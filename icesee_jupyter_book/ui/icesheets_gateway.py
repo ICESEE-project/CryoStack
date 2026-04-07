@@ -346,52 +346,8 @@ def submit_remote_icesheets(
                 raise RuntimeError("Remote ICESEE-Spack install failed.")
 
     elif backend == "container":
-        remote_root = make_remote_run_dir(
-            remote_base_dir.strip() or "~/r-arobel3-0",
-            remote_tag.strip() or "icesheets"
-        ).rsplit("/runs/", 1)[0] if "/runs/" in make_remote_run_dir(
-            remote_base_dir.strip() or "~/r-arobel3-0",
-            remote_tag.strip() or "icesheets"
-        ) else (remote_base_dir.strip() or "~/r-arobel3-0")
-
-        container_root = f"{expand_remote_home(remote_base_dir)}/{remote_tag}/ICESEE-Containers"
-        container_dir = f"{container_root}/spack-managed/combined-container"
-        sif_path = f"{container_dir}/combined-env.sif"
-        def_path = f"{container_dir}/combined-env-inbuilt-matlab.def"
-
-        chk_cmd = f"""
-set -e
-if ! command -v apptainer >/dev/null 2>&1; then
-  echo "__NO_APPTAINER__"
-  exit 0
-fi
-
-if [ ! -d "{container_root}" ]; then
-  git clone https://github.com/ICESEE-project/ICESEE-Containers.git "{container_root}"
-fi
-
-cd "{container_dir}"
-
-if [ ! -f "{sif_path}" ]; then
-  if [ ! -f "{def_path}" ]; then
-    echo "__NO_DEF__"
-    exit 0
-  fi
-  apptainer build combined-env.sif combined-env-inbuilt-matlab.def
-fi
-
-echo "__OK__"
-"""
-        r = ssh_run(host, user, port, chk_cmd, timeout=300)
-        if "__NO_APPTAINER__" in (r.stdout or ""):
-            raise RuntimeError("apptainer not found on remote host.")
-        if "__NO_DEF__" in (r.stdout or ""):
-            raise RuntimeError("Apptainer definition file not found on remote host.")
-        if r.returncode != 0:
-            raise RuntimeError(r.stderr or r.stdout)
-
-        messages.append("[remote] ICESEE-Container backend ready")
-        messages.append(f"  image: {sif_path}")
+        messages.append("[remote] ICESEE-Container backend selected")
+        messages.append("[remote] Container setup will be handled inside the submitted Slurm job.")
 
     else:
         raise RuntimeError(f"Unsupported backend: {backend}")
@@ -425,20 +381,61 @@ source "{spack_path}/scripts/activate.sh"
 
         if model == "issm":
             run_block = f"""
-mkdir -p "{remote_example_dir}" "{remote_exec_dir}"
-srun --mpi=pmix -n {slurm_ntasks} apptainer exec \\
-  -B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution \\
-  "{sif_path}" with-issm matlab -nodesktop -nosplash -r "issmversion; exit"
-"""
+    mkdir -p "{remote_example_dir}" "{remote_exec_dir}"
+    srun --mpi=pmix -n {slurm_ntasks} apptainer exec \\
+    -B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution \\
+    "{sif_path}" with-issm matlab -nodesktop -nosplash -r "issmversion; exit"
+    """
         elif model == "icepack":
             run_block = f"""
-mkdir -p "{remote_example_dir}" "{remote_exec_dir}"
-apptainer exec "{sif_path}" with-icepack python -c "import icepack; print('Icepack import successful')"
-"""
+    mkdir -p "{remote_example_dir}" "{remote_exec_dir}"
+    apptainer exec "{sif_path}" with-icepack python -c "import icepack; print('Icepack import successful')"
+    """
         else:
             raise RuntimeError(f"Unsupported model: {model}")
 
-        body = run_block
+        container_setup = f"""
+    # --- ICESEE-Container / Apptainer setup ---
+    echo "[icesheets] Checking apptainer..."
+
+    if ! command -v apptainer >/dev/null 2>&1; then
+    echo "[icesheets] apptainer not found in PATH. Trying module load apptainer..."
+    source /etc/profile >/dev/null 2>&1 || true
+    module load apptainer >/dev/null 2>&1 || true
+    fi
+
+    if ! command -v apptainer >/dev/null 2>&1; then
+    echo "[icesheets][ERROR] apptainer not found, and module load apptainer failed."
+    exit 2
+    fi
+
+    container_root="{expand_remote_home(remote_base_dir)}/{remote_tag}/ICESEE-Containers"
+    container_dir="$container_root/spack-managed/combined-container"
+    sif_path="$container_dir/combined-env.sif"
+    def_path="$container_dir/combined-env-inbuilt-matlab.def"
+
+    mkdir -p "{expand_remote_home(remote_base_dir)}/{remote_tag}"
+
+    if [ ! -d "$container_root" ]; then
+    echo "[icesheets] Cloning ICESEE-Containers..."
+    git clone https://github.com/ICESEE-project/ICESEE-Containers.git "$container_root"
+    fi
+
+    cd "$container_dir"
+
+    if [ ! -f "$sif_path" ]; then
+    echo "[icesheets] Building Apptainer image..."
+    if [ ! -f "$def_path" ]; then
+        echo "[icesheets][ERROR] Definition file not found: $def_path"
+        exit 2
+    fi
+    apptainer build combined-env.sif combined-env-inbuilt-matlab.def
+    else
+    echo "[icesheets] Using existing Apptainer image: $sif_path"
+    fi
+    """
+
+        body = container_setup + "\n" + run_block
 
     # ---------------------------------------------------------
     # Render sbatch
@@ -624,32 +621,36 @@ def build_icesheets_ui():
 
         def build_container_setup_block() -> str:
             remote_root = f"{expand_remote_home(remote_base_dir.value)}/{remote_tag.value}"
-            container_repo = f"{remote_root}/ICESEE-Containers"
-            container_dir = f"{container_repo}/spack-managed/combined-container"
+            container_root = f"{remote_root}/ICESEE-Containers"
+            container_dir = f"{container_root}/spack-managed/combined-container"
             sif_path = f"{container_dir}/combined-env.sif"
             def_path = f"{container_dir}/combined-env-inbuilt-matlab.def"
 
             return f"""
         # --- ICESEE-Container / Apptainer setup ---
+        echo "[icesheets] Checking apptainer..."
+
         if ! command -v apptainer >/dev/null 2>&1; then
-        echo "[icesheets][ERROR] apptainer not found on remote host."
+        echo "[icesheets] apptainer not found in PATH. Trying module load apptainer..."
+        module load apptainer >/dev/null 2>&1 || true
+        fi
+
+        if ! command -v apptainer >/dev/null 2>&1; then
+        echo "[icesheets][ERROR] apptainer not found, and module load apptainer failed."
         exit 2
         fi
 
         mkdir -p "{remote_root}"
 
-        if [ -f "{sif_path}" ]; then
-        echo "[icesheets] Found existing Apptainer image:"
-        echo "  {sif_path}"
-        else
-        echo "[icesheets] Apptainer image not found."
-
-        if [ ! -d "{container_repo}" ]; then
-            echo "[icesheets] Cloning ICESEE-Containers..."
-            git clone https://github.com/ICESEE-project/ICESEE-Containers.git "{container_repo}"
+        if [ ! -d "{container_root}" ]; then
+        echo "[icesheets] Cloning ICESEE-Containers..."
+        git clone https://github.com/ICESEE-project/ICESEE-Containers.git "{container_root}"
         fi
 
         cd "{container_dir}"
+
+        if [ ! -f "{sif_path}" ]; then
+        echo "[icesheets] Apptainer image not found."
 
         if [ ! -f "{def_path}" ]; then
             echo "[icesheets][ERROR] Definition file not found:"
@@ -657,8 +658,11 @@ def build_icesheets_ui():
             exit 2
         fi
 
-        echo "[icesheets] Building Apptainer image from definition file..."
+        echo "[icesheets] Building image from definition file..."
         apptainer build combined-env.sif combined-env-inbuilt-matlab.def
+        else
+        echo "[icesheets] Using existing Apptainer image:"
+        echo "  {sif_path}"
         fi
         """
 
