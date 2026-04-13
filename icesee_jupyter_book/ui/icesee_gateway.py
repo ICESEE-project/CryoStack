@@ -10,6 +10,7 @@ import ipywidgets as W
 
 from IPython.display import display, Image
 
+from icesee_jupyter_book.core import ssh_key_manager
 from icesee_jupyter_book.core.example_registry import EXAMPLES, enabled_names
 from icesee_jupyter_book.core.config_io import load_yaml, dump_yaml
 from icesee_jupyter_book.core.example_discovery import (
@@ -33,6 +34,7 @@ from icesee_jupyter_book.core.remote_runner import (
     remote_tail_log,
     remote_cancel_job,
     submit_remote_example,
+    submit_remote_example_container,
     RemoteSubmitResult,
 )
 from icesee_jupyter_book.core.cloud_runner import (
@@ -41,6 +43,7 @@ from icesee_jupyter_book.core.cloud_runner import (
     submit_cloud_example,
 )
 
+from icesee_jupyter_book.ui.shared_ssh_widgets import build_ssh_key_manager
 
 # ============================================================
 # Params widgets factory
@@ -490,6 +493,23 @@ def build_icesee_ui():
         remote_base_dir = W.Text(value="~/r-arobel3-0", layout=W.Layout(width="320px"))
         remote_tag = W.Text(value="icesee", layout=W.Layout(width="220px"))
 
+        exec_backend_choice = W.Dropdown(
+            options=[("ICESEE-Spack", "spack"), ("ICESEE-Container", "container")],
+            value="spack",
+            layout=W.Layout(width="320px"),
+        )
+
+        container_source = W.Dropdown(
+            options=[("Docker Hub", "docker"), ("AWS Registry", "aws")],
+            value="docker",
+            layout=W.Layout(width="220px"),
+        )
+
+        container_image_uri = W.Text(
+            value="icesee/combined-container:latest",
+            layout=W.Layout(width="520px"),
+        )
+
         connect_btn = W.Button(description="Test SSH", icon="terminal", button_style="info")
         submit_btn = W.Button(description="Submit job", icon="server", button_style="warning")
         status_btn = W.Button(description="Check status", icon="tasks", button_style="")
@@ -865,37 +885,66 @@ def build_icesee_ui():
                 cfg_yaml = build_config_from_widgets()
                 params_text = yaml.safe_dump(cfg_yaml, sort_keys=False)
 
-                result = submit_remote_example(
-                    host=host,
-                    user=user,
-                    port=port,
-                    example_cfg=example_cfg,
-                    params_text=params_text,
-                    remote_base_dir=remote_base_dir.value,
-                    remote_tag=remote_tag.value,
-                    spack_enable=spack_enable.value,
-                    spack_repo_url=spack_repo_url.value,
-                    spack_dirname=spack_dirname.value,
-                    spack_install_if_needed=spack_install_if_needed.value,
-                    spack_install_mode=spack_install_mode.value,
-                    spack_slurm_dir=spack_slurm_dir.value,
-                    spack_pmix_dir=spack_pmix_dir.value,
-                    spack_use_existing_sbatch=spack_use_existing_sbatch.value,
-                    slurm_time=slurm_time.value,
-                    slurm_job_name=slurm_job_name.value,
-                    slurm_nodes=slurm_nodes.value,
-                    slurm_ntasks=slurm_ntasks.value,
-                    slurm_tpn=slurm_tpn.value,
-                    slurm_part=slurm_part.value,
-                    slurm_mem=slurm_mem.value,
-                    slurm_account=slurm_account.value,
-                    slurm_mail=slurm_mail.value,
-                    remote_module_lines=remote_module_lines.value,
-                    remote_export_lines=remote_export_lines.value,
-                    cluster_mpi_np=cluster_mpi_np.value,
-                    ens_size=ens_sl.value,
-                    cluster_model_nprocs=cluster_model_nprocs.value,
-                )
+                if exec_backend_choice.value == "spack":
+                    result = submit_remote_example(
+                        host=host,
+                        user=user,
+                        port=port,
+                        example_cfg=example_cfg,
+                        params_text=params_text,
+                        remote_base_dir=remote_base_dir.value,
+                        remote_tag=remote_tag.value,
+                        spack_enable=spack_enable.value,
+                        spack_repo_url=spack_repo_url.value,
+                        spack_dirname=spack_dirname.value,
+                        spack_install_if_needed=spack_install_if_needed.value,
+                        spack_install_mode=spack_install_mode.value,
+                        spack_slurm_dir=spack_slurm_dir.value,
+                        spack_pmix_dir=spack_pmix_dir.value,
+                        spack_use_existing_sbatch=spack_use_existing_sbatch.value,
+                        slurm_time=slurm_time.value,
+                        slurm_job_name=slurm_job_name.value,
+                        slurm_nodes=slurm_nodes.value,
+                        slurm_ntasks=slurm_ntasks.value,
+                        slurm_tpn=slurm_tpn.value,
+                        slurm_part=slurm_part.value,
+                        slurm_mem=slurm_mem.value,
+                        slurm_account=slurm_account.value,
+                        slurm_mail=slurm_mail.value,
+                        remote_module_lines=remote_module_lines.value,
+                        remote_export_lines=remote_export_lines.value,
+                        cluster_mpi_np=cluster_mpi_np.value,
+                        ens_size=ens_sl.value,
+                        cluster_model_nprocs=cluster_model_nprocs.value,
+                    )
+                else:
+                    result = submit_remote_example_container(
+                        host=host,
+                        user=user,
+                        port=port,
+                        example_cfg=example_cfg,
+                        params_text=params_text,
+                        remote_base_dir=remote_base_dir.value,
+                        remote_tag=remote_tag.value,
+                        spack_repo_url=spack_repo_url.value,
+                        spack_dirname=spack_dirname.value,
+                        slurm_time=slurm_time.value,
+                        slurm_job_name=slurm_job_name.value,
+                        slurm_nodes=slurm_nodes.value,
+                        slurm_ntasks=slurm_ntasks.value,
+                        slurm_tpn=slurm_tpn.value,
+                        slurm_part=slurm_part.value,
+                        slurm_mem=slurm_mem.value,
+                        slurm_account=slurm_account.value,
+                        slurm_mail=slurm_mail.value,
+                        remote_module_lines=remote_module_lines.value,
+                        remote_export_lines=remote_export_lines.value,
+                        cluster_mpi_np=cluster_mpi_np.value,
+                        ens_size=ens_sl.value,
+                        cluster_model_nprocs=cluster_model_nprocs.value,
+                        container_source=container_source.value,
+                        container_image_uri=container_image_uri.value,
+                    )
 
                 STATUS["remote_dir"] = result.remote_dir
                 STATUS["jobid"] = result.jobid
@@ -1296,6 +1345,90 @@ def build_icesee_ui():
         local_tab_card = W.VBox([W.HTML("<div class='icesee-subtle'>Local mode runs directly in this notebook.</div>")])
         local_tab_card.add_class("icesee-card")
 
+        cluster_name_for_keys = W.Text(value="pace" , layout=W.Layout(width="320px"))
+        ssh_key_manager = build_ssh_key_manager(
+            cluster_name_widget=cluster_name_for_keys,
+            host_widget=cluster_host,
+            user_widget=cluster_user,
+            )
+        exec_backend_row = W.HBox(
+            [W.HTML("<div class='icesee-lbl'>Exec backend:</div>"), exec_backend_choice],
+            layout=W.Layout(gap="12px"),
+        )
+
+        container_source_row = W.HBox(
+            [W.HTML("<div class='icesee-lbl'>Source:</div>"), container_source],
+            layout=W.Layout(gap="12px"),
+        )
+
+        container_image_row = W.HBox(
+            [W.HTML("<div class='icesee-lbl'>Image:</div>"), container_image_uri],
+            layout=W.Layout(gap="12px"),
+        )
+
+        def _toggle_exec_backend_ui(_=None):
+            is_container = (exec_backend_choice.value == "container")
+
+            container_source_row.layout.display = "flex" if is_container else "none"
+            container_image_row.layout.display = "flex" if is_container else "none"
+
+            spack_display = "none" if is_container else "flex"
+            spack_block_display = "none" if is_container else "block"
+
+            spack_section_title.layout.display = spack_block_display
+            spack_enable_row.layout.display = spack_block_display
+            spack_repo_row.layout.display = spack_display
+            spack_dir_row.layout.display = spack_display
+            spack_install_if_needed_row.layout.display = spack_block_display
+            spack_install_mode_row.layout.display = spack_display
+            spack_slurm_dir_row.layout.display = spack_display
+            spack_pmix_dir_row.layout.display = spack_display
+            spack_existing_sbatch_row.layout.display = spack_block_display
+
+            if is_container:
+                spack_enable.value = False
+
+        spack_section_title = W.HTML("<div class='icesee-subtle' style='margin-top:10px'>ICESEE-Spack</div>")
+        spack_enable_row = W.Box([spack_enable], layout=W.Layout(margin="0 0 0 120px"))
+        spack_repo_row = W.HBox([W.HTML("<div class='icesee-lbl'>Repo:</div>"), spack_repo_url], layout=W.Layout(gap="12px"))
+        spack_dir_row = W.HBox([W.HTML("<div class='icesee-lbl'>Dir name:</div>"), spack_dirname], layout=W.Layout(gap="12px"))
+        spack_install_if_needed_row = W.Box([spack_install_if_needed], layout=W.Layout(margin="0 0 0 120px"))
+        spack_install_mode_row = W.HBox([W.HTML("<div class='icesee-lbl'>Install:</div>"), spack_install_mode], layout=W.Layout(gap="12px"))
+        spack_slurm_dir_row = W.HBox([W.HTML("<div class='icesee-lbl'>SLURM_DIR:</div>"), spack_slurm_dir], layout=W.Layout(gap="12px"))
+        spack_pmix_dir_row = W.HBox([W.HTML("<div class='icesee-lbl'>PMIX_DIR:</div>"), spack_pmix_dir], layout=W.Layout(gap="12px"))
+        spack_existing_sbatch_row = W.Box([spack_use_existing_sbatch], layout=W.Layout(margin="0 0 0 120px"))
+
+        remote_controls_row = W.HBox([connect_btn, status_btn, tail_btn, terminate_btn], layout=W.Layout(gap="10px"))
+        slurm_section_title = W.HTML("<div class='icesee-subtle' style='margin-top:8px'>Slurm resources</div>")
+        job_time_row = W.HBox(
+            [form_pair("Job:", slurm_job_name), form_pair("Time:", slurm_time)],
+            layout=W.Layout(gap="8px", width="100%"),
+        )
+        nodes_tasks_tpn_row = W.HBox(
+            [form_pair("Nodes:", slurm_nodes), form_pair("Tasks:", slurm_ntasks), form_pair("TPN:", slurm_tpn)],
+            layout=W.Layout(gap="8px", width="100%"),
+        )
+        part_mem_row = W.HBox(
+            [form_pair("Part:", slurm_part), form_pair("Mem:", slurm_mem)],
+            layout=W.Layout(gap="8px", width="100%"),
+        )
+        acct_mail_row = W.HBox(
+            [form_pair("Acct:", slurm_account), form_pair("Mail:", slurm_mail)],
+            layout=W.Layout(gap="8px", width="100%"),
+        )
+        mpi_model_row = W.HBox(
+            [form_pair("MPI np:", cluster_mpi_np), form_pair("Model nprocs:", cluster_model_nprocs, label_width="120px")],
+            layout=W.Layout(gap="8px", width="100%"),
+        )
+
+        modules_title = W.HTML("<div class='icesee-subtle' style='margin-top:10px'>Modules</div>")
+        exports_title = W.HTML("<div class='icesee-subtle' style='margin-top:10px'>Exports</div>")
+        auth_title = W.HTML("<div class='icesee-subtle' style='margin-top:10px'>Auth</div>")
+        auth_row = W.HBox([W.HTML("<div class='icesee-lbl'>Method:</div>"), auth_mode], layout=W.Layout(gap="12px"))
+        ssh_key_title = W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>SSH key manager</div>")
+        cluster_password_row = W.Box([cluster_password], layout=W.Layout(margin="0 0 0 120px"))
+        bootstrap_btn_row = W.Box([bootstrap_btn], layout=W.Layout(margin="0 0 0 120px"))
+
         # Remote panel
         cluster_panel = W.VBox(
             [
@@ -1316,62 +1449,40 @@ def build_icesee_ui():
                     ],
                     layout=W.Layout(gap="16px", width="100%"),
                 ),
-                W.HTML("<div class='icesee-subtle' style='margin-top:10px'>ICESEE-Spack</div>"),
-                W.Box([spack_enable], layout=W.Layout(margin="0 0 0 120px")),
-                W.HBox([W.HTML("<div class='icesee-lbl'>Repo:</div>"), spack_repo_url], layout=W.Layout(gap="12px")),
-                W.HBox([W.HTML("<div class='icesee-lbl'>Dir name:</div>"), spack_dirname], layout=W.Layout(gap="12px")),
-                W.Box([spack_install_if_needed], layout=W.Layout(margin="0 0 0 120px")),
-                W.HBox([W.HTML("<div class='icesee-lbl'>Install:</div>"), spack_install_mode], layout=W.Layout(gap="12px")),
-                W.HBox([W.HTML("<div class='icesee-lbl'>SLURM_DIR:</div>"), spack_slurm_dir], layout=W.Layout(gap="12px")),
-                W.HBox([W.HTML("<div class='icesee-lbl'>PMIX_DIR:</div>"),  spack_pmix_dir],  layout=W.Layout(gap="12px")),
-                W.Box([spack_use_existing_sbatch], layout=W.Layout(margin="0 0 0 120px")),
-                # W.HBox([connect_btn, submit_btn, status_btn, tail_btn], layout=W.Layout(gap="10px")),
-                W.HBox([connect_btn, status_btn, tail_btn, terminate_btn], layout=W.Layout(gap="10px")),
-                W.HTML("<div class='icesee-subtle' style='margin-top:8px'>Slurm resources</div>"),
-                W.HBox(
-                    [
-                        form_pair("Job:", slurm_job_name),
-                        form_pair("Time:", slurm_time),
-                    ],
-                    layout=W.Layout(gap="8px", width="100%"),
-                ),
-                W.HBox(
-                    [
-                        form_pair("Nodes:", slurm_nodes),
-                        form_pair("Tasks:", slurm_ntasks),
-                        form_pair("TPN:", slurm_tpn),
-                    ],
-                    layout=W.Layout(gap="8px", width="100%"),
-                ),
-                W.HBox(
-                    [
-                        form_pair("Part:", slurm_part),
-                        form_pair("Mem:", slurm_mem),
-                    ],
-                    layout=W.Layout(gap="8px", width="100%"),
-                ),
-                W.HBox(
-                    [
-                        form_pair("Acct:", slurm_account),
-                        form_pair("Mail:", slurm_mail),
-                    ],
-                    layout=W.Layout(gap="8px", width="100%"),
-                ),
-                W.HBox(
-                    [
-                        form_pair("MPI np:", cluster_mpi_np),
-                        form_pair("Model nprocs:", cluster_model_nprocs, label_width="120px"),
-                    ],
-                    layout=W.Layout(gap="8px", width="100%"),
-                ),
-                W.HTML("<div class='icesee-subtle' style='margin-top:10px'>Modules</div>"),
+
+                W.HTML("<div class='icesee-subtle' style='margin-top:10px'>Execution backend</div>"),
+                exec_backend_row,
+                container_source_row,
+                container_image_row,
+
+                spack_section_title,
+                spack_enable_row,
+                spack_repo_row,
+                spack_dir_row,
+                spack_install_if_needed_row,
+                spack_install_mode_row,
+                spack_slurm_dir_row,
+                spack_pmix_dir_row,
+                spack_existing_sbatch_row,
+
+                remote_controls_row,
+                slurm_section_title,
+                job_time_row,
+                nodes_tasks_tpn_row,
+                part_mem_row,
+                acct_mail_row,
+                mpi_model_row,
+
+                modules_title,
                 remote_module_lines,
-                W.HTML("<div class='icesee-subtle' style='margin-top:10px'>Exports</div>"),
+                exports_title,
                 remote_export_lines,
-                W.HTML("<div class='icesee-subtle' style='margin-top:10px'>Auth</div>"),
-                W.HBox([W.HTML("<div class='icesee-lbl'>Method:</div>"), auth_mode], layout=W.Layout(gap="12px")),
-                W.Box([cluster_password], layout=W.Layout(margin="0 0 0 120px")),
-                W.Box([bootstrap_btn], layout=W.Layout(margin="0 0 0 120px")),
+                auth_title,
+                auth_row,
+                ssh_key_title,
+                ssh_key_manager,
+                cluster_password_row,
+                bootstrap_btn_row,
             ],
             layout=W.Layout(gap="8px"),
         )
@@ -1423,6 +1534,9 @@ def build_icesee_ui():
 
         mode_tabs.observe(_toggle_panels_from_tabs, names="selected_index")
         _toggle_panels_from_tabs()
+
+        exec_backend_choice.observe(_toggle_exec_backend_ui, names="value")
+        _toggle_exec_backend_ui()
 
         left = W.VBox(
             [

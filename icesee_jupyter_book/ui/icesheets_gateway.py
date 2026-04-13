@@ -46,6 +46,7 @@ from icesee_jupyter_book.core.cloud_runner import (
     aws_batch_status,
     submit_cloud_example,
 )
+from icesee_jupyter_book.ui.shared_ssh_widgets import build_ssh_key_manager
 
 
 # ============================================================
@@ -434,7 +435,6 @@ source "{spack_path}/scripts/activate.sh"
     echo "[icesheets] Using existing Apptainer image: $sif_path"
     fi
     """
-
         body = container_setup + "\n" + run_block
 
     # ---------------------------------------------------------
@@ -1215,6 +1215,13 @@ def build_icesheets_ui():
         slurm_account_row = form_pair("Acct:", slurm_account, "90px")
         slurm_mail_row = form_pair("Mail:", slurm_mail, "90px")
 
+        cluster_name_for_keys = W.Text(value="pace" , layout=W.Layout(width="320px"))
+        ssh_key_manager = build_ssh_key_manager(
+            cluster_name_widget=cluster_name_for_keys,
+            host_widget=cluster_host,
+            user_widget=cluster_user,
+        )
+
         remote_box = W.VBox([
             W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>Remote connection</div>"),
             cluster_host_row,
@@ -1225,6 +1232,9 @@ def build_icesheets_ui():
             W.HBox([W.HTML("<div class='icesee-lbl'>Method:</div>"), auth_mode], layout=W.Layout(gap="10px")),
             cluster_password,
             bootstrap_btn,
+
+            W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>SSH key manager</div>"),
+            ssh_key_manager,
 
             W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>Slurm resources</div>"),
             W.HBox([slurm_job_name_row, slurm_time_row], layout=W.Layout(gap="12px", width="100%")),

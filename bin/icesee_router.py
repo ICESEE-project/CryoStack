@@ -17,28 +17,29 @@ HOP_BY_HOP = {
 }
 
 
-def pick_target(request, book_port: int, voila_port: int):
+def pick_target(request, book_port: int, voila_port: int, icesheet_port: int):
     path = request.path
 
-    # Book pages live under normal paths like /index.html, /intro.html, /_static/...
-    # Voilà app lives under /icesee-gui and its Jupyter runtime endpoints.
-    if (
-        path.startswith("/icesee-gui")
-        or path.startswith("/api/")
-        or path.startswith("/voila/")
-        or path.startswith("/nbextensions/")
-        or path.startswith("/kernelspecs/")
-        or path.startswith("/files/")
-        or path.startswith("/static/")
-    ):
-        return "127.0.0.1", voila_port
+    if path == "/icesee-gui" or path.startswith("/icesee-gui/"):
+        return "127.0.0.1", voila_port, path
 
-    return "127.0.0.1", book_port
+    if path == "/icesheets" or path.startswith("/icesheets/"):
+        return "127.0.0.1", icesheet_port, path
+
+    return "127.0.0.1", book_port, path
 
 
 async def handle_http(request: web.Request) -> web.StreamResponse:
-    host, port = pick_target(request, request.app["book_port"], request.app["voila_port"])
-    upstream_url = f"http://{host}:{port}{request.rel_url}"
+    host, port, upstream_path = pick_target(
+        request,
+        request.app["book_port"],
+        request.app["voila_port"],
+        request.app["icesheet_port"],
+    )
+
+    upstream_url = f"http://{host}:{port}{upstream_path}"
+    if request.query_string:
+        upstream_url += f"?{request.query_string}"
 
     headers = {
         k: v for k, v in request.headers.items()
@@ -69,8 +70,16 @@ async def handle_http(request: web.Request) -> web.StreamResponse:
 
 
 async def handle_ws(request: web.Request) -> web.WebSocketResponse:
-    host, port = pick_target(request, request.app["book_port"], request.app["voila_port"])
-    upstream_url = f"http://{host}:{port}{request.rel_url}"
+    host, port, upstream_path = pick_target(
+        request,
+        request.app["book_port"],
+        request.app["voila_port"],
+        request.app["icesheet_port"],
+    )
+
+    upstream_url = f"http://{host}:{port}{upstream_path}"
+    if request.query_string:
+        upstream_url += f"?{request.query_string}"
 
     client_ws = web.WebSocketResponse()
     await client_ws.prepare(request)
@@ -126,11 +135,13 @@ def main():
     parser.add_argument("--listen-port", type=int, default=8080)
     parser.add_argument("--book-port", type=int, default=8081)
     parser.add_argument("--voila-port", type=int, default=8866)
+    parser.add_argument("--icesheet-port", type=int, default=8870)
     args = parser.parse_args()
 
     app = web.Application()
     app["book_port"] = args.book_port
     app["voila_port"] = args.voila_port
+    app["icesheet_port"] = args.icesheet_port
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
     app.router.add_route("*", "/{tail:.*}", dispatch)

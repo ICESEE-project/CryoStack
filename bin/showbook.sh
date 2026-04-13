@@ -93,10 +93,6 @@ if [ ! -f "${ICESHEET_NOTEBOOK}" ]; then
   exit 2
 fi
 
-# Optional patch step for built HTML launcher page
-# echo "[ICESEE] Patching run_center.html"
-# "${PYTHON_BIN}" "${repoRoot}/bin/patch_run_center_html.py" "${RUN_CENTER_HTML}"
-
 echo "[ICESEE] Starting static book on 127.0.0.1:${BOOK_PORT}"
 (
   cd "${BOOK_DIR}"
@@ -110,7 +106,8 @@ echo "[ICESEE] Starting ICESEE GUI Voilà on 127.0.0.1:${VOILA_PORT}"
   exec "${PYTHON_BIN}" -m voila "${VOILA_NOTEBOOK}" \
     --no-browser \
     --Voila.ip=127.0.0.1 \
-    --port="${VOILA_PORT}"
+    --port="${VOILA_PORT}" \
+    --Voila.base_url="/icesee-gui/"
 ) &
 VOILA_PID=$!
 
@@ -120,7 +117,8 @@ echo "[ICESEE] Starting Ice-Sheet Modeling GUI Voilà on 127.0.0.1:${ICESHEET_GU
   exec "${PYTHON_BIN}" -m voila "${ICESHEET_NOTEBOOK}" \
     --no-browser \
     --Voila.ip=127.0.0.1 \
-    --port="${ICESHEET_GUI_PORT}"
+    --port="${ICESHEET_GUI_PORT}" \
+    --Voila.base_url="/icesheets/"
 ) &
 ICESHEET_PID=$!
 
@@ -130,15 +128,16 @@ echo "[ICESEE] Starting router on 127.0.0.1:${ROUTER_PORT}"
   exec "${PYTHON_BIN}" "${repoRoot}/bin/icesee_router.py" \
     --listen-port "${ROUTER_PORT}" \
     --book-port "${BOOK_PORT}" \
-    --voila-port "${VOILA_PORT}"
+    --voila-port "${VOILA_PORT}" \
+    --icesheet-port "${ICESHEET_GUI_PORT}"
 ) &
 ROUTER_PID=$!
 
 echo
 echo "[ICESEE] Services"
 echo "  Book:                    http://127.0.0.1:${ROUTER_PORT}/"
-echo "  ICESEE GUI:              http://127.0.0.1:${VOILA_PORT}/"
-echo "  Ice-Sheet Modeling GUI:  http://127.0.0.1:${ICESHEET_GUI_PORT}/"
+echo "  ICESEE GUI:              http://127.0.0.1:${ROUTER_PORT}/icesee-gui/"
+echo "  Ice-Sheet Modeling GUI:  http://127.0.0.1:${ROUTER_PORT}/icesheets/"
 echo
 
 wait "${BOOK_PID}" "${VOILA_PID}" "${ICESHEET_PID}" "${ROUTER_PID}"

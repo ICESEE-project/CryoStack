@@ -243,6 +243,210 @@ sbatch {sh_quote(remote_sbatch)}
         messages=messages,
     )
 
+def submit_remote_example_container(
+    *,
+    host: str,
+    user: str,
+    port: int,
+    example_cfg: dict,
+    params_text: str,
+    remote_base_dir: str,
+    remote_tag: str,
+    spack_repo_url: str,
+    spack_dirname: str,
+    slurm_time: str,
+    slurm_job_name: str,
+    slurm_nodes: int,
+    slurm_ntasks: int,
+    slurm_tpn: int,
+    slurm_part: str,
+    slurm_mem: str,
+    slurm_account: str,
+    slurm_mail: str,
+    remote_module_lines: str,
+    remote_export_lines: str,
+    cluster_mpi_np: int,
+    ens_size: int,
+    cluster_model_nprocs: int,
+    container_source: str,
+    container_image_uri: str,
+) -> RemoteSubmitResult:
+    messages: list[str] = []
+
+    if not host or not user:
+        raise ValueError("Provide Host + User first.")
+
+    rdir = make_remote_run_dir(
+        remote_base_dir.strip() or "~/r-arobel3-0",
+        remote_tag.strip() or "icesee",
+    )
+    messages.append(f"[remote] Remote run dir: {rdir}")
+
+    # keep using ICESEE-Spack to locate the example directory and scripts
+    spack_parent = remote_base_dir.strip() or "~/r-arobel3-0"
+    spack_name = spack_dirname.strip() or "ICESEE-Spack"
+    repo = spack_repo_url.strip()
+
+    messages.append("[remote] Container backend enabled")
+    messages.append(f"  spack parent: {spack_parent}")
+    messages.append(f"  spack repo  : {repo}")
+    messages.append(f"  spack name  : {spack_name}")
+
+    spack_path, (rc, out, err) = remote_ensure_spack(
+        host, user, port, spack_parent, spack_name, repo
+    )
+    if out.strip():
+        messages.append(out.strip())
+    if err.strip():
+        messages.append(err.strip())
+    if rc != 0:
+        raise RuntimeError("Failed to ensure ICESEE-Spack on remote host.")
+
+    spack_path = resolve_remote_abs_path(host, user, port, spack_path)
+    messages.append(f"[remote] Resolved ICESEE-Spack path: {spack_path}")
+
+    remote_rel = example_cfg.get("remote_rel")
+    if not remote_rel:
+        raise RuntimeError("This example has no remote_rel configured in EXAMPLES.")
+
+    remote_example_dir = f"{spack_path.rstrip('/')}/{remote_rel.lstrip('/')}"
+    messages.append(f"[remote] Remote example dir : {remote_example_dir}")
+
+    rc, out, err = rsh(
+        host, user, port,
+        f"test -d {sh_quote(remote_example_dir)} && echo OK || echo MISSING",
+        timeout=20,
+    )
+    if "OK" not in (out or ""):
+        raise RuntimeError(
+            f"Remote example directory not found.\nstdout: {(out or '').strip()}\nstderr: {(err or '').strip()}"
+        )
+
+    account_line, mail_lines = slurm_optional_lines(slurm_account.strip(), slurm_mail.strip())
+
+    resolved_base = resolve_remote_abs_path(host, user, port, remote_base_dir.strip() or "~/r-arobel3-0")
+    remote_root = f"{resolved_base.rstrip('/')}/{remote_tag.strip() or 'icesee'}"
+    container_root = f"{remote_root}/ICESEE-Containers"
+    container_dir = f"{container_root}/spack-managed/combined-container"
+    sif_path = f"{container_dir}/combined-env.sif"
+    def_path = f"{container_dir}/combined-env-inbuilt-matlab.def"
+
+    run_script_name = example_cfg.get("run_script")
+    outfile = f"{rdir}/icesee-enkf-%j.out"
+
+    slurm_text = f"""#!/bin/bash
+#SBATCH -t {slurm_time.strip()}
+#SBATCH -J {slurm_job_name.strip() or "ICESEE"}
+#SBATCH -N {int(slurm_nodes)}
+#SBATCH -n {int(slurm_ntasks)}
+#SBATCH --ntasks-per-node={int(slurm_tpn)}
+#SBATCH -p {slurm_part.strip()}
+#SBATCH --mem={slurm_mem.strip()}
+{account_line}
+#SBATCH -o {outfile}
+{mail_lines}
+
+set -euo pipefail
+cd "${{SLURM_SUBMIT_DIR}}"
+
+module purge || true
+{sanitize_multiline(remote_module_lines)}
+
+{sanitize_multiline(remote_export_lines)}
+
+echo "[icesee] Host: $(hostname)"
+echo "[icesee] Date: $(date)"
+echo "[icesee] PWD : $(pwd)"
+
+echo "[icesee] Checking apptainer..."
+if ! command -v apptainer >/dev/null 2>&1; then
+  echo "[icesee] apptainer not found in PATH. Trying module load apptainer..."
+  source /etc/profile >/dev/null 2>&1 || true
+  module load apptainer >/dev/null 2>&1 || true
+fi
+
+if ! command -v apptainer >/dev/null 2>&1; then
+  echo "[icesee][ERROR] apptainer not found, and module load apptainer failed."
+  exit 2
+fi
+
+mkdir -p "{remote_root}"
+
+if [ ! -d "{container_root}" ]; then
+  echo "[icesee] Cloning ICESEE-Containers..."
+  git clone https://github.com/ICESEE-project/ICESEE-Containers.git "{container_root}"
+fi
+
+cd "{container_dir}"
+
+if [ ! -f "{sif_path}" ]; then
+  if [ ! -f "{def_path}" ]; then
+    echo "[icesee][ERROR] Definition file not found: {def_path}"
+    exit 2
+  fi
+  echo "[icesee] Building Apptainer image..."
+  apptainer build combined-env.sif combined-env-inbuilt-matlab.def
+else
+  echo "[icesee] Using existing Apptainer image: {sif_path}"
+fi
+
+cd "{remote_example_dir}"
+
+# bind example dir and run dir to the same absolute paths inside the container
+if command -v srun >/dev/null 2>&1; then
+  /usr/bin/time -v \\
+    srun --mpi=pmix -n "{int(cluster_mpi_np)}" \\
+      apptainer exec \\
+      -B "{remote_example_dir}:{remote_example_dir},{rdir}:{rdir}" \\
+      "{sif_path}" \\
+      python "{run_script_name}" \\
+        -F "{rdir}/params.yaml" \\
+        --Nens="{int(ens_size)}" \\
+        --model_nprocs="{int(cluster_model_nprocs)}" \\
+        --verbose
+else
+  /usr/bin/time -v \\
+    apptainer exec \\
+      -B "{remote_example_dir}:{remote_example_dir},{rdir}:{rdir}" \\
+      "{sif_path}" \\
+      python "{run_script_name}" \\
+        -F "{rdir}/params.yaml" \\
+        --Nens="{int(ens_size)}" \\
+        --model_nprocs="{int(cluster_model_nprocs)}" \\
+        --verbose
+fi
+
+echo "=== Finished ==="
+"""
+
+    messages.append("[remote] Writing params.yaml + slurm_run.sh, then sbatch…")
+
+    jobid = remote_stage_and_submit(
+        host=host,
+        user=user,
+        port=port,
+        remote_dir=rdir,
+        params_text=params_text,
+        slurm_text=slurm_text,
+    )
+
+    messages.append("[remote] ✅ Submitted container-based slurm_run.sh")
+    messages.append(f"  jobid : {jobid}")
+    messages.append(f"  rdir  : {rdir}")
+    messages.append(f"  example dir: {remote_example_dir}")
+    messages.append(f"  image : {sif_path}")
+
+    return RemoteSubmitResult(
+        success=True,
+        jobid=jobid,
+        remote_dir=rdir,
+        remote_example_dir=remote_example_dir,
+        spack_path=spack_path,
+        used_existing_sbatch=False,
+        existing_sbatch_name=None,
+        messages=messages,
+    )
+
 def sh_quote(s: str) -> str:
     return "'" + s.replace("'", "'\"'\"'") + "'"
 
