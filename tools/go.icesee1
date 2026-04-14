@@ -226,7 +226,7 @@ fi
 
 python -m pip install -U pip setuptools wheel 
 
-python -m pip install voila asyncio 
+python -m pip install -U voila aiohttp
 
 # Install ICESEE (editable locally, non-editable for apps build)
 if [[ "${apps}" == "true" ]]; then
