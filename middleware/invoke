@@ -7,5 +7,5 @@
                          -r none \
                          -w headless \
                          -e PYTHONPATH=@tool \
-                         -C @tool/bin/showbook.sh \
+                         -C @tool/bin/start_icesee_services.sh \
                          -c "wrwroxy --listenHost 0.0.0.0 --listenPort 8000 --forwardHost 127.0.0.1 --forwardPort 8080 --loglevel WARNING"
