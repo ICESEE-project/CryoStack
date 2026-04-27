@@ -753,7 +753,7 @@ def explain_ssh_failure_hint(stderr: str) -> str:
     return "SSH failed. Check host/user/VPN and whether passwordless key auth is enabled."
 
 
-def rsh(host, user, port, cmd, timeout=60):
+def rsh(host, user, port, cmd, timeout=600):
     """SSH run with a timeout and returned stdout/stderr."""
     r = ssh_run(host, user, port, cmd, timeout=timeout)
     return r.returncode, r.stdout, r.stderr
