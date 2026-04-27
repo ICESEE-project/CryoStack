@@ -5,8 +5,7 @@ import io
 import yaml
 import zipfile
 import shutil
-import threading
-import time
+import asyncio
 import subprocess
 from pathlib import Path
 from IPython.display import FileLink
@@ -711,6 +710,11 @@ def build_icesheets_ui():
             "selected_example_path": None,
         }
 
+        AUTO_TAIL = {
+            "task": None,
+            "running": False,
+        }
+
         def status_html(state: str) -> str:
             cls = {
                 "idle": "icesee-idle",
@@ -729,12 +733,6 @@ def build_icesheets_ui():
         # =========================================================
         # Controls
         # =========================================================
-        auto_tail_btn = W.Button(
-            value=False,
-            description="Start auto tail",
-            icon="refresh",
-            button_style="info",
-        )
         ui_mode_dd = W.ToggleButtons(
             options=[("Basic", "basic"), ("Advanced", "advanced")],
             value="basic",
@@ -845,6 +843,13 @@ def build_icesheets_ui():
             icon="picture-o",
             button_style="success",
         )
+
+        auto_tail_btn = W.ToggleButton(
+        value=False,
+        description="Auto tail",
+        icon="refresh",
+        button_style="info",
+    )
 
         # -----------------------------
         # Remote controls
@@ -1706,6 +1711,7 @@ def build_icesheets_ui():
         file_picker.observe(load_selected_file, names="value")
         # run_target.observe(update_summary, names="value")
         file_picker.observe(maybe_seed_run_target_from_file, names="value")
+        
 
         # =========================================================
         # Actions
@@ -1944,78 +1950,42 @@ fi
                 with log_out:
                     print("[remote][ERROR]", type(e).__name__, e)
 
-        
 
-        AUTO_TAIL = {"running": False, "thread": None}
 
-        def auto_tail_loop():
+        async def auto_tail_worker():
+            loop = asyncio.get_running_loop()
+
             while AUTO_TAIL["running"]:
                 try:
-                    rdir = normalize_remote_path(STATUS.get("remote_dir") or "")
-                    jobid = STATUS.get("jobid")
-
-                    if not rdir or not jobid:
-                        with log_out:
-                            print("[auto-tail] No remote_dir / JobID yet. Submit first.")
-                        time.sleep(5)
-                        continue
-
-                    log_file = STATUS.get("log_file") or f"{rdir}/icesheets-{jobid}.out"
-                    log_file = normalize_remote_path(log_file)
-
-                    host = cluster_host.value.strip()
-                    user = cluster_user.value.strip()
-                    port = int(cluster_port.value)
-
-                    tail_cmd = f"""
-        set -e
-        log_file="{log_file}"
-        run_dir="{rdir}"
-
-        if [ -f "$log_file" ]; then
-            echo "[remote] file: $log_file"
-            echo "--- tail ---"
-            tail -n 80 "$log_file"
-        else
-            echo "[remote] log file not found yet: $log_file"
-            echo
-            echo "[remote] contents of run dir:"
-            ls -lah "$run_dir" || true
-        fi
-        """
-
-                    result = ssh_run(host, user, port, tail_cmd, timeout=30)
-
-                    log_out.clear_output(wait=True)
-                    with log_out:
-                        if (result.stdout or "").strip():
-                            print(result.stdout.rstrip())
-                        if (result.stderr or "").strip():
-                            print("--- stderr ---")
-                            print(result.stderr.strip())
+                    # run blocking on_tail in a thread (non-blocking for asyncio)
+                    await loop.run_in_executor(None, on_tail, None)
 
                 except Exception as e:
                     with log_out:
                         print("[auto-tail][ERROR]", type(e).__name__, e)
 
-                time.sleep(5)
+                await asyncio.sleep(5)
 
+        def on_auto_tail_change(change):
+            if change["name"] != "value":
+                return
 
-        def on_auto_tail_click(_=None):
-            if not AUTO_TAIL["running"]:
+            if change["new"]:
                 AUTO_TAIL["running"] = True
                 auto_tail_btn.description = "Stop auto tail"
-                auto_tail_btn.icon = "stop"
                 auto_tail_btn.button_style = "warning"
 
-                t = threading.Thread(target=auto_tail_loop, daemon=True)
-                AUTO_TAIL["thread"] = t
-                t.start()
+                AUTO_TAIL["task"] = asyncio.create_task(auto_tail_worker())
+
             else:
                 AUTO_TAIL["running"] = False
-                auto_tail_btn.description = "Start auto tail"
-                auto_tail_btn.icon = "refresh"
+                auto_tail_btn.description = "Auto tail"
                 auto_tail_btn.button_style = "info"
+
+                task = AUTO_TAIL.get("task")
+                if task is not None:
+                    task.cancel()
+                    AUTO_TAIL["task"] = None
 
         def on_terminate(_=None):
             log_out.clear_output()
@@ -2081,7 +2051,7 @@ fi
         connect_btn.on_click(on_test_remote)
         status_btn.on_click(on_status)
         tail_btn.on_click(on_tail)
-        auto_tail_btn.on_click(on_auto_tail_click)
+        # auto_tail_btn.on_click(on_auto_tail_click)
         terminate_btn.on_click(on_terminate)
         cloud_status_btn.on_click(on_cloud_status)
         cloud_logs_btn.on_click(on_cloud_logs)
@@ -2114,6 +2084,7 @@ fi
         .icesee-left { flex: 0 0 46%; min-width: 0; }
         .icesee-right { flex: 0 0 54%; min-width: 0; }
         .icesee-actions { display: flex; gap: 12px; align-items: center; }
+        
         </style>
         """
 
@@ -2176,6 +2147,17 @@ fi
             user_widget=cluster_user,
         )
 
+        ssh_key_manager_box = W.Accordion(children=[ssh_key_manager])
+        ssh_key_manager_box.set_title(0, "🔐 SSH Key Manager")
+        ssh_key_manager_box.selected_index = None
+
+        ssh_key_manager_box.layout = W.Layout(
+            width="100%",
+            border="1px solid rgba(0,0,0,.08)",
+            border_radius="12px",
+            margin="8px 0 4px 0"
+        )
+
         advanced_buttons_row = W.HBox(
             [save_file_btn, deploy_example_btn, upload_dataset_btn],
             layout=W.Layout(gap="10px", flex_wrap="wrap"),
@@ -2191,26 +2173,62 @@ fi
                 margin="10px 0 0 0",
             ),
         )
-
-        remote_box = W.VBox([
-            W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>Remote connection</div>"),
+        remote_conn_inner = W.VBox([
             cluster_host_row,
             W.HBox([cluster_user_row, cluster_port_row], layout=W.Layout(gap="12px", width="100%")),
             W.HBox([remote_base_dir_row, remote_tag_row], layout=W.Layout(gap="12px", width="100%")),
+        ])
+        remote_conn_box = W.Accordion(children=[remote_conn_inner])
+        remote_conn_box.set_title(0, "🔌 Remote connection")
+        # remote_conn_box.selected_index = 0  # open by default
 
-            W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>Authentication</div>"),
-            W.HBox([W.HTML("<div class='icesee-lbl'>Method:</div>"), auth_mode], layout=W.Layout(gap="10px")),
-            cluster_password,
-            bootstrap_btn,
-
-            W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>SSH key manager</div>"),
-            ssh_key_manager,
-
-            W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>Slurm resources</div>"),
+        slurm_inner = W.VBox([
             W.HBox([slurm_job_name_row, slurm_time_row], layout=W.Layout(gap="12px", width="100%")),
             W.HBox([slurm_nodes_row, slurm_ntasks_row, slurm_tpn_row], layout=W.Layout(gap="12px", width="100%")),
             W.HBox([slurm_part_row, slurm_mem_row], layout=W.Layout(gap="12px", width="100%")),
             W.HBox([slurm_account_row, slurm_mail_row], layout=W.Layout(gap="12px", width="100%")),
+        ])
+
+        slurm_box = W.Accordion(children=[slurm_inner])
+        slurm_box.set_title(0, "📊 Slurm resources")
+        slurm_box.selected_index = None
+
+        auth_inner = W.VBox([
+            W.HBox(
+                [W.HTML("<div class='icesee-lbl'>Method:</div>"), auth_mode],
+                layout=W.Layout(gap="10px")
+            ),
+            cluster_password,
+            bootstrap_btn,
+        ])
+
+        auth_box = W.Accordion(children=[auth_inner])
+        auth_box.set_title(0, "🔒 Authentication")
+
+        remote_box = W.VBox([
+            # W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>Remote connection</div>"),
+            # cluster_host_row,
+            # W.HBox([cluster_user_row, cluster_port_row], layout=W.Layout(gap="12px", width="100%")),
+            # W.HBox([remote_base_dir_row, remote_tag_row], layout=W.Layout(gap="12px", width="100%")),
+            remote_conn_box,
+
+
+            # W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>Authentication</div>"),
+            # W.HBox([W.HTML("<div class='icesee-lbl'>Method:</div>"), auth_mode], layout=W.Layout(gap="10px")),
+            # cluster_password,
+            # bootstrap_btn,
+            auth_box,
+
+            # W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>SSH key manager</div>"),
+            # ssh_key_manager,
+            ssh_key_manager_box,
+
+            # W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>Slurm resources</div>"),
+            # W.HBox([slurm_job_name_row, slurm_time_row], layout=W.Layout(gap="12px", width="100%")),
+            # W.HBox([slurm_nodes_row, slurm_ntasks_row, slurm_tpn_row], layout=W.Layout(gap="12px", width="100%")),
+            # W.HBox([slurm_part_row, slurm_mem_row], layout=W.Layout(gap="12px", width="100%")),
+            # W.HBox([slurm_account_row, slurm_mail_row], layout=W.Layout(gap="12px", width="100%")),
+            slurm_box,
         ], layout=W.Layout(gap="10px"))
 
         cloud_box = W.VBox([
@@ -2272,6 +2290,8 @@ fi
 
         row = W.HBox([left_card, right_card], layout=W.Layout(width="100%", gap="24px"))
         row.add_class("icesee-grid")
+
+        auto_tail_btn.observe(on_auto_tail_change, names="value")
 
         remote_actions = W.HBox(
             [connect_btn, status_btn, tail_btn, terminate_btn],
