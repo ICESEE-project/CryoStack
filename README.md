@@ -86,6 +86,49 @@ ICESEE-GHUB/
 ├── LICENSE                 # MIT License
 └── README.md              # This file
 ```
+## Simplified architectural diagram
+```text
+                    ┌────────────────────────────┐
+                    │          Users             │
+                    │  Browser / Web Interface   │
+                    └─────────────┬──────────────┘
+                                  │ HTTPS
+                                  ▼
+        ┌────────────────────────────────────────────────┐
+        │        GT-hosted ICESEE Web Server             │
+        │                                                │
+        │  ┌──────────────────────────────────────────┐  │
+        │  │ Jupyter Book Frontend                    │  │
+        │  │ Documentation + workflow entry point     │  │
+        │  └──────────────────────────────────────────┘  │
+        │                                                │
+        │  ┌──────────────────────────────────────────┐  │
+        │  │ Voilà GUI Apps                           │  │
+        │  │ ICESEE DA GUI + Ice-sheet Modeling GUI   │  │
+        │  └──────────────────────────────────────────┘  │
+        │                                                │
+        │  ┌──────────────────────────────────────────┐  │
+        │  │ Backend Orchestration Layer              │  │
+        │  │ SSH, SLURM submission, monitoring, logs  │  │
+        │  └──────────────────────────────────────────┘  │
+        └─────────────┬──────────────────────┬───────────┘
+                      │                      │
+          SSH / SLURM │                      │ Cloud API / SSH
+                      ▼                      ▼
+        ┌──────────────────────┐      ┌──────────────────────┐
+        │   HPC Resources      │      │   Cloud Resources    │
+        │                      │      │                      │
+        │  PACE                │      │  AWS / other cloud   │
+        │  UBuffalo cluster    │      │  compute services    │
+        │  User-owned clusters │      │                      │
+        └──────────┬───────────┘      └──────────┬───────────┘
+                   │                             │
+                   ▼                             ▼
+        ┌────────────────────────────────────────────────┐
+        │              Simulation Outputs                │
+        │  Logs, plots, result files, lightweight views  │
+        └────────────────────────────────────────────────┘
+```
 
 ##  Building the Book Locally
 
