@@ -769,7 +769,7 @@ mkdir -p {sh_quote(remote_parent_dir)}
 if [ ! -d {sh_quote(spack_path)} ]; then
 echo "[spack] cloning {repo_url} -> {spack_path}"
 cd {sh_quote(remote_parent_dir)}
-git clone --recurse-submodules {sh_quote(repo_url)} {sh_quote(spack_name)}
+git clone {sh_quote(repo_url)} {sh_quote(spack_name)}
 else
 echo "[spack] exists: {spack_path}"
 fi
