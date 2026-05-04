@@ -37,6 +37,7 @@ from icesee_jupyter_book.core.cloud_runner import (
     AWSBatchConfig,
     aws_batch_status,
 )
+from icesee_jupyter_book.core.local_connector import build_connector_panel
 from icesee_jupyter_book.ui.shared_ssh_widgets import build_ssh_key_manager
 
 
@@ -1155,7 +1156,9 @@ def build_icesheets_ui():
         description="Auto tail",
         icon="refresh",
         button_style="info",
-    )
+        )
+
+        connector_panel, refresh_connector = build_connector_panel(mode_dd)
 
         # -----------------------------
         # Remote controls
@@ -2349,6 +2352,14 @@ def build_icesheets_ui():
                     print("[cloud] Next step is to adapt submit_cloud_example for model-only workflows.")
                 status_chip.value = status_html("done")
                 return
+            
+            if mode == "remote":
+                if not refresh_connector():
+                    status_chip.value = status_html("fail")
+                    with log_out:
+                        print("[remote][ERROR] ICESEE Connector is required for remote HPC execution.")
+                        print("[remote] Install the connector, turn on VPN, then retry.")
+                    return
 
             host = cluster_host.value.strip()
             user = cluster_user.value.strip()
@@ -2857,6 +2868,7 @@ fi
         auth_box.set_title(0, "🔒 Authentication")
 
         remote_box = W.VBox([
+            connector_panel,
             # W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>Remote connection</div>"),
             # cluster_host_row,
             # W.HBox([cluster_user_row, cluster_port_row], layout=W.Layout(gap="12px", width="100%")),
