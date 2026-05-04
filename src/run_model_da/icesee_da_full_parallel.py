@@ -356,20 +356,23 @@ def icesee_model_data_assimilation_full_parallel(**model_kwargs):
         #  --- generate the H file
         # ---- H matrix (skip if present & matching) ----
         H_matrix_zarr_path = f"{_modelrun_datasets}/H_matrix.zarr"
-        if rank_world == 0:
-            need_H = True
-            meta_h5 = f"{_modelrun_datasets}/H_matrix_meta.h5"
-            if reuse_allowed and os.path.isdir(H_matrix_zarr_path) and tools.h5_attr_equals(meta_h5, "icesee_fingerprint", fp):
-                need_H = False
-                print("[ICESEE][RESTART] Using existing H matrix.")
-            if need_H:
-                print("[ICESEE] Generating H matrix and saving to Zarr...")
-                model_kwargs.update({'H_matrix_zarr_path': H_matrix_zarr_path})
-                enkf_parallel_io.H_matrix(**model_kwargs)
-                # record a tiny meta tag
-                with h5py.File(meta_h5, "w") as f:
-                    f.attrs["icesee_fingerprint"] = fp
-        comm_world.Barrier()
+        # if rank_world == 0:
+        #     need_H = True
+        #     meta_h5 = f"{_modelrun_datasets}/H_matrix_meta.h5"
+        #     if reuse_allowed and os.path.isdir(H_matrix_zarr_path) and tools.h5_attr_equals(meta_h5, "icesee_fingerprint", fp):
+        #         need_H = False
+        #         print("[ICESEE][RESTART] Using existing H matrix.")
+        #     if need_H:
+        #         print("[ICESEE] Generating H matrix and saving to Zarr...")
+        #         model_kwargs.update({'H_matrix_zarr_path': H_matrix_zarr_path})
+        #         enkf_parallel_io.H_matrix(**model_kwargs)
+        #         # record a tiny meta tag
+        #         with h5py.File(meta_h5, "w") as f:
+        #             f.attrs["icesee_fingerprint"] = fp
+            
+        model_kwargs.update({'H_matrix_zarr_path': H_matrix_zarr_path})
+        enkf_parallel_io.H_matrix(**model_kwargs)
+        # comm_world.Barrier()
                     
         # --- Initialize the ensemble ---------------------------------------------------
         Q_rho     = model_kwargs.get("Q_rho")
@@ -493,9 +496,8 @@ def icesee_model_data_assimilation_full_parallel(**model_kwargs):
         else:
             N_size = params["total_state_param_vars"] * hdim
             # noise = generate_pseudo_random_field_1d(N_size,np.sqrt(Lx*Ly), len_scale, verbose=0)
-            model_kwargs.update({"ii_sig": None, "hdim":hdim, "num_vars":params["total_state_param_vars"]})
-            # noise = generate_enkf_field(**model_kwargs)
-            noise = generate_enkf_field(None, np.sqrt(Lx*Ly), hdim, params["total_state_param_vars"], rh=len_scale, verbose=False)
+            model_kwargs.update({"ii_sig": None, "Lx_dim": np.sqrt(Lx*Ly), "noise_dim": hdim, "num_vars":params["total_state_param_vars"]})
+            noise = generate_enkf_field(**model_kwargs)
         
         # synchronize all processes before starting the time loop
         comm_world.Barrier()

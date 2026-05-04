@@ -30,8 +30,6 @@ from ICESEE.src.utils.tools import icesee_get_index, display_timing_default,disp
                                    load_bed_masks_from_h5
 from ICESEE.src.run_model_da._error_generation import compute_Q_err_random_fields, \
                               compute_noise_random_fields, \
-                              generate_pseudo_random_field_1d, \
-                              generate_pseudo_random_field_2D, \
                               generate_enkf_field
 
 # ======================== Run model with EnKF ========================
@@ -164,7 +162,6 @@ def icesee_model_data_assimilation_partial_parallel(**model_kwargs):
         time_generation_true_and_wrong_state = MPI.Wtime() - time_generation_true_and_wrong_state
 
         comm_world.Barrier()
-        # exit(0);
 
         # --- Generate the Synthetic ObservationsObservations ---------------------------------------------------
         # --- time generation of synthetic observations ---
@@ -176,6 +173,23 @@ def icesee_model_data_assimilation_partial_parallel(**model_kwargs):
                     
         # --- Initialize the ensemble ---------------------------------------------------
         comm_world.Barrier()
+
+        # end here if user choses to only generate the synthetic observations and the true and nurged states
+        if model_kwargs.get("generate_true_wrong_state_only", False):
+            if rank_world == 0:
+                print("[ICESEE] Data generation complete. Exiting as per user request.")
+                # print(f"[ICESEE] Time taken to generate true and nurged states: {display_timing_default(time_generation_true_and_wrong_state)}")
+                # print(f"[ICESEE] Time taken to generate synthetic observations: {display_timing_default(time_generation_synthetic_obs)}")
+                # --- kill matlab processes if any
+            #     from ICESEE.scripts.matlab.kill_matlab_processes import kill_matlab_processes
+            #     kill_matlab_processes()
+                  
+            # # exit the program gracefully
+            # comm_world.Barrier()
+            exit(0)
+        # exit(0);
+
+
         Q_rho     = model_kwargs.get("Q_rho")
         len_scale = model_kwargs.get("length_scale")
         hdim  = params["nd"] // params["total_state_param_vars"]
@@ -268,7 +282,8 @@ def icesee_model_data_assimilation_partial_parallel(**model_kwargs):
                         ensemble_vec[indx_map[key],ens] = value
 
                     N_size = params["total_state_param_vars"] * hdim
-                    noise = generate_enkf_field(None,np.sqrt(Lx*Ly), hdim, params["total_state_param_vars"], rh=len_scale, verbose=False)
+                    model_kwargs.update({"ii_sig": None, "Lx_dim": np.sqrt(Lx*Ly), "noise_dim": hdim, "num_vars":params["total_state_param_vars"]})
+                    noise = generate_enkf_field(**model_kwargs)
 
                     # for ii, sig in enumerate(params["sig_Q"]):
                     #     start_idx = ii *hdim
@@ -384,9 +399,8 @@ def icesee_model_data_assimilation_partial_parallel(**model_kwargs):
     else:
         N_size = params["total_state_param_vars"] * hdim
         # noise = generate_pseudo_random_field_1d(N_size,np.sqrt(Lx*Ly), len_scale, verbose=0)
-        model_kwargs.update({"ii_sig": None, "hdim":hdim, "num_vars":params["total_state_param_vars"]})
-        # noise = generate_enkf_field(**model_kwargs)
-        noise = generate_enkf_field(None, np.sqrt(Lx*Ly), hdim, params["total_state_param_vars"], rh=len_scale, verbose=False)
+        model_kwargs.update({"ii_sig": None, "Lx_dim": np.sqrt(Lx*Ly), "noise_dim": hdim, "num_vars":params["total_state_param_vars"]})
+        noise = generate_enkf_field(**model_kwargs)
         model_kwargs.update({"noise": noise})
 
     for k in range(model_kwargs.get("nt",params["nt"])):
