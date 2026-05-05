@@ -12,8 +12,7 @@ app = FastAPI(title="ICESEE Connector Relay")
 
 SESSIONS: dict[str, WebSocket] = {}
 PENDING: dict[str, dict[str, asyncio.Future]] = {}
-
-
+SESSION_ORDER: list[str] = []
 class CommandRequest(BaseModel):
     command_type: str
     payload: dict[str, Any] = {}
@@ -23,6 +22,8 @@ class CommandRequest(BaseModel):
 def create_session():
     session_id = uuid.uuid4().hex
     PENDING[session_id] = {}
+    SESSION_ORDER.append(session_id)
+
     return {
         "session_id": session_id,
         "ws_url": f"/connector/ws/{session_id}",
@@ -85,3 +86,17 @@ async def send_command(session_id: str, req: CommandRequest):
     except asyncio.TimeoutError:
         PENDING[session_id].pop(command_id, None)
         raise HTTPException(status_code=504, detail="Connector command timed out")
+
+@app.get("/connector/latest")
+def latest_session():
+    if not SESSION_ORDER:
+        return {"ok": False, "error": "No connector session has been created yet."}
+
+    sid = SESSION_ORDER[-1]
+
+    return {
+        "ok": True,
+        "session_id": sid,
+        "ws_url": f"/connector/ws/{sid}",
+        "online": sid in SESSIONS,
+    }
