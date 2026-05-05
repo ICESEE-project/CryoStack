@@ -212,13 +212,18 @@ if __name__ == "__main__":
     # parser.add_argument("--ws-url", required=True)
     parser.add_argument("--ws-url", default=None)
     parser.add_argument("--relay", default="http://127.0.0.1:8899")
+    parser.add_argument("--session", default=None)
     args = parser.parse_args()
 
     # asyncio.run(main(args.ws_url))
     if args.ws_url:
         ws_url = args.ws_url
+    elif args.session:
+        relay_ws_base = args.relay.replace("http://", "ws://").replace("https://", "wss://")
+        ws_url = f"{relay_ws_base}/connector/ws/{args.session}"
     else:
         resp = requests.get(f"{args.relay}/connector/latest", timeout=5).json()
+        
         print("[connector] latest response:", resp)
 
         if not resp.get("ok"):

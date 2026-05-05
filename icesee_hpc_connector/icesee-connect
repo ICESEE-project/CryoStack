@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -e
+
+RELAY="${ICESEE_RELAY:-https://cryolauncher.com}"
+SESSION=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --relay)
+      RELAY="$2"
+      shift 2
+      ;;
+    --session)
+      SESSION="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown argument: $1"
+      exit 1
+      ;;
+  esac
+done
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ -n "$SESSION" ]]; then
+  python "$SCRIPT_DIR/connector_ws_client.py" --relay "$RELAY" --session "$SESSION"
+else
+  python "$SCRIPT_DIR/connector_ws_client.py" --relay "$RELAY"
+fi

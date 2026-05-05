@@ -1748,6 +1748,22 @@ def build_icesheets_ui():
                     SESSION["id"] = sess["session_id"]
                     SESSION["ws_url"] = sess["ws_url"]
 
+                    connector_setup_link.value = f"""
+                    <a href="https://cryolauncher.com/connect/?session={SESSION['id']}"
+                    target="_blank"
+                    style="
+                        display:inline-block;
+                        background:#0d6efd;
+                        color:white;
+                        padding:8px 12px;
+                        border-radius:8px;
+                        text-decoration:none;
+                        font-weight:700;
+                        margin:6px 0;">
+                    Open ICESEE Connector Setup
+                    </a>
+                    """
+
                 st = relay_check_status(SESSION["id"])
 
                 relay_status.value = f"""
@@ -2027,6 +2043,7 @@ def build_icesheets_ui():
         # =========================================================
         summary_html = W.HTML()
         command_preview = W.Textarea(layout=W.Layout(width="100%", height="130px"))
+        connector_setup_link = W.HTML("")
 
         log_out = W.Output(layout=W.Layout(
             border="1px solid rgba(0,0,0,.10)",
@@ -2756,6 +2773,9 @@ def build_icesheets_ui():
 
             md_config_panel.layout.display = "" if model_dd.value == "issm" else "none"
 
+            if is_remote and access_mode_dd.value == "connector" and SESSION.get("id") is None:
+                create_or_refresh_connector_session()
+
             update_summary()
 
         def update_summary(_=None):
@@ -2837,6 +2857,7 @@ def build_icesheets_ui():
         md_section_dd.observe(refresh_md_field_dropdown, names="value")
         md_field_dd.observe(refresh_md_value_from_field, names="value")
         refresh_md_field_dropdown()
+        access_mode_dd.observe(lambda change: create_or_refresh_connector_session() if change["new"] == "connector" else None, names="value")
         
 
         # =========================================================
@@ -3484,6 +3505,16 @@ fi
         .icesee-left { flex: 0 0 46%; min-width: 0; }
         .icesee-right { flex: 0 0 54%; min-width: 0; }
         .icesee-actions { display: flex; gap: 12px; align-items: center; }
+
+        pre {
+            background: #f6f8fa;
+            border: 1px solid rgba(0,0,0,.08);
+            padding: 12px;
+            border-radius: 10px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            }
         
         </style>
         """
@@ -3631,6 +3662,7 @@ fi
             slurm_box,
             relay_status,
             start_connector_session_btn,
+            connector_setup_link,
             connector_panel,
         ], layout=W.Layout(gap="10px"))
 

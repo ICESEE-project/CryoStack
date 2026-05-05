@@ -181,7 +181,7 @@
 
     <div class="grid">
       <section class="card">
-        <h2>Download for your computer</h2>
+        <h2>Download Connector</h2>
 
         <div class="osbox">
           <div class="osline">Detected operating system</div>
@@ -203,7 +203,20 @@
       </section>
 
       <section class="card">
-        <h2>After installation</h2>
+        <h2>Connector Session</h2>
+
+        <div class="status" id="session-box" style="display:none;">
+          <b>Session detected</b><br>
+          Session ID: <code id="session-id"></code>
+
+          <p class="small">
+            For the current development version, run:
+          </p>
+
+          <pre id="connector-command"></pre>
+        </div>
+
+        <h2 style="margin-top:24px;">After installation</h2>
 
         <ol class="steps">
           <li>Turn on your university VPN.</li>
@@ -219,7 +232,6 @@
         </div>
       </section>
     </div>
-
     <div class="footer">
       ICESEE OnLine · HPC bridge setup · cryolauncher.com
     </div>
@@ -258,6 +270,20 @@
 
     document.getElementById("os").textContent = labels[os] || labels.unknown;
     document.getElementById("download").href = urls[os] || urls.unknown;
+    const params = new URLSearchParams(window.location.search);
+    const session = params.get("session");
+
+    if (session) {
+      const sessionBox = document.getElementById("session-box");
+      const sessionId = document.getElementById("session-id");
+      const command = document.getElementById("connector-command");
+
+      sessionBox.style.display = "block";
+      sessionId.textContent = session;
+
+      command.textContent =
+        "./icesee_hpc_connector/icesee-connect --session " + session;
+    }
   </script>
 </body>
 </html>
