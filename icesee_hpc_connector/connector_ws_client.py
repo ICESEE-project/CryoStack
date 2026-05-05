@@ -139,6 +139,9 @@ async def handle_command(command_type: str, payload: dict):
     if command_type == "stage-archive":
         return await run_stage_archive(payload)
 
+    if command_type == "fetch-archive":
+        return await run_fetch_archive(payload)
+
     return {
         "ok": False,
         "error": f"Unsupported command_type: {command_type}",
@@ -264,6 +267,63 @@ async def run_stage_archive(payload: dict):
             })
             ex["stage"] = "extract_archive"
             return ex
+
+    except Exception as e:
+        return {
+            "ok": False,
+            "stage": "python_exception",
+            "error": f"{type(e).__name__}: {e}",
+        }
+
+async def run_fetch_archive(payload: dict):
+    import base64
+    import tarfile
+    import tempfile
+    from pathlib import Path
+
+    host = payload["host"]
+    user = payload["user"]
+    port = int(payload.get("port", 22))
+    remote_path = payload["remote_path"].rstrip("/") + "/"
+    timeout = int(payload.get("timeout", 600))
+
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            local_dir = Path(td) / "outputs"
+            local_dir.mkdir(parents=True, exist_ok=True)
+
+            down = await run_subprocess(
+                [
+                    "rsync",
+                    "-az",
+                    "-e",
+                    f"ssh -p {port} -o BatchMode=yes -o StrictHostKeyChecking=accept-new",
+                    f"{user}@{host}:{remote_path}",
+                    f"{local_dir}/",
+                ],
+                timeout=timeout,
+            )
+
+            if not down.get("ok"):
+                down["stage"] = "rsync_remote_outputs"
+                return down
+
+            archive_path = Path(td) / "outputs.tar.gz"
+            with tarfile.open(archive_path, "w:gz") as tar:
+                for p in local_dir.rglob("*"):
+                    if p.is_file():
+                        tar.add(p, arcname=str(p.relative_to(local_dir)))
+
+            archive_b64 = base64.b64encode(archive_path.read_bytes()).decode("ascii")
+
+            return {
+                "ok": True,
+                "stage": "fetch_archive",
+                "archive_name": "outputs.tar.gz",
+                "archive_b64": archive_b64,
+                "stdout": down.get("stdout", ""),
+                "stderr": down.get("stderr", ""),
+            }
 
     except Exception as e:
         return {

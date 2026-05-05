@@ -449,6 +449,28 @@ end
 def relay_result_payload(result: dict) -> dict:
     return result.get("result", result)
 
+def connector_fetch_archive(
+    session_id: str,
+    host: str,
+    user: str,
+    port: int,
+    remote_path: str,
+    timeout: int = 600,
+):
+    from icesee_jupyter_book.core.connector_relay_client import send_command
+
+    res = send_command(
+        session_id,
+        "fetch-archive",
+        {
+            "host": host,
+            "user": user,
+            "port": port,
+            "remote_path": remote_path,
+            "timeout": timeout,
+        },
+    )
+    return relay_result_payload(res)
 
 def connector_ssh(session_id: str, host: str, user: str, port: int, command: str, timeout: int = 60):
     from icesee_jupyter_book.core.connector_relay_client import send_command
@@ -2581,32 +2603,54 @@ def build_icesheets_ui():
             ]
 
             if access_mode_dd.value == "connector":
-                payload = send_command(
+                result = connector_fetch_archive(
                     SESSION["id"],
-                    "rsync-download",
-                    {
-                        "host": host,
-                        "user": user,
-                        "port": port,
-                        "remote_path": f"{remote_outputs.rstrip('/')}/",
-                        "local_path": f"{outputs_dir}/",
-                        "timeout": 600,
-                    },
+                    host,
+                    user,
+                    port,
+                    f"{remote_outputs.rstrip('/')}/",
+                    timeout=600,
                 )
-
-                result = payload.get("result", payload)
 
                 if not result.get("ok"):
                     with results_out:
                         print("[results][ERROR] Could not fetch remote outputs through connector.")
                         print("Remote source:", remote_outputs)
+                        print("FULL RESPONSE:")
+                        print(result)
                         print("--- stdout ---")
                         print(result.get("stdout", ""))
                         print("--- stderr ---")
                         print(result.get("stderr", ""))
                     return None
 
-                return outputs_dir
+                try:
+                    import base64
+                    import tarfile
+                    import tempfile
+
+                    archive_b64 = result.get("archive_b64")
+                    if not archive_b64:
+                        raise RuntimeError("Connector response did not include archive_b64.")
+
+                    with tempfile.TemporaryDirectory() as td:
+                        archive_path = Path(td) / "outputs.tar.gz"
+                        archive_path.write_bytes(base64.b64decode(archive_b64))
+
+                        if outputs_dir.exists():
+                            shutil.rmtree(outputs_dir)
+                        outputs_dir.mkdir(parents=True, exist_ok=True)
+
+                        with tarfile.open(archive_path, "r:gz") as tar:
+                            tar.extractall(outputs_dir)
+
+                    return outputs_dir
+
+                except Exception as e:
+                    with results_out:
+                        print("[results][ERROR] Could not unpack connector archive.")
+                        print(type(e).__name__, e)
+                    return None
             else:
                 rs = subprocess.run(rsync_cmd, capture_output=True, text=True)
 
