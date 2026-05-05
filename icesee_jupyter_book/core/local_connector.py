@@ -118,9 +118,6 @@ def connector_success_html(data: dict | None = None) -> str:
 
 
 def connector_prompt_html(error: str = "") -> str:
-    os_name = detect_client_os()
-    installer = connector_installer_url()
-
     error_block = ""
     if error:
         error_block = f"""
@@ -142,8 +139,8 @@ def connector_prompt_html(error: str = "") -> str:
       Remote mode needs a local connector so the user's workstation can act as
       the bridge to VPN-protected clusters.
       <br><br>
-      Detected OS: <b>{os_name}</b><br>
-      <a href="{installer}" target="_blank"
+
+      <a href="https://cryolauncher.com/connect/" target="_blank"
          style="
            display:inline-block;
            margin-top:8px;
@@ -153,8 +150,9 @@ def connector_prompt_html(error: str = "") -> str:
            border-radius:8px;
            text-decoration:none;
            font-weight:700;">
-        Download ICESEE Connector
+        Set up ICESEE HPC Bridge Connector
       </a>
+
       <br><br>
       After installation, turn on VPN and click <b>Retry connector check</b>.
       {error_block}
