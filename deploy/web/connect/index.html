@@ -1,0 +1,263 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>ICESEE HPC Bridge Connector</title>
+  <style>
+    :root {
+      --blue: #0d6efd;
+      --green: #198754;
+      --ink: #1f2937;
+      --muted: #5f6b7a;
+      --border: rgba(0,0,0,.08);
+      --soft-blue: rgba(13,110,253,.09);
+      --soft-green: rgba(25,135,84,.09);
+    }
+
+    body {
+      margin: 0;
+      background: #ffffff;
+      color: var(--ink);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+
+    .page {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 70px 28px;
+    }
+
+    .badge {
+      display: inline-block;
+      background: var(--soft-blue);
+      color: var(--blue);
+      font-weight: 800;
+      font-size: 13px;
+      padding: 7px 13px;
+      border-radius: 999px;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      font-size: 42px;
+      line-height: 1.1;
+      margin: 0 0 16px;
+      letter-spacing: -0.03em;
+    }
+
+    .lead {
+      color: var(--muted);
+      font-size: 18px;
+      max-width: 780px;
+      line-height: 1.65;
+      margin-bottom: 34px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.05fr .95fr;
+      gap: 24px;
+      align-items: stretch;
+    }
+
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 28px;
+      background: #fff;
+      box-shadow: 0 10px 30px rgba(0,0,0,.05);
+    }
+
+    .card h2 {
+      margin: 0 0 14px;
+      font-size: 23px;
+      letter-spacing: -0.02em;
+    }
+
+    .osbox {
+      background: linear-gradient(to bottom, rgba(13,110,253,.04), rgba(13,110,253,.08));
+      border: 1px solid rgba(13,110,253,.12);
+      border-radius: 14px;
+      padding: 16px;
+      margin: 18px 0;
+    }
+
+    .osline {
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    #os {
+      font-size: 22px;
+      font-weight: 850;
+      color: var(--ink);
+    }
+
+    .btn {
+      display: inline-block;
+      background: var(--blue);
+      color: white;
+      padding: 12px 18px;
+      border-radius: 10px;
+      text-decoration: none;
+      font-weight: 800;
+      box-shadow: 0 8px 18px rgba(13,110,253,.20);
+      margin-top: 8px;
+    }
+
+    .btn:hover {
+      background: #0b5ed7;
+    }
+
+    .steps {
+      margin: 14px 0 0;
+      padding-left: 22px;
+      line-height: 1.9;
+      color: var(--ink);
+    }
+
+    .manual {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
+
+    .manual a {
+      display: inline-block;
+      color: var(--blue);
+      background: var(--soft-blue);
+      text-decoration: none;
+      font-weight: 750;
+      padding: 8px 12px;
+      border-radius: 9px;
+    }
+
+    .status {
+      background: var(--soft-green);
+      border: 1px solid rgba(25,135,84,.13);
+      border-radius: 14px;
+      padding: 15px;
+      color: var(--ink);
+      line-height: 1.55;
+      margin-top: 16px;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .footer {
+      margin-top: 34px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    @media (max-width: 860px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 34px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="page">
+    <div class="badge">Remote HPC Connector</div>
+
+    <h1>Install ICESEE HPC Bridge Connector</h1>
+
+    <p class="lead">
+      ICESEE detected that you want to run a remote HPC workflow. The connector lets
+      your workstation act as the secure bridge to VPN-protected clusters while the
+      ICESEE web interface remains simple and browser-based.
+    </p>
+
+    <div class="grid">
+      <section class="card">
+        <h2>Download for your computer</h2>
+
+        <div class="osbox">
+          <div class="osline">Detected operating system</div>
+          <div id="os">detecting...</div>
+        </div>
+
+        <a id="download" class="btn" href="/downloads/">Download Connector</a>
+
+        <p class="small" style="margin-top:18px;">
+          The installer is selected automatically based on your browser and operating system.
+          If the detection is incorrect, choose manually below.
+        </p>
+
+        <div class="manual">
+          <a href="/downloads/ICESEE-Connector-macOS.pkg">macOS</a>
+          <a href="/downloads/ICESEE-Connector-Windows.exe">Windows</a>
+          <a href="/downloads/ICESEE-Connector-Linux.AppImage">Linux</a>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>After installation</h2>
+
+        <ol class="steps">
+          <li>Turn on your university VPN.</li>
+          <li>Start the ICESEE Connector if it does not auto-start.</li>
+          <li>Return to ICESEE and click <b>Retry connector check</b>.</li>
+        </ol>
+
+        <div class="status">
+          <b>What this connector does</b><br>
+          It allows ICESEE to submit, monitor, and retrieve remote HPC jobs through
+          your local VPN-connected workstation without exposing your cluster directly
+          to the public web.
+        </div>
+      </section>
+    </div>
+
+    <div class="footer">
+      ICESEE OnLine · HPC bridge setup · cryolauncher.com
+    </div>
+  </main>
+
+  <script>
+    function detectOS() {
+      const p = (
+        navigator.userAgentData?.platform ||
+        navigator.platform ||
+        navigator.userAgent ||
+        ""
+      ).toLowerCase();
+
+      if (p.includes("mac")) return "macos";
+      if (p.includes("win")) return "windows";
+      if (p.includes("linux")) return "linux";
+      return "unknown";
+    }
+
+    const urls = {
+      macos: "/downloads/ICESEE-Connector-macOS.pkg",
+      windows: "/downloads/ICESEE-Connector-Windows.exe",
+      linux: "/downloads/ICESEE-Connector-Linux.AppImage",
+      unknown: "/downloads/"
+    };
+
+    const labels = {
+      macos: "macOS",
+      windows: "Windows",
+      linux: "Linux",
+      unknown: "Unknown"
+    };
+
+    const os = detectOS();
+
+    document.getElementById("os").textContent = labels[os] || labels.unknown;
+    document.getElementById("download").href = urls[os] || urls.unknown;
+  </script>
+</body>
+</html>
