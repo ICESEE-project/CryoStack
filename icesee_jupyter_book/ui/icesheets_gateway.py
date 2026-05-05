@@ -39,7 +39,11 @@ from icesee_jupyter_book.core.cloud_runner import (
 )
 from icesee_jupyter_book.core.local_connector import build_connector_panel
 from icesee_jupyter_book.ui.shared_ssh_widgets import build_ssh_key_manager
-
+from icesee_jupyter_book.core.connector_relay_client import (
+    create_session,
+    check_status as relay_check_status,
+    send_command,
+)
 
 # ============================================================
 # Params widgets factory
@@ -442,6 +446,450 @@ catch ME
     disp(['[ICESEE-GUI][ERROR] Postprocess failed: ' ME.message]);
 end
 """
+def relay_result_payload(result: dict) -> dict:
+    return result.get("result", result)
+
+
+def connector_ssh(session_id: str, host: str, user: str, port: int, command: str, timeout: int = 60):
+    from icesee_jupyter_book.core.connector_relay_client import send_command
+
+    res = send_command(
+        session_id,
+        "ssh-run",
+        {
+            "host": host,
+            "user": user,
+            "port": port,
+            "command": command,
+            "timeout": timeout,
+        },
+    )
+    return relay_result_payload(res)
+
+
+def connector_rsync_upload(session_id: str, host: str, user: str, port: int, local_path: str, remote_path: str, timeout: int = 300):
+    from icesee_jupyter_book.core.connector_relay_client import send_command
+
+    res = send_command(
+        session_id,
+        "rsync-upload",
+        {
+            "host": host,
+            "user": user,
+            "port": port,
+            "local_path": local_path,
+            "remote_path": remote_path,
+            "timeout": timeout,
+        },
+    )
+    return relay_result_payload(res)
+
+
+def connector_slurm_submit(session_id: str, host: str, user: str, port: int, remote_script: str, timeout: int = 60):
+    from icesee_jupyter_book.core.connector_relay_client import send_command
+
+    res = send_command(
+        session_id,
+        "slurm-submit",
+        {
+            "host": host,
+            "user": user,
+            "port": port,
+            "remote_script": remote_script,
+            "timeout": timeout,
+        },
+    )
+    return relay_result_payload(res)
+
+def submit_remote_icesheets_via_connector(
+    *,
+    session_id: str,
+    host: str,
+    user: str,
+    port: int,
+    remote_base_dir: str,
+    remote_tag: str,
+    backend: str,
+    model: str,
+    example_dir: str,
+    exec_dir: str,
+    image_uri: str,
+    container_source: str,
+    spack_enable: bool,
+    spack_repo_url: str,
+    spack_dirname: str,
+    spack_install_if_needed: bool,
+    spack_install_mode: str,
+    spack_slurm_dir: str,
+    spack_pmix_dir: str,
+    slurm_time: str,
+    slurm_job_name: str,
+    slurm_nodes: int,
+    slurm_ntasks: int,
+    slurm_tpn: int,
+    slurm_part: str,
+    slurm_mem: str,
+    slurm_account: str,
+    slurm_mail: str,
+    remote_module_lines: str = "",
+    remote_export_lines: str = "",
+    test_mode: bool = False,
+    run_file: str = "",
+    md_config: dict | None = None,
+):
+    import base64
+    import shlex
+
+    messages = []
+
+    if not session_id:
+        raise RuntimeError("Missing connector session ID.")
+
+    if not host or not user:
+        raise ValueError("Provide Host + User first.")
+
+    # Resolve remote base through connector.
+    remote_base_input = (remote_base_dir or "").strip() or "~/r-arobel3-0"
+
+    resolve_cmd = f'python3 -c "import os; print(os.path.abspath(os.path.expanduser({remote_base_input!r})))"'
+    rbase = connector_ssh(session_id, host, user, port, resolve_cmd, timeout=60)
+    if not rbase.get("ok"):
+        raise RuntimeError(f"Failed to resolve remote base dir:\n{rbase.get('stderr', '')}")
+
+    remote_base_abs = (rbase.get("stdout") or "").strip().splitlines()[-1]
+    tag = (remote_tag or "").strip() or "icesheets"
+
+    remote_run_dir = f"{remote_base_abs.rstrip('/')}/{tag}/runs/{model}_{backend}"
+    remote_submit_script = f"{remote_run_dir}/run_icesheets.sbatch"
+
+    messages.append("[connector] Using local connector / VPN bridge")
+    messages.append(f"[connector] Remote base dir : {remote_base_abs}")
+    messages.append(f"[connector] Remote run dir  : {remote_run_dir}")
+
+    account_line, mail_lines = slurm_optional_lines(
+        slurm_account.strip(),
+        slurm_mail.strip(),
+    )
+
+    run_file_name = Path(run_file).name if run_file else ""
+    run_file_py = Path(run_file_name).with_suffix(".py").name if run_file_name else ""
+
+    local_example_path = Path(example_dir).expanduser()
+    if not local_example_path.exists():
+        raise RuntimeError(f"Local example path does not exist: {local_example_path}")
+
+    local_parent = str(local_example_path.resolve().parent)
+    local_name = local_example_path.resolve().name
+
+    # Clean and create remote run dir.
+    clean_cmd = f'''
+rm -rf "{remote_run_dir}"
+mkdir -p "{remote_run_dir}"
+'''
+    cres = connector_ssh(session_id, host, user, port, clean_cmd, timeout=300)
+    if not cres.get("ok"):
+        raise RuntimeError(f"Failed to prepare remote run dir:\n{cres.get('stderr', '')}")
+
+    # Upload example using connector-side rsync.
+    local_upload_path = f"{local_parent}/{local_name}"
+    up = connector_rsync_upload(
+        session_id,
+        host,
+        user,
+        port,
+        local_upload_path,
+        f"{remote_run_dir}/",
+        timeout=600,
+    )
+    if not up.get("ok"):
+        raise RuntimeError(
+            "Failed to copy local example to remote host through connector\n"
+            f"STDOUT:\n{up.get('stdout','')}\n\nSTDERR:\n{up.get('stderr','')}"
+        )
+
+    remote_example_dir = f"{remote_run_dir}/{local_name}"
+    remote_exec_dir = f"{remote_run_dir}/execution"
+
+    messages.append(f"[connector] staged example dir: {remote_example_dir}")
+    messages.append(f"[connector] staged exec dir   : {remote_exec_dir}")
+
+    # Backend setup.
+    spack_path = None
+
+    if backend == "spack":
+        if not spack_enable:
+            raise RuntimeError("ICESEE-Spack backend requires spack_enable=True")
+
+        spack_parent = remote_base_abs
+        spack_name = spack_dirname.strip() or "ICESEE-Spack"
+        repo = spack_repo_url.strip()
+        spack_path = f"{spack_parent.rstrip('/')}/{spack_name}"
+
+        ensure_cmd = f'''
+set -e
+mkdir -p "{spack_parent}"
+if [ ! -d "{spack_path}" ]; then
+    git clone "{repo}" "{spack_path}"
+fi
+test -f "{spack_path}/scripts/activate.sh"
+echo "{spack_path}"
+'''
+        eres = connector_ssh(session_id, host, user, port, ensure_cmd, timeout=600)
+        if not eres.get("ok"):
+            raise RuntimeError(
+                "Failed to ensure ICESEE-Spack on remote host through connector\n"
+                f"STDOUT:\n{eres.get('stdout','')}\n\nSTDERR:\n{eres.get('stderr','')}"
+            )
+
+        messages.append("[connector] Spack backend enabled")
+        messages.append(f"[connector] ICESEE-Spack path: {spack_path}")
+
+        if spack_install_if_needed:
+            install_flag = spack_install_mode or ""
+            install_cmd = f'''
+set -e
+cd "{spack_path}"
+bash ./install.sh {install_flag}
+'''
+            ires = connector_ssh(session_id, host, user, port, install_cmd, timeout=7200)
+            if not ires.get("ok"):
+                raise RuntimeError(
+                    "Remote ICESEE-Spack install failed through connector\n"
+                    f"STDOUT:\n{ires.get('stdout','')}\n\nSTDERR:\n{ires.get('stderr','')}"
+                )
+
+    elif backend == "container":
+        messages.append("[connector] ICESEE-Container backend selected")
+    else:
+        raise RuntimeError(f"Unsupported backend: {backend}")
+
+    # Write ISSM postprocess if needed.
+    if model == "issm":
+        postprocess_path = f"{remote_run_dir}/postprocess_icesee.m"
+        postprocess_text = build_issm_postprocess_script()
+        encoded_post = base64.b64encode(postprocess_text.encode("utf-8")).decode("ascii")
+
+        write_post_cmd = (
+            "python3 -c "
+            + shlex.quote(
+                "import base64, pathlib; "
+                f"p = pathlib.Path({postprocess_path!r}); "
+                "p.parent.mkdir(parents=True, exist_ok=True); "
+                f"p.write_text(base64.b64decode({encoded_post!r}).decode('utf-8'), encoding='utf-8'); "
+                "print(str(p))"
+            )
+        )
+
+        pres = connector_ssh(session_id, host, user, port, write_post_cmd, timeout=60)
+        if not pres.get("ok"):
+            raise RuntimeError(
+                "Failed to write ISSM postprocess script through connector\n"
+                f"STDOUT:\n{pres.get('stdout','')}\n\nSTDERR:\n{pres.get('stderr','')}"
+            )
+
+        messages.append(f"[connector] wrote postprocess script: {postprocess_path}")
+
+    # Build run block.
+    if backend == "spack":
+        issm_matlab_setup = (
+            "addpath([getenv('ISSM_DIR') '/bin'], [getenv('ISSM_DIR') '/lib']); "
+            "issmversion; "
+        )
+
+        if test_mode:
+            if model == "issm":
+                run_block = f'''
+cd "{remote_example_dir}"
+matlab -nodesktop -nosplash -r "{issm_matlab_setup}; exit"
+'''
+            elif model == "icepack":
+                run_block = f'''
+cd "{remote_example_dir}"
+python -c "import icepack; print('Icepack import successful')"
+'''
+            else:
+                raise RuntimeError(f"Unsupported model: {model}")
+        else:
+            if model == "issm":
+                target_m = run_file_name if run_file_name.endswith(".m") else "runme.m"
+                run_block = f'''
+cd "{remote_example_dir}"
+matlab -nodesktop -nosplash -r "{issm_matlab_setup} ICESEE_RUN_DIR='{remote_run_dir}'; run('{target_m}'); run('../postprocess_icesee.m'); exit"
+'''
+            elif model == "icepack":
+                if run_file_name.endswith(".py"):
+                    run_block = f'''
+cd "{remote_example_dir}"
+python "{run_file_name}"
+'''
+                elif run_file_name.endswith(".ipynb"):
+                    run_block = f'''
+cd "{remote_example_dir}"
+jupyter nbconvert --to script "{run_file_name}"
+python "{run_file_py}"
+'''
+                else:
+                    run_block = f'''
+cd "{remote_example_dir}"
+python -c "import icepack; print('Icepack import successful')"
+'''
+            else:
+                raise RuntimeError(f"Unsupported model: {model}")
+
+        body = f'''
+cd "{spack_path}"
+source "{spack_path}/scripts/activate.sh"
+
+{run_block}
+'''
+
+    else:
+        container_root = f"{remote_base_abs.rstrip('/')}/{tag}/ICESEE-Containers"
+        container_dir = f"{container_root}/spack-managed/combined-container"
+        sif_path = f"{container_dir}/combined-env.sif"
+        def_path = f"{container_dir}/combined-env-inbuilt-matlab.def"
+
+        container_setup = f'''
+echo "[icesheets] Checking apptainer..."
+
+if ! command -v apptainer >/dev/null 2>&1; then
+    echo "[icesheets] apptainer not found in PATH. Trying module load apptainer..."
+    source /etc/profile >/dev/null 2>&1 || true
+    module load apptainer >/dev/null 2>&1 || true
+fi
+
+if ! command -v apptainer >/dev/null 2>&1; then
+    echo "[icesheets][ERROR] apptainer not found, and module load apptainer failed."
+    exit 2
+fi
+
+container_root="{container_root}"
+container_dir="{container_dir}"
+sif_path="{sif_path}"
+def_path="{def_path}"
+
+mkdir -p "{remote_base_abs.rstrip('/')}/{tag}"
+
+if [ ! -d "$container_root" ]; then
+    git clone https://github.com/ICESEE-project/ICESEE-Containers.git "$container_root"
+fi
+
+cd "$container_dir"
+
+if [ ! -f "$sif_path" ]; then
+    apptainer build combined-env.sif combined-env-inbuilt-matlab.def
+fi
+'''
+        if model == "issm":
+            target_m = run_file_name if run_file_name.endswith(".m") else "runme.m"
+            run_block = f'''
+mkdir -p "{remote_exec_dir}"
+srun --mpi=pmix -n {slurm_ntasks} apptainer exec \
+-B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution \
+"{sif_path}" with-issm matlab -nodesktop -nosplash -r "cd('/opt/ISSM/examples'); run('{target_m}'); exit"
+'''
+        else:
+            if run_file_name.endswith(".py"):
+                run_block = f'''
+mkdir -p "{remote_exec_dir}"
+apptainer exec \
+-B "{remote_example_dir}":/workspace/example,"{remote_exec_dir}":/workspace/run \
+"{sif_path}" with-icepack bash -lc 'cd /workspace/example && python "{run_file_name}"'
+'''
+            elif run_file_name.endswith(".ipynb"):
+                run_block = f'''
+mkdir -p "{remote_exec_dir}"
+apptainer exec \
+-B "{remote_example_dir}":/workspace/example,"{remote_exec_dir}":/workspace/run \
+"{sif_path}" with-icepack bash -lc 'cd /workspace/example && jupyter nbconvert --to script "{run_file_name}" && python "{run_file_py}"'
+'''
+            else:
+                run_block = f'''
+apptainer exec "{sif_path}" with-icepack python -c "import icepack; print('Icepack import successful')"
+'''
+        body = container_setup + "\n" + run_block
+
+    outfile = f"{remote_run_dir}/icesheets-%j.out"
+
+    slurm_text = f"""#!/bin/bash
+#SBATCH -J {slurm_job_name.strip() or "ICESHEETS"}
+#SBATCH -t {slurm_time.strip()}
+#SBATCH -N {int(slurm_nodes)}
+#SBATCH --ntasks={int(slurm_ntasks)}
+#SBATCH --ntasks-per-node={int(slurm_tpn)}
+#SBATCH -p {slurm_part.strip()}
+#SBATCH --mem={slurm_mem.strip()}
+{account_line}
+{mail_lines}
+#SBATCH -o {outfile}
+
+set -euo pipefail
+
+cd "{remote_run_dir}"
+mkdir -p outputs/model outputs/figures
+
+echo "[icesheets] Host: $(hostname)"
+echo "[icesheets] Date: $(date)"
+echo "[icesheets] PWD : $(pwd)"
+echo "[icesheets] Run dir: {remote_run_dir}"
+
+{sanitize_multiline(remote_module_lines)}
+{sanitize_multiline(remote_export_lines)}
+
+{body}
+"""
+
+    encoded = base64.b64encode(slurm_text.encode("utf-8")).decode("ascii")
+
+    write_cmd = (
+        "python3 -c "
+        + shlex.quote(
+            "import base64, pathlib; "
+            f"p = pathlib.Path({remote_submit_script!r}); "
+            "p.parent.mkdir(parents=True, exist_ok=True); "
+            f"p.write_text(base64.b64decode({encoded!r}).decode('utf-8'), encoding='utf-8'); "
+            "print(str(p))"
+        )
+    )
+
+    wres = connector_ssh(session_id, host, user, port, write_cmd, timeout=60)
+    if not wres.get("ok"):
+        raise RuntimeError(
+            "Failed to write remote sbatch script through connector\n"
+            f"STDOUT:\n{wres.get('stdout','')}\n\nSTDERR:\n{wres.get('stderr','')}"
+        )
+
+    messages.append(f"[connector] wrote script: {remote_submit_script}")
+
+    sres = connector_slurm_submit(
+        session_id,
+        host,
+        user,
+        port,
+        remote_submit_script,
+        timeout=60,
+    )
+
+    if not sres.get("ok") or not sres.get("submitted"):
+        raise RuntimeError(
+            "Failed to submit remote sbatch script through connector\n"
+            f"STDOUT:\n{sres.get('stdout','')}\n\nSTDERR:\n{sres.get('stderr','')}"
+        )
+
+    jobid = sres["jobid"]
+
+    messages.append("[connector] ✅ Submitted model-only slurm_run.sh")
+    messages.append(f"  jobid : {jobid}")
+    messages.append(f"  rdir  : {remote_run_dir}")
+
+    return {
+        "success": True,
+        "jobid": jobid,
+        "remote_dir": remote_run_dir,
+        "log_file": f"{remote_run_dir}/icesheets-{jobid}.out",
+        "spack_path": spack_path,
+        "messages": messages,
+    }
 
 def submit_remote_icesheets(
     *,
@@ -1016,6 +1464,10 @@ def build_icesheets_ui():
             "cloud_run": None,
             "selected_example_path": None,
         }
+        SESSION = {
+            "id": None,
+            "ws_url": None,
+        }
 
         AUTO_TAIL = {
             "task": None,
@@ -1097,6 +1549,16 @@ def build_icesheets_ui():
             layout=W.Layout(width="100%"),
         )
 
+        access_mode_dd = W.Dropdown(
+            options=[
+                ("Auto", "auto"),
+                ("Direct SSH from server", "direct"),
+                ("Local Connector / VPN bridge", "connector"),
+            ],
+            value="auto",
+            layout=W.Layout(width="100%"),
+        )
+
         file_editor = W.Textarea(
             value="",
             layout=W.Layout(width="100%", height="280px"),
@@ -1159,6 +1621,12 @@ def build_icesheets_ui():
         )
 
         connector_panel, refresh_connector = build_connector_panel(mode_dd)
+        relay_status = W.HTML("")
+        start_connector_session_btn = W.Button(
+            description="Create connector session",
+            icon="plug",
+            button_style="info",
+        )
 
         # -----------------------------
         # Remote controls
@@ -1270,6 +1738,41 @@ def build_icesheets_ui():
             disabled=True,
             layout=W.Layout(width="100%", height="120px"),
         )
+
+        def create_or_refresh_connector_session(_=None):
+            log_out.clear_output()
+
+            try:
+                if SESSION.get("id") is None:
+                    sess = create_session()
+                    SESSION["id"] = sess["session_id"]
+                    SESSION["ws_url"] = sess["ws_url"]
+
+                st = relay_check_status(SESSION["id"])
+
+                relay_status.value = f"""
+                <div style="
+                    border:1px solid rgba(13,110,253,.18);
+                    background:rgba(13,110,253,.06);
+                    border-radius:12px;
+                    padding:12px;
+                    line-height:1.5;
+                    margin:8px 0;
+                ">
+                <b>Connector session:</b> {SESSION["id"]}<br>
+                <b>Status:</b> {"online" if st.get("online") else "waiting for connector"}<br>
+                <b>WebSocket path:</b> {SESSION["ws_url"]}
+                </div>
+                """
+
+                with log_out:
+                    print("[connector] Session ID:", SESSION["id"])
+                    print("[connector] Status:", st)
+
+            except Exception as e:
+                relay_status.value = ""
+                with log_out:
+                    print("[connector][ERROR]", type(e).__name__, e)
 
         def refresh_md_field_dropdown(_=None):
             section = md_section_dd.value
@@ -2010,19 +2513,47 @@ def build_icesheets_ui():
                 f"{outputs_dir}/",
             ]
 
-            rs = subprocess.run(rsync_cmd, capture_output=True, text=True)
+            if access_mode_dd.value == "connector":
+                payload = send_command(
+                    SESSION["id"],
+                    "rsync-download",
+                    {
+                        "host": host,
+                        "user": user,
+                        "port": port,
+                        "remote_path": f"{remote_outputs.rstrip('/')}/",
+                        "local_path": f"{outputs_dir}/",
+                        "timeout": 600,
+                    },
+                )
 
-            if rs.returncode != 0:
-                with results_out:
-                    print("[results][ERROR] Could not fetch remote outputs.")
-                    print("Remote source:", remote_outputs)
-                    print("--- stdout ---")
-                    print(rs.stdout)
-                    print("--- stderr ---")
-                    print(rs.stderr)
-                return None
+                result = payload.get("result", payload)
 
-            return outputs_dir
+                if not result.get("ok"):
+                    with results_out:
+                        print("[results][ERROR] Could not fetch remote outputs through connector.")
+                        print("Remote source:", remote_outputs)
+                        print("--- stdout ---")
+                        print(result.get("stdout", ""))
+                        print("--- stderr ---")
+                        print(result.get("stderr", ""))
+                    return None
+
+                return outputs_dir
+            else:
+                rs = subprocess.run(rsync_cmd, capture_output=True, text=True)
+
+                if rs.returncode != 0:
+                    with results_out:
+                        print("[results][ERROR] Could not fetch remote outputs.")
+                        print("Remote source:", remote_outputs)
+                        print("--- stdout ---")
+                        print(rs.stdout)
+                        print("--- stderr ---")
+                        print(rs.stderr)
+                    return None
+
+                return outputs_dir
 
         def download_results_bundle(_=None):
             results_out.clear_output()
@@ -2315,6 +2846,26 @@ def build_icesheets_ui():
         clear_btn = W.Button(description="Clear", icon="trash")
         status_chip = W.HTML(status_html("idle"))
 
+        def should_use_connector() -> bool:
+            mode = access_mode_dd.value
+
+            if mode == "connector":
+                return True
+
+            if mode == "direct":
+                return False
+
+            # auto mode: use connector only if direct SSH fails
+            try:
+                result = remote_test_connection(
+                    cluster_host.value.strip(),
+                    cluster_user.value.strip(),
+                    int(cluster_port.value),
+                )
+                return not result.get("ok", False)
+            except Exception:
+                return True
+
         def on_run(_=None):
             log_out.clear_output()
             status_chip.value = status_html("running")
@@ -2353,12 +2904,15 @@ def build_icesheets_ui():
                 status_chip.value = status_html("done")
                 return
             
-            if mode == "remote":
-                if not refresh_connector():
+            if mode == "remote" and access_mode_dd.value == "connector":
+                create_or_refresh_connector_session()
+
+                st = relay_check_status(SESSION["id"])
+                if not st.get("online"):
                     status_chip.value = status_html("fail")
                     with log_out:
-                        print("[remote][ERROR] ICESEE Connector is required for remote HPC execution.")
-                        print("[remote] Install the connector, turn on VPN, then retry.")
+                        print("[connector][ERROR] Connector session is not online.")
+                        print("[connector] Start the local connector with the session WebSocket URL, then retry.")
                     return
 
             host = cluster_host.value.strip()
@@ -2389,39 +2943,73 @@ def build_icesheets_ui():
                 return
 
             try:
-                result = submit_remote_icesheets(
-                    host=host,
-                    user=user,
-                    port=port,
-                    remote_base_dir=remote_base_dir.value,
-                    remote_tag=remote_tag.value,
-                    backend=backend_dd.value,
-                    model=model_dd.value,
-                    example_dir=example_dir.value,
-                    exec_dir=exec_dir.value,
-                    image_uri=image_uri.value,
-                    container_source=container_source.value,
-                    spack_enable=True,
-                    spack_repo_url="https://github.com/ICESEE-project/ICESEE-Spack.git",
-                    spack_dirname="ICESEE-Spack",
-                    spack_install_if_needed=False,
-                    spack_install_mode="--with-issm" if model_dd.value == "issm" else "--with-icepack",
-                    spack_slurm_dir="",
-                    spack_pmix_dir="",
-                    slurm_time=slurm_time.value,
-                    slurm_job_name=slurm_job_name.value,
-                    slurm_nodes=slurm_nodes.value,
-                    slurm_ntasks=slurm_ntasks.value,
-                    slurm_tpn=slurm_tpn.value,
-                    slurm_part=slurm_part.value,
-                    slurm_mem=slurm_mem.value,
-                    slurm_account=slurm_account.value,
-                    slurm_mail=slurm_mail.value,
-                    test_mode=test_mode,
-                    run_file=selected_run_file(),
-                    md_config=collect_md_config(),
-
-                )
+                if access_mode_dd.value == "connector":
+                    result = submit_remote_icesheets_via_connector(
+                        session_id=SESSION["id"],
+                        host=host,
+                        user=user,
+                        port=port,
+                        remote_base_dir=remote_base_dir.value,
+                        remote_tag=remote_tag.value,
+                        backend=backend_dd.value,
+                        model=model_dd.value,
+                        example_dir=example_dir.value,
+                        exec_dir=exec_dir.value,
+                        image_uri=image_uri.value,
+                        container_source=container_source.value,
+                        spack_enable=True,
+                        spack_repo_url="https://github.com/ICESEE-project/ICESEE-Spack.git",
+                        spack_dirname="ICESEE-Spack",
+                        spack_install_if_needed=False,
+                        spack_install_mode="--with-issm" if model_dd.value == "issm" else "--with-icepack",
+                        spack_slurm_dir="",
+                        spack_pmix_dir="",
+                        slurm_time=slurm_time.value,
+                        slurm_job_name=slurm_job_name.value,
+                        slurm_nodes=slurm_nodes.value,
+                        slurm_ntasks=slurm_ntasks.value,
+                        slurm_tpn=slurm_tpn.value,
+                        slurm_part=slurm_part.value,
+                        slurm_mem=slurm_mem.value,
+                        slurm_account=slurm_account.value,
+                        slurm_mail=slurm_mail.value,
+                        test_mode=test_mode,
+                        run_file=selected_run_file(),
+                        md_config=collect_md_config(),
+                    )
+                else:
+                    result = submit_remote_icesheets(
+                        host=host,
+                        user=user,
+                        port=port,
+                        remote_base_dir=remote_base_dir.value,
+                        remote_tag=remote_tag.value,
+                        backend=backend_dd.value,
+                        model=model_dd.value,
+                        example_dir=example_dir.value,
+                        exec_dir=exec_dir.value,
+                        image_uri=image_uri.value,
+                        container_source=container_source.value,
+                        spack_enable=True,
+                        spack_repo_url="https://github.com/ICESEE-project/ICESEE-Spack.git",
+                        spack_dirname="ICESEE-Spack",
+                        spack_install_if_needed=False,
+                        spack_install_mode="--with-issm" if model_dd.value == "issm" else "--with-icepack",
+                        spack_slurm_dir="",
+                        spack_pmix_dir="",
+                        slurm_time=slurm_time.value,
+                        slurm_job_name=slurm_job_name.value,
+                        slurm_nodes=slurm_nodes.value,
+                        slurm_ntasks=slurm_ntasks.value,
+                        slurm_tpn=slurm_tpn.value,
+                        slurm_part=slurm_part.value,
+                        slurm_mem=slurm_mem.value,
+                        slurm_account=slurm_account.value,
+                        slurm_mail=slurm_mail.value,
+                        test_mode=test_mode,
+                        run_file=selected_run_file(),
+                        md_config=collect_md_config(),
+                    )
 
                 STATUS["remote_dir"] = result["remote_dir"]
                 STATUS["jobid"] = result["jobid"]
@@ -2450,22 +3038,135 @@ def build_icesheets_ui():
         def on_test_remote(_=None):
             log_out.clear_output()
             status_chip.value = status_html("running")
+
             try:
-                result = remote_test_connection(
+                access_mode = access_mode_dd.value
+
+                # -----------------------------------------------------
+                # 1. Direct SSH from server
+                # -----------------------------------------------------
+                if access_mode == "direct":
+                    result = remote_test_connection(
+                        cluster_host.value.strip(),
+                        cluster_user.value.strip(),
+                        int(cluster_port.value),
+                    )
+
+                    with log_out:
+                        print("[direct] Test SSH")
+                        print("returncode:", result["returncode"])
+                        if (result["stdout"] or "").strip():
+                            print("--- stdout ---")
+                            print(result["stdout"].strip())
+                        if (result["stderr"] or "").strip():
+                            print("--- stderr ---")
+                            print(result["stderr"].strip())
+
+                    status_chip.value = status_html("done" if result["ok"] else "fail")
+                    return
+
+                # -----------------------------------------------------
+                # 2. Connector / VPN bridge
+                # -----------------------------------------------------
+                if access_mode == "connector":
+                    from icesee_jupyter_book.core.connector_relay_client import send_command
+
+                    if not SESSION.get("id"):
+                        status_chip.value = status_html("fail")
+                        with log_out:
+                            print("[connector][ERROR] No connector session found.")
+                            print("Create/start a connector session first.")
+                        return
+
+                    result = send_command(
+                        SESSION["id"],
+                        "ssh-run",
+                        {
+                            "host": cluster_host.value.strip(),
+                            "user": cluster_user.value.strip(),
+                            "port": int(cluster_port.value),
+                            "command": "hostname && whoami && pwd",
+                            "timeout": 30,
+                        },
+                    )
+
+                    payload = result.get("result", result)
+
+                    with log_out:
+                        print("[connector] Test SSH via relay")
+                        print("ok:", payload.get("ok"))
+                        print("returncode:", payload.get("returncode"))
+                        if (payload.get("stdout") or "").strip():
+                            print("--- stdout ---")
+                            print(payload["stdout"].strip())
+                        if (payload.get("stderr") or "").strip():
+                            print("--- stderr ---")
+                            print(payload["stderr"].strip())
+
+                    status_chip.value = status_html("done" if payload.get("ok") else "fail")
+                    return
+
+                # -----------------------------------------------------
+                # 3. Auto: try direct first, fallback to connector
+                # -----------------------------------------------------
+                direct = remote_test_connection(
                     cluster_host.value.strip(),
                     cluster_user.value.strip(),
                     int(cluster_port.value),
                 )
+
+                if direct.get("ok"):
+                    with log_out:
+                        print("[auto] Direct SSH works.")
+                        print("returncode:", direct["returncode"])
+                        if (direct["stdout"] or "").strip():
+                            print("--- stdout ---")
+                            print(direct["stdout"].strip())
+                        if (direct["stderr"] or "").strip():
+                            print("--- stderr ---")
+                            print(direct["stderr"].strip())
+
+                    status_chip.value = status_html("done")
+                    return
+
+                from icesee_jupyter_book.core.connector_relay_client import send_command
+
+                if not SESSION.get("id"):
+                    status_chip.value = status_html("fail")
+                    with log_out:
+                        print("[auto] Direct SSH failed.")
+                        print("[connector][ERROR] No connector session found for fallback.")
+                        print("--- direct stderr ---")
+                        print((direct.get("stderr") or "").strip())
+                    return
+
+                result = send_command(
+                    SESSION["id"],
+                    "ssh-run",
+                    {
+                        "host": cluster_host.value.strip(),
+                        "user": cluster_user.value.strip(),
+                        "port": int(cluster_port.value),
+                        "command": "hostname && whoami && pwd",
+                        "timeout": 30,
+                    },
+                )
+
+                payload = result.get("result", result)
+
                 with log_out:
-                    print("[remote] Test SSH")
-                    print("returncode:", result["returncode"])
-                    if (result["stdout"] or "").strip():
+                    print("[auto] Direct SSH failed. Used connector fallback.")
+                    print("ok:", payload.get("ok"))
+                    print("returncode:", payload.get("returncode"))
+                    if (payload.get("stdout") or "").strip():
                         print("--- stdout ---")
-                        print(result["stdout"].strip())
-                    if (result["stderr"] or "").strip():
+                        print(payload["stdout"].strip())
+                    if (payload.get("stderr") or "").strip():
                         print("--- stderr ---")
-                        print(result["stderr"].strip())
-                status_chip.value = status_html("done" if result["ok"] else "fail")
+                        print(payload["stderr"].strip())
+
+                status_chip.value = status_html("done" if payload.get("ok") else "fail")
+
             except Exception as e:
                 status_chip.value = status_html("fail")
                 with log_out:
@@ -2474,22 +3175,49 @@ def build_icesheets_ui():
         def on_status(_=None):
             log_out.clear_output()
             jobid = STATUS.get("jobid")
+
             if not jobid:
                 with log_out:
                     print("[remote] No JobID yet. Submit first.")
                 return
 
             try:
+                if access_mode_dd.value == "connector":
+                    payload = send_command(
+                        SESSION["id"],
+                        "ssh-run",
+                        {
+                            "host": cluster_host.value.strip(),
+                            "user": cluster_user.value.strip(),
+                            "port": int(cluster_port.value),
+                            "command": f"squeue -j {jobid}",
+                            "timeout": 30,
+                        },
+                    )
+
+                    result = payload.get("result", payload)
+
+                    with log_out:
+                        print("[connector] Status")
+                        print((result.get("stdout") or "").strip())
+
+                    status_chip.value = status_html("done" if result.get("ok") else "fail")
+                    return
+
+                # fallback (direct)
                 result = remote_job_status(
                     cluster_host.value.strip(),
                     cluster_user.value.strip(),
                     int(cluster_port.value),
                     jobid,
                 )
+
                 with log_out:
                     print("[remote] Status")
-                    print((result["stdout"] or "").strip() or "(no output)")
+                    print((result["stdout"] or "").strip())
+
                 status_chip.value = status_html("done" if result["returncode"] == 0 else "fail")
+
             except Exception as e:
                 status_chip.value = status_html("fail")
                 with log_out:
@@ -2539,6 +3267,33 @@ fi
 """
 
             try:
+
+                if access_mode_dd.value == "connector":
+                    payload = send_command(
+                        SESSION["id"],
+                        "ssh-run",
+                        {
+                            "host": host,
+                            "user": user,
+                            "port": port,
+                            "command": tail_cmd,
+                            "timeout": 30,
+                        },
+                    )
+
+                    result = payload.get("result", payload)
+
+                    with log_out:
+                        print("[connector] Tail log")
+                        if (result.get("stdout") or "").strip():
+                            print(result["stdout"].rstrip())
+                        if (result.get("stderr") or "").strip():
+                            print("--- stderr ---")
+                            print(result["stderr"].strip())
+
+                    status_chip.value = status_html("done" if result.get("ok") else "fail")
+                    return
+                
                 result = ssh_run(host, user, port, tail_cmd, timeout=30)
 
                 with log_out:
@@ -2704,6 +3459,7 @@ fi
         preview_results_btn.on_click(preview_remote_results)
         add_md_override_btn.on_click(add_md_override)
         clear_md_overrides_btn.on_click(clear_md_overrides)
+        start_connector_session_btn.on_click(create_or_refresh_connector_session)
 
         # =========================================================
         # CSS
@@ -2836,6 +3592,7 @@ fi
             ),
         )
         remote_conn_inner = W.VBox([
+            form_pair("Access:", access_mode_dd, "90px"),
             cluster_host_row,
             W.HBox([cluster_user_row, cluster_port_row], layout=W.Layout(gap="12px", width="100%")),
             W.HBox([remote_base_dir_row, remote_tag_row], layout=W.Layout(gap="12px", width="100%")),
@@ -2868,30 +3625,13 @@ fi
         auth_box.set_title(0, "🔒 Authentication")
 
         remote_box = W.VBox([
-            connector_panel,
-            # W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>Remote connection</div>"),
-            # cluster_host_row,
-            # W.HBox([cluster_user_row, cluster_port_row], layout=W.Layout(gap="12px", width="100%")),
-            # W.HBox([remote_base_dir_row, remote_tag_row], layout=W.Layout(gap="12px", width="100%")),
             remote_conn_box,
-
-
-            # W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>Authentication</div>"),
-            # W.HBox([W.HTML("<div class='icesee-lbl'>Method:</div>"), auth_mode], layout=W.Layout(gap="10px")),
-            # cluster_password,
-            # bootstrap_btn,
             auth_box,
-
-            # W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>SSH key manager</div>"),
-            # ssh_key_manager,
             ssh_key_manager_box,
-
-            # W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>Slurm resources</div>"),
-            # W.HBox([slurm_job_name_row, slurm_time_row], layout=W.Layout(gap="12px", width="100%")),
-            # W.HBox([slurm_nodes_row, slurm_ntasks_row, slurm_tpn_row], layout=W.Layout(gap="12px", width="100%")),
-            # W.HBox([slurm_part_row, slurm_mem_row], layout=W.Layout(gap="12px", width="100%")),
-            # W.HBox([slurm_account_row, slurm_mail_row], layout=W.Layout(gap="12px", width="100%")),
             slurm_box,
+            relay_status,
+            start_connector_session_btn,
+            connector_panel,
         ], layout=W.Layout(gap="10px"))
 
         cloud_box = W.VBox([
