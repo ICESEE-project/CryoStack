@@ -136,6 +136,9 @@ async def handle_command(command_type: str, payload: dict):
     if command_type == "rsync-download":
         return await run_rsync_download(payload)
 
+    if command_type == "stage-archive":
+        return await run_stage_archive(payload)
+
     return {
         "ok": False,
         "error": f"Unsupported command_type: {command_type}",
@@ -206,6 +209,68 @@ async def run_slurm_submit(payload: dict):
     result["jobid"] = jobid
     result["submitted"] = bool(jobid)
     return result
+
+async def run_stage_archive(payload: dict):
+    import base64
+    import tempfile
+    from pathlib import Path
+
+    host = payload["host"]
+    user = payload["user"]
+    port = int(payload.get("port", 22))
+    archive_name = payload["archive_name"]
+    archive_b64 = payload["archive_b64"]
+    remote_dir = payload["remote_dir"]
+    timeout = int(payload.get("timeout", 600))
+
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            archive_path = Path(td) / archive_name
+            archive_path.write_bytes(base64.b64decode(archive_b64))
+
+            mk = await run_ssh({
+                "host": host,
+                "user": user,
+                "port": port,
+                "command": f'mkdir -p "{remote_dir}"',
+                "timeout": 60,
+            })
+            if not mk.get("ok"):
+                mk["stage"] = "mkdir_remote_dir"
+                return mk
+
+            up = await run_subprocess(
+                [
+                    "rsync",
+                    "-az",
+                    "-e",
+                    f"ssh -p {port} -o BatchMode=yes -o StrictHostKeyChecking=accept-new",
+                    str(archive_path),
+                    f"{user}@{host}:{remote_dir}/",
+                ],
+                timeout=timeout,
+            )
+            if not up.get("ok"):
+                up["stage"] = "rsync_archive"
+                return up
+
+            remote_archive = f"{remote_dir.rstrip('/')}/{archive_name}"
+            ex = await run_ssh({
+                "host": host,
+                "user": user,
+                "port": port,
+                "command": f'cd "{remote_dir}" && tar -xzf "{remote_archive}" && ls -lah "{remote_dir}"',
+                "timeout": timeout,
+            })
+            ex["stage"] = "extract_archive"
+            return ex
+
+    except Exception as e:
+        return {
+            "ok": False,
+            "stage": "python_exception",
+            "error": f"{type(e).__name__}: {e}",
+        }
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

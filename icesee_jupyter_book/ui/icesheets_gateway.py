@@ -501,6 +501,53 @@ def connector_slurm_submit(session_id: str, host: str, user: str, port: int, rem
     )
     return relay_result_payload(res)
 
+def connector_stage_archive(
+    session_id: str,
+    host: str,
+    user: str,
+    port: int,
+    local_example_path: Path,
+    remote_run_dir: str,
+    timeout: int = 600,
+):
+    """
+    Package an example directory on the AWS/Voila side, send it through the relay,
+    let the local connector write it temporarily, rsync it to HPC, and extract it there.
+    """
+    import base64
+    import tarfile
+    import tempfile
+    from pathlib import Path
+    from icesee_jupyter_book.core.connector_relay_client import send_command
+
+    local_example_path = Path(local_example_path).expanduser().resolve()
+    if not local_example_path.exists():
+        raise RuntimeError(f"Example path does not exist: {local_example_path}")
+
+    with tempfile.TemporaryDirectory() as td:
+        archive_path = Path(td) / f"{local_example_path.name}.tar.gz"
+
+        with tarfile.open(archive_path, "w:gz") as tar:
+            tar.add(local_example_path, arcname=local_example_path.name)
+
+        archive_b64 = base64.b64encode(archive_path.read_bytes()).decode("ascii")
+
+    res = send_command(
+        session_id,
+        "stage-archive",
+        {
+            "host": host,
+            "user": user,
+            "port": port,
+            "archive_name": f"{local_example_path.name}.tar.gz",
+            "archive_b64": archive_b64,
+            "remote_dir": remote_run_dir,
+            "timeout": timeout,
+        },
+    )
+
+    return relay_result_payload(res)
+    
 def submit_remote_icesheets_via_connector(
     *,
     session_id: str,
@@ -592,19 +639,22 @@ mkdir -p "{remote_run_dir}"
 
     # Upload example using connector-side rsync.
     local_upload_path = f"{local_parent}/{local_name}"
-    up = connector_rsync_upload(
+    up = connector_stage_archive(
         session_id,
         host,
         user,
         port,
-        local_upload_path,
-        f"{remote_run_dir}/",
+        local_example_path,
+        remote_run_dir,
         timeout=600,
     )
+
     if not up.get("ok"):
         raise RuntimeError(
             "Failed to copy local example to remote host through connector\n"
-            f"STDOUT:\n{up.get('stdout','')}\n\nSTDERR:\n{up.get('stderr','')}"
+            f"FULL RESPONSE:\n{up}\n\n"
+            f"STDOUT:\n{up.get('stdout','')}\n\n"
+            f"STDERR:\n{up.get('stderr','')}"
         )
 
     remote_example_dir = f"{remote_run_dir}/{local_name}"
