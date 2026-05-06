@@ -25,8 +25,10 @@ def create_session():
     SESSION_ORDER.append(session_id)
 
     return {
+        "ok": True,
         "session_id": session_id,
         "ws_url": f"/connector/ws/{session_id}",
+        "online": False,
     }
 
 
@@ -80,8 +82,15 @@ async def send_command(session_id: str, req: CommandRequest):
     })
 
     try:
-        result = await asyncio.wait_for(fut, timeout=120)
-        return result
+        # result = await asyncio.wait_for(fut, timeout=120)
+        # return result
+        result = await asyncio.wait_for(fut, timeout=900)
+
+        return {
+            "ok": True,
+            "command_id": command_id,
+            "result": result.get("result", result),
+        }
 
     except asyncio.TimeoutError:
         PENDING[session_id].pop(command_id, None)
