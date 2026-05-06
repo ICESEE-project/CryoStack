@@ -9,7 +9,7 @@ echo "[ICESEE] Deploying web assets..."
 sudo mkdir -p /var/www/cryolauncher
 
 # Sync web files
-sudorsync -av --delete deploy/web/ /var/www/cryolauncher/
+sudo rsync -av --delete deploy/web/ /var/www/cryolauncher/
 
 echo "[ICESEE] Updating nginx config..."
 
