@@ -332,6 +332,18 @@ async def run_fetch_archive(payload: dict):
             "error": f"{type(e).__name__}: {e}",
         }
 
+def main_auto():
+    relay = "https://cryolauncher.com"
+
+    resp = requests.get(f"{relay}/connector/latest", timeout=10).json()
+    if not resp.get("ok"):
+        raise SystemExit("No ICESEE connector session found. Open ICESEE and create a connector session first.")
+
+    relay_ws_base = relay.replace("http://", "ws://").replace("https://", "wss://")
+    ws_url = f"{relay_ws_base}{resp['ws_url']}"
+
+    asyncio.run(main(ws_url))
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # parser.add_argument("--ws-url", required=True)
