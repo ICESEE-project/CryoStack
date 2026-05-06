@@ -4,7 +4,7 @@ import argparse
 import asyncio
 import json
 import shlex
-from jupyter_server_terminals import msg
+# from jupyter_server_terminals import msg
 import requests
 import subprocess
 
@@ -397,7 +397,7 @@ def run_connector(
 
         if not target:
             if not poll:
-                log("[connector] No active session found.")
+                print("[connector] No active session found.")
                 return
 
             print(f"[connector] waiting for ICESEE session... retrying in {poll_seconds}s")
@@ -405,15 +405,15 @@ def run_connector(
             time.sleep(poll_seconds)
             continue
 
-        log("[connector] using ws_url:", target)
+        print("[connector] using ws_url:", target)
 
         try:
             asyncio.run(main(target))
         except KeyboardInterrupt:
-            log("[connector] stopped")
+            print("[connector] stopped")
             return
         except Exception as e:
-            log("[connector] disconnected:", type(e).__name__, e)
+            print("[connector] disconnected:", type(e).__name__, e)
 
         if not poll:
             return
