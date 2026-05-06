@@ -1838,17 +1838,33 @@ def build_icesheets_ui():
 
                 st = relay_check_status(SESSION["id"])
 
+                # relay_status.value = f"""
+                # <div style="
+                #     border:1px solid rgba(13,110,253,.18);
+                #     background:rgba(13,110,253,.06);
+                #     border-radius:12px;
+                #     padding:12px;
+                #     line-height:1.5;
+                #     margin:8px 0;
+                # ">
+                # <b>Connector session:</b> {SESSION["id"]}<br>
+                # <b>Status:</b> {"online" if st.get("online") else "waiting for connector"}<br>
+                # <b>WebSocket path:</b> {SESSION["ws_url"]}
+                # </div>
+                # """
+                is_online = st.get("online")
+
                 relay_status.value = f"""
                 <div style="
-                    border:1px solid rgba(13,110,253,.18);
-                    background:rgba(13,110,253,.06);
+                    border:1px solid {'rgba(25,135,84,.25)' if is_online else 'rgba(13,110,253,.18)'};
+                    background:{'rgba(25,135,84,.08)' if is_online else 'rgba(13,110,253,.06)'};
                     border-radius:12px;
                     padding:12px;
-                    line-height:1.5;
+                    line-height:1.55;
                     margin:8px 0;
                 ">
                 <b>Connector session:</b> {SESSION["id"]}<br>
-                <b>Status:</b> {"online" if st.get("online") else "waiting for connector"}<br>
+                <b>Status:</b> {'online ✅' if is_online else 'waiting for connector'}<br>
                 <b>WebSocket path:</b> {SESSION["ws_url"]}
                 </div>
                 """
@@ -3757,7 +3773,7 @@ fi
             relay_status,
             start_connector_session_btn,
             connector_setup_link,
-            connector_panel,
+            # connector_panel,
         ], layout=W.Layout(gap="10px"))
 
         cloud_box = W.VBox([
