@@ -191,13 +191,13 @@
     </div>
 
     <h1>
-      Install ICESEE HPC Bridge Connector
+      Install Cryolauncher HPC Bridge Connector
     </h1>
 
     <p class="lead">
-      ICESEE detected that you want to run a remote HPC workflow.
+      Cryolauncher detected that you want to run a remote HPC workflow.
       The connector lets your workstation act as the secure bridge
-      to VPN-protected clusters while the ICESEE web interface
+      to VPN-protected clusters while the Cryolauncher web interface
       remains simple and browser-based.
     </p>
 
@@ -264,7 +264,7 @@
 
           <p class="small">
             Once started, the connector automatically finds
-            the active ICESEE session and connects.
+            the active Cryolauncher session and connects.
           </p>
 
         </div>
@@ -281,7 +281,7 @@
 
           <b>What this connector does</b><br>
 
-          It allows ICESEE to submit, monitor, and retrieve
+          It allows Cryolauncher to submit, monitor, and retrieve
           remote HPC jobs through your local VPN-connected
           workstation without exposing your cluster directly
           to the public web.
@@ -293,7 +293,7 @@
     </div>
 
     <div class="footer">
-      ICESEE OnLine · HPC bridge setup · cryolauncher.com
+      Cryolauncher OnLine · HPC bridge setup · cryolauncher.com
     </div>
 
   </main>
@@ -318,13 +318,13 @@
 
     const urls = {
       macos:
-        "/downloads/ICESEE-Connector-macOS-v0.2.dmg",
+        "/downloads/Cryolauncher-Connector-macOS-v0.4.dmg",
 
       windows:
-        "/downloads/ICESEE-Connector-Windows.exe",
+        "/downloads/Cryolauncher-Connector-Windows.exe",
 
       linux:
-        "/downloads/ICESEE-Connector-Linux-x86_64.tar.gz",
+        "/downloads/Cryolauncher-Connector-Linux-x86_64.tar.gz",
 
       unknown:
         "/downloads/"
@@ -340,43 +340,43 @@
     const sessionInstructions = {
 
       macos:
-        "Download the connector, open the DMG, drag ICESEE_Connector.app to Applications, then double-click it. No Python, terminal, or local ICESEE-GHUB installation is required.",
+        "Download the connector, open the DMG, drag Cryolauncher_Connector.app to Applications, then double-click it. No Python, terminal, or local Cryolauncher-GHUB installation is required.",
 
       windows:
-        "Download the connector installer, run ICESEE_Connector.exe, and allow it to start the local bridge. No Python or local ICESEE-GHUB installation is required.",
+        "Download the connector installer, run Cryolauncher_Connector.exe, and allow it to start the local bridge. No Python or local Cryolauncher-GHUB installation is required.",
 
       linux:
-        "Download the Linux tar.gz file, extract it, then run the ICESEE_Connector_Linux binary. For now, Linux uses a terminal-launched connector.",
+        "Download the Linux tar.gz file, extract it, then run the Cryolauncher_Connector_Linux binary. For now, Linux uses a terminal-launched connector.",
 
       unknown:
-        "Download the connector for your operating system, start it, and return to ICESEE."
+        "Download the connector for your operating system, start it, and return to Cryolauncher."
     };
 
     const afterSteps = {
 
       macos: [
         "Turn on your university VPN.",
-        "Start ICESEE_Connector.app if it is not already running in the menu bar.",
-        "Return to ICESEE. The connector status should change to online automatically."
+        "Start Cryolauncher_Connector.app if it is not already running in the menu bar.",
+        "Return to Cryolauncher. The connector status should change to online automatically."
       ],
 
       windows: [
         "Turn on your university VPN.",
-        "Start ICESEE_Connector.exe.",
-        "Return to ICESEE. The connector status should change to online automatically."
+        "Start Cryolauncher_Connector.exe.",
+        "Return to Cryolauncher. The connector status should change to online automatically."
       ],
 
       linux: [
         "Turn on your university VPN.",
         "Extract the tar.gz file.",
-        "Run ./ICESEE_Connector_Linux from the extracted folder.",
-        "Return to ICESEE. The connector status should change to online automatically."
+        "Run ./Cryolauncher_Connector_Linux from the extracted folder.",
+        "Return to Cryolauncher. The connector status should change to online automatically."
       ],
 
       unknown: [
         "Turn on your university VPN.",
-        "Start the ICESEE Connector for your operating system.",
-        "Return to ICESEE. The connector status should change to online automatically."
+        "Start the Cryolauncher Connector for your operating system.",
+        "Return to Cryolauncher. The connector status should change to online automatically."
       ]
     };
 
