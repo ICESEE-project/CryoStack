@@ -10,6 +10,19 @@ import ipywidgets as W
 
 from IPython.display import display, Image
 
+import zipfile
+import shutil
+import base64
+import tarfile
+import tempfile
+from IPython.display import HTML, FileLink
+
+from icesee_jupyter_book.core.connector_relay_client import (
+    create_session,
+    check_status as relay_check_status,
+    send_command,
+)
+
 from icesee_jupyter_book.core import ssh_key_manager
 from icesee_jupyter_book.core.example_registry import EXAMPLES, enabled_names
 from icesee_jupyter_book.core.config_io import load_yaml, dump_yaml
@@ -109,6 +122,53 @@ def refresh_results_preview(rd: Path, results_out: W.Output):
                 display(Image(filename=str(p)))
         else:
             print("\nNo figures found yet.")
+
+def relay_result_payload(result: dict) -> dict:
+    return result.get("result", result)
+
+
+def connector_ssh(session_id: str, host: str, user: str, port: int, command: str, timeout: int = 60):
+    res = send_command(
+        session_id,
+        "ssh-run",
+        {
+            "host": host,
+            "user": user,
+            "port": port,
+            "command": command,
+            "timeout": timeout,
+        },
+    )
+    return relay_result_payload(res)
+
+
+def connector_fetch_archive(
+    session_id: str,
+    host: str,
+    user: str,
+    port: int,
+    remote_path: str,
+    timeout: int = 600,
+):
+    res = send_command(
+        session_id,
+        "fetch-archive",
+        {
+            "host": host,
+            "user": user,
+            "port": port,
+            "remote_path": remote_path,
+            "timeout": timeout,
+        },
+    )
+    return relay_result_payload(res)
+
+
+def make_zip_from_dir(src_dir: Path, zip_path: Path):
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for p in sorted(src_dir.rglob("*")):
+            if p.is_file():
+                zf.write(p, arcname=p.relative_to(src_dir))
 
 def build_sidebar():
     sidebar_html = """
@@ -246,6 +306,11 @@ def build_icesee_ui():
         # UI state containers
         # -----------------------------
         STATUS = {"mode": "idle", "remote_dir": None, "jobid": None, "batch_job_id": None, "s3_run": None}
+
+        SESSION = {
+            "id": None,
+            "ws_url": None,
+        }
 
         def set_status(state: str):
             cls = {"idle": "icesee-idle", "running": "icesee-running", "done": "icesee-done", "fail": "icesee-fail"}[state]
@@ -505,6 +570,25 @@ def build_icesee_ui():
             layout=W.Layout(width="220px"),
         )
 
+        access_mode_dd = W.Dropdown(
+            options=[
+                ("Auto", "auto"),
+                ("Direct SSH from server", "direct"),
+                ("Local Connector / VPN bridge", "connector"),
+            ],
+            value="auto",
+            layout=W.Layout(width="320px"),
+        )
+
+        relay_status = W.HTML("")
+        connector_setup_link = W.HTML("")
+
+        start_connector_session_btn = W.Button(
+            description="Create connector session",
+            icon="plug",
+            button_style="info",
+        )
+
         container_image_uri = W.Text(
             value="icesee/combined-container:latest",
             layout=W.Layout(width="520px"),
@@ -515,6 +599,18 @@ def build_icesee_ui():
         status_btn = W.Button(description="Check status", icon="tasks", button_style="")
         tail_btn = W.Button(description="Tail log", icon="file-text", button_style="")
         terminate_btn = W.Button(description="Terminate job",icon="stop",button_style="danger")
+
+        preview_results_btn = W.Button(
+            description="Preview results",
+            icon="eye",
+            button_style="info",
+        )
+
+        results_download_btn = W.Button(
+            description="Download results",
+            icon="download",
+            button_style="success",
+        )
 
         slurm_job_name = W.Text(value="ICESEE", layout=W.Layout(width="100%"))
         slurm_time = W.Text(value="50:00:00", layout=W.Layout(width="100%"))
@@ -530,6 +626,140 @@ def build_icesee_ui():
 
         cluster_mpi_np = W.IntText(value=40, layout=W.Layout(width="100%"))
         cluster_model_nprocs = W.IntText(value=4, layout=W.Layout(width="100%"))
+
+        def local_remote_cache_dir() -> Path:
+            rd = run_dir()
+            return rd / "_remote_fetch"
+
+
+        def fetch_remote_outputs_to_local() -> Path | None:
+            rdir = STATUS.get("remote_dir")
+            if not rdir:
+                with results_out:
+                    print("[results] No remote run directory found. Submit a job first.")
+                return None
+
+            host = cluster_host.value.strip()
+            user = cluster_user.value.strip()
+            port = int(cluster_port.value)
+
+            local_cache = local_remote_cache_dir()
+            outputs_dir = local_cache / "outputs"
+
+            if outputs_dir.exists():
+                shutil.rmtree(outputs_dir)
+            outputs_dir.mkdir(parents=True, exist_ok=True)
+
+            remote_outputs = f"{str(rdir).rstrip('/')}/outputs"
+
+            if access_mode_dd.value == "connector":
+                if not SESSION.get("id"):
+                    create_or_refresh_connector_session()
+
+                result = connector_fetch_archive(
+                    SESSION["id"],
+                    host,
+                    user,
+                    port,
+                    f"{remote_outputs.rstrip('/')}/",
+                    timeout=600,
+                )
+
+                if not result.get("ok"):
+                    with results_out:
+                        print("[results][ERROR] Could not fetch remote outputs through connector.")
+                        print("Remote source:", remote_outputs)
+                        print(result)
+                    return None
+
+                archive_b64 = result.get("archive_b64")
+                if not archive_b64:
+                    with results_out:
+                        print("[results][ERROR] Connector response did not include archive_b64.")
+                    return None
+
+                with tempfile.TemporaryDirectory() as td:
+                    archive_path = Path(td) / "outputs.tar.gz"
+                    archive_path.write_bytes(base64.b64decode(archive_b64))
+
+                    with tarfile.open(archive_path, "r:gz") as tar:
+                        tar.extractall(outputs_dir)
+
+                return outputs_dir
+
+            rsync_cmd = [
+                "rsync",
+                "-az",
+                "-e",
+                f"ssh -p {port}",
+                f"{user}@{host}:{remote_outputs.rstrip('/')}/",
+                f"{outputs_dir}/",
+            ]
+
+            rs = subprocess.run(rsync_cmd, capture_output=True, text=True)
+
+            if rs.returncode != 0:
+                with results_out:
+                    print("[results][ERROR] Could not fetch remote outputs.")
+                    print("Remote source:", remote_outputs)
+                    print("--- stdout ---")
+                    print(rs.stdout)
+                    print("--- stderr ---")
+                    print(rs.stderr)
+                return None
+
+            return outputs_dir
+        
+
+        def preview_remote_results(_=None):
+            results_out.clear_output()
+
+            outputs_dir = fetch_remote_outputs_to_local()
+            if outputs_dir is None:
+                return
+
+            pngs = sorted(outputs_dir.rglob("*.png"))
+            h5s = sorted(outputs_dir.rglob("*.h5"))
+            all_files = sorted([p for p in outputs_dir.rglob("*") if p.is_file()])
+
+            with results_out:
+                print("Fetched outputs:", outputs_dir)
+                print(f"H5 files: {len(h5s)}")
+                print(f"PNG figures: {len(pngs)}\n")
+
+                if all_files:
+                    print("Output tree:")
+                    for p in all_files[:50]:
+                        print(" -", p.relative_to(outputs_dir))
+                    print()
+
+                if pngs:
+                    print("Preview figures:")
+                    for p in pngs[:8]:
+                        print("\n", p.name)
+                        display(Image(filename=str(p)))
+                else:
+                    print("No PNG figures found.")
+
+
+        def download_results_bundle(_=None):
+            results_out.clear_output()
+
+            outputs_dir = fetch_remote_outputs_to_local()
+            if outputs_dir is None:
+                return
+
+            zip_path = local_remote_cache_dir() / "results_bundle.zip"
+
+            if zip_path.exists():
+                zip_path.unlink()
+
+            make_zip_from_dir(outputs_dir, zip_path)
+
+            with results_out:
+                print("Results bundle ready:")
+                display(FileLink(str(zip_path)))
+            
 
         def form_pair(label: str, widget, label_width: str = "80px", widget_width: str = "1fr"):
             lbl = W.HTML(f"<div class='icesee-lbl-sm'>{label}</div>")
@@ -629,6 +859,57 @@ def build_icesee_ui():
             W.HBox([open_ood_btn], layout=W.Layout(gap="10px")),
             W.HTML("<div class='icesee-subtle'>Tip: You may need GT VPN to access OnDemand.</div>"),
         ])
+
+        def create_or_refresh_connector_session(_=None):
+            log_out.clear_output()
+
+            try:
+                if SESSION.get("id") is None:
+                    sess = create_session()
+                    SESSION["id"] = sess["session_id"]
+                    SESSION["ws_url"] = sess["ws_url"]
+
+                    connector_setup_link.value = f"""
+                    <a href="https://cryolauncher.com/connect/?session={SESSION['id']}"
+                    target="_blank"
+                    style="
+                        display:inline-block;
+                        background:#0d6efd;
+                        color:white;
+                        padding:8px 12px;
+                        border-radius:8px;
+                        text-decoration:none;
+                        font-weight:700;
+                        margin:6px 0;">
+                    Open ICESEE Connector Setup
+                    </a>
+                    """
+
+                st = relay_check_status(SESSION["id"])
+
+                relay_status.value = f"""
+                <div style="
+                    border:1px solid rgba(13,110,253,.18);
+                    background:rgba(13,110,253,.06);
+                    border-radius:12px;
+                    padding:12px;
+                    line-height:1.5;
+                    margin:8px 0;
+                ">
+                <b>Connector session:</b> {SESSION["id"]}<br>
+                <b>Status:</b> {"online ✅" if st.get("online") else "waiting for connector"}<br>
+                <b>WebSocket path:</b> {SESSION["ws_url"]}
+                </div>
+                """
+
+                with log_out:
+                    print("[connector] Session ID:", SESSION["id"])
+                    print("[connector] Status:", st)
+
+            except Exception as e:
+                relay_status.value = ""
+                with log_out:
+                    print("[connector][ERROR]", type(e).__name__, e)
 
         def _toggle_remote_backend(_=None):
             is_ssh = (remote_backend.value == "ssh")
@@ -986,6 +1267,41 @@ def build_icesee_ui():
                 return
 
             try:
+
+                if access_mode_dd.value == "connector":
+                    if not SESSION.get("id"):
+                        create_or_refresh_connector_session()
+
+                    st = relay_check_status(SESSION["id"])
+                    if not st.get("online"):
+                        set_status("fail")
+                        with log_out:
+                            print("[connector][ERROR] Connector session is not online.")
+                            print("Open the connector setup page and start the local connector first.")
+                        return
+
+                    payload = connector_ssh(
+                        SESSION["id"],
+                        host,
+                        user,
+                        port,
+                        "hostname && whoami && pwd && date",
+                        timeout=30,
+                    )
+
+                    with log_out:
+                        print("[connector] Test SSH via local connector / VPN bridge")
+                        print("ok:", payload.get("ok"))
+                        print("returncode:", payload.get("returncode"))
+                        if (payload.get("stdout") or "").strip():
+                            print("--- stdout ---")
+                            print(payload["stdout"].strip())
+                        if (payload.get("stderr") or "").strip():
+                            print("--- stderr ---")
+                            print(payload["stderr"].strip())
+
+                    set_status("done" if payload.get("ok") else "fail")
+                    return
                 result = remote_test_connection(host, user, port)
 
                 with log_out:
@@ -1276,6 +1592,14 @@ def build_icesee_ui():
         cloud_submit_btn.on_click(lambda b: run_example_cloud_submit())
         cloud_status_btn.on_click(lambda b: run_example_cloud_status())
         cloud_logs_btn.on_click(lambda b: run_example_cloud_logs_hint())
+        
+        start_connector_session_btn.on_click(create_or_refresh_connector_session)
+        access_mode_dd.observe(
+            lambda change: create_or_refresh_connector_session() if change["new"] == "connector" else None,
+            names="value",
+        )
+        preview_results_btn.on_click(preview_remote_results)
+        results_download_btn.on_click(download_results_bundle)
 
         # keep template in sync with quick knobs
         def _sync_knobs(_=None):
@@ -1365,6 +1689,7 @@ def build_icesee_ui():
             [W.HTML("<div class='icesee-lbl'>Image:</div>"), container_image_uri],
             layout=W.Layout(gap="12px"),
         )
+        
 
         def _toggle_exec_backend_ui(_=None):
             is_container = (exec_backend_choice.value == "container")
@@ -1429,6 +1754,17 @@ def build_icesee_ui():
         cluster_password_row = W.Box([cluster_password], layout=W.Layout(margin="0 0 0 120px"))
         bootstrap_btn_row = W.Box([bootstrap_btn], layout=W.Layout(margin="0 0 0 120px"))
 
+        download_buttons_row = W.HBox(
+            [preview_results_btn, results_download_btn],
+            layout=W.Layout(
+                gap="10px",
+                justify_content="flex-end",
+                align_items="center",
+                width="100%",
+                margin="10px 0 0 0",
+            ),
+        )
+
         # Remote panel
         cluster_panel = W.VBox(
             [
@@ -1442,6 +1778,13 @@ def build_icesee_ui():
                     ],
                     layout=W.Layout(gap="16px", width="100%"),
                 ),
+                W.HBox(
+                    [W.HTML("<div class='icesee-lbl'>Access:</div>"), access_mode_dd],
+                    layout=W.Layout(gap="12px"),
+                ),
+                relay_status,
+                start_connector_session_btn,
+                connector_setup_link,
                 W.HBox(
                     [
                         form_pair("Remote dir:", remote_base_dir, label_width="90px"),
@@ -1565,6 +1908,7 @@ def build_icesee_ui():
                 log_out,
                 W.HTML("<div class='icesee-h' style='margin-top:14px'>Results preview</div>"),
                 results_out,
+                download_buttons_row,
             ]
         )
         right_card = W.VBox([right])

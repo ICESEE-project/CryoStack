@@ -10,6 +10,7 @@ import subprocess
 
 import websockets
 
+DEFAULT_RELAY = "https://cryolauncher.com"
 
 async def run_shell(payload: dict):
     command = payload.get("command", "")
@@ -149,26 +150,49 @@ async def handle_command(command_type: str, payload: dict):
     }
 
 
-async def main(ws_url: str):
+async def main(ws_url: str, relay: str = DEFAULT_RELAY, poll_seconds: int = 5):
     print(f"[connector] connecting to {ws_url}")
 
     async with websockets.connect(ws_url) as ws:
         print("[connector] connected")
 
-        async for raw in ws:
-            msg = json.loads(raw)
+        async def watch_for_newer_session():
+            while True:
+                await asyncio.sleep(poll_seconds)
 
-            command_id = msg.get("command_id")
-            command_type = msg.get("command_type")
-            payload = msg.get("payload", {})
+                try:
+                    latest = resolve_ws_url(relay=relay, session=None, ws_url=None)
 
-            result = await handle_command(command_type, payload)
+                    if latest and latest != ws_url:
+                        print("[connector] newer ICESEE session detected")
+                        print("[connector] old:", ws_url)
+                        print("[connector] new:", latest)
+                        await ws.close()
+                        return
 
-            await ws.send(json.dumps({
-                "command_id": command_id,
-                "command_type": command_type,
-                "result": result,
-            }))
+                except Exception as e:
+                    print("[connector] session watcher error:", type(e).__name__, e)
+
+        watcher = asyncio.create_task(watch_for_newer_session())
+
+        try:
+            async for raw in ws:
+                msg = json.loads(raw)
+
+                command_id = msg.get("command_id")
+                command_type = msg.get("command_type")
+                payload = msg.get("payload", {})
+
+                result = await handle_command(command_type, payload)
+
+                await ws.send(json.dumps({
+                    "command_id": command_id,
+                    "command_type": command_type,
+                    "result": result,
+                }))
+
+        finally:
+            watcher.cancel()
 
 async def run_rsync_upload(payload: dict):
     local_path = payload["local_path"]
@@ -333,9 +357,6 @@ async def run_fetch_archive(payload: dict):
             "error": f"{type(e).__name__}: {e}",
         }
 
-DEFAULT_RELAY = "https://cryolauncher.com"
-
-
 def resolve_ws_url(relay: str, session: str | None = None, ws_url: str | None = None):
     if ws_url:
         return ws_url
@@ -408,7 +429,7 @@ def run_connector(
         print("[connector] using ws_url:", target)
 
         try:
-            asyncio.run(main(target))
+            asyncio.run(main(target, relay=relay, poll_seconds=poll_seconds))
         except KeyboardInterrupt:
             print("[connector] stopped")
             return
