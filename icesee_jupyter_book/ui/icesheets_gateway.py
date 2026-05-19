@@ -110,6 +110,102 @@ def refresh_results_preview(rd: Path, results_out: W.Output):
         else:
             print("\nNo figures found yet.")
 
+# def build_sidebar():
+#     sidebar_html = """
+#     <style>
+#     .icesee-shell {
+#       width: 100%;
+#       display: flex;
+#       min-height: 100vh;
+#       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+#     }
+
+#     .icesee-sidebar {
+#       width: 260px;
+#       min-width: 260px;
+#       background: #f8f9fb;
+#       border-right: 1px solid rgba(0,0,0,.08);
+#       padding: 18px 14px;
+#       box-sizing: border-box;
+#     }
+
+#     .icesee-sidebar h2 {
+#       font-size: 18px;
+#       margin: 0 0 16px 0;
+#       font-weight: 800;
+#     }
+
+#     .icesee-nav-group {
+#       margin: 18px 0 8px 0;
+#       font-size: 13px;
+#       font-weight: 800;
+#       color: rgba(0,0,0,.75);
+#       text-transform: uppercase;
+#     }
+
+#     .icesee-nav a {
+#       display: block;
+#       padding: 8px 10px;
+#       margin: 2px 0;
+#       border-radius: 8px;
+#       color: #1f3b64;
+#       text-decoration: none;
+#       font-weight: 500;
+#     }
+
+#     .icesee-nav a:hover {
+#       background: rgba(13,110,253,.08);
+#     }
+
+#     .icesee-nav a.active {
+#       background: rgba(13,110,253,.12);
+#       color: #0d6efd;
+#       font-weight: 700;
+#     }
+
+#     .icesee-main {
+#       flex: 1 1 auto;
+#       min-width: 0;
+#       padding: 18px;
+#       box-sizing: border-box;
+#     }
+#     </style>
+
+#     <div class="icesee-sidebar">
+#       <h2>ICESEE</h2>
+
+#       <div class="icesee-nav">
+#         <a href="http://127.0.0.1:8080/index.html">Home</a>
+
+#         <div class="icesee-nav-group">Getting Started</div>
+#         <a href="http://127.0.0.1:8080/intro.html">ICESEE on GHUB</a>
+#         <a href="http://127.0.0.1:8080/quickstart.html">Quickstart</a>
+#         <a href="http://127.0.0.1:8080/icesee_workflow.html">ICESEE Workflow Overview</a>
+
+#         <div class="icesee-nav-group">ICESEE-OnLINE</div>
+#         <a class="active" href="http://127.0.0.1:8866/">ICESEE GUI</a>
+#         <a href="http://127.0.0.1:8080/icesee_jupyter_notebooks/icesheet_models.html">ICE-Sheet Modeling</a>
+
+#         <div class="icesee-nav-group">Tutorials</div>
+#         <a href="http://127.0.0.1:8080/icesee_jupyter_notebooks/run_lorenz96_da.html">Tutorial: Lorenz-96</a>
+
+#         <div class="icesee-nav-group">Deployment Notes</div>
+#         <a href="http://127.0.0.1:8080/running_with_containers.html">Running with Containers</a>
+#         <a href="http://127.0.0.1:8080/icesee_hpc_coupling.html">ICESEE-HPC Coupling</a>
+#         <a href="http://127.0.0.1:8080/user_manual.html">User Manual</a>
+#       </div>
+#     </div>
+#     """
+#     return W.HTML(sidebar_html)
+
+# back_link = W.HTML(
+#     '<div style="margin-bottom:12px;">'
+#     '<a href="http://127.0.0.1:8080/" style="font-weight:700; text-decoration:none;">'
+#     '← Back to ICESEE Book'
+#     '</a>'
+#     '</div>'
+# )
+
 def build_sidebar():
     sidebar_html = """
     <style>
@@ -175,36 +271,29 @@ def build_sidebar():
       <h2>ICESEE</h2>
 
       <div class="icesee-nav">
-        <a href="http://127.0.0.1:8080/index.html">Home</a>
+        <a href="/index.html">Home</a>
 
         <div class="icesee-nav-group">Getting Started</div>
-        <a href="http://127.0.0.1:8080/intro.html">ICESEE on GHUB</a>
-        <a href="http://127.0.0.1:8080/quickstart.html">Quickstart</a>
-        <a href="http://127.0.0.1:8080/icesee_workflow.html">ICESEE Workflow Overview</a>
+        <a href="/intro.html">ICESEE on GHUB</a>
+        <a href="/quickstart.html">Quickstart</a>
+        <a href="/icesee_workflow.html">ICESEE Workflow Overview</a>
 
         <div class="icesee-nav-group">ICESEE-OnLINE</div>
-        <a class="active" href="http://127.0.0.1:8866/">ICESEE GUI</a>
-        <a href="http://127.0.0.1:8080/icesee_jupyter_notebooks/icesheet_models.html">ICE-Sheet Modeling</a>
+        <a class="active" href="/voila/render/icesee_jupyter_notebooks/icesee_app.ipynb">ICESEE GUI</a>
+        <a href="/icesee_jupyter_notebooks/icesheet_models.html">ICE-Sheet Modeling</a>
 
         <div class="icesee-nav-group">Tutorials</div>
-        <a href="http://127.0.0.1:8080/icesee_jupyter_notebooks/run_lorenz96_da.html">Tutorial: Lorenz-96</a>
+        <a href="/icesee_jupyter_notebooks/run_lorenz96_da.html">Tutorial: Lorenz-96</a>
 
         <div class="icesee-nav-group">Deployment Notes</div>
-        <a href="http://127.0.0.1:8080/running_with_containers.html">Running with Containers</a>
-        <a href="http://127.0.0.1:8080/icesee_hpc_coupling.html">ICESEE-HPC Coupling</a>
-        <a href="http://127.0.0.1:8080/user_manual.html">User Manual</a>
+        <a href="/running_with_containers.html">Running with Containers</a>
+        <a href="/icesee_hpc_coupling.html">ICESEE-HPC Coupling</a>
+        <a href="/user_manual.html">User Manual</a>
       </div>
     </div>
     """
     return W.HTML(sidebar_html)
 
-# back_link = W.HTML(
-#     '<div style="margin-bottom:12px;">'
-#     '<a href="http://127.0.0.1:8080/" style="font-weight:700; text-decoration:none;">'
-#     '← Back to ICESEE Book'
-#     '</a>'
-#     '</div>'
-# )
 back_link = W.HTML("""
 <style>
 .icesee-back {
@@ -229,7 +318,7 @@ back_link = W.HTML("""
 </style>
 
 <div class="icesee-back-wrap">
-  <a href="http://127.0.0.1:8080/icesee_jupyter_notebooks/run_center.html" class="icesee-back">
+  <a href="/icesee_jupyter_notebooks/run_center.html" class="icesee-back">
     ← Back to ICESEE Run Center
   </a>
 </div>
