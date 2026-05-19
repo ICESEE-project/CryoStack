@@ -534,6 +534,7 @@ def build_icesee_ui():
         cluster_host = W.Text(value="login-phoenix-rh9.pace.gatech.edu", layout=W.Layout(width="320px"))
         cluster_user = W.Text(value=os.environ.get("USER", ""), placeholder="username", layout=W.Layout(width="320px"))
         cluster_port = W.IntText(value=22, layout=W.Layout(width="120px"))
+        cluster_name_for_keys = W.Text(value="pace" , layout=W.Layout(width="320px"))
         
         auth_mode = W.ToggleButtons(
         options=[("Key-only", "key"), ("Bootstrap with password (one-time)", "bootstrap")],
@@ -933,7 +934,7 @@ def build_icesee_ui():
 
             # else: your SSH test (with timeout) as you already fixed
             return run_example_remote_test()
-        connect_btn.on_click(on_test_remote)
+        # connect_btn.on_click(on_test_remote)
 
         def submit_remote(_=None):
             log_out.clear_output()
@@ -1419,13 +1420,15 @@ def build_icesee_ui():
                             print("Open the connector setup page and start the local connector first.")
                         return
 
+                    cluster_name = cluster_name_for_keys.value or "pace"
                     payload = connector_ssh(
                         SESSION["id"],
                         host,
                         user,
                         port,
                         "hostname && whoami && pwd && date",
-                        timeout=30,
+                        timeout=300,
+                        cluster_name=cluster_name,
                     )
 
                     with log_out:
@@ -1808,7 +1811,6 @@ def build_icesee_ui():
         local_tab_card = W.VBox([W.HTML("<div class='icesee-subtle'>Local mode runs directly in this notebook.</div>")])
         local_tab_card.add_class("icesee-card")
 
-        cluster_name_for_keys = W.Text(value="pace" , layout=W.Layout(width="320px"))
         ssh_key_manager = build_ssh_key_manager(
             cluster_name_widget=cluster_name_for_keys,
             host_widget=cluster_host,

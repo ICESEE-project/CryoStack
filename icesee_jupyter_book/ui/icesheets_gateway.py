@@ -589,6 +589,7 @@ def submit_remote_icesheets_via_connector(
     test_mode: bool = False,
     run_file: str = "",
     md_config: dict | None = None,
+    cluster_name: str = "pace",
 ):
     import base64
     import shlex
@@ -605,7 +606,7 @@ def submit_remote_icesheets_via_connector(
     remote_base_input = (remote_base_dir or "").strip() or "~/r-arobel3-0"
 
     resolve_cmd = f'python3 -c "import os; print(os.path.abspath(os.path.expanduser({remote_base_input!r})))"'
-    rbase = connector_ssh(session_id, host, user, port, resolve_cmd, timeout=60)
+    rbase = connector_ssh(session_id, host, user, port, resolve_cmd, timeout=300, cluster_name=cluster_name)
     if not rbase.get("ok"):
         raise RuntimeError(f"Failed to resolve remote base dir:\n{rbase.get('stderr', '')}")
 
@@ -639,7 +640,7 @@ def submit_remote_icesheets_via_connector(
 rm -rf "{remote_run_dir}"
 mkdir -p "{remote_run_dir}"
 '''
-    cres = connector_ssh(session_id, host, user, port, clean_cmd, timeout=300)
+    cres = connector_ssh(session_id, host, user, port, clean_cmd, timeout=300, cluster_name=cluster_name)
     if not cres.get("ok"):
         raise RuntimeError(f"Failed to prepare remote run dir:\n{cres.get('stderr', '')}")
 
@@ -690,7 +691,7 @@ fi
 test -f "{spack_path}/scripts/activate.sh"
 echo "{spack_path}"
 '''
-        eres = connector_ssh(session_id, host, user, port, ensure_cmd, timeout=600)
+        eres = connector_ssh(session_id, host, user, port, ensure_cmd, timeout=600, cluster_name=cluster_name)
         if not eres.get("ok"):
             raise RuntimeError(
                 "Failed to ensure ICESEE-Spack on remote host through connector\n"
@@ -707,7 +708,7 @@ set -e
 cd "{spack_path}"
 bash ./install.sh {install_flag}
 '''
-            ires = connector_ssh(session_id, host, user, port, install_cmd, timeout=7200)
+            ires = connector_ssh(session_id, host, user, port, install_cmd, timeout=7200, cluster_name=cluster_name)
             if not ires.get("ok"):
                 raise RuntimeError(
                     "Remote ICESEE-Spack install failed through connector\n"
@@ -736,7 +737,7 @@ bash ./install.sh {install_flag}
             )
         )
 
-        pres = connector_ssh(session_id, host, user, port, write_post_cmd, timeout=60)
+        pres = connector_ssh(session_id, host, user, port, write_post_cmd, timeout=60, cluster_name=cluster_name)
         if not pres.get("ok"):
             raise RuntimeError(
                 "Failed to write ISSM postprocess script through connector\n"
@@ -1690,6 +1691,7 @@ def build_icesheets_ui():
         cluster_host = W.Text(value="login-phoenix-rh9.pace.gatech.edu", layout=W.Layout(width="320px"))
         cluster_user = W.Text(value=os.environ.get("USER", ""), placeholder="username", layout=W.Layout(width="320px"))
         cluster_port = W.IntText(value=22, layout=W.Layout(width="120px"))
+        cluster_name_for_keys = W.Text(value="pace" , layout=W.Layout(width="320px"))
 
         remote_base_dir = W.Text(value="~/r-arobel3-0", layout=W.Layout(width="320px"))
         remote_tag = W.Text(value="icesheets", layout=W.Layout(width="220px"))
@@ -2837,7 +2839,8 @@ def build_icesheets_ui():
                     user,
                     port,
                     cmd,
-                    timeout=30,
+                    timeout=300,
+                    cluster_name=cluster_name_for_keys.value or "pace",
                 )
 
                 class Result:
@@ -3180,6 +3183,7 @@ def build_icesheets_ui():
                         test_mode=test_mode,
                         run_file=selected_run_file(),
                         md_config=collect_md_config(),
+                        cluster_name=cluster_name_for_keys.value or "pace",
                     )
                 else:
                     result = submit_remote_icesheets(
@@ -3572,7 +3576,8 @@ fi
                         user,
                         port,
                         f"scancel {jobid}",
-                        timeout=30,
+                        timeout=300,
+                        cluster_name=cluster_name_for_keys.value or "pace",
                     )
 
                     with log_out:
@@ -3801,7 +3806,6 @@ fi
         slurm_account_row = form_pair("Acct:", slurm_account, "90px")
         slurm_mail_row = form_pair("Mail:", slurm_mail, "90px")
 
-        cluster_name_for_keys = W.Text(value="pace" , layout=W.Layout(width="320px"))
         ssh_key_manager = build_ssh_key_manager(
             cluster_name_widget=cluster_name_for_keys,
             host_widget=cluster_host,

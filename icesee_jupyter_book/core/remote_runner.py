@@ -681,7 +681,15 @@ def ensure_local_ssh_key(key_type: str = "ed25519") -> tuple[Path, Path]:
     os.chmod(pub, 0o644)
     return priv, pub
 
-def connector_slurm_submit(session_id: str, host: str, user: str, port: int, remote_script: str, timeout: int = 60):
+def connector_slurm_submit(
+    session_id: str,
+    host: str,
+    user: str,
+    port: int,
+    remote_script: str,
+    timeout: int = 60,
+    cluster_name: str = "pace",
+):
     from icesee_jupyter_book.core.connector_relay_client import send_command
 
     res = send_command(
@@ -690,9 +698,10 @@ def connector_slurm_submit(session_id: str, host: str, user: str, port: int, rem
         {
             "host": host,
             "user": user,
-            "port": port,
+            "port": int(port),
             "remote_script": remote_script,
             "timeout": timeout,
+            "cluster_name": cluster_name,
         },
     )
     return relay_result_payload(res)
@@ -894,6 +903,7 @@ def connector_ssh(
     port: int,
     command: str,
     timeout: int = 60,
+    cluster_name: str = "pace",
 ):
     from icesee_jupyter_book.core.connector_relay_client import send_command
 
@@ -906,6 +916,7 @@ def connector_ssh(
             "port": int(port),
             "command": command,
             "timeout": int(timeout),
+            "cluster_name": cluster_name,
         },
     )
     return relay_result_payload(res)
@@ -969,11 +980,9 @@ def bootstrap_passwordless_ssh(
     session_id: str | None = None,
     cluster_name: str = "pace",
 ):
-    messages = []
-
     if access_mode == "connector":
         if not session_id:
-            raise RuntimeError("Connector bootstrap requires a session_id.")
+            raise RuntimeError("Connector bootstrap requested, but no session_id was provided.")
 
         from icesee_jupyter_book.core.connector_relay_client import send_command
 
@@ -983,23 +992,17 @@ def bootstrap_passwordless_ssh(
             {
                 "host": host,
                 "user": user,
-                "port": port,
+                "port": int(port),
                 "password": password,
                 "cluster_name": cluster_name,
+                "timeout": 90,
             },
         )
-        payload = res.get("result", res)
-        payload["messages"] = [
-            "[auth] Connector bootstrap selected.",
-            "[auth] Creating/installing SSH key on the local connector machine.",
-        ]
-        return payload
+
+        return res.get("result", res)
 
     priv, pub = ensure_local_ssh_key(key_type="ed25519")
     pubkey_text = pub.read_text(encoding="utf-8").strip()
-
-    messages.append("[auth] Direct bootstrap selected.")
-    messages.append(f"[auth] Local SSH key ready: {pub}")
 
     remote_install_pubkey_with_password(
         host=host,
@@ -1016,7 +1019,13 @@ def bootstrap_passwordless_ssh(
         "returncode": r.returncode,
         "stdout": r.stdout,
         "stderr": r.stderr,
-        "messages": messages,
+        "private_key": str(priv),
+        "public_key": str(pub),
+        "messages": [
+            "[auth] Local SSH key ready",
+            f"[auth] private key: {priv}",
+            f"[auth] public key : {pub}",
+        ],
     }
     
 def connector_write_text(
@@ -1104,6 +1113,7 @@ def connector_stage_and_submit(
         port,
         f"{remote_dir}/slurm_run.sh",
         timeout=60,
+        cluster_name="pace",
     )
 
     if not sres.get("ok"):
@@ -1654,11 +1664,13 @@ def connector_stage_archive(
     local_example_path: Path,
     remote_run_dir: str,
     timeout: int = 600,
+    cluster_name: str = "pace",
 ):
     import base64
     import tarfile
     import tempfile
     from pathlib import Path
+    from icesee_jupyter_book.core.connector_relay_client import send_command
 
     local_example_path = Path(local_example_path).expanduser().resolve()
     if not local_example_path.exists():
@@ -1678,11 +1690,12 @@ def connector_stage_archive(
         {
             "host": host,
             "user": user,
-            "port": port,
+            "port": int(port),
             "archive_name": f"{local_example_path.name}.tar.gz",
             "archive_b64": archive_b64,
             "remote_dir": remote_run_dir,
-            "timeout": timeout,
+            "timeout": int(timeout),
+            "cluster_name": cluster_name,
         },
     )
 

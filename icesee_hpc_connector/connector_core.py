@@ -242,6 +242,7 @@ async def run_slurm_submit(payload: dict):
         "port": port,
         "command": cmd,
         "timeout": timeout,
+        "cluster_name": payload.get("cluster_name", "pace"),
     })
 
     jobid = None
@@ -545,6 +546,7 @@ echo OK
             "-i", priv,
             "-p", str(port),
             "-o", "BatchMode=yes",
+            "-o", "IdentitiesOnly=yes",
             "-o", "StrictHostKeyChecking=accept-new",
             f"{user}@{host}",
             "hostname && whoami && date",
@@ -561,6 +563,13 @@ echo OK
         "stderr": test.stderr,
         "private_key": priv,
         "public_key": pub,
+        "messages": [
+            "[auth] Connector bootstrap selected.",
+            "[auth] Creating/installing SSH key on the local connector machine.",
+            f"[auth] private key: {priv}",
+            f"[auth] public key : {pub}",
+            "[auth] Testing passwordless SSH through connector.",
+        ],
     }
 
 def main_auto():
