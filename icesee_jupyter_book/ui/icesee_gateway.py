@@ -1758,71 +1758,162 @@ def build_icesee_ui():
             ),
         )
 
+        remote_conn_inner = W.VBox([
+            W.HBox([W.HTML("<div class='icesee-lbl'>Host:</div>"), cluster_host], layout=W.Layout(gap="12px")),
+            W.HBox([
+                form_pair("User:", cluster_user),
+                form_pair("Port:", cluster_port, label_width="56px"),
+            ], layout=W.Layout(gap="16px", width="100%")),
+            W.HBox([W.HTML("<div class='icesee-lbl'>Access:</div>"), access_mode_dd], layout=W.Layout(gap="12px")),
+            W.HBox([
+                form_pair("Remote dir:", remote_base_dir, label_width="90px"),
+                form_pair("Tag:", remote_tag, label_width="56px"),
+            ], layout=W.Layout(gap="16px", width="100%")),
+            relay_status,
+            W.HBox([start_connector_session_btn], layout=W.Layout(gap="10px")),
+            connector_setup_link,
+        ], layout=W.Layout(gap="8px"))
+
+
+        exec_backend_inner = W.VBox([
+            exec_backend_row,
+            container_source_row,
+            container_image_row,
+            spack_enable_row,
+            spack_repo_row,
+            spack_dir_row,
+            spack_install_if_needed_row,
+            spack_install_mode_row,
+            spack_slurm_dir_row,
+            spack_pmix_dir_row,
+            spack_existing_sbatch_row,
+        ], layout=W.Layout(gap="8px"))
+
+
+        slurm_inner = W.VBox([
+            job_time_row,
+            nodes_tasks_tpn_row,
+            part_mem_row,
+            acct_mail_row,
+            mpi_model_row,
+            modules_title,
+            remote_module_lines,
+            exports_title,
+            remote_export_lines,
+        ], layout=W.Layout(gap="8px"))
+
+
+        auth_inner = W.VBox([
+            auth_row,
+            cluster_password_row,
+            bootstrap_btn_row,
+        ], layout=W.Layout(gap="8px"))
+
+        remote_conn_box = W.Accordion(children=[remote_conn_inner])
+        remote_conn_box.set_title(0, "🔌 Remote connection")
+        remote_conn_box.selected_index = None
+
+        exec_backend_box = W.Accordion(children=[exec_backend_inner])
+        exec_backend_box.set_title(0, "⚙️ Execution backend")
+        exec_backend_box.selected_index = None
+
+        slurm_box = W.Accordion(children=[slurm_inner])
+        slurm_box.set_title(0, "📊 Slurm resources")
+        slurm_box.selected_index = None
+
+        auth_box = W.Accordion(children=[auth_inner])
+        auth_box.set_title(0, "🔒 Authentication")
+        auth_box.selected_index = None
+
+        ssh_key_manager_box = W.Accordion(children=[ssh_key_manager])
+        ssh_key_manager_box.set_title(0, "🔐 SSH Key Manager")
+        ssh_key_manager_box.selected_index = None
+
         # Remote panel
-        cluster_panel = W.VBox(
+        remote_box = W.VBox(
             [
                 W.HTML("<div class='icesee-h'>Remote</div>"),
-                W.HTML("<div class='icesee-subtle'>SSH connection</div>"),
-                W.HBox([W.HTML("<div class='icesee-lbl'>Host:</div>"), cluster_host], layout=W.Layout(gap="12px")),
+                remote_conn_box,
+                exec_backend_box,
+                slurm_box,
+                auth_box,
+                ssh_key_manager_box,
                 W.HBox(
-                    [
-                        form_pair("User:", cluster_user),
-                        form_pair("Port:", cluster_port, label_width="56px"),
-                    ],
-                    layout=W.Layout(gap="16px", width="100%"),
+                    [connect_btn, status_btn, tail_btn, terminate_btn],
+                    layout=W.Layout(gap="10px", flex_wrap="wrap"),
                 ),
-                W.HBox(
-                    [W.HTML("<div class='icesee-lbl'>Access:</div>"), access_mode_dd],
-                    layout=W.Layout(gap="12px"),
-                ),
-                relay_status,
-                start_connector_session_btn,
-                connector_setup_link,
-                W.HBox(
-                    [
-                        form_pair("Remote dir:", remote_base_dir, label_width="90px"),
-                        form_pair("Tag:", remote_tag, label_width="56px"),
-                    ],
-                    layout=W.Layout(gap="16px", width="100%"),
-                ),
-
-                W.HTML("<div class='icesee-subtle' style='margin-top:10px'>Execution backend</div>"),
-                exec_backend_row,
-                container_source_row,
-                container_image_row,
-
-                spack_section_title,
-                spack_enable_row,
-                spack_repo_row,
-                spack_dir_row,
-                spack_install_if_needed_row,
-                spack_install_mode_row,
-                spack_slurm_dir_row,
-                spack_pmix_dir_row,
-                spack_existing_sbatch_row,
-
-                remote_controls_row,
-                slurm_section_title,
-                job_time_row,
-                nodes_tasks_tpn_row,
-                part_mem_row,
-                acct_mail_row,
-                mpi_model_row,
-
-                modules_title,
-                remote_module_lines,
-                exports_title,
-                remote_export_lines,
-                auth_title,
-                auth_row,
-                ssh_key_title,
-                ssh_key_manager,
-                cluster_password_row,
-                bootstrap_btn_row,
+                # W.HBox(
+                #     [preview_results_btn, results_download_btn],
+                #     layout=W.Layout(gap="10px", flex_wrap="wrap"),
+                # ),
             ],
             layout=W.Layout(gap="8px"),
         )
-        cluster_panel.add_class("icesee-card")
+
+        # remote_box = W.VBox(
+        #     [
+        #         W.HTML("<div class='icesee-h'>Remote</div>"),
+        #         W.HTML("<div class='icesee-subtle'>SSH connection</div>"),
+        #         W.HBox([W.HTML("<div class='icesee-lbl'>Host:</div>"), cluster_host], layout=W.Layout(gap="12px")),
+        #         W.HBox(
+        #             [
+        #                 form_pair("User:", cluster_user),
+        #                 form_pair("Port:", cluster_port, label_width="56px"),
+        #             ],
+        #             layout=W.Layout(gap="16px", width="100%"),
+        #         ),
+        #         W.HBox(
+        #             [W.HTML("<div class='icesee-lbl'>Access:</div>"), access_mode_dd],
+        #             layout=W.Layout(gap="12px"),
+        #         ),
+        #         relay_status,
+        #         start_connector_session_btn,
+        #         connector_setup_link,
+        #         W.HBox(
+        #             [
+        #                 form_pair("Remote dir:", remote_base_dir, label_width="90px"),
+        #                 form_pair("Tag:", remote_tag, label_width="56px"),
+        #             ],
+        #             layout=W.Layout(gap="16px", width="100%"),
+        #         ),
+
+        #         W.HTML("<div class='icesee-subtle' style='margin-top:10px'>Execution backend</div>"),
+        #         exec_backend_row,
+        #         container_source_row,
+        #         container_image_row,
+
+        #         spack_section_title,
+        #         spack_enable_row,
+        #         spack_repo_row,
+        #         spack_dir_row,
+        #         spack_install_if_needed_row,
+        #         spack_install_mode_row,
+        #         spack_slurm_dir_row,
+        #         spack_pmix_dir_row,
+        #         spack_existing_sbatch_row,
+
+        #         remote_controls_row,
+        #         slurm_section_title,
+        #         job_time_row,
+        #         nodes_tasks_tpn_row,
+        #         part_mem_row,
+        #         acct_mail_row,
+        #         mpi_model_row,
+
+        #         modules_title,
+        #         remote_module_lines,
+        #         exports_title,
+        #         remote_export_lines,
+        #         auth_title,
+        #         auth_row,
+        #         ssh_key_title,
+        #         ssh_key_manager,
+        #         cluster_password_row,
+        #         bootstrap_btn_row,
+        #     ],
+        #     layout=W.Layout(gap="8px"),
+        # )
+        # remote_box.add_class("icesee-card")
 
         # Cloud panel
         cloud_panel = W.VBox(
@@ -1842,13 +1933,13 @@ def build_icesee_ui():
         )
         cloud_panel.add_class("icesee-card")
 
-        mode_tabs.children = [local_tab_card, cluster_panel, cloud_panel]
+        mode_tabs.children = [local_tab_card, remote_box, cloud_panel]
         mode_tabs.set_title(0, "Local (GHUB)")
         mode_tabs.set_title(1, "Remote")
         mode_tabs.set_title(2, "Cloud")
 
         local_tab_card.layout = W.Layout(width="100%")
-        cluster_panel.layout   = W.Layout(width="100%")
+        remote_box.layout   = W.Layout(width="100%")
         cloud_panel.layout     = W.Layout(width="100%")
 
         def _toggle_panels_from_tabs(_=None):
