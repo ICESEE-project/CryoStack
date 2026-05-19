@@ -1836,8 +1836,9 @@ def build_icesheets_ui():
                     user=user,
                     port=port,
                     password=password,
-                    access_mode="connector" if use_connector else "direct",
+                    access_mode="connector" if access_mode_dd.value == "connector" else "direct",
                     session_id=SESSION.get("id"),
+                    cluster_name=cluster_name_for_keys.value or "pace",
                 )
 
                 with log_out:

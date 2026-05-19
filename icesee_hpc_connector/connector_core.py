@@ -5,6 +5,7 @@ import asyncio
 import json
 import shlex
 # from jupyter_server_terminals import msg
+from click import command
 import requests
 import subprocess
 
@@ -65,6 +66,10 @@ async def run_subprocess(cmd: list[str], timeout: int = 300):
             "command": " ".join(shlex.quote(x) for x in cmd),
         }
     
+def ssh_identity_args(cluster_name="pace"):
+    priv, _ = ensure_local_ssh_key(cluster_name=cluster_name)
+    return ["-i", priv]
+    
 async def run_ssh(payload: dict):
     host = payload["host"]
     user = payload["user"]
@@ -72,10 +77,14 @@ async def run_ssh(payload: dict):
     command = payload["command"]
     timeout = int(payload.get("timeout", 60))
 
+    cluster_name = payload.get("cluster_name", "pace")
+
     ssh_cmd = [
         "ssh",
+        *ssh_identity_args(cluster_name),
         "-p", str(port),
         "-o", "BatchMode=yes",
+        "-o", "IdentitiesOnly=yes",
         "-o", "StrictHostKeyChecking=accept-new",
         f"{user}@{host}",
         command,
@@ -115,7 +124,9 @@ async def run_rsync_download(payload: dict):
 
     cmd = [
         "rsync", "-az",
-        "-e", f"ssh -p {port} -o BatchMode=yes -o StrictHostKeyChecking=accept-new",
+        "-e", f"ssh -i {shlex.quote(ensure_local_ssh_key(payload.get('cluster_name', 'pace'))[0])} "
+        f"-p {port} -o BatchMode=yes -o IdentitiesOnly=yes "
+        f"-o StrictHostKeyChecking=accept-new",
         f"{user}@{host}:{remote_path}",
         local_path,
     ]
@@ -143,6 +154,9 @@ async def handle_command(command_type: str, payload: dict):
 
     if command_type == "fetch-archive":
         return await run_fetch_archive(payload)
+    
+    elif command_type == "bootstrap-passwordless-ssh":
+        return await bootstrap_passwordless_ssh_local(payload)
 
     return {
         "ok": False,
@@ -204,7 +218,9 @@ async def run_rsync_upload(payload: dict):
 
     cmd = [
         "rsync", "-az",
-        "-e", f"ssh -p {port} -o BatchMode=yes -o StrictHostKeyChecking=accept-new",
+        "-e", f"ssh -i {shlex.quote(ensure_local_ssh_key(payload.get('cluster_name', 'pace'))[0])} "
+        f"-p {port} -o BatchMode=yes -o IdentitiesOnly=yes "
+        f"-o StrictHostKeyChecking=accept-new",
         local_path,
         f"{user}@{host}:{remote_path}",
     ]
@@ -272,7 +288,9 @@ async def run_stage_archive(payload: dict):
                     "rsync",
                     "-az",
                     "-e",
-                    f"ssh -p {port} -o BatchMode=yes -o StrictHostKeyChecking=accept-new",
+                    f"ssh -i {shlex.quote(ensure_local_ssh_key(payload.get('cluster_name', 'pace'))[0])} "
+                    f"-p {port} -o BatchMode=yes -o IdentitiesOnly=yes "
+                    f"-o StrictHostKeyChecking=accept-new",
                     str(archive_path),
                     f"{user}@{host}:{remote_dir}/",
                 ],
@@ -322,7 +340,9 @@ async def run_fetch_archive(payload: dict):
                     "rsync",
                     "-az",
                     "-e",
-                    f"ssh -p {port} -o BatchMode=yes -o StrictHostKeyChecking=accept-new",
+                    f"ssh -i {shlex.quote(ensure_local_ssh_key(payload.get('cluster_name', 'pace'))[0])} "
+                    f"-p {port} -o BatchMode=yes -o IdentitiesOnly=yes "
+                    f"-o StrictHostKeyChecking=accept-new",
                     f"{user}@{host}:{remote_path}",
                     f"{local_dir}/",
                 ],
@@ -471,6 +491,77 @@ def ensure_local_ssh_key(cluster_name="pace", key_type="ed25519"):
         os.chmod(pub, 0o644)
 
     return str(priv), str(pub)
+
+async def bootstrap_passwordless_ssh_local(payload):
+    import paramiko
+    import subprocess
+
+    host = payload["host"]
+    user = payload["user"]
+    port = int(payload.get("port", 22))
+    password = payload["password"]
+    cluster_name = payload.get("cluster_name", "pace")
+
+    priv, pub = ensure_local_ssh_key(cluster_name=cluster_name)
+    pubkey_text = open(pub, "r", encoding="utf-8").read().strip()
+
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.connect(
+        hostname=host,
+        port=port,
+        username=user,
+        password=password,
+        look_for_keys=False,
+        allow_agent=False,
+        timeout=25,
+        banner_timeout=25,
+        auth_timeout=25,
+    )
+
+    quoted_key = shlex.quote(pubkey_text)
+
+    cmd = f"""
+set -e
+mkdir -p ~/.ssh
+chmod 700 ~/.ssh
+touch ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+grep -Fqx {quoted_key} ~/.ssh/authorized_keys || echo {quoted_key} >> ~/.ssh/authorized_keys
+echo OK
+"""
+    stdin, stdout, stderr = client.exec_command(cmd)
+    out = stdout.read().decode()
+    err = stderr.read().decode()
+    rc = stdout.channel.recv_exit_status()
+    client.close()
+
+    if rc != 0:
+        return {"ok": False, "stdout": out, "stderr": err, "private_key": priv, "public_key": pub}
+
+    test = subprocess.run(
+        [
+            "ssh",
+            "-i", priv,
+            "-p", str(port),
+            "-o", "BatchMode=yes",
+            "-o", "StrictHostKeyChecking=accept-new",
+            f"{user}@{host}",
+            "hostname && whoami && date",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=25,
+    )
+
+    return {
+        "ok": test.returncode == 0,
+        "returncode": test.returncode,
+        "stdout": test.stdout,
+        "stderr": test.stderr,
+        "private_key": priv,
+        "public_key": pub,
+    }
 
 def main_auto():
     run_connector(relay=DEFAULT_RELAY, poll=True)
