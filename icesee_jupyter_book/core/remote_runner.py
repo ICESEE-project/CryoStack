@@ -967,77 +967,39 @@ def bootstrap_passwordless_ssh(
     password: str,
     access_mode: str = "direct",
     session_id: str | None = None,
-    key_type: str = "ed25519",
-) -> dict:
-    """
-    Generate a local SSH key if needed, install the public key on the remote host,
-    then verify passwordless SSH.
-
-    access_mode:
-      - "direct": install via direct SSH/password using Paramiko
-      - "connector": install through local connector/VPN bridge
-    """
-
-    if not host or not user:
-        raise ValueError("Provide Host + User first.")
-
-    if not password:
-        raise ValueError("Password is required for one-time bootstrap.")
-
-    priv, pub = ensure_local_ssh_key(key_type=key_type)
-    pubkey_text = pub.read_text(encoding="utf-8").strip()
-
-    messages = [
-        "[auth] Local SSH key ready",
-        f"[auth] private key: {priv}",
-        f"[auth] public key : {pub}",
-    ]
+    cluster_name: str = "pace",
+):
+    messages = []
 
     if access_mode == "connector":
         if not session_id:
-            raise ValueError("Connector session_id is required for connector bootstrap.")
+            raise RuntimeError("Connector bootstrap requires a session_id.")
 
-        install = connector_install_pubkey_with_password(
-            session_id=session_id,
-            host=host,
-            user=user,
-            port=port,
-            password=password,
-            pubkey_text=pubkey_text,
-            timeout=60,
+        from icesee_jupyter_book.core.connector_relay_client import send_command
+
+        res = send_command(
+            session_id,
+            "bootstrap-passwordless-ssh",
+            {
+                "host": host,
+                "user": user,
+                "port": port,
+                "password": password,
+                "cluster_name": cluster_name,
+            },
         )
+        payload = res.get("result", res)
+        payload["messages"] = [
+            "[auth] Connector bootstrap selected.",
+            "[auth] Creating/installing SSH key on the local connector machine.",
+        ]
+        return payload
 
-        if not install.get("ok"):
-            return {
-                "ok": False,
-                "mode": "connector",
-                "private_key": str(priv),
-                "public_key": str(pub),
-                "messages": messages + ["[auth][ERROR] Connector key installation failed."],
-                "stdout": install.get("stdout", ""),
-                "stderr": install.get("stderr", ""),
-                "raw": install,
-            }
+    priv, pub = ensure_local_ssh_key(key_type="ed25519")
+    pubkey_text = pub.read_text(encoding="utf-8").strip()
 
-        verify = connector_ssh(
-            session_id=session_id,
-            host=host,
-            user=user,
-            port=port,
-            command="hostname && whoami && date",
-            timeout=30,
-        )
-
-        return {
-            "ok": bool(verify.get("ok")),
-            "mode": "connector",
-            "private_key": str(priv),
-            "public_key": str(pub),
-            "messages": messages + ["[auth] Connector bootstrap completed."],
-            "stdout": verify.get("stdout", ""),
-            "stderr": verify.get("stderr", ""),
-            "raw": verify,
-        }
+    messages.append("[auth] Direct bootstrap selected.")
+    messages.append(f"[auth] Local SSH key ready: {pub}")
 
     remote_install_pubkey_with_password(
         host=host,
@@ -1047,19 +1009,16 @@ def bootstrap_passwordless_ssh(
         pubkey_text=pubkey_text,
     )
 
-    verify = ssh_run(host, user, port, "hostname && whoami && date", timeout=20)
+    r = ssh_run(host, user, port, "hostname && whoami && date", timeout=20)
 
     return {
-        "ok": verify.returncode == 0,
-        "mode": "direct",
-        "private_key": str(priv),
-        "public_key": str(pub),
-        "messages": messages + ["[auth] Direct SSH bootstrap completed."],
-        "stdout": verify.stdout,
-        "stderr": verify.stderr,
-        "returncode": verify.returncode,
+        "ok": r.returncode == 0,
+        "returncode": r.returncode,
+        "stdout": r.stdout,
+        "stderr": r.stderr,
+        "messages": messages,
     }
-
+    
 def connector_write_text(
     session_id: str,
     host: str,
