@@ -443,6 +443,34 @@ def run_connector(
         import time
         time.sleep(poll_seconds)
 
+def ensure_local_ssh_key(cluster_name="pace", key_type="ed25519"):
+    from pathlib import Path
+    import subprocess, os, getpass
+
+    ssh_dir = Path.home() / ".ssh"
+    ssh_dir.mkdir(parents=True, exist_ok=True)
+    os.chmod(ssh_dir, 0o700)
+
+    priv = ssh_dir / f"id_{key_type}_icesee_{cluster_name}"
+    pub = Path(str(priv) + ".pub")
+
+    if not priv.exists() or not pub.exists():
+        subprocess.run(
+            [
+                "ssh-keygen",
+                "-t", key_type,
+                "-f", str(priv),
+                "-N", "",
+                "-C", f"icesee-{cluster_name}-{getpass.getuser()}",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        os.chmod(priv, 0o600)
+        os.chmod(pub, 0o644)
+
+    return str(priv), str(pub)
 
 def main_auto():
     run_connector(relay=DEFAULT_RELAY, poll=True)
