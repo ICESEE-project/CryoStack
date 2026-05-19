@@ -48,6 +48,11 @@ from icesee_jupyter_book.core.remote_runner import (
     remote_cancel_job,
     submit_remote_example,
     submit_remote_example_container,
+    bootstrap_passwordless_ssh,
+    connector_ssh,
+    connector_fetch_archive,
+    submit_remote_example_via_connector,
+    submit_remote_example_container_via_connector,
     RemoteSubmitResult,
 )
 from icesee_jupyter_book.core.cloud_runner import (
@@ -123,45 +128,45 @@ def refresh_results_preview(rd: Path, results_out: W.Output):
         else:
             print("\nNo figures found yet.")
 
-def relay_result_payload(result: dict) -> dict:
-    return result.get("result", result)
+# def relay_result_payload(result: dict) -> dict:
+#     return result.get("result", result)
 
 
-def connector_ssh(session_id: str, host: str, user: str, port: int, command: str, timeout: int = 60):
-    res = send_command(
-        session_id,
-        "ssh-run",
-        {
-            "host": host,
-            "user": user,
-            "port": port,
-            "command": command,
-            "timeout": timeout,
-        },
-    )
-    return relay_result_payload(res)
+# def connector_ssh(session_id: str, host: str, user: str, port: int, command: str, timeout: int = 60):
+#     res = send_command(
+#         session_id,
+#         "ssh-run",
+#         {
+#             "host": host,
+#             "user": user,
+#             "port": port,
+#             "command": command,
+#             "timeout": timeout,
+#         },
+#     )
+#     return relay_result_payload(res)
 
 
-def connector_fetch_archive(
-    session_id: str,
-    host: str,
-    user: str,
-    port: int,
-    remote_path: str,
-    timeout: int = 600,
-):
-    res = send_command(
-        session_id,
-        "fetch-archive",
-        {
-            "host": host,
-            "user": user,
-            "port": port,
-            "remote_path": remote_path,
-            "timeout": timeout,
-        },
-    )
-    return relay_result_payload(res)
+# def connector_fetch_archive(
+#     session_id: str,
+#     host: str,
+#     user: str,
+#     port: int,
+#     remote_path: str,
+#     timeout: int = 600,
+# ):
+#     res = send_command(
+#         session_id,
+#         "fetch-archive",
+#         {
+#             "host": host,
+#             "user": user,
+#             "port": port,
+#             "remote_path": remote_path,
+#             "timeout": timeout,
+#         },
+#     )
+#     return relay_result_payload(res)
 
 
 def make_zip_from_dir(src_dir: Path, zip_path: Path):
@@ -1007,59 +1012,112 @@ def build_icesee_ui():
                     pass
             return h
     
+        # def on_bootstrap_keys(_=None):
+        #     log_out.clear_output()
+        #     set_status("running")
+
+        #     host = cluster_host.value.strip()
+        #     user = cluster_user.value.strip()
+        #     port = int(cluster_port.value)
+        #     pw   = cluster_password.value
+
+        #     if not host or not user:
+        #         set_status("fail")
+        #         with log_out:
+        #             print("[auth][ERROR] Provide Host + User first.")
+        #         return
+        #     if not pw:
+        #         set_status("fail")
+        #         with log_out:
+        #             print("[auth][ERROR] Enter your password (used once; not stored).")
+        #         return
+
+        #     try:
+        #         # 1) ensure local keypair exists
+        #         priv, pub = ensure_local_ssh_key(key_type="ed25519")
+        #         pubkey_text = pub.read_text(encoding="utf-8").strip()
+
+        #         with log_out:
+        #             print("[auth] Installing public key to remote authorized_keys…")
+
+        #         # 2) install pubkey using password auth
+        #         remote_install_pubkey_with_password(
+        #             host=host, user=user, port=port,
+        #             password=pw, pubkey_text=pubkey_text
+        #         )
+
+        #         # 3) verify system ssh works (BatchMode)
+        #         with log_out:
+        #             print("[auth] Verifying non-interactive SSH…")
+        #         r = ssh_run(host, user, port, "hostname && whoami && date", timeout=15)
+
+        #         if r.returncode == 0:
+        #             set_status("done")
+        #             with log_out:
+        #                 print("[auth] ✅ Passwordless SSH is working. You can switch back to Key-only.")
+        #             # Optional: flip auth mode back
+        #             auth_mode.value = "key"
+        #             cluster_password.value = ""
+        #         else:
+        #             set_status("fail")
+        #             with log_out:
+        #                 print("[auth][ERROR] Key install ran, but BatchMode SSH still failed.")
+        #                 print("stdout:", (r.stdout or "").strip())
+        #                 print("stderr:", (r.stderr or "").strip())
+        #                 print("hint :", explain_ssh_failure_hint(r.stderr or ""))
+
+        #     except Exception as e:
+        #         set_status("fail")
+        #         with log_out:
+        #             print("[auth][ERROR]", type(e).__name__, e)
+
         def on_bootstrap_keys(_=None):
             log_out.clear_output()
             set_status("running")
 
-            host = cluster_host.value.strip()
-            user = cluster_user.value.strip()
-            port = int(cluster_port.value)
-            pw   = cluster_password.value
-
-            if not host or not user:
-                set_status("fail")
-                with log_out:
-                    print("[auth][ERROR] Provide Host + User first.")
-                return
-            if not pw:
-                set_status("fail")
-                with log_out:
-                    print("[auth][ERROR] Enter your password (used once; not stored).")
-                return
-
             try:
-                # 1) ensure local keypair exists
-                priv, pub = ensure_local_ssh_key(key_type="ed25519")
-                pubkey_text = pub.read_text(encoding="utf-8").strip()
+                if access_mode_dd.value == "connector":
+                    if not SESSION.get("id"):
+                        create_or_refresh_connector_session()
 
-                with log_out:
-                    print("[auth] Installing public key to remote authorized_keys…")
+                    st = relay_check_status(SESSION["id"])
+                    if not st.get("online"):
+                        set_status("fail")
+                        with log_out:
+                            print("[connector][ERROR] Connector session is not online.")
+                        return
 
-                # 2) install pubkey using password auth
-                remote_install_pubkey_with_password(
-                    host=host, user=user, port=port,
-                    password=pw, pubkey_text=pubkey_text
+                result = bootstrap_passwordless_ssh(
+                    host=cluster_host.value.strip(),
+                    user=cluster_user.value.strip(),
+                    port=int(cluster_port.value),
+                    password=cluster_password.value,
+                    access_mode="connector" if access_mode_dd.value == "connector" else "direct",
+                    session_id=SESSION.get("id"),
                 )
 
-                # 3) verify system ssh works (BatchMode)
                 with log_out:
-                    print("[auth] Verifying non-interactive SSH…")
-                r = ssh_run(host, user, port, "hostname && whoami && date", timeout=15)
+                    for msg in result.get("messages", []):
+                        print(msg)
 
-                if r.returncode == 0:
+                    if result.get("stdout"):
+                        print("--- stdout ---")
+                        print(result["stdout"].strip())
+
+                    if result.get("stderr"):
+                        print("--- stderr ---")
+                        print(result["stderr"].strip())
+
+                if result.get("ok"):
                     set_status("done")
-                    with log_out:
-                        print("[auth] ✅ Passwordless SSH is working. You can switch back to Key-only.")
-                    # Optional: flip auth mode back
                     auth_mode.value = "key"
                     cluster_password.value = ""
+                    with log_out:
+                        print("[auth] ✅ Passwordless SSH is working.")
                 else:
                     set_status("fail")
                     with log_out:
-                        print("[auth][ERROR] Key install ran, but BatchMode SSH still failed.")
-                        print("stdout:", (r.stdout or "").strip())
-                        print("stderr:", (r.stderr or "").strip())
-                        print("hint :", explain_ssh_failure_hint(r.stderr or ""))
+                        print("[auth][ERROR] Bootstrap failed.")
 
             except Exception as e:
                 set_status("fail")
@@ -1153,6 +1211,24 @@ def build_icesee_ui():
                 print("-" * 70)
 
             try:
+
+                use_connector = access_mode_dd.value == "connector"
+
+                if access_mode_dd.value == "auto":
+                    direct = remote_test_connection(host, user, port)
+                    use_connector = not direct.get("ok", False)
+
+                if use_connector:
+                    if not SESSION.get("id"):
+                        create_or_refresh_connector_session()
+
+                    st = relay_check_status(SESSION["id"])
+                    if not st.get("online"):
+                        set_status("fail")
+                        with log_out:
+                            print("[connector][ERROR] Connector session is not online.")
+                        return
+    
                 example_cfg = EXAMPLES[example_dd.value]
 
                 sync_quick_into_widgets()
@@ -1160,7 +1236,41 @@ def build_icesee_ui():
                 params_text = yaml.safe_dump(cfg_yaml, sort_keys=False)
 
                 if exec_backend_choice.value == "spack":
-                    result = submit_remote_example(
+                    if use_connector:
+                        result = submit_remote_example_via_connector(
+                            session_id=SESSION["id"],
+                            host=host,
+                            user=user,
+                            port=port,
+                            example_cfg=example_cfg,
+                            params_text=params_text,
+                            remote_base_dir=remote_base_dir.value,
+                            remote_tag=remote_tag.value,
+                            spack_enable=spack_enable.value,
+                            spack_repo_url=spack_repo_url.value,
+                            spack_dirname=spack_dirname.value,
+                            spack_install_if_needed=spack_install_if_needed.value,
+                            spack_install_mode=spack_install_mode.value,
+                            spack_slurm_dir=spack_slurm_dir.value,
+                            spack_pmix_dir=spack_pmix_dir.value,
+                            spack_use_existing_sbatch=spack_use_existing_sbatch.value,
+                            slurm_time=slurm_time.value,
+                            slurm_job_name=slurm_job_name.value,
+                            slurm_nodes=slurm_nodes.value,
+                            slurm_ntasks=slurm_ntasks.value,
+                            slurm_tpn=slurm_tpn.value,
+                            slurm_part=slurm_part.value,
+                            slurm_mem=slurm_mem.value,
+                            slurm_account=slurm_account.value,
+                            slurm_mail=slurm_mail.value,
+                            remote_module_lines=remote_module_lines.value,
+                            remote_export_lines=remote_export_lines.value,
+                            cluster_mpi_np=cluster_mpi_np.value,
+                            ens_size=ens_sl.value,
+                            cluster_model_nprocs=cluster_model_nprocs.value,
+                        )
+                    else:
+                        result = submit_remote_example(
                         host=host,
                         user=user,
                         port=port,
@@ -1192,33 +1302,63 @@ def build_icesee_ui():
                         cluster_model_nprocs=cluster_model_nprocs.value,
                     )
                 else:
-                    result = submit_remote_example_container(
-                        host=host,
-                        user=user,
-                        port=port,
-                        example_cfg=example_cfg,
-                        params_text=params_text,
-                        remote_base_dir=remote_base_dir.value,
-                        remote_tag=remote_tag.value,
-                        spack_repo_url=spack_repo_url.value,
-                        spack_dirname=spack_dirname.value,
-                        slurm_time=slurm_time.value,
-                        slurm_job_name=slurm_job_name.value,
-                        slurm_nodes=slurm_nodes.value,
-                        slurm_ntasks=slurm_ntasks.value,
-                        slurm_tpn=slurm_tpn.value,
-                        slurm_part=slurm_part.value,
-                        slurm_mem=slurm_mem.value,
-                        slurm_account=slurm_account.value,
-                        slurm_mail=slurm_mail.value,
-                        remote_module_lines=remote_module_lines.value,
-                        remote_export_lines=remote_export_lines.value,
-                        cluster_mpi_np=cluster_mpi_np.value,
-                        ens_size=ens_sl.value,
-                        cluster_model_nprocs=cluster_model_nprocs.value,
-                        container_source=container_source.value,
-                        container_image_uri=container_image_uri.value,
-                    )
+                    if use_connector:
+                        result = submit_remote_example_container_via_connector(
+                            session_id=SESSION["id"],
+                            host=host,
+                            user=user,
+                            port=port,
+                            example_cfg=example_cfg,
+                            params_text=params_text,
+                            remote_base_dir=remote_base_dir.value,
+                            remote_tag=remote_tag.value,
+                            spack_repo_url=spack_repo_url.value,
+                            spack_dirname=spack_dirname.value,
+                            slurm_time=slurm_time.value,
+                            slurm_job_name=slurm_job_name.value,
+                            slurm_nodes=slurm_nodes.value,
+                            slurm_ntasks=slurm_ntasks.value,
+                            slurm_tpn=slurm_tpn.value,
+                            slurm_part=slurm_part.value,
+                            slurm_mem=slurm_mem.value,
+                            slurm_account=slurm_account.value,
+                            slurm_mail=slurm_mail.value,
+                            remote_module_lines=remote_module_lines.value,
+                            remote_export_lines=remote_export_lines.value,
+                            cluster_mpi_np=cluster_mpi_np.value,
+                            ens_size=ens_sl.value,
+                            cluster_model_nprocs=cluster_model_nprocs.value,
+                            container_source=container_source.value,
+                            container_image_uri=container_image_uri.value,
+                        )
+                    else:
+                        result = submit_remote_example_container(
+                            host=host,
+                            user=user,
+                            port=port,
+                            example_cfg=example_cfg,
+                            params_text=params_text,
+                            remote_base_dir=remote_base_dir.value,
+                            remote_tag=remote_tag.value,
+                            spack_repo_url=spack_repo_url.value,
+                            spack_dirname=spack_dirname.value,
+                            slurm_time=slurm_time.value,
+                            slurm_job_name=slurm_job_name.value,
+                            slurm_nodes=slurm_nodes.value,
+                            slurm_ntasks=slurm_ntasks.value,
+                            slurm_tpn=slurm_tpn.value,
+                            slurm_part=slurm_part.value,
+                            slurm_mem=slurm_mem.value,
+                            slurm_account=slurm_account.value,
+                            slurm_mail=slurm_mail.value,
+                            remote_module_lines=remote_module_lines.value,
+                            remote_export_lines=remote_export_lines.value,
+                            cluster_mpi_np=cluster_mpi_np.value,
+                            ens_size=ens_sl.value,
+                            cluster_model_nprocs=cluster_model_nprocs.value,
+                            container_source=container_source.value,
+                            container_image_uri=container_image_uri.value,
+                        )
 
                 STATUS["remote_dir"] = result.remote_dir
                 STATUS["jobid"] = result.jobid

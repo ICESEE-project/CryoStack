@@ -8,6 +8,11 @@ import os
 import re
 import time
 import json
+import base64
+import tarfile
+import tempfile
+import zipfile
+import shutil
 import getpass
 import subprocess
 from pathlib import Path
@@ -38,6 +43,9 @@ def resolve_remote_abs_path(host: str, user: str, port: int, remote_path: str) -
     if rc != 0 or not resolved:
         raise RuntimeError(f"Could not resolve remote absolute path: {remote_path}\n{err or out}")
     return resolved
+
+def relay_result_payload(result: dict) -> dict:
+    return result.get("result", result)
 
 def submit_remote_example(
     *,
@@ -673,6 +681,21 @@ def ensure_local_ssh_key(key_type: str = "ed25519") -> tuple[Path, Path]:
     os.chmod(pub, 0o644)
     return priv, pub
 
+def connector_slurm_submit(session_id: str, host: str, user: str, port: int, remote_script: str, timeout: int = 60):
+    from icesee_jupyter_book.core.connector_relay_client import send_command
+
+    res = send_command(
+        session_id,
+        "slurm-submit",
+        {
+            "host": host,
+            "user": user,
+            "port": port,
+            "remote_script": remote_script,
+            "timeout": timeout,
+        },
+    )
+    return relay_result_payload(res)
 
 def _paramiko_connect_password(host: str, user: str, port: int, password: str, timeout: int = 20):
     try:
@@ -864,178 +887,802 @@ def remote_cancel_job(host: str, user: str, port: int, jobid: str) -> dict:
         "ok": (r.returncode == 0),
     }
 
-# def remote_test():
-#     log_out.clear_output()
-#     set_status("running")
+def connector_ssh(
+    session_id: str,
+    host: str,
+    user: str,
+    port: int,
+    command: str,
+    timeout: int = 60,
+):
+    from icesee_jupyter_book.core.connector_relay_client import send_command
 
-#     if remote_backend.value == "ssh":
-#         return run_example_remote_test()
-
-#     with log_out:
-#         print("[remote:https] Testing health endpoint…")
-#         print("base:", https_base.value.strip())
-#     try:
-#         url = _https_url(https_health_path)
-#         code, j, txt = http_json("GET", url, headers=_extra_headers(), timeout=15)
-#         with log_out:
-#             print("GET", url)
-#             print("status:", code)
-#             print("json:", j)
-#             if txt and not j:
-#                 print("text:", txt[:4000])
-#         set_status("done" if 200 <= code < 300 else "fail")
-#     except Exception as e:
-#         set_status("fail")
-#         with log_out:
-#             print("[remote:https][ERROR]", type(e).__name__, e)
-
-# def remote_submit():
-#     log_out.clear_output()
-#     set_status("running")
-
-#     if remote_backend.value == "ssh":
-#         return run_example_remote_submit()
-
-#     # Build job request
-#     example_cfg = EXAMPLES[example_dd.value]
-#     sync_quick_into_widgets()
-#     cfg_yaml = build_config_from_widgets()
-
-#     rd = run_dir()
-#     params_path = rd / "params.yaml"
-#     dump_yaml(cfg_yaml, params_path)
-
-#     # Optional: generate slurm script (still useful for many services)
-#     slurm_text = render_slurm_script(
-#         dict(
-#             TIME=slurm_time.value.strip(),
-#             JOB_NAME=slurm_job_name.value.strip() or "ICESEE",
-#             NODES=int(slurm_nodes.value),
-#             NTASKS=int(slurm_ntasks.value),
-#             TPN=int(slurm_tpn.value),
-#             PARTITION=slurm_part.value.strip(),
-#             MEM=slurm_mem.value.strip(),
-#             ACCOUNT=(slurm_account.value.strip() or ""),
-#             OUTFILE="icesee-enkf-%j.out",
-#             MAIL_USER=(slurm_mail.value.strip() or ""),
-#             MODULE_LINES=remote_module_lines.value.rstrip(),
-#             EXPORT_LINES=remote_export_lines.value.rstrip(),
-#             RUN_LAUNCH_LINE=(
-#                 f"mpirun -np {int(cluster_mpi_np.value)} "
-#                 f"python3 {find_run_script(example_cfg).name} "
-#                 f"-F params.yaml --Nens={int(ens_sl.value)} --model_nprocs={int(cluster_model_nprocs.value)}"
-#             ),
-#         )
-#     )
-#     if "{{" in slurm_text or "}}" in slurm_text:
-#         raise RuntimeError("SLURM_TEMPLATE render left unresolved placeholders. Check keys passed to render_slurm_script().")
-    
-
-#     payload = {
-#         "kind": "icesee-run",
-#         "created_at": datetime.utcnow().isoformat() + "Z",
-#         "example": example_dd.value,
-#         "run_script": find_run_script(example_cfg).name,
-#         "params_yaml": params_path.read_text(encoding="utf-8"),
-#         "slurm_script": slurm_text,  # optional; service may ignore
-#         "metadata": {
-#             "repo": str(REPO),
-#             "tag": remote_tag.value.strip(),
-#         },
-#     }
-
-#     with log_out:
-#         print("[remote:https] Submitting to webhook…")
-#         print("example:", payload["example"])
-#         print("endpoint:", _https_url(https_submit_path))
-#         print("-" * 70)
-
-#     try:
-#         url = _https_url(https_submit_path)
-#         code, j, txt = http_json("POST", url, payload=payload, headers=_extra_headers(), timeout=30)
-#         if not (200 <= code < 300):
-#             raise RuntimeError(f"HTTP {code}: {txt[:2000]}")
-#         run_id = (j or {}).get("run_id") or (j or {}).get("id")
-#         if not run_id:
-#             raise RuntimeError(f"No run_id in response. Response json={j}, text={txt[:2000]}")
-
-#         STATUS["run_id"] = run_id
-#         STATUS["remote_mode"] = "https"
-
-#         set_status("done")
-#         with log_out:
-#             print("[remote:https] ✅ Submitted")
-#             print("run_id:", run_id)
-#             if (j or {}).get("url"):
-#                 print("url  :", (j or {}).get("url"))
-#     except Exception as e:
-#         set_status("fail")
-#         with log_out:
-#             print("[remote:https][ERROR]", type(e).__name__, e)
-
-# def remote_status():
-#     log_out.clear_output()
-#     set_status("running")
-
-#     if remote_backend.value == "ssh":
-#         return run_example_remote_status()
-
-#     run_id = STATUS.get("run_id")
-#     if not run_id:
-#         set_status("fail")
-#         with log_out:
-#             print("[remote:https] No run_id yet. Submit first.")
-#         return
-
-#     try:
-#         url = _https_url(https_status_path, run_id=run_id)
-#         code, j, txt = http_json("GET", url, headers=_extra_headers(), timeout=15)
-#         with log_out:
-#             print("[remote:https] GET", url)
-#             print("status:", code)
-#             if j:
-#                 print(json.dumps(j, indent=2)[:4000])
-#             else:
-#                 print(txt[:4000])
-#         set_status("done" if 200 <= code < 300 else "fail")
-#     except Exception as e:
-#         set_status("fail")
-#         with log_out:
-#             print("[remote:https][ERROR]", type(e).__name__, e)
+    res = send_command(
+        session_id,
+        "ssh-run",
+        {
+            "host": host,
+            "user": user,
+            "port": int(port),
+            "command": command,
+            "timeout": int(timeout),
+        },
+    )
+    return relay_result_payload(res)
 
 
-# def remote_tail():
-#     log_out.clear_output()
-#     set_status("running")
+def connector_fetch_archive(
+    session_id: str,
+    host: str,
+    user: str,
+    port: int,
+    remote_path: str,
+    timeout: int = 600,
+):
+    from icesee_jupyter_book.core.connector_relay_client import send_command
 
-#     if remote_backend.value == "ssh":
-#         return run_example_remote_tail()
+    res = send_command(
+        session_id,
+        "fetch-archive",
+        {
+            "host": host,
+            "user": user,
+            "port": int(port),
+            "remote_path": remote_path,
+            "timeout": int(timeout),
+        },
+    )
+    return relay_result_payload(res)
 
-#     run_id = STATUS.get("run_id")
-#     if not run_id:
-#         set_status("fail")
-#         with log_out:
-#             print("[remote:https] No run_id yet. Submit first.")
-#         return
+def connector_install_pubkey_with_password(
+    session_id: str,
+    host: str,
+    user: str,
+    port: int,
+    password: str,
+    pubkey_text: str,
+    timeout: int = 60,
+):
+    from icesee_jupyter_book.core.connector_relay_client import send_command
 
-#     try:
-#         url = _https_url(https_tail_path, run_id=run_id, query={"n": 120})
-#         code, j, txt = http_json("GET", url, headers=_extra_headers(), timeout=15)
-#         with log_out:
-#             print("[remote:https] GET", url)
-#             print("status:", code)
-#             # tail is usually text; show text first
-#             if txt:
-#                 print(txt.rstrip()[:8000])
-#             elif j:
-#                 print(json.dumps(j, indent=2)[:8000])
-#         set_status("done" if 200 <= code < 300 else "fail")
-#     except Exception as e:
-#         set_status("fail")
-#         with log_out:
-#             print("[remote:https][ERROR]", type(e).__name__, e)
+    res = send_command(
+        session_id,
+        "install-pubkey",
+        {
+            "host": host,
+            "user": user,
+            "port": int(port),
+            "password": password,
+            "pubkey_text": pubkey_text,
+            "timeout": int(timeout),
+        },
+    )
+    return relay_result_payload(res)
 
-# # connect_btn.on_click(lambda b: remote_test())
-# # submit_btn.on_click(lambda b: remote_submit())
-# # status_btn.on_click(lambda b: remote_status())
-# # tail_btn.on_click(lambda b: remote_tail())
+def bootstrap_passwordless_ssh(
+    *,
+    host: str,
+    user: str,
+    port: int,
+    password: str,
+    access_mode: str = "direct",
+    session_id: str | None = None,
+    key_type: str = "ed25519",
+) -> dict:
+    """
+    Generate a local SSH key if needed, install the public key on the remote host,
+    then verify passwordless SSH.
+
+    access_mode:
+      - "direct": install via direct SSH/password using Paramiko
+      - "connector": install through local connector/VPN bridge
+    """
+
+    if not host or not user:
+        raise ValueError("Provide Host + User first.")
+
+    if not password:
+        raise ValueError("Password is required for one-time bootstrap.")
+
+    priv, pub = ensure_local_ssh_key(key_type=key_type)
+    pubkey_text = pub.read_text(encoding="utf-8").strip()
+
+    messages = [
+        "[auth] Local SSH key ready",
+        f"[auth] private key: {priv}",
+        f"[auth] public key : {pub}",
+    ]
+
+    if access_mode == "connector":
+        if not session_id:
+            raise ValueError("Connector session_id is required for connector bootstrap.")
+
+        install = connector_install_pubkey_with_password(
+            session_id=session_id,
+            host=host,
+            user=user,
+            port=port,
+            password=password,
+            pubkey_text=pubkey_text,
+            timeout=60,
+        )
+
+        if not install.get("ok"):
+            return {
+                "ok": False,
+                "mode": "connector",
+                "private_key": str(priv),
+                "public_key": str(pub),
+                "messages": messages + ["[auth][ERROR] Connector key installation failed."],
+                "stdout": install.get("stdout", ""),
+                "stderr": install.get("stderr", ""),
+                "raw": install,
+            }
+
+        verify = connector_ssh(
+            session_id=session_id,
+            host=host,
+            user=user,
+            port=port,
+            command="hostname && whoami && date",
+            timeout=30,
+        )
+
+        return {
+            "ok": bool(verify.get("ok")),
+            "mode": "connector",
+            "private_key": str(priv),
+            "public_key": str(pub),
+            "messages": messages + ["[auth] Connector bootstrap completed."],
+            "stdout": verify.get("stdout", ""),
+            "stderr": verify.get("stderr", ""),
+            "raw": verify,
+        }
+
+    remote_install_pubkey_with_password(
+        host=host,
+        user=user,
+        port=port,
+        password=password,
+        pubkey_text=pubkey_text,
+    )
+
+    verify = ssh_run(host, user, port, "hostname && whoami && date", timeout=20)
+
+    return {
+        "ok": verify.returncode == 0,
+        "mode": "direct",
+        "private_key": str(priv),
+        "public_key": str(pub),
+        "messages": messages + ["[auth] Direct SSH bootstrap completed."],
+        "stdout": verify.stdout,
+        "stderr": verify.stderr,
+        "returncode": verify.returncode,
+    }
+
+def connector_write_text(
+    session_id: str,
+    host: str,
+    user: str,
+    port: int,
+    remote_path: str,
+    text: str,
+    timeout: int = 60,
+):
+    import base64
+    import shlex
+
+    encoded = base64.b64encode(text.encode("utf-8")).decode("ascii")
+
+    cmd = (
+        "python3 -c "
+        + shlex.quote(
+            "import base64, pathlib; "
+            f"p = pathlib.Path({remote_path!r}); "
+            "p.parent.mkdir(parents=True, exist_ok=True); "
+            f"p.write_text(base64.b64decode({encoded!r}).decode('utf-8'), encoding='utf-8'); "
+            "print(str(p))"
+        )
+    )
+
+    res = connector_ssh(session_id, host, user, port, cmd, timeout=timeout)
+
+    if not res.get("ok"):
+        raise RuntimeError(
+            f"Failed to write remote file through connector: {remote_path}\n"
+            f"STDOUT:\n{res.get('stdout', '')}\n\n"
+            f"STDERR:\n{res.get('stderr', '')}"
+        )
+
+    return res
+
+
+def connector_stage_and_submit(
+    *,
+    session_id: str,
+    host: str,
+    user: str,
+    port: int,
+    remote_dir: str,
+    params_text: str,
+    slurm_text: str,
+) -> str:
+    import re
+
+    connector_write_text(
+        session_id,
+        host,
+        user,
+        port,
+        f"{remote_dir}/params.yaml",
+        params_text,
+        timeout=60,
+    )
+
+    connector_write_text(
+        session_id,
+        host,
+        user,
+        port,
+        f"{remote_dir}/slurm_run.sh",
+        slurm_text,
+        timeout=60,
+    )
+
+    chmod_cmd = f"chmod +x {sh_quote(remote_dir + '/slurm_run.sh')}"
+    cres = connector_ssh(session_id, host, user, port, chmod_cmd, timeout=30)
+    if not cres.get("ok"):
+        raise RuntimeError(
+            "Failed to chmod remote slurm_run.sh through connector\n"
+            f"STDOUT:\n{cres.get('stdout', '')}\n\n"
+            f"STDERR:\n{cres.get('stderr', '')}"
+        )
+
+    sres = connector_slurm_submit(
+        session_id,
+        host,
+        user,
+        port,
+        f"{remote_dir}/slurm_run.sh",
+        timeout=60,
+    )
+
+    if not sres.get("ok"):
+        raise RuntimeError(
+            "Failed to submit remote slurm_run.sh through connector\n"
+            f"STDOUT:\n{sres.get('stdout', '')}\n\n"
+            f"STDERR:\n{sres.get('stderr', '')}"
+        )
+
+    if sres.get("jobid"):
+        return str(sres["jobid"])
+
+    stdout = sres.get("stdout", "") or ""
+    m = re.search(r"Submitted batch job\s+(\d+)", stdout)
+    if not m:
+        raise RuntimeError(f"Could not parse JobID from connector submit response:\n{sres}")
+
+    return m.group(1)
+
+
+def submit_remote_example_via_connector(
+    *,
+    session_id: str,
+    host: str,
+    user: str,
+    port: int,
+    example_cfg: dict,
+    params_text: str,
+    remote_base_dir: str,
+    remote_tag: str,
+    spack_enable: bool,
+    spack_repo_url: str,
+    spack_dirname: str,
+    spack_install_if_needed: bool,
+    spack_install_mode: str,
+    spack_slurm_dir: str,
+    spack_pmix_dir: str,
+    spack_use_existing_sbatch: bool,
+    slurm_time: str,
+    slurm_job_name: str,
+    slurm_nodes: int,
+    slurm_ntasks: int,
+    slurm_tpn: int,
+    slurm_part: str,
+    slurm_mem: str,
+    slurm_account: str,
+    slurm_mail: str,
+    remote_module_lines: str,
+    remote_export_lines: str,
+    cluster_mpi_np: int,
+    ens_size: int,
+    cluster_model_nprocs: int,
+) -> RemoteSubmitResult:
+    import re
+
+    messages: list[str] = []
+
+    if not session_id:
+        raise RuntimeError("Missing connector session ID.")
+
+    if not host or not user:
+        raise ValueError("Provide Host + User first.")
+
+    if not spack_enable:
+        raise RuntimeError("Remote currently requires ICESEE-Spack enabled.")
+
+    remote_base_input = remote_base_dir.strip() or "~/r-arobel3-0"
+
+    rbase_cmd = (
+        "python3 -c "
+        + sh_quote(
+            f"import os; print(os.path.abspath(os.path.expanduser({remote_base_input!r})))"
+        )
+    )
+
+    rbase = connector_ssh(session_id, host, user, port, rbase_cmd, timeout=60)
+    if not rbase.get("ok"):
+        raise RuntimeError(
+            "Failed to resolve remote base dir through connector\n"
+            f"STDOUT:\n{rbase.get('stdout', '')}\n\n"
+            f"STDERR:\n{rbase.get('stderr', '')}"
+        )
+
+    remote_base_abs = (rbase.get("stdout") or "").strip().splitlines()[-1]
+    tag = remote_tag.strip() or "icesee"
+
+    rdir = make_remote_run_dir(remote_base_abs, tag)
+    messages.append("[connector] Using local connector / VPN bridge")
+    messages.append(f"[connector] Remote base dir: {remote_base_abs}")
+    messages.append(f"[connector] Remote run dir : {rdir}")
+
+    spack_name = spack_dirname.strip() or "ICESEE-Spack"
+    repo = spack_repo_url.strip()
+    spack_path = f"{remote_base_abs.rstrip('/')}/{spack_name}"
+
+    ensure_cmd = f"""
+set -e
+mkdir -p {sh_quote(remote_base_abs)}
+if [ ! -d {sh_quote(spack_path)} ]; then
+  echo "[spack] cloning {repo} -> {spack_path}"
+  cd {sh_quote(remote_base_abs)}
+  git clone {sh_quote(repo)} {sh_quote(spack_name)}
+else
+  echo "[spack] exists: {spack_path}"
+fi
+test -f {sh_quote(spack_path + '/scripts/activate.sh')}
+echo {sh_quote(spack_path)}
+"""
+
+    eres = connector_ssh(session_id, host, user, port, ensure_cmd, timeout=600)
+    if not eres.get("ok"):
+        raise RuntimeError(
+            "Failed to ensure ICESEE-Spack through connector\n"
+            f"STDOUT:\n{eres.get('stdout', '')}\n\n"
+            f"STDERR:\n{eres.get('stderr', '')}"
+        )
+
+    messages.append("[connector] Spack enabled")
+    messages.append(f"[connector] ICESEE-Spack path: {spack_path}")
+
+    if spack_install_if_needed:
+        install_flag = spack_install_mode or ""
+        env_prefix = ""
+        if spack_slurm_dir.strip():
+            env_prefix += f"SLURM_DIR={sh_quote(spack_slurm_dir.strip())} "
+        if spack_pmix_dir.strip():
+            env_prefix += f"PMIX_DIR={sh_quote(spack_pmix_dir.strip())} "
+
+        install_cmd = f"""
+set -e
+cd {sh_quote(spack_path)}
+echo "[spack] running install.sh {install_flag}"
+{env_prefix} ./scripts/install.sh {install_flag}
+echo "[spack] install completed"
+"""
+        ires = connector_ssh(session_id, host, user, port, install_cmd, timeout=7200)
+        if not ires.get("ok"):
+            raise RuntimeError(
+                "Remote ICESEE-Spack install failed through connector\n"
+                f"STDOUT:\n{ires.get('stdout', '')}\n\n"
+                f"STDERR:\n{ires.get('stderr', '')}"
+            )
+
+    remote_rel = example_cfg.get("remote_rel")
+    if not remote_rel:
+        raise RuntimeError("This example has no remote_rel configured in EXAMPLES.")
+
+    remote_example_dir = f"{spack_path.rstrip('/')}/{remote_rel.lstrip('/')}"
+    messages.append(f"[connector] Remote example dir: {remote_example_dir}")
+
+    chk = connector_ssh(
+        session_id,
+        host,
+        user,
+        port,
+        f"test -d {sh_quote(remote_example_dir)} && echo OK || echo MISSING",
+        timeout=30,
+    )
+
+    if not chk.get("ok") or "OK" not in (chk.get("stdout") or ""):
+        raise RuntimeError(
+            "Remote example directory not found through connector.\n"
+            f"STDOUT:\n{chk.get('stdout', '')}\n\n"
+            f"STDERR:\n{chk.get('stderr', '')}"
+        )
+
+    remote_sbatch = example_cfg.get("remote_sbatch")
+
+    if spack_use_existing_sbatch and remote_sbatch:
+        sbatch_path = f"{remote_example_dir}/{remote_sbatch}"
+        chk2 = connector_ssh(
+            session_id,
+            host,
+            user,
+            port,
+            f"test -f {sh_quote(sbatch_path)} && echo OK || echo MISSING",
+            timeout=30,
+        )
+
+        if chk2.get("ok") and "OK" in (chk2.get("stdout") or ""):
+            connector_write_text(
+                session_id,
+                host,
+                user,
+                port,
+                f"{rdir}/params.yaml",
+                params_text,
+                timeout=60,
+            )
+
+            copy_cmd = f"cp {sh_quote(rdir + '/params.yaml')} {sh_quote(remote_example_dir + '/params.yaml')}"
+            cres = connector_ssh(session_id, host, user, port, copy_cmd, timeout=30)
+            if not cres.get("ok"):
+                raise RuntimeError(
+                    "Failed to copy params.yaml into example dir through connector\n"
+                    f"STDOUT:\n{cres.get('stdout', '')}\n\n"
+                    f"STDERR:\n{cres.get('stderr', '')}"
+                )
+
+            submit_cmd = f"""
+set -e
+cd {sh_quote(remote_example_dir)}
+source {sh_quote(spack_path + '/scripts/activate.sh')}
+sbatch {sh_quote(remote_sbatch)}
+"""
+            sres = connector_ssh(session_id, host, user, port, submit_cmd, timeout=60)
+            if not sres.get("ok"):
+                raise RuntimeError(
+                    "Failed to submit existing sbatch through connector\n"
+                    f"STDOUT:\n{sres.get('stdout', '')}\n\n"
+                    f"STDERR:\n{sres.get('stderr', '')}"
+                )
+
+            stdout = sres.get("stdout", "") or ""
+            m = re.search(r"Submitted batch job\s+(\d+)", stdout)
+            if not m:
+                raise RuntimeError(f"Could not parse JobID from:\n{stdout}")
+
+            jobid = m.group(1)
+
+            messages.append("[connector] ✅ Submitted existing sbatch from example dir")
+            messages.append(f"  sbatch: {remote_sbatch}")
+            messages.append(f"  jobid : {jobid}")
+
+            return RemoteSubmitResult(
+                success=True,
+                jobid=jobid,
+                remote_dir=remote_example_dir,
+                remote_example_dir=remote_example_dir,
+                spack_path=spack_path,
+                used_existing_sbatch=True,
+                existing_sbatch_name=remote_sbatch,
+                messages=messages,
+            )
+
+        messages.append("[connector] NOTE: remote_sbatch configured but not found; falling back to generated slurm_run.sh.")
+
+    account_line, mail_lines = slurm_optional_lines(
+        slurm_account.strip(),
+        slurm_mail.strip(),
+    )
+
+    outfile = "icesee-enkf-%j.out"
+    run_script_name = example_cfg.get("run_script")
+
+    slurm_text = render_slurm_script(
+        dict(
+            TIME=slurm_time.strip(),
+            JOB_NAME=slurm_job_name.strip() or "ICESEE",
+            NODES=int(slurm_nodes),
+            NTASKS=int(slurm_ntasks),
+            TPN=int(slurm_tpn),
+            PARTITION=slurm_part.strip(),
+            MEM=slurm_mem.strip(),
+            ACCOUNT_LINE=account_line,
+            MAIL_LINES=mail_lines,
+            OUTFILE=outfile,
+            MODULE_LINES=sanitize_multiline(remote_module_lines),
+            EXPORT_LINES=sanitize_multiline(remote_export_lines),
+            SPACK_PATH=spack_path,
+            NP=int(cluster_mpi_np),
+            NENS=int(ens_size),
+            MODEL_NPROCS=int(cluster_model_nprocs),
+            RUN_SCRIPT=run_script_name,
+            PARAMS_PATH=f"{rdir}/params.yaml",
+            EXAMPLE_DIR=remote_example_dir,
+            SRUN_MPI_FLAG="--mpi=pmix",
+        )
+    )
+
+    if "{{" in slurm_text or "}}" in slurm_text:
+        raise RuntimeError("SLURM_TEMPLATE render left unresolved placeholders.")
+
+    messages.append("[connector] Writing params.yaml + slurm_run.sh, then sbatch...")
+
+    jobid = connector_stage_and_submit(
+        session_id=session_id,
+        host=host,
+        user=user,
+        port=port,
+        remote_dir=rdir,
+        params_text=params_text,
+        slurm_text=slurm_text,
+    )
+
+    messages.append("[connector] ✅ Submitted generated slurm_run.sh")
+    messages.append(f"  jobid : {jobid}")
+    messages.append(f"  rdir  : {rdir}")
+    messages.append(f"  example dir: {remote_example_dir}")
+
+    return RemoteSubmitResult(
+        success=True,
+        jobid=jobid,
+        remote_dir=rdir,
+        remote_example_dir=remote_example_dir,
+        spack_path=spack_path,
+        used_existing_sbatch=False,
+        existing_sbatch_name=None,
+        messages=messages,
+    )
+
+
+def submit_remote_example_container_via_connector(
+    *,
+    session_id: str,
+    host: str,
+    user: str,
+    port: int,
+    example_cfg: dict,
+    params_text: str,
+    remote_base_dir: str,
+    remote_tag: str,
+    spack_repo_url: str,
+    spack_dirname: str,
+    slurm_time: str,
+    slurm_job_name: str,
+    slurm_nodes: int,
+    slurm_ntasks: int,
+    slurm_tpn: int,
+    slurm_part: str,
+    slurm_mem: str,
+    slurm_account: str,
+    slurm_mail: str,
+    remote_module_lines: str,
+    remote_export_lines: str,
+    cluster_mpi_np: int,
+    ens_size: int,
+    cluster_model_nprocs: int,
+    container_source: str,
+    container_image_uri: str,
+) -> RemoteSubmitResult:
+    messages: list[str] = []
+
+    if not session_id:
+        raise RuntimeError("Missing connector session ID.")
+
+    if not host or not user:
+        raise ValueError("Provide Host + User first.")
+
+    remote_base_input = remote_base_dir.strip() or "~/r-arobel3-0"
+
+    rbase_cmd = (
+        "python3 -c "
+        + sh_quote(
+            f"import os; print(os.path.abspath(os.path.expanduser({remote_base_input!r})))"
+        )
+    )
+
+    rbase = connector_ssh(session_id, host, user, port, rbase_cmd, timeout=60)
+    if not rbase.get("ok"):
+        raise RuntimeError(
+            "Failed to resolve remote base dir through connector\n"
+            f"STDOUT:\n{rbase.get('stdout', '')}\n\n"
+            f"STDERR:\n{rbase.get('stderr', '')}"
+        )
+
+    remote_base_abs = (rbase.get("stdout") or "").strip().splitlines()[-1]
+    tag = remote_tag.strip() or "icesee"
+
+    rdir = make_remote_run_dir(remote_base_abs, tag)
+
+    messages.append("[connector] Using local connector / VPN bridge")
+    messages.append("[connector] Container backend enabled")
+    messages.append(f"[connector] Remote base dir: {remote_base_abs}")
+    messages.append(f"[connector] Remote run dir : {rdir}")
+
+    spack_name = spack_dirname.strip() or "ICESEE-Spack"
+    repo = spack_repo_url.strip()
+    spack_path = f"{remote_base_abs.rstrip('/')}/{spack_name}"
+
+    ensure_cmd = f"""
+set -e
+mkdir -p {sh_quote(remote_base_abs)}
+if [ ! -d {sh_quote(spack_path)} ]; then
+  echo "[spack] cloning {repo} -> {spack_path}"
+  cd {sh_quote(remote_base_abs)}
+  git clone {sh_quote(repo)} {sh_quote(spack_name)}
+else
+  echo "[spack] exists: {spack_path}"
+fi
+test -f {sh_quote(spack_path + '/scripts/activate.sh')}
+echo {sh_quote(spack_path)}
+"""
+
+    eres = connector_ssh(session_id, host, user, port, ensure_cmd, timeout=600)
+    if not eres.get("ok"):
+        raise RuntimeError(
+            "Failed to ensure ICESEE-Spack through connector\n"
+            f"STDOUT:\n{eres.get('stdout', '')}\n\n"
+            f"STDERR:\n{eres.get('stderr', '')}"
+        )
+
+    remote_rel = example_cfg.get("remote_rel")
+    if not remote_rel:
+        raise RuntimeError("This example has no remote_rel configured in EXAMPLES.")
+
+    remote_example_dir = f"{spack_path.rstrip('/')}/{remote_rel.lstrip('/')}"
+    messages.append(f"[connector] Remote example dir: {remote_example_dir}")
+
+    chk = connector_ssh(
+        session_id,
+        host,
+        user,
+        port,
+        f"test -d {sh_quote(remote_example_dir)} && echo OK || echo MISSING",
+        timeout=30,
+    )
+
+    if not chk.get("ok") or "OK" not in (chk.get("stdout") or ""):
+        raise RuntimeError(
+            "Remote example directory not found through connector.\n"
+            f"STDOUT:\n{chk.get('stdout', '')}\n\n"
+            f"STDERR:\n{chk.get('stderr', '')}"
+        )
+
+    account_line, mail_lines = slurm_optional_lines(
+        slurm_account.strip(),
+        slurm_mail.strip(),
+    )
+
+    remote_root = f"{remote_base_abs.rstrip('/')}/{tag}"
+    container_root = f"{remote_root}/ICESEE-Containers"
+    container_dir = f"{container_root}/spack-managed/combined-container"
+    sif_path = f"{container_dir}/combined-env.sif"
+    def_path = f"{container_dir}/combined-env-inbuilt-matlab.def"
+
+    run_script_name = example_cfg.get("run_script")
+    outfile = f"{rdir}/icesee-enkf-%j.out"
+
+    slurm_text = f"""#!/bin/bash
+#SBATCH -t {slurm_time.strip()}
+#SBATCH -J {slurm_job_name.strip() or "ICESEE"}
+#SBATCH -N {int(slurm_nodes)}
+#SBATCH -n {int(slurm_ntasks)}
+#SBATCH --ntasks-per-node={int(slurm_tpn)}
+#SBATCH -p {slurm_part.strip()}
+#SBATCH --mem={slurm_mem.strip()}
+{account_line}
+#SBATCH -o {outfile}
+{mail_lines}
+
+set -euo pipefail
+cd "${{SLURM_SUBMIT_DIR}}"
+
+module purge || true
+{sanitize_multiline(remote_module_lines)}
+
+{sanitize_multiline(remote_export_lines)}
+
+echo "[icesee] Host: $(hostname)"
+echo "[icesee] Date: $(date)"
+echo "[icesee] PWD : $(pwd)"
+
+echo "[icesee] Checking apptainer..."
+if ! command -v apptainer >/dev/null 2>&1; then
+  echo "[icesee] apptainer not found in PATH. Trying module load apptainer..."
+  source /etc/profile >/dev/null 2>&1 || true
+  module load apptainer >/dev/null 2>&1 || true
+fi
+
+if ! command -v apptainer >/dev/null 2>&1; then
+  echo "[icesee][ERROR] apptainer not found, and module load apptainer failed."
+  exit 2
+fi
+
+mkdir -p "{remote_root}"
+
+if [ ! -d "{container_root}" ]; then
+  echo "[icesee] Cloning ICESEE-Containers..."
+  git clone https://github.com/ICESEE-project/ICESEE-Containers.git "{container_root}"
+fi
+
+cd "{container_dir}"
+
+if [ ! -f "{sif_path}" ]; then
+  if [ ! -f "{def_path}" ]; then
+    echo "[icesee][ERROR] Definition file not found: {def_path}"
+    exit 2
+  fi
+  echo "[icesee] Building Apptainer image..."
+  apptainer build combined-env.sif combined-env-inbuilt-matlab.def
+else
+  echo "[icesee] Using existing Apptainer image: {sif_path}"
+fi
+
+cd "{remote_example_dir}"
+
+if command -v srun >/dev/null 2>&1; then
+  /usr/bin/time -v \\
+    srun --mpi=pmix -n "{int(cluster_mpi_np)}" \\
+      apptainer exec \\
+      -B "{remote_example_dir}:{remote_example_dir},{rdir}:{rdir}" \\
+      "{sif_path}" \\
+      python "{run_script_name}" \\
+        -F "{rdir}/params.yaml" \\
+        --Nens="{int(ens_size)}" \\
+        --model_nprocs="{int(cluster_model_nprocs)}" \\
+        --verbose
+else
+  /usr/bin/time -v \\
+    apptainer exec \\
+      -B "{remote_example_dir}:{remote_example_dir},{rdir}:{rdir}" \\
+      "{sif_path}" \\
+      python "{run_script_name}" \\
+        -F "{rdir}/params.yaml" \\
+        --Nens="{int(ens_size)}" \\
+        --model_nprocs="{int(cluster_model_nprocs)}" \\
+        --verbose
+fi
+
+echo "=== Finished ==="
+"""
+
+    messages.append("[connector] Writing params.yaml + slurm_run.sh, then sbatch...")
+
+    jobid = connector_stage_and_submit(
+        session_id=session_id,
+        host=host,
+        user=user,
+        port=port,
+        remote_dir=rdir,
+        params_text=params_text,
+        slurm_text=slurm_text,
+    )
+
+    messages.append("[connector] ✅ Submitted container-based slurm_run.sh")
+    messages.append(f"  jobid : {jobid}")
+    messages.append(f"  rdir  : {rdir}")
+    messages.append(f"  example dir: {remote_example_dir}")
+    messages.append(f"  image : {sif_path}")
+
+    return RemoteSubmitResult(
+        success=True,
+        jobid=jobid,
+        remote_dir=rdir,
+        remote_example_dir=remote_example_dir,
+        spack_path=spack_path,
+        used_existing_sbatch=False,
+        existing_sbatch_name=None,
+        messages=messages,
+    )

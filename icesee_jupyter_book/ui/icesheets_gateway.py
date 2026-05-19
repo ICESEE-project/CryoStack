@@ -32,6 +32,11 @@ from icesee_jupyter_book.core.remote_runner import (
     resolve_remote_abs_path,
     remote_stage_and_submit,
     sanitize_multiline,
+    bootstrap_passwordless_ssh,
+    connector_ssh,
+    connector_fetch_archive,
+    connector_stage_archive,
+    connector_slurm_submit,
 )
 from icesee_jupyter_book.core.cloud_runner import (
     AWSBatchConfig,
@@ -425,129 +430,129 @@ catch ME
     disp(['[ICESEE-GUI][ERROR] Postprocess failed: ' ME.message]);
 end
 """
-def relay_result_payload(result: dict) -> dict:
-    return result.get("result", result)
+# def relay_result_payload(result: dict) -> dict:
+#     return result.get("result", result)
 
-def connector_fetch_archive(
-    session_id: str,
-    host: str,
-    user: str,
-    port: int,
-    remote_path: str,
-    timeout: int = 600,
-):
-    from icesee_jupyter_book.core.connector_relay_client import send_command
+# def connector_fetch_archive(
+#     session_id: str,
+#     host: str,
+#     user: str,
+#     port: int,
+#     remote_path: str,
+#     timeout: int = 600,
+# ):
+#     from icesee_jupyter_book.core.connector_relay_client import send_command
 
-    res = send_command(
-        session_id,
-        "fetch-archive",
-        {
-            "host": host,
-            "user": user,
-            "port": port,
-            "remote_path": remote_path,
-            "timeout": timeout,
-        },
-    )
-    return relay_result_payload(res)
+#     res = send_command(
+#         session_id,
+#         "fetch-archive",
+#         {
+#             "host": host,
+#             "user": user,
+#             "port": port,
+#             "remote_path": remote_path,
+#             "timeout": timeout,
+#         },
+#     )
+#     return relay_result_payload(res)
 
-def connector_ssh(session_id: str, host: str, user: str, port: int, command: str, timeout: int = 60):
-    from icesee_jupyter_book.core.connector_relay_client import send_command
+# def connector_ssh(session_id: str, host: str, user: str, port: int, command: str, timeout: int = 60):
+#     from icesee_jupyter_book.core.connector_relay_client import send_command
 
-    res = send_command(
-        session_id,
-        "ssh-run",
-        {
-            "host": host,
-            "user": user,
-            "port": port,
-            "command": command,
-            "timeout": timeout,
-        },
-    )
-    return relay_result_payload(res)
-
-
-def connector_rsync_upload(session_id: str, host: str, user: str, port: int, local_path: str, remote_path: str, timeout: int = 300):
-    from icesee_jupyter_book.core.connector_relay_client import send_command
-
-    res = send_command(
-        session_id,
-        "rsync-upload",
-        {
-            "host": host,
-            "user": user,
-            "port": port,
-            "local_path": local_path,
-            "remote_path": remote_path,
-            "timeout": timeout,
-        },
-    )
-    return relay_result_payload(res)
+#     res = send_command(
+#         session_id,
+#         "ssh-run",
+#         {
+#             "host": host,
+#             "user": user,
+#             "port": port,
+#             "command": command,
+#             "timeout": timeout,
+#         },
+#     )
+#     return relay_result_payload(res)
 
 
-def connector_slurm_submit(session_id: str, host: str, user: str, port: int, remote_script: str, timeout: int = 60):
-    from icesee_jupyter_book.core.connector_relay_client import send_command
+# def connector_rsync_upload(session_id: str, host: str, user: str, port: int, local_path: str, remote_path: str, timeout: int = 300):
+#     from icesee_jupyter_book.core.connector_relay_client import send_command
 
-    res = send_command(
-        session_id,
-        "slurm-submit",
-        {
-            "host": host,
-            "user": user,
-            "port": port,
-            "remote_script": remote_script,
-            "timeout": timeout,
-        },
-    )
-    return relay_result_payload(res)
+#     res = send_command(
+#         session_id,
+#         "rsync-upload",
+#         {
+#             "host": host,
+#             "user": user,
+#             "port": port,
+#             "local_path": local_path,
+#             "remote_path": remote_path,
+#             "timeout": timeout,
+#         },
+#     )
+#     return relay_result_payload(res)
 
-def connector_stage_archive(
-    session_id: str,
-    host: str,
-    user: str,
-    port: int,
-    local_example_path: Path,
-    remote_run_dir: str,
-    timeout: int = 600,
-):
-    """
-    Package an example directory on the AWS/Voila side, send it through the relay,
-    let the local connector write it temporarily, rsync it to HPC, and extract it there.
-    """
-    import base64
-    import tarfile
-    import tempfile
-    from pathlib import Path
-    from icesee_jupyter_book.core.connector_relay_client import send_command
 
-    local_example_path = Path(local_example_path).expanduser().resolve()
-    if not local_example_path.exists():
-        raise RuntimeError(f"Example path does not exist: {local_example_path}")
+# def connector_slurm_submit(session_id: str, host: str, user: str, port: int, remote_script: str, timeout: int = 60):
+#     from icesee_jupyter_book.core.connector_relay_client import send_command
 
-    with tempfile.TemporaryDirectory() as td:
-        archive_path = Path(td) / f"{local_example_path.name}.tar.gz"
+#     res = send_command(
+#         session_id,
+#         "slurm-submit",
+#         {
+#             "host": host,
+#             "user": user,
+#             "port": port,
+#             "remote_script": remote_script,
+#             "timeout": timeout,
+#         },
+#     )
+#     return relay_result_payload(res)
 
-        with tarfile.open(archive_path, "w:gz") as tar:
-            tar.add(local_example_path, arcname=local_example_path.name)
+# def connector_stage_archive(
+#     session_id: str,
+#     host: str,
+#     user: str,
+#     port: int,
+#     local_example_path: Path,
+#     remote_run_dir: str,
+#     timeout: int = 600,
+# ):
+#     """
+#     Package an example directory on the AWS/Voila side, send it through the relay,
+#     let the local connector write it temporarily, rsync it to HPC, and extract it there.
+#     """
+#     import base64
+#     import tarfile
+#     import tempfile
+#     from pathlib import Path
+#     from icesee_jupyter_book.core.connector_relay_client import send_command
 
-        archive_b64 = base64.b64encode(archive_path.read_bytes()).decode("ascii")
+#     local_example_path = Path(local_example_path).expanduser().resolve()
+#     if not local_example_path.exists():
+#         raise RuntimeError(f"Example path does not exist: {local_example_path}")
 
-    res = send_command(
-        session_id,
-        "stage-archive",
-        {
-            "host": host,
-            "user": user,
-            "port": port,
-            "archive_name": f"{local_example_path.name}.tar.gz",
-            "archive_b64": archive_b64,
-            "remote_dir": remote_run_dir,
-            "timeout": timeout,
-        },
-    )
+#     with tempfile.TemporaryDirectory() as td:
+#         archive_path = Path(td) / f"{local_example_path.name}.tar.gz"
 
-    return relay_result_payload(res)
+#         with tarfile.open(archive_path, "w:gz") as tar:
+#             tar.add(local_example_path, arcname=local_example_path.name)
+
+#         archive_b64 = base64.b64encode(archive_path.read_bytes()).decode("ascii")
+
+#     res = send_command(
+#         session_id,
+#         "stage-archive",
+#         {
+#             "host": host,
+#             "user": user,
+#             "port": port,
+#             "archive_name": f"{local_example_path.name}.tar.gz",
+#             "archive_b64": archive_b64,
+#             "remote_dir": remote_run_dir,
+#             "timeout": timeout,
+#         },
+#     )
+
+#     return relay_result_payload(res)
     
 def submit_remote_icesheets_via_connector(
     *,
@@ -1790,6 +1795,77 @@ def build_icesheets_ui():
             layout=W.Layout(width="100%", height="120px"),
         )
 
+        def on_bootstrap_keys(_=None):
+            log_out.clear_output()
+            status_chip.value = status_html("running")
+
+            host = cluster_host.value.strip()
+            user = cluster_user.value.strip()
+            port = int(cluster_port.value)
+            password = cluster_password.value
+
+            if not host or not user:
+                status_chip.value = status_html("fail")
+                with log_out:
+                    print("[auth][ERROR] Provide Host + User first.")
+                return
+
+            if not password:
+                status_chip.value = status_html("fail")
+                with log_out:
+                    print("[auth][ERROR] Enter your password. It is used once and not stored.")
+                return
+
+            try:
+                use_connector = should_use_connector()
+
+                if use_connector:
+                    if not SESSION.get("id"):
+                        create_or_refresh_connector_session()
+
+                    st = relay_check_status(SESSION["id"])
+                    if not st.get("online"):
+                        status_chip.value = status_html("fail")
+                        with log_out:
+                            print("[connector][ERROR] Connector session is not online.")
+                            print("Open the connector setup page and start the local connector first.")
+                        return
+
+                result = bootstrap_passwordless_ssh(
+                    host=host,
+                    user=user,
+                    port=port,
+                    password=password,
+                    access_mode="connector" if use_connector else "direct",
+                    session_id=SESSION.get("id"),
+                )
+
+                with log_out:
+                    for msg in result.get("messages", []):
+                        print(msg)
+
+                    if (result.get("stdout") or "").strip():
+                        print("--- stdout ---")
+                        print(result["stdout"].strip())
+
+                    if (result.get("stderr") or "").strip():
+                        print("--- stderr ---")
+                        print(result["stderr"].strip())
+
+                if result.get("ok"):
+                    status_chip.value = status_html("done")
+                    auth_mode.value = "key"
+                    cluster_password.value = ""
+                    with log_out:
+                        print("[auth] ✅ Passwordless SSH is working.")
+                else:
+                    status_chip.value = status_html("fail")
+
+            except Exception as e:
+                status_chip.value = status_html("fail")
+                with log_out:
+                    print("[auth][ERROR]", type(e).__name__, e)
+
         def create_or_refresh_connector_session(_=None):
             log_out.clear_output()
 
@@ -2753,6 +2829,22 @@ def build_icesheets_ui():
         echo "[remote] png/mat/h5 files:"
         find "{outputs}" -maxdepth 6 -type f \\( -name "*.png" -o -name "*.mat" -o -name "*.h5" \\) -print || true
         '''
+            if should_use_connector():
+                payload = connector_ssh(
+                    SESSION["id"],
+                    host,
+                    user,
+                    port,
+                    cmd,
+                    timeout=30,
+                )
+
+                class Result:
+                    returncode = 0 if payload.get("ok") else 1
+                    stdout = payload.get("stdout", "")
+                    stderr = payload.get("stderr", "")
+
+                return Result()
             return ssh_run(host, user, port, cmd, timeout=30)
 
         def preview_remote_results(_=None):
@@ -3053,7 +3145,8 @@ def build_icesheets_ui():
                 return
 
             try:
-                if access_mode_dd.value == "connector":
+                use_connector = should_use_connector()
+                if use_connector:
                     result = submit_remote_icesheets_via_connector(
                         session_id=SESSION["id"],
                         host=host,
@@ -3460,25 +3553,54 @@ fi
         def on_terminate(_=None):
             log_out.clear_output()
             jobid = STATUS.get("jobid")
+
             if not jobid:
                 with log_out:
                     print("[remote] No JobID found.")
                 return
 
+            host = cluster_host.value.strip()
+            user = cluster_user.value.strip()
+            port = int(cluster_port.value)
+
             try:
-                result = remote_cancel_job(
-                    cluster_host.value.strip(),
-                    cluster_user.value.strip(),
-                    int(cluster_port.value),
-                    jobid,
-                )
+                if access_mode_dd.value == "connector":
+                    payload = connector_ssh(
+                        SESSION["id"],
+                        host,
+                        user,
+                        port,
+                        f"scancel {jobid}",
+                        timeout=30,
+                    )
+
+                    with log_out:
+                        print("[connector] Cancel job")
+                        print("ok:", payload.get("ok"))
+                        print("returncode:", payload.get("returncode"))
+                        if (payload.get("stdout") or "").strip():
+                            print("--- stdout ---")
+                            print(payload["stdout"].strip())
+                        if (payload.get("stderr") or "").strip():
+                            print("--- stderr ---")
+                            print(payload["stderr"].strip())
+
+                    status_chip.value = status_html("done" if payload.get("ok") else "fail")
+                    return
+
+                result = remote_cancel_job(host, user, port, jobid)
+
                 with log_out:
                     print("returncode:", result["returncode"])
                     if (result["stdout"] or "").strip():
                         print(result["stdout"].strip())
                     if (result["stderr"] or "").strip():
                         print(result["stderr"].strip())
+
+                status_chip.value = status_html("done" if result.get("ok") else "fail")
+
             except Exception as e:
+                status_chip.value = status_html("fail")
                 with log_out:
                     print("[remote][ERROR]", type(e).__name__, e)
 
@@ -3570,6 +3692,7 @@ fi
         add_md_override_btn.on_click(add_md_override)
         clear_md_overrides_btn.on_click(clear_md_overrides)
         start_connector_session_btn.on_click(create_or_refresh_connector_session)
+        bootstrap_btn.on_click(on_bootstrap_keys)
 
         # =========================================================
         # CSS
