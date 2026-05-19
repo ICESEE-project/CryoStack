@@ -1075,6 +1075,11 @@ def build_icesee_ui():
             log_out.clear_output()
             set_status("running")
 
+            host = cluster_host.value.strip()
+            user = cluster_user.value.strip()
+            port = int(cluster_port.value)
+            password = cluster_password.value
+
             try:
                 if access_mode_dd.value == "connector":
                     if not SESSION.get("id"):
@@ -1088,12 +1093,13 @@ def build_icesee_ui():
                         return
 
                 result = bootstrap_passwordless_ssh(
-                    host=cluster_host.value.strip(),
-                    user=cluster_user.value.strip(),
-                    port=int(cluster_port.value),
-                    password=cluster_password.value,
+                    host=host,
+                    user=user,
+                    port=port,
+                    password=password,
                     access_mode="connector" if access_mode_dd.value == "connector" else "direct",
                     session_id=SESSION.get("id"),
+                    cluster_name=cluster_name_for_keys.value or "pace",
                 )
 
                 with log_out:
