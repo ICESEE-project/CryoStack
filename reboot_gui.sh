@@ -19,6 +19,14 @@ pkill -f uvicorn || true
 
 sleep 2
 
+echo "=================================================="
+echo "Building Jupyter Book..."
+echo "=================================================="
+
+jupyter-book build icesee_jupyter_book
+
+sleep 5
+
 echo
 echo "=================================================="
 echo "Starting ICESEE GUI services..."
