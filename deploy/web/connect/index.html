@@ -234,9 +234,11 @@
         </p>
 
         <div class="manual">
-          <a href="#" data-os-choice="macos">macOS</a>
-          <a href="#" data-os-choice="windows">Windows</a>
-          <a href="#" data-os-choice="linux">Linux</a>
+          <a href="#" data-os-choice="macos-arm64">macOS Apple Silicon</a>
+          <a href="#" data-os-choice="macos-x86_64">macOS Intel</a>
+          <a href="#" data-os-choice="windows-x86_64">Windows x86_64</a>
+          <a href="#" data-os-choice="linux-x86_64">Linux x86_64</a>
+          <a href="#" data-os-choice="linux-arm64">Linux ARM64</a>
         </div>
 
       </section>
@@ -300,82 +302,124 @@
 
   <script>
 
-    function detectOS() {
+    function normalizeArch(raw) {
+      raw = (raw || "").toLowerCase();
 
-      const p = (
+      if (
+        raw.includes("arm64") ||
+        raw.includes("aarch64") ||
+        raw.includes("arm")
+      ) {
+        return "arm64";
+      }
+
+      if (
+        raw.includes("x86_64") ||
+        raw.includes("x64") ||
+        raw.includes("amd64") ||
+        raw.includes("win64")
+      ) {
+        return "x86_64";
+      }
+
+      return "x86_64";
+    }
+
+    function detectOS() {
+      const ua = navigator.userAgent.toLowerCase();
+      const platform = (
         navigator.userAgentData?.platform ||
         navigator.platform ||
-        navigator.userAgent ||
         ""
       ).toLowerCase();
 
-      if (p.includes("mac")) return "macos";
-      if (p.includes("win")) return "windows";
-      if (p.includes("linux")) return "linux";
+      const arch = normalizeArch(
+        navigator.userAgentData?.architecture ||
+        navigator.platform ||
+        navigator.userAgent
+      );
+
+      if (platform.includes("mac") || ua.includes("mac os")) {
+        return `macos-${arch}`;
+      }
+
+      if (platform.includes("win") || ua.includes("windows")) {
+        return `windows-${arch}`;
+      }
+
+      if (platform.includes("linux") || ua.includes("linux")) {
+        return `linux-${arch}`;
+      }
 
       return "unknown";
     }
 
     const urls = {
-      macos:
-        "/downloads/ICESEE-Connector-macOS-v0.4.dmg",
-
-      windows:
-        "/downloads/ICESEE-Connector-Windows.exe",
-
-      linux:
-        "/downloads/ICESEE-Connector-Linux-x86_64.tar.gz",
-
-      unknown:
-        "/downloads/"
+      "macos-arm64": "/downloads/Cryolauncher_Connector_macOS_arm64.dmg",
+      "macos-x86_64": "/downloads/Cryolauncher_Connector_macOS_x86_64.dmg",
+      "windows-x86_64": "/downloads/Cryolauncher_Connector_Windows_x86_64.exe",
+      "windows-arm64": "/downloads/Cryolauncher_Connector_Windows_arm64.exe",
+      "linux-x86_64": "/downloads/Cryolauncher_Connector_Linux_x86_64.tar.gz",
+      "linux-arm64": "/downloads/Cryolauncher_Connector_Linux_arm64.tar.gz",
+      unknown: "/downloads/"
     };
 
     const labels = {
-      macos: "macOS",
-      windows: "Windows",
-      linux: "Linux",
+      "macos-arm64": "macOS Apple Silicon",
+      "macos-x86_64": "macOS Intel",
+      "windows-x86_64": "Windows x86_64",
+      "windows-arm64": "Windows ARM64",
+      "linux-x86_64": "Linux x86_64",
+      "linux-arm64": "Linux ARM64",
       unknown: "Unknown"
     };
 
     const sessionInstructions = {
-
-      macos:
-        "Download the connector, open the DMG, drag Cryolauncher_Connector.app to Applications, then double-click it. No Python, terminal, or local Cryolauncher-GHUB installation is required.",
-
-      windows:
-        "Download the connector installer, run Cryolauncher_Connector.exe, and allow it to start the local bridge. No Python or local Cryolauncher-GHUB installation is required.",
-
-      linux:
-        "Download the Linux tar.gz file, extract it, then run the Cryolauncher_Connector_Linux binary. For now, Linux uses a terminal-launched connector.",
-
-      unknown:
-        "Download the connector for your operating system, start it, and return to Cryolauncher."
+      "macos-arm64": "Download the connector, open the DMG, drag Cryolauncher_Connector.app to Applications, then double-click it.",
+      "macos-x86_64": "Download the connector, open the DMG, drag Cryolauncher_Connector.app to Applications, then double-click it.",
+      "windows-x86_64": "Download the connector installer, run Cryolauncher_Connector.exe, and allow it to start the local bridge.",
+      "windows-arm64": "Download the connector installer, run Cryolauncher_Connector.exe, and allow it to start the local bridge.",
+      "linux-x86_64": "Download the Linux x86_64 tar.gz file, extract it, then run the connector binary.",
+      "linux-arm64": "Download the Linux ARM64 tar.gz file, extract it, then run the connector binary.",
+      unknown: "Download the connector for your operating system, start it, and return to Cryolauncher."
     };
 
     const afterSteps = {
-
-      macos: [
+      "macos-arm64": [
         "Turn on your university VPN.",
-        "Start Cryolauncher_Connector.app if it is not already running in the menu bar.",
+        "Start Cryolauncher_Connector.app.",
         "Return to Cryolauncher. The connector status should change to online automatically."
       ],
-
-      windows: [
+      "macos-x86_64": [
+        "Turn on your university VPN.",
+        "Start Cryolauncher_Connector.app.",
+        "Return to Cryolauncher. The connector status should change to online automatically."
+      ],
+      "windows-x86_64": [
         "Turn on your university VPN.",
         "Start Cryolauncher_Connector.exe.",
         "Return to Cryolauncher. The connector status should change to online automatically."
       ],
-
-      linux: [
+      "windows-arm64": [
         "Turn on your university VPN.",
-        "Extract the tar.gz file.",
-        "Run ./Cryolauncher_Connector_Linux from the extracted folder.",
+        "Start Cryolauncher_Connector.exe.",
         "Return to Cryolauncher. The connector status should change to online automatically."
       ],
-
+      "linux-x86_64": [
+        "Turn on your university VPN.",
+        "Extract the tar.gz file.",
+        "Run ./Cryolauncher_Connector from the extracted folder.",
+        "Return to Cryolauncher. The connector status should change to online automatically."
+      ],
+      "linux-arm64": [
+        "Turn on your university VPN.",
+        "Extract the tar.gz file.",
+        "Run ./Cryolauncher_Connector from the extracted folder.",
+        "Return to Cryolauncher. The connector status should change to online automatically."
+      ],
       unknown: [
         "Turn on your university VPN.",
-        "Start the Cryolauncher Connector for your operating system.",
+        "Start the Cryolauncher Connector.",
         "Return to Cryolauncher. The connector status should change to online automatically."
       ]
     };
