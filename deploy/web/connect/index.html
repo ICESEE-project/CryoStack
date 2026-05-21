@@ -179,6 +179,53 @@
         font-size: 34px;
       }
     }
+
+    .download-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-top: 14px;
+    }
+
+    .download-card {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px 12px;
+      text-align: center;
+      background: #fff;
+    }
+
+    .download-icon {
+      font-size: 42px;
+      margin-bottom: 8px;
+    }
+
+    .download-card h3 {
+      margin: 4px 0 10px;
+      font-size: 18px;
+    }
+
+    .download-card .mini {
+      display: inline-block;
+      margin: 4px;
+      padding: 7px 10px;
+      border-radius: 8px;
+      background: var(--soft-blue);
+      color: var(--blue);
+      font-weight: 750;
+      text-decoration: none;
+      font-size: 13px;
+    }
+
+    .download-card .mini:hover {
+      background: rgba(13,110,253,.15);
+    }
+
+    @media (max-width: 860px) {
+      .download-grid {
+        grid-template-columns: 1fr;
+      }
+    }
   </style>
 </head>
 
@@ -206,41 +253,47 @@
       <!-- LEFT CARD -->
 
       <section class="card">
-
-        <h2>
-          Download Connector
-        </h2>
+        <h2>Download Connector</h2>
 
         <div class="osbox">
-          <div class="osline">
-            Detected operating system
-          </div>
+          <div class="osline">Recommended download</div>
+          <div id="os">detecting...</div>
 
-          <div id="os">
-            detecting...
-          </div>
+          <a id="download" class="btn" href="/downloads/">
+            Download Recommended Connector
+          </a>
+
+          <p class="small" id="detect-note">
+            If this does not match your machine, choose manually below.
+          </p>
         </div>
 
-        <a id="download"
-           class="btn"
-           href="/downloads/">
-          Download Connector
-        </a>
+        <h2 style="margin-top:24px;">Choose manually</h2>
 
-        <p class="small" style="margin-top:18px;">
-          The connector is selected automatically based on your
-          browser and operating system. If the detection is
-          incorrect, choose manually below.
-        </p>
+        <div class="download-grid">
 
-        <div class="manual">
-          <a href="#" data-os-choice="macos-arm64">macOS Apple Silicon</a>
-          <a href="#" data-os-choice="macos-x86_64">macOS Intel</a>
-          <a href="#" data-os-choice="windows-x86_64">Windows x86_64</a>
-          <a href="#" data-os-choice="linux-x86_64">Linux x86_64</a>
-          <a href="#" data-os-choice="linux-arm64">Linux ARM64</a>
+          <div class="download-card">
+            <div class="download-icon"></div>
+            <h3>macOS</h3>
+            <a class="mini" href="/downloads/Cryolauncher_Connector_macOS_arm64.dmg">Apple Silicon</a>
+            <a class="mini" href="/downloads/Cryolauncher_Connector_macOS_x86_64.dmg">Intel</a>
+          </div>
+
+          <div class="download-card">
+            <div class="download-icon">🐧</div>
+            <h3>Linux</h3>
+            <a class="mini" href="/downloads/Cryolauncher_Connector_Linux_x86_64.tar.gz">x86_64</a>
+            <a class="mini" href="/downloads/Cryolauncher_Connector_Linux_arm64.tar.gz">ARM64</a>
+          </div>
+
+          <div class="download-card">
+            <div class="download-icon">▦</div>
+            <h3>Windows</h3>
+            <a class="mini" href="/downloads/Cryolauncher_Connector_Windows_x86_64.exe">x86_64</a>
+            <a class="mini" href="/downloads/Cryolauncher_Connector_Windows_arm64.exe">ARM64</a>
+          </div>
+
         </div>
-
       </section>
 
       <!-- RIGHT CARD -->
@@ -325,7 +378,7 @@
       return "x86_64";
     }
 
-    function detectOS() {
+    async function detectOS() {
       const ua = navigator.userAgent.toLowerCase();
       const platform = (
         navigator.userAgentData?.platform ||
@@ -333,13 +386,25 @@
         ""
       ).toLowerCase();
 
-      const arch = normalizeArch(
-        navigator.userAgentData?.architecture ||
-        navigator.platform ||
-        navigator.userAgent
-      );
+      let archRaw = "";
+
+      if (navigator.userAgentData?.getHighEntropyValues) {
+        try {
+          const data = await navigator.userAgentData.getHighEntropyValues(["architecture", "bitness"]);
+          archRaw = `${data.architecture || ""} ${data.bitness || ""}`;
+        } catch (e) {
+          archRaw = "";
+        }
+      }
+
+      archRaw = archRaw || navigator.platform || navigator.userAgent;
+
+      const arch = normalizeArch(archRaw);
 
       if (platform.includes("mac") || ua.includes("mac os")) {
+        if (navigator.userAgent.includes("Mac") && navigator.maxTouchPoints > 1) {
+          return "macos-arm64";
+        }
         return `macos-${arch}`;
       }
 
@@ -353,6 +418,21 @@
 
       return "unknown";
     }
+
+    async function initPage() {
+      let selectedOS = await detectOS();
+      setOS(selectedOS);
+
+      const params = new URLSearchParams(window.location.search);
+      const session = params.get("session");
+
+      if (session) {
+        document.getElementById("session-box").style.display = "block";
+        document.getElementById("session-id").textContent = session;
+      }
+    }
+
+    initPage();
 
     const urls = {
       "macos-arm64": "/downloads/Cryolauncher_Connector_macOS_arm64.dmg",
@@ -466,21 +546,6 @@
     let selectedOS = detectOS();
 
     setOS(selectedOS);
-
-    document
-      .querySelectorAll("[data-os-choice]")
-      .forEach((el) => {
-
-        el.addEventListener("click", (event) => {
-
-          event.preventDefault();
-
-          selectedOS =
-            el.getAttribute("data-os-choice");
-
-          setOS(selectedOS);
-        });
-      });
 
     const params =
       new URLSearchParams(window.location.search);
