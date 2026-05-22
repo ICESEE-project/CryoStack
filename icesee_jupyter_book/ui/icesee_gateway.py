@@ -1044,8 +1044,8 @@ def build_icesee_ui():
                 cluster_name=cluster_name_for_keys.value or "pace",
             )
 
-            # with log_out:
-            #     print()
+            with log_out:
+                print()
             #     print("[ssh] Automatic key installation did not complete.")
             #     print("[ssh] Some clusters require SSH keys to be added through a web portal.")
             #     print()
