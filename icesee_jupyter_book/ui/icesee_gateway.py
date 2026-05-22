@@ -535,7 +535,8 @@ def build_icesee_ui():
         cluster_host = W.Text(value="login-phoenix-rh9.pace.gatech.edu", layout=W.Layout(width="320px"))
         cluster_user = W.Text(value=os.environ.get("USER", ""), placeholder="username", layout=W.Layout(width="320px"))
         cluster_port = W.IntText(value=22, layout=W.Layout(width="120px"))
-        cluster_name_for_keys = W.Text(value="pace" , layout=W.Layout(width="320px"))
+        # cluster_name_for_keys = W.Text(value="pace" , layout=W.Layout(width="320px"))
+        cluster_name_for_keys = W.Text(value="pace", placeholder="e.g. pace, ub-ccr, frontera", layout=W.Layout(width="320px"))
         
         auth_mode = W.ToggleButtons(
         options=[("Key-only", "key"), ("Bootstrap with password (one-time)", "bootstrap")],
@@ -576,7 +577,7 @@ def build_icesee_ui():
                 ("Direct SSH from server", "direct"),
                 ("Local Connector / VPN bridge", "connector"),
             ],
-            value="auto",
+            value="connector",
             layout=W.Layout(width="320px"),
         )
 
@@ -1900,7 +1901,11 @@ def build_icesee_ui():
             ),
         )
 
+
+        cluster_name_row = form_pair("Cluster:", cluster_name_for_keys, "90px")
+
         remote_conn_inner = W.VBox([
+            cluster_name_row,
             W.HBox([W.HTML("<div class='icesee-lbl'>Host:</div>"), cluster_host], layout=W.Layout(gap="12px")),
             W.HBox([
                 form_pair("User:", cluster_user),

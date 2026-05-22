@@ -1477,7 +1477,7 @@ def build_icesheets_ui():
                 ("Direct SSH from server", "direct"),
                 ("Local Connector / VPN bridge", "connector"),
             ],
-            value="auto",
+            value="connector",
             layout=W.Layout(width="100%"),
         )
 
@@ -1562,7 +1562,8 @@ def build_icesheets_ui():
         cluster_host = W.Text(value="login-phoenix-rh9.pace.gatech.edu", layout=W.Layout(width="320px"))
         cluster_user = W.Text(value=os.environ.get("USER", ""), placeholder="username", layout=W.Layout(width="320px"))
         cluster_port = W.IntText(value=22, layout=W.Layout(width="120px"))
-        cluster_name_for_keys = W.Text(value="pace" , layout=W.Layout(width="320px"))
+        # cluster_name_for_keys = W.Text(value="pace" , layout=W.Layout(width="320px"))
+        cluster_name_for_keys = W.Text(value="pace", placeholder="e.g. pace, ub-ccr, frontera", layout=W.Layout(width="320px"))
 
         remote_base_dir = W.Text(value="~/r-arobel3-0", layout=W.Layout(width="320px"))
         remote_tag = W.Text(value="icesheets", layout=W.Layout(width="220px"))
@@ -3830,7 +3831,10 @@ fi
                 margin="10px 0 0 0",
             ),
         )
+
+        cluster_name_row = form_pair("Cluster:", cluster_name_for_keys, "90px")
         remote_conn_inner = W.VBox([
+            cluster_name_row,
             form_pair("Access:", access_mode_dd, "90px"),
             cluster_host_row,
             W.HBox([cluster_user_row, cluster_port_row], layout=W.Layout(gap="12px", width="100%")),
