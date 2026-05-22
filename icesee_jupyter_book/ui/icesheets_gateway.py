@@ -3993,7 +3993,7 @@ fi
         auto_tail_btn.observe(on_auto_tail_change, names="value")
 
         remote_actions = W.HBox(
-            [connect_btn, check_backend_btn, status_btn, tail_btn, terminate_btn],
+            [connect_btn, status_btn, tail_btn, terminate_btn],
             layout=W.Layout(gap="10px", flex_wrap="wrap")
         )
 
