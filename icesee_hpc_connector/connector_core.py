@@ -577,24 +577,48 @@ async def bootstrap_passwordless_ssh_local(payload):
         }
     except Exception as e:
         cluster_name = payload.get("cluster_name", "pace")
-        priv, pub = ensure_local_ssh_key(cluster_name=cluster_name)
+
+        priv, pub = ensure_local_ssh_key(
+            cluster_name=cluster_name
+        )
+
         pub_text = ""
+
         try:
-            pub_text = open(pub, "r", encoding="utf-8").read().strip()
+            pub_text = open(
+                pub,
+                "r",
+                encoding="utf-8"
+            ).read().strip()
+
         except Exception:
             pass
+
         return {
             "ok": False,
             "stage": "bootstrap_exception",
             "error": f"{type(e).__name__}: {e}",
-            "private_key": priv,
-            "public_key": pub,
+            "private_key": str(priv),
+            "public_key": str(pub),
             "public_key_text": pub_text,
             "messages": [
-                "[auth][ERROR] Automatic key installation failed.",
-                "[auth] If this cluster requires a web portal for SSH keys, copy the public key below into the cluster portal.",
-                f"[auth] public key file: {pub}",
+                "[auth][ERROR] Automatic SSH key installation did not complete.",
+                "",
+                "[ssh] This usually means the cluster does not allow keys to be installed automatically from the command line.",
+                "[ssh] Some clusters require you to paste your public SSH key into their web portal first.",
+                "",
+                "[ssh] Copy this public key:",
                 pub_text,
+                "",
+                f"[ssh] Public key file on this machine: {pub}",
+                "",
+                "[ssh] Next steps:",
+                "  1. Open your cluster SSH key portal.",
+                "  2. Paste the public key shown above.",
+                "  3. Save or submit the key in the portal.",
+                "  4. Wait a few minutes if the cluster needs time to activate the key.",
+                '  5. Return here and click "Test SSH".',
+                '  6. If the test succeeds, continue using "Key-only" mode.',
             ],
         }
 
