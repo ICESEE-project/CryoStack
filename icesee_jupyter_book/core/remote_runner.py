@@ -1700,3 +1700,19 @@ def connector_stage_archive(
     )
 
     return relay_result_payload(res)
+
+def connector_get_public_key(
+    session_id: str,
+    cluster_name: str = "pace",
+):
+    from icesee_jupyter_book.core.connector_relay_client import send_command
+
+    res = send_command(
+        session_id,
+        "get-public-key",
+        {
+            "cluster_name": cluster_name,
+            "timeout": 30,
+        },
+    )
+    return relay_result_payload(res)

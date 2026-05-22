@@ -155,8 +155,11 @@ async def handle_command(command_type: str, payload: dict):
     if command_type == "fetch-archive":
         return await run_fetch_archive(payload)
     
-    elif command_type == "bootstrap-passwordless-ssh":
+    if command_type == "bootstrap-passwordless-ssh":
         return await bootstrap_passwordless_ssh_local(payload)
+    
+    if command_type == "get-public-key":
+        return await get_public_key_local(payload)
 
     return {
         "ok": False,
@@ -574,3 +577,20 @@ echo OK
 
 def main_auto():
     run_connector(relay=DEFAULT_RELAY, poll=True)
+
+async def get_public_key_local(payload: dict):
+    cluster_name = payload.get("cluster_name", "pace")
+    priv, pub = ensure_local_ssh_key(cluster_name=cluster_name)
+
+    return {
+        "ok": True,
+        "private_key": priv,
+        "public_key": pub,
+        "public_key_text": open(pub, "r", encoding="utf-8").read().strip(),
+        "messages": [
+            "[ssh] Connector SSH key ready.",
+            f"[ssh] private key: {priv}",
+            f"[ssh] public key : {pub}",
+            "[ssh] If automatic bootstrap fails, copy the public key text into your cluster SSH key portal.",
+        ],
+    }

@@ -53,6 +53,7 @@ from icesee_jupyter_book.core.remote_runner import (
     connector_fetch_archive,
     submit_remote_example_via_connector,
     submit_remote_example_container_via_connector,
+    connector_get_public_key,
     RemoteSubmitResult,
 )
 from icesee_jupyter_book.core.cloud_runner import (
@@ -1012,65 +1013,49 @@ def build_icesee_ui():
                 except Exception:
                     pass
             return h
+        
+        def should_use_connector() -> bool:
+            mode = access_mode_dd.value
+
+            if mode == "connector":
+                return True
+
+            if mode == "direct":
+                return False
+
+            # auto mode: use connector only if direct SSH fails
+            try:
+                result = remote_test_connection(
+                    cluster_host.value.strip(),
+                    cluster_user.value.strip(),
+                    int(cluster_port.value),
+                )
+                return not result.get("ok", False)
+            except Exception:
+                return True
     
-        # def on_bootstrap_keys(_=None):
-        #     log_out.clear_output()
-        #     set_status("running")
+        def show_connector_public_key_help():
+            if not SESSION.get("id"):
+                create_or_refresh_connector_session()
 
-        #     host = cluster_host.value.strip()
-        #     user = cluster_user.value.strip()
-        #     port = int(cluster_port.value)
-        #     pw   = cluster_password.value
+            result = connector_get_public_key(
+                SESSION["id"],
+                cluster_name=cluster_name_for_keys.value or "pace",
+            )
 
-        #     if not host or not user:
-        #         set_status("fail")
-        #         with log_out:
-        #             print("[auth][ERROR] Provide Host + User first.")
-        #         return
-        #     if not pw:
-        #         set_status("fail")
-        #         with log_out:
-        #             print("[auth][ERROR] Enter your password (used once; not stored).")
-        #         return
+            with log_out:
+                print()
+                print("[ssh] Automatic key installation did not complete.")
+                print("[ssh] Some clusters require SSH keys to be added through a web portal.")
+                print()
+                print("[ssh] Copy this public key and add it to the cluster SSH key portal:")
+                print()
+                print(result.get("public_key_text", "").strip())
+                print()
+                print("[ssh] After adding the key, return here and click Test SSH.")
+                print("[ssh] Then continue using Key-only mode.")
 
-        #     try:
-        #         # 1) ensure local keypair exists
-        #         priv, pub = ensure_local_ssh_key(key_type="ed25519")
-        #         pubkey_text = pub.read_text(encoding="utf-8").strip()
-
-        #         with log_out:
-        #             print("[auth] Installing public key to remote authorized_keys…")
-
-        #         # 2) install pubkey using password auth
-        #         remote_install_pubkey_with_password(
-        #             host=host, user=user, port=port,
-        #             password=pw, pubkey_text=pubkey_text
-        #         )
-
-        #         # 3) verify system ssh works (BatchMode)
-        #         with log_out:
-        #             print("[auth] Verifying non-interactive SSH…")
-        #         r = ssh_run(host, user, port, "hostname && whoami && date", timeout=15)
-
-        #         if r.returncode == 0:
-        #             set_status("done")
-        #             with log_out:
-        #                 print("[auth] ✅ Passwordless SSH is working. You can switch back to Key-only.")
-        #             # Optional: flip auth mode back
-        #             auth_mode.value = "key"
-        #             cluster_password.value = ""
-        #         else:
-        #             set_status("fail")
-        #             with log_out:
-        #                 print("[auth][ERROR] Key install ran, but BatchMode SSH still failed.")
-        #                 print("stdout:", (r.stdout or "").strip())
-        #                 print("stderr:", (r.stderr or "").strip())
-        #                 print("hint :", explain_ssh_failure_hint(r.stderr or ""))
-
-        #     except Exception as e:
-        #         set_status("fail")
-        #         with log_out:
-        #             print("[auth][ERROR]", type(e).__name__, e)
+            return result
 
         def on_bootstrap_keys(_=None):
             log_out.clear_output()
@@ -1123,8 +1108,17 @@ def build_icesee_ui():
                         print("[auth] ✅ Passwordless SSH is working.")
                 else:
                     set_status("fail")
-                    with log_out:
-                        print("[auth][ERROR] Bootstrap failed.")
+                    # with log_out:
+                    #     print("[auth][ERROR] Bootstrap failed.")
+
+                    # status_chip.value = status_html("fail")
+                    if should_use_connector():
+                        show_connector_public_key_help()
+                    else:
+                        with log_out:
+                            print()
+                            print("[ssh] Direct/server-side bootstrap failed.")
+                            print("[ssh] Use the SSH Key Manager below only for direct SSH from this server.")
 
             except Exception as e:
                 set_status("fail")
@@ -1973,9 +1967,29 @@ def build_icesee_ui():
         auth_box.set_title(0, "🔒 Authentication")
         auth_box.selected_index = None
 
-        ssh_key_manager_box = W.Accordion(children=[ssh_key_manager])
-        ssh_key_manager_box.set_title(0, "🔐 SSH Key Manager")
+        server_key_note = W.HTML("""
+        <div class='icesee-subtle' style='line-height:1.5; margin-bottom:8px;'>
+        This manages SSH keys on the web server/GHUB side for direct SSH.
+        For Local Connector / VPN bridge mode, the connector creates the key on your workstation.
+        </div>
+        """)
+
+        ssh_key_manager_box = W.Accordion(
+            children=[
+                W.VBox([
+                    server_key_note,
+                    ssh_key_manager,
+                ], layout=W.Layout(gap="8px"))
+            ]
+        )
+
+        ssh_key_manager_box.set_title(0, "🔐 Server-side SSH Key Manager")
         ssh_key_manager_box.selected_index = None
+
+        # ssh_key_manager_box = W.Accordion(children=[ssh_key_manager])
+        # # ssh_key_manager_box.set_title(0, "🔐 SSH Key Manager")
+        # ssh_key_manager_box.set_title(0, "🔐 Server-side SSH Key Manager")
+        # ssh_key_manager_box.selected_index = None
 
         # Remote panel
         remote_box = W.VBox(
@@ -1985,6 +1999,7 @@ def build_icesee_ui():
                 exec_backend_box,
                 slurm_box,
                 auth_box,
+                # server_key_note,
                 ssh_key_manager_box,
                 W.HBox(
                     [connect_btn, status_btn, tail_btn, terminate_btn],

@@ -37,6 +37,7 @@ from icesee_jupyter_book.core.remote_runner import (
     connector_fetch_archive,
     connector_stage_archive,
     connector_slurm_submit,
+    connector_get_public_key,
 )
 from icesee_jupyter_book.core.cloud_runner import (
     AWSBatchConfig,
@@ -1667,6 +1668,29 @@ def build_icesheets_ui():
             layout=W.Layout(width="100%", height="120px"),
         )
 
+        def show_connector_public_key_help():
+            if not SESSION.get("id"):
+                create_or_refresh_connector_session()
+
+            result = connector_get_public_key(
+                SESSION["id"],
+                cluster_name=cluster_name_for_keys.value or "pace",
+            )
+
+            with log_out:
+                print()
+                print("[ssh] Automatic key installation did not complete.")
+                print("[ssh] Some clusters require SSH keys to be added through a web portal.")
+                print()
+                print("[ssh] Copy this public key and add it to the cluster SSH key portal:")
+                print()
+                print(result.get("public_key_text", "").strip())
+                print()
+                print("[ssh] After adding the key, return here and click Test SSH.")
+                print("[ssh] Then continue using Key-only mode.")
+
+            return result
+
         def on_bootstrap_keys(_=None):
             log_out.clear_output()
             status_chip.value = status_html("running")
@@ -1733,6 +1757,14 @@ def build_icesheets_ui():
                         print("[auth] ✅ Passwordless SSH is working.")
                 else:
                     status_chip.value = status_html("fail")
+
+                    if should_use_connector():
+                        show_connector_public_key_help()
+                    else:
+                        with log_out:
+                            print()
+                            print("[ssh] Direct/server-side bootstrap failed.")
+                            print("[ssh] Use the SSH Key Manager below only for direct SSH from this server.")
 
             except Exception as e:
                 status_chip.value = status_html("fail")
@@ -3751,10 +3783,29 @@ fi
             host_widget=cluster_host,
             user_widget=cluster_user,
         )
+        server_key_note = W.HTML("""
+        <div class='icesee-subtle' style='line-height:1.5; margin-bottom:8px;'>
+        This manages SSH keys on the web server/GHUB side for direct SSH.
+        For Local Connector / VPN bridge mode, the connector creates the key on your workstation.
+        </div>
+        """)
 
-        ssh_key_manager_box = W.Accordion(children=[ssh_key_manager])
-        ssh_key_manager_box.set_title(0, "🔐 SSH Key Manager")
+        ssh_key_manager_box = W.Accordion(
+            children=[
+                W.VBox([
+                    server_key_note,
+                    ssh_key_manager,
+                ], layout=W.Layout(gap="8px"))
+            ]
+        )
+
+        ssh_key_manager_box.set_title(0, "🔐 Server-side SSH Key Manager")
         ssh_key_manager_box.selected_index = None
+
+        # ssh_key_manager_box = W.Accordion(children=[ssh_key_manager])
+        # # ssh_key_manager_box.set_title(0, "🔐 SSH Key Manager")
+        # ssh_key_manager_box.set_title(0, "🔐 Server-side SSH Key Manager")
+        # ssh_key_manager_box.selected_index = None
 
         ssh_key_manager_box.layout = W.Layout(
             width="100%",
@@ -3921,6 +3972,7 @@ fi
             remote_conn_box,
             exec_backend_box,
             auth_box,
+            # server_key_note,
             ssh_key_manager_box,
             slurm_box,
             relay_status,
