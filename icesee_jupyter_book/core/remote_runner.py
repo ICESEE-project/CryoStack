@@ -820,10 +820,10 @@ def remote_maybe_install_spack(host, user, port, spack_path, install_flag, slurm
 
     # Build env prefix only if provided
     env_prefix = ""
-    if slurm:
-        env_prefix += f"SLURM_DIR={sh_quote(slurm)} "
-    if pmix:
-        env_prefix += f"PMIX_DIR={sh_quote(pmix)} "
+    # if slurm:
+    #     env_prefix += f"SLURM_DIR={sh_quote(slurm)} "
+    # if pmix:
+    #     env_prefix += f"PMIX_DIR={sh_quote(pmix)} "
 
     cmd = f"""
 set -e
@@ -1237,10 +1237,10 @@ echo {sh_quote(spack_path)}
     if spack_install_if_needed:
         install_flag = spack_install_mode or ""
         env_prefix = ""
-        if spack_slurm_dir.strip():
-            env_prefix += f"SLURM_DIR={sh_quote(spack_slurm_dir.strip())} "
-        if spack_pmix_dir.strip():
-            env_prefix += f"PMIX_DIR={sh_quote(spack_pmix_dir.strip())} "
+        # if spack_slurm_dir.strip():
+        #     env_prefix += f"SLURM_DIR={sh_quote(spack_slurm_dir.strip())} "
+        # if spack_pmix_dir.strip():
+        #     env_prefix += f"PMIX_DIR={sh_quote(spack_pmix_dir.strip())} "
 
         install_cmd = f"""
 set -e

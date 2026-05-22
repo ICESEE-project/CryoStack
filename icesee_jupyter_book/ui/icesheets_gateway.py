@@ -430,129 +430,6 @@ catch ME
     disp(['[ICESEE-GUI][ERROR] Postprocess failed: ' ME.message]);
 end
 """
-# def relay_result_payload(result: dict) -> dict:
-#     return result.get("result", result)
-
-# def connector_fetch_archive(
-#     session_id: str,
-#     host: str,
-#     user: str,
-#     port: int,
-#     remote_path: str,
-#     timeout: int = 600,
-# ):
-#     from icesee_jupyter_book.core.connector_relay_client import send_command
-
-#     res = send_command(
-#         session_id,
-#         "fetch-archive",
-#         {
-#             "host": host,
-#             "user": user,
-#             "port": port,
-#             "remote_path": remote_path,
-#             "timeout": timeout,
-#         },
-#     )
-#     return relay_result_payload(res)
-
-# def connector_ssh(session_id: str, host: str, user: str, port: int, command: str, timeout: int = 60):
-#     from icesee_jupyter_book.core.connector_relay_client import send_command
-
-#     res = send_command(
-#         session_id,
-#         "ssh-run",
-#         {
-#             "host": host,
-#             "user": user,
-#             "port": port,
-#             "command": command,
-#             "timeout": timeout,
-#         },
-#     )
-#     return relay_result_payload(res)
-
-
-# def connector_rsync_upload(session_id: str, host: str, user: str, port: int, local_path: str, remote_path: str, timeout: int = 300):
-#     from icesee_jupyter_book.core.connector_relay_client import send_command
-
-#     res = send_command(
-#         session_id,
-#         "rsync-upload",
-#         {
-#             "host": host,
-#             "user": user,
-#             "port": port,
-#             "local_path": local_path,
-#             "remote_path": remote_path,
-#             "timeout": timeout,
-#         },
-#     )
-#     return relay_result_payload(res)
-
-
-# def connector_slurm_submit(session_id: str, host: str, user: str, port: int, remote_script: str, timeout: int = 60):
-#     from icesee_jupyter_book.core.connector_relay_client import send_command
-
-#     res = send_command(
-#         session_id,
-#         "slurm-submit",
-#         {
-#             "host": host,
-#             "user": user,
-#             "port": port,
-#             "remote_script": remote_script,
-#             "timeout": timeout,
-#         },
-#     )
-#     return relay_result_payload(res)
-
-# def connector_stage_archive(
-#     session_id: str,
-#     host: str,
-#     user: str,
-#     port: int,
-#     local_example_path: Path,
-#     remote_run_dir: str,
-#     timeout: int = 600,
-# ):
-#     """
-#     Package an example directory on the AWS/Voila side, send it through the relay,
-#     let the local connector write it temporarily, rsync it to HPC, and extract it there.
-#     """
-#     import base64
-#     import tarfile
-#     import tempfile
-#     from pathlib import Path
-#     from icesee_jupyter_book.core.connector_relay_client import send_command
-
-#     local_example_path = Path(local_example_path).expanduser().resolve()
-#     if not local_example_path.exists():
-#         raise RuntimeError(f"Example path does not exist: {local_example_path}")
-
-#     with tempfile.TemporaryDirectory() as td:
-#         archive_path = Path(td) / f"{local_example_path.name}.tar.gz"
-
-#         with tarfile.open(archive_path, "w:gz") as tar:
-#             tar.add(local_example_path, arcname=local_example_path.name)
-
-#         archive_b64 = base64.b64encode(archive_path.read_bytes()).decode("ascii")
-
-#     res = send_command(
-#         session_id,
-#         "stage-archive",
-#         {
-#             "host": host,
-#             "user": user,
-#             "port": port,
-#             "archive_name": f"{local_example_path.name}.tar.gz",
-#             "archive_b64": archive_b64,
-#             "remote_dir": remote_run_dir,
-#             "timeout": timeout,
-#         },
-#     )
-
-#     return relay_result_payload(res)
     
 def submit_remote_icesheets_via_connector(
     *,
@@ -1142,64 +1019,6 @@ def submit_remote_icesheets(
 
         messages.append(f"[remote] wrote postprocess script: {postprocess_path}")
 
-#     if model == "issm":
-#         import shlex
-
-#         md_config = md_config or {}
-#         config_path = f"{remote_run_dir}/apply_icesee_md_config.m"
-#         config_text = build_issm_md_config_script(md_config)
-#         encoded_cfg = base64.b64encode(config_text.encode("utf-8")).decode("ascii")
-
-#         write_cfg_cmd = (
-#             "python3 -c "
-#             + shlex.quote(
-#                 "import base64, pathlib; "
-#                 f"p = pathlib.Path({config_path!r}); "
-#                 "p.parent.mkdir(parents=True, exist_ok=True); "
-#                 f"p.write_text(base64.b64decode({encoded_cfg!r}).decode('utf-8'), encoding='utf-8'); "
-#                 "print(str(p))"
-#             )
-#         )
-
-#         cres = ssh_run(host, user, port, write_cfg_cmd, timeout=120)
-#         if cres.returncode != 0:
-#             raise RuntimeError(
-#                 "Failed to write ISSM md config script\n"
-#                 f"STDOUT:\n{cres.stdout}\n\nSTDERR:\n{cres.stderr}"
-#             )
-
-#         messages.append(f"[remote] wrote md config script: {config_path}")
-
-#     if model == "issm" and not test_mode:
-#         target_m = run_file_name if run_file_name.endswith(".m") else "runme.m"
-#         patch_cmd = f'''
-# python3 - <<'PY'
-# from pathlib import Path
-
-# p = Path(r"{remote_example_dir}") / "{target_m}"
-# txt = p.read_text()
-
-# inject = "run('../apply_icesee_md_config.m');\\n"
-
-# if "apply_icesee_md_config.m" not in txt:
-#     idx = txt.find("solve(")
-#     if idx >= 0:
-#         txt = txt[:idx] + inject + txt[idx:]
-#     else:
-#         txt += "\\n" + inject
-
-# p.write_text(txt)
-# print("[ICESEE-GUI] patched run target:", p)
-# PY
-# '''
-#         pres = ssh_run(host, user, port, patch_cmd, timeout=120)
-#         if pres.returncode != 0:
-#             raise RuntimeError(
-#                 "Failed to patch ISSM run target\n"
-#                 f"STDOUT:\n{pres.stdout}\n\nSTDERR:\n{pres.stderr}"
-#             )
-#         messages.append((pres.stdout or "").strip())
-
     # ---------------------------------------------------------
     # Build model-specific run block
     # ---------------------------------------------------------
@@ -1508,6 +1327,51 @@ def build_default_md_fields(section: str) -> dict:
         for f in fields
     }
 
+def build_backend_check_cmd(backend: str, model: str, remote_base: str, remote_tag: str) -> str:
+    root = f"{remote_base.rstrip('/')}/{remote_tag}"
+    spack_path = f"{remote_base.rstrip('/')}/ICESEE-Spack"
+    container_dir = f"{root}/ICESEE-Containers/spack-managed/combined-container"
+    sif_path = f"{container_dir}/combined-env.sif"
+
+    if backend == "spack":
+        if model == "issm":
+            return f'''
+set -e
+test -d "{spack_path}" || {{ echo "[missing] ICESEE-Spack not found: {spack_path}"; exit 2; }}
+source "{spack_path}/scripts/activate.sh"
+test -n "${{ISSM_DIR:-}}" || {{ echo "[missing] ISSM_DIR is not set"; exit 3; }}
+test -d "$ISSM_DIR" || {{ echo "[missing] ISSM_DIR path does not exist: $ISSM_DIR"; exit 4; }}
+echo "[ok] ICESEE-Spack found"
+echo "[ok] ISSM_DIR=$ISSM_DIR"
+'''
+        if model == "icepack":
+            return f'''
+set -e
+test -d "{spack_path}" || {{ echo "[missing] ICESEE-Spack not found: {spack_path}"; exit 2; }}
+source "{spack_path}/scripts/activate.sh"
+python - <<'PY'
+import icepack
+print("[ok] icepack import successful")
+try:
+    import firedrake
+    print("[ok] firedrake import successful")
+except Exception as e:
+    print("[warn] firedrake import failed:", type(e).__name__, e)
+PY
+'''
+    else:
+        return f'''
+set -e
+if ! command -v apptainer >/dev/null 2>&1; then
+    source /etc/profile >/dev/null 2>&1 || true
+    module load apptainer >/dev/null 2>&1 || true
+fi
+command -v apptainer >/dev/null 2>&1 || {{ echo "[missing] apptainer not found"; exit 2; }}
+test -f "{sif_path}" || {{ echo "[missing] container image not found: {sif_path}"; exit 3; }}
+echo "[ok] apptainer found: $(command -v apptainer)"
+echo "[ok] container image found: {sif_path}"
+'''
+
 def build_icesheets_ui():
     try:
         # =========================================================
@@ -1682,6 +1546,12 @@ def build_icesheets_ui():
         start_connector_session_btn = W.Button(
             description="Create connector session",
             icon="plug",
+            button_style="info",
+        )
+
+        check_backend_btn = W.Button(
+            description="Check backend",
+            icon="check-circle",
             button_style="info",
         )
 
@@ -2921,12 +2791,81 @@ def build_icesheets_ui():
             </a>
             """))
 
+        def on_check_backend(_=None):
+            log_out.clear_output()
+            status_chip.value = status_html("running")
+
+            host = cluster_host.value.strip()
+            user = cluster_user.value.strip()
+            port = int(cluster_port.value)
+
+            cmd = build_backend_check_cmd(
+                backend_dd.value,
+                model_dd.value,
+                remote_base_dir.value,
+                remote_tag.value,
+            )
+
+            try:
+                if should_use_connector():
+                    if not SESSION.get("id"):
+                        create_or_refresh_connector_session()
+
+                    res = connector_ssh(
+                        SESSION["id"],
+                        host,
+                        user,
+                        port,
+                        cmd,
+                        timeout=120,
+                    )
+
+                    rc = res.get("returncode", 1)
+                    out = res.get("stdout", "")
+                    err = res.get("stderr", "")
+                    ok = res.get("ok", False)
+                else:
+                    res = ssh_run(host, user, port, cmd, timeout=120)
+                    rc = res.returncode
+                    out = res.stdout
+                    err = res.stderr
+                    ok = rc == 0
+
+                with log_out:
+                    print("[backend] Check", backend_dd.value, "for", model_dd.value)
+                    print("returncode:", rc)
+                    if out.strip():
+                        print("--- stdout ---")
+                        print(out.strip())
+                    if err.strip():
+                        print("--- stderr ---")
+                        print(err.strip())
+
+                status_chip.value = status_html("done" if ok else "fail")
+
+            except Exception as e:
+                status_chip.value = status_html("fail")
+                with log_out:
+                    print("[backend][ERROR]", type(e).__name__, e)
+
 
         # =========================================================
         # Dynamic logic
         # =========================================================
         def update_visibility(_=None):
             is_container = backend_dd.value == "container"
+
+            container_source.layout.display = "" if is_container else "none"
+            image_uri.layout.display = "" if is_container else "none"
+
+            spack_enable.layout.display = "none" if is_container else ""
+            spack_repo_url.layout.display = "none" if is_container else ""
+            spack_dirname.layout.display = "none" if is_container else ""
+            spack_install_if_needed.layout.display = "none" if is_container else ""
+            spack_install_mode.layout.display = "none" if is_container else ""
+            # spack_slurm_dir.layout.display = "none" if is_container else ""
+            # spack_pmix_dir.layout.display = "none" if is_container else ""
+
             is_remote = mode_dd.value == "remote"
             is_cloud = mode_dd.value == "cloud"
             is_basic = ui_mode_dd.value == "basic"
@@ -3164,13 +3103,13 @@ def build_icesheets_ui():
                         exec_dir=exec_dir.value,
                         image_uri=image_uri.value,
                         container_source=container_source.value,
-                        spack_enable=True,
-                        spack_repo_url="https://github.com/ICESEE-project/ICESEE-Spack.git",
-                        spack_dirname="ICESEE-Spack",
-                        spack_install_if_needed=False,
-                        spack_install_mode="--with-issm" if model_dd.value == "issm" else "--with-icepack",
-                        spack_slurm_dir="",
-                        spack_pmix_dir="",
+                        spack_enable=spack_enable.value,
+                        spack_repo_url=spack_repo_url.value,
+                        spack_dirname=spack_dirname.value,
+                        spack_install_if_needed=spack_install_if_needed.value,
+                        spack_install_mode=spack_install_mode.value,
+                        spack_slurm_dir=spack_slurm_dir.value,
+                        spack_pmix_dir=spack_pmix_dir.value,
                         slurm_time=slurm_time.value,
                         slurm_job_name=slurm_job_name.value,
                         slurm_nodes=slurm_nodes.value,
@@ -3699,6 +3638,7 @@ fi
         clear_md_overrides_btn.on_click(clear_md_overrides)
         start_connector_session_btn.on_click(create_or_refresh_connector_session)
         bootstrap_btn.on_click(on_bootstrap_keys)
+        check_backend_btn.on_click(on_check_backend)
 
         # =========================================================
         # CSS
@@ -3872,8 +3812,114 @@ fi
         auth_box = W.Accordion(children=[auth_inner])
         auth_box.set_title(0, "🔒 Authentication")
 
+        exec_backend_choice = W.Dropdown(
+            options=[("ICESEE-Spack", "spack"), ("ICESEE-Container", "container")],
+            value="spack",
+            layout=W.Layout(width="320px"),
+        )
+
+        spack_enable = W.Checkbox(value=True, description="Use ICESEE-Spack on Remote")
+
+        spack_repo_url = W.Text(
+            value="https://github.com/ICESEE-project/ICESEE-Spack.git",
+            layout=W.Layout(width="100%"),
+        )
+
+        spack_dirname = W.Text(value="ICESEE-Spack", layout=W.Layout(width="100%"))
+
+        spack_install_if_needed = W.Checkbox(
+            value=False,
+            description="Run install.sh if not installed",
+        )
+
+        spack_install_mode = W.Dropdown(
+            options=[
+                ("Default", ""),
+                ("With ISSM", "--with-issm"),
+                ("With Icepack", "--with-icepack"),
+                ("With Firedrake", "--with-firedrake"),
+            ],
+            value="--with-issm",
+            layout=W.Layout(width="100%"),
+        )
+
+        spack_slurm_dir = W.Text(
+            value="",
+            placeholder="e.g. /opt/slurm/current",
+            layout=W.Layout(width="100%"),
+        )
+
+        spack_pmix_dir = W.Text(
+            value="",
+            placeholder="e.g. /opt/pmix/5.0.1",
+            layout=W.Layout(width="100%"),
+        )
+
+        backend_row = form_row("Backend:", backend_dd)
+
+        container_source_row = form_row("Source:", container_source)
+        image_uri_row = form_row("Image:", image_uri)
+
+        spack_enable_row = W.Box([spack_enable], layout=W.Layout(margin="0 0 0 120px"))
+        spack_repo_row = form_row("Repo:", spack_repo_url)
+        spack_dir_row = form_row("Dir name:", spack_dirname)
+        spack_install_row = W.Box([spack_install_if_needed], layout=W.Layout(margin="0 0 0 120px"))
+        spack_install_mode_row = form_row("Install:", spack_install_mode)
+        spack_slurm_row = form_row("SLURM_DIR:", spack_slurm_dir)
+        spack_pmix_row = form_row("PMIX_DIR:", spack_pmix_dir)
+
+        exec_backend_inner = W.VBox([
+            backend_row,
+            container_source_row,
+            image_uri_row,
+            spack_enable_row,
+            spack_repo_row,
+            spack_dir_row,
+            spack_install_row,
+            spack_install_mode_row,
+            # spack_slurm_row,
+            # spack_pmix_row,
+        ], layout=W.Layout(gap="8px"))
+
+        def _toggle_exec_backend_ui(_=None):
+            is_container = backend_dd.value == "container"
+
+            container_source_row.layout.display = "flex" if is_container else "none"
+            image_uri_row.layout.display = "flex" if is_container else "none"
+
+            spack_display = "none" if is_container else "flex"
+            spack_box_display = "none" if is_container else "block"
+
+            spack_enable_row.layout.display = spack_box_display
+            spack_repo_row.layout.display = spack_display
+            spack_dir_row.layout.display = spack_display
+            spack_install_row.layout.display = spack_box_display
+            spack_install_mode_row.layout.display = spack_display
+            spack_slurm_row.layout.display = spack_display
+            spack_pmix_row.layout.display = spack_display
+        
+        backend_dd.observe(_toggle_exec_backend_ui, names="value")
+        _toggle_exec_backend_ui()
+        # exec_backend_inner = W.VBox([
+        #     form_row("Backend:", backend_dd),
+        #     form_row("Source:", container_source),
+        #     form_row("Image:", image_uri),
+        #     spack_enable,
+        #     form_row("Repo:", spack_repo_url),
+        #     form_row("Dir name:", spack_dirname),
+        #     spack_install_if_needed,
+        #     form_row("Install:", spack_install_mode),
+        #     # form_row("SLURM_DIR:", spack_slurm_dir),
+        #     # form_row("PMIX_DIR:", spack_pmix_dir),
+        # ], layout=W.Layout(gap="8px"))
+
+        exec_backend_box = W.Accordion(children=[exec_backend_inner])
+        exec_backend_box.set_title(0, "⚙️ Execution backend")
+        exec_backend_box.selected_index = None
+
         remote_box = W.VBox([
             remote_conn_box,
+            exec_backend_box,
             auth_box,
             ssh_key_manager_box,
             slurm_box,
@@ -3901,7 +3947,7 @@ fi
             W.HTML("<div class='icesee-h'>Run settings</div>"),
             ui_mode_row,
             mode_row,
-            backend_row,
+            # backend_row,
             model_row,
             example_picker_row,
             example_info_row,
@@ -3915,8 +3961,8 @@ fi
             new_example_row,
             advanced_buttons_row,
             dataset_upload_row,
-            container_source_row,
-            image_uri_row,
+            # container_source_row,
+            # image_uri_row,
             remote_box,
             cloud_box,
             W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>Execution summary</div>"),
@@ -3947,7 +3993,7 @@ fi
         auto_tail_btn.observe(on_auto_tail_change, names="value")
 
         remote_actions = W.HBox(
-            [connect_btn, status_btn, tail_btn, terminate_btn],
+            [connect_btn, check_backend_btn, status_btn, tail_btn, terminate_btn],
             layout=W.Layout(gap="10px", flex_wrap="wrap")
         )
 
