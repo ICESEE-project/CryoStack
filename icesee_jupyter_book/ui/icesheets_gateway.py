@@ -1678,17 +1678,17 @@ def build_icesheets_ui():
                 cluster_name=cluster_name_for_keys.value or "pace",
             )
 
-            with log_out:
-                print()
-                print("[ssh] Automatic key installation did not complete.")
-                print("[ssh] Some clusters require SSH keys to be added through a web portal.")
-                print()
-                print("[ssh] Copy this public key and add it to the cluster SSH key portal:")
-                print()
-                print(result.get("public_key_text", "").strip())
-                print()
-                print("[ssh] After adding the key, return here and click Test SSH.")
-                print("[ssh] Then continue using Key-only mode.")
+            # with log_out:
+            #     print()
+            #     print("[ssh] Automatic key installation did not complete.")
+            #     print("[ssh] Some clusters require SSH keys to be added through a web portal.")
+            #     print()
+            #     print("[ssh] Copy this public key and add it to the cluster SSH key portal:")
+            #     print()
+            #     print(result.get("public_key_text", "").strip())
+            #     print()
+            #     print("[ssh] After adding the key, return here and click Test SSH.")
+            #     print("[ssh] Then continue using Key-only mode.")
 
             return result
 
