@@ -28,7 +28,7 @@ mkdir -p dist/packages
 
 COMMON_ARGS=(
   --name "$APP_BASENAME"
-  --onedir
+  --onefile
   --windowed
   --clean
   --paths "$PWD"
