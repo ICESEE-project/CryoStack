@@ -585,14 +585,24 @@ async def bootstrap_passwordless_ssh_local(payload):
         pub_text = ""
 
         try:
-            pub_text = open(
-                pub,
-                "r",
-                encoding="utf-8"
-            ).read().strip()
+            with open(pub, "r", encoding="utf-8") as f:
+                pub_text = f.read().strip()
 
         except Exception:
-            pass
+            pub_text = ""
+
+        messages = [
+            "[ssh] Automatic key installation did not complete.",
+            "[ssh] Some clusters require SSH keys to be added through a web portal.",
+            "",
+            "[ssh] Step 1: Copy the public key below.",
+            pub_text or f"[ssh][ERROR] Could not read public key file: {pub}",
+            "",
+            "[ssh] Step 2: Open your cluster SSH key portal.",
+            "[ssh] Step 3: Paste and save the key.",
+            "[ssh] Step 4: Return here and click Test SSH.",
+            "[ssh] Step 5: Continue using Key-only mode.",
+        ]
 
         return {
             "ok": False,
@@ -601,25 +611,7 @@ async def bootstrap_passwordless_ssh_local(payload):
             "private_key": str(priv),
             "public_key": str(pub),
             "public_key_text": pub_text,
-            "messages": [
-                "[auth][ERROR] Automatic SSH key installation did not complete.",
-                "",
-                "[ssh] This usually means the cluster does not allow keys to be installed automatically from the command line.",
-                "[ssh] Some clusters require you to paste your public SSH key into their web portal first.",
-                "",
-                "[ssh] Copy this public key:",
-                pub_text,
-                "",
-                f"[ssh] Public key file on this machine: {pub}",
-                "",
-                "[ssh] Next steps:",
-                "  1. Open your cluster SSH key portal.",
-                "  2. Paste the public key shown above.",
-                "  3. Save or submit the key in the portal.",
-                "  4. Wait a few minutes if the cluster needs time to activate the key.",
-                '  5. Return here and click "Test SSH".',
-                '  6. If the test succeeds, continue using "Key-only" mode.',
-            ],
+            "messages": messages,
         }
 
 def main_auto():
