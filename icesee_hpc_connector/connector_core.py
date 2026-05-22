@@ -497,83 +497,106 @@ def ensure_local_ssh_key(cluster_name="pace", key_type="ed25519"):
     return str(priv), str(pub)
 
 async def bootstrap_passwordless_ssh_local(payload):
-    import paramiko
-    import subprocess
+    try:
+        import paramiko
+        import subprocess
 
-    host = payload["host"]
-    user = payload["user"]
-    port = int(payload.get("port", 22))
-    password = payload["password"]
-    cluster_name = payload.get("cluster_name", "pace")
+        host = payload["host"]
+        user = payload["user"]
+        port = int(payload.get("port", 22))
+        password = payload["password"]
+        cluster_name = payload.get("cluster_name", "pace")
 
-    priv, pub = ensure_local_ssh_key(cluster_name=cluster_name)
-    pubkey_text = open(pub, "r", encoding="utf-8").read().strip()
+        priv, pub = ensure_local_ssh_key(cluster_name=cluster_name)
+        pubkey_text = open(pub, "r", encoding="utf-8").read().strip()
 
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(
-        hostname=host,
-        port=port,
-        username=user,
-        password=password,
-        look_for_keys=False,
-        allow_agent=False,
-        timeout=25,
-        banner_timeout=25,
-        auth_timeout=25,
-    )
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(
+            hostname=host,
+            port=port,
+            username=user,
+            password=password,
+            look_for_keys=False,
+            allow_agent=False,
+            timeout=15,
+            banner_timeout=15,
+            auth_timeout=15,
+        )
 
-    quoted_key = shlex.quote(pubkey_text)
+        quoted_key = shlex.quote(pubkey_text)
 
-    cmd = f"""
-set -e
-mkdir -p ~/.ssh
-chmod 700 ~/.ssh
-touch ~/.ssh/authorized_keys
-chmod 600 ~/.ssh/authorized_keys
-grep -Fqx {quoted_key} ~/.ssh/authorized_keys || echo {quoted_key} >> ~/.ssh/authorized_keys
-echo OK
-"""
-    stdin, stdout, stderr = client.exec_command(cmd)
-    out = stdout.read().decode()
-    err = stderr.read().decode()
-    rc = stdout.channel.recv_exit_status()
-    client.close()
+        cmd = f"""
+    set -e
+    mkdir -p ~/.ssh
+    chmod 700 ~/.ssh
+    touch ~/.ssh/authorized_keys
+    chmod 600 ~/.ssh/authorized_keys
+    grep -Fqx {quoted_key} ~/.ssh/authorized_keys || echo {quoted_key} >> ~/.ssh/authorized_keys
+    echo OK
+    """
+        stdin, stdout, stderr = client.exec_command(cmd)
+        out = stdout.read().decode()
+        err = stderr.read().decode()
+        rc = stdout.channel.recv_exit_status()
+        client.close()
 
-    if rc != 0:
-        return {"ok": False, "stdout": out, "stderr": err, "private_key": priv, "public_key": pub}
+        if rc != 0:
+            return {"ok": False, "stdout": out, "stderr": err, "private_key": priv, "public_key": pub}
 
-    test = subprocess.run(
-        [
-            "ssh",
-            "-i", priv,
-            "-p", str(port),
-            "-o", "BatchMode=yes",
-            "-o", "IdentitiesOnly=yes",
-            "-o", "StrictHostKeyChecking=accept-new",
-            f"{user}@{host}",
-            "hostname && whoami && date",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=25,
-    )
+        test = subprocess.run(
+            [
+                "ssh",
+                "-i", priv,
+                "-p", str(port),
+                "-o", "BatchMode=yes",
+                "-o", "IdentitiesOnly=yes",
+                "-o", "StrictHostKeyChecking=accept-new",
+                f"{user}@{host}",
+                "hostname && whoami && date",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
 
-    return {
-        "ok": test.returncode == 0,
-        "returncode": test.returncode,
-        "stdout": test.stdout,
-        "stderr": test.stderr,
-        "private_key": priv,
-        "public_key": pub,
-        "messages": [
-            "[auth] Connector bootstrap selected.",
-            "[auth] Creating/installing SSH key on the local connector machine.",
-            f"[auth] private key: {priv}",
-            f"[auth] public key : {pub}",
-            "[auth] Testing passwordless SSH through connector.",
-        ],
-    }
+        return {
+            "ok": test.returncode == 0,
+            "returncode": test.returncode,
+            "stdout": test.stdout,
+            "stderr": test.stderr,
+            "private_key": priv,
+            "public_key": pub,
+            "messages": [
+                "[auth] Connector bootstrap selected.",
+                "[auth] Creating/installing SSH key on the local connector machine.",
+                f"[auth] private key: {priv}",
+                f"[auth] public key : {pub}",
+                "[auth] Testing passwordless SSH through connector.",
+            ],
+        }
+    except Exception as e:
+        cluster_name = payload.get("cluster_name", "pace")
+        priv, pub = ensure_local_ssh_key(cluster_name=cluster_name)
+        pub_text = ""
+        try:
+            pub_text = open(pub, "r", encoding="utf-8").read().strip()
+        except Exception:
+            pass
+        return {
+            "ok": False,
+            "stage": "bootstrap_exception",
+            "error": f"{type(e).__name__}: {e}",
+            "private_key": priv,
+            "public_key": pub,
+            "public_key_text": pub_text,
+            "messages": [
+                "[auth][ERROR] Automatic key installation failed.",
+                "[auth] If this cluster requires a web portal for SSH keys, copy the public key below into the cluster portal.",
+                f"[auth] public key file: {pub}",
+                pub_text,
+            ],
+        }
 
 def main_auto():
     run_connector(relay=DEFAULT_RELAY, poll=True)

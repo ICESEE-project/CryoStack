@@ -997,7 +997,7 @@ def bootstrap_passwordless_ssh(
                 "port": int(port),
                 "password": password,
                 "cluster_name": cluster_name,
-                "timeout": 90,
+                "timeout": 300,
             },
         )
 
@@ -1726,7 +1726,7 @@ def connector_get_public_key(
         "get-public-key",
         {
             "cluster_name": cluster_name,
-            "timeout": 30,
+            "timeout": 300,
         },
     )
     return relay_result_payload(res)
