@@ -787,7 +787,7 @@ echo "[icesheets] Run dir: {remote_run_dir}"
         )
     )
 
-    wres = connector_ssh(session_id, host, user, port, write_cmd, timeout=60)
+    wres = connector_ssh(session_id, host, user, port, write_cmd, timeout=60, cluster_name=cluster_name)
     if not wres.get("ok"):
         raise RuntimeError(
             "Failed to write remote sbatch script through connector\n"
@@ -2851,6 +2851,7 @@ def build_icesheets_ui():
                         port,
                         cmd,
                         timeout=120,
+                        cluster_name=cluster_name_for_keys.value or "pace",
                     )
 
                     rc = res.get("returncode", 1)

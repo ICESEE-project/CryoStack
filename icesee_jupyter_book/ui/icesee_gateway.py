@@ -1270,6 +1270,7 @@ def build_icesee_ui():
                             cluster_mpi_np=cluster_mpi_np.value,
                             ens_size=ens_sl.value,
                             cluster_model_nprocs=cluster_model_nprocs.value,
+                            cluster_name=cluster_name_for_keys.value,
                         )
                     else:
                         result = submit_remote_example(
@@ -1332,6 +1333,7 @@ def build_icesee_ui():
                             cluster_model_nprocs=cluster_model_nprocs.value,
                             container_source=container_source.value,
                             container_image_uri=container_image_uri.value,
+                            cluster_name=cluster_name_for_keys.value,
                         )
                     else:
                         result = submit_remote_example_container(

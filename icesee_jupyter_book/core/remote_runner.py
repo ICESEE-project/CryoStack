@@ -929,6 +929,7 @@ def connector_fetch_archive(
     port: int,
     remote_path: str,
     timeout: int = 600,
+    cluster_name: str = "pace",
 ):
     from icesee_jupyter_book.core.connector_relay_client import send_command
 
@@ -941,6 +942,7 @@ def connector_fetch_archive(
             "port": int(port),
             "remote_path": remote_path,
             "timeout": int(timeout),
+            "cluster_name": cluster_name,
         },
     )
     return relay_result_payload(res)
@@ -1036,6 +1038,7 @@ def connector_write_text(
     remote_path: str,
     text: str,
     timeout: int = 60,
+    cluster_name: str = "pace",
 ):
     import base64
     import shlex
@@ -1053,7 +1056,11 @@ def connector_write_text(
         )
     )
 
-    res = connector_ssh(session_id, host, user, port, cmd, timeout=timeout)
+    res = connector_ssh(
+        session_id, host, user, port, cmd,
+        timeout=timeout,
+        cluster_name=cluster_name,
+    )
 
     if not res.get("ok"):
         raise RuntimeError(
@@ -1074,6 +1081,7 @@ def connector_stage_and_submit(
     remote_dir: str,
     params_text: str,
     slurm_text: str,
+    cluster_name: str = "pace",
 ) -> str:
     import re
 
@@ -1085,6 +1093,7 @@ def connector_stage_and_submit(
         f"{remote_dir}/params.yaml",
         params_text,
         timeout=60,
+        cluster_name=cluster_name,
     )
 
     connector_write_text(
@@ -1095,10 +1104,11 @@ def connector_stage_and_submit(
         f"{remote_dir}/slurm_run.sh",
         slurm_text,
         timeout=60,
+        cluster_name=cluster_name,
     )
 
     chmod_cmd = f"chmod +x {sh_quote(remote_dir + '/slurm_run.sh')}"
-    cres = connector_ssh(session_id, host, user, port, chmod_cmd, timeout=30)
+    cres = connector_ssh(session_id, host, user, port, chmod_cmd, timeout=30, cluster_name=cluster_name)
     if not cres.get("ok"):
         raise RuntimeError(
             "Failed to chmod remote slurm_run.sh through connector\n"
@@ -1113,7 +1123,7 @@ def connector_stage_and_submit(
         port,
         f"{remote_dir}/slurm_run.sh",
         timeout=60,
-        cluster_name="pace",
+        cluster_name=cluster_name,
     )
 
     if not sres.get("ok"):
@@ -1166,6 +1176,7 @@ def submit_remote_example_via_connector(
     cluster_mpi_np: int,
     ens_size: int,
     cluster_model_nprocs: int,
+    cluster_name: str,
 ) -> RemoteSubmitResult:
     import re
 
@@ -1189,7 +1200,7 @@ def submit_remote_example_via_connector(
         )
     )
 
-    rbase = connector_ssh(session_id, host, user, port, rbase_cmd, timeout=60)
+    rbase = connector_ssh(session_id, host, user, port, rbase_cmd, timeout=60, cluster_name=cluster_name)
     if not rbase.get("ok"):
         raise RuntimeError(
             "Failed to resolve remote base dir through connector\n"
@@ -1223,7 +1234,7 @@ test -f {sh_quote(spack_path + '/scripts/activate.sh')}
 echo {sh_quote(spack_path)}
 """
 
-    eres = connector_ssh(session_id, host, user, port, ensure_cmd, timeout=600)
+    eres = connector_ssh(session_id, host, user, port, ensure_cmd, timeout=600, cluster_name=cluster_name)
     if not eres.get("ok"):
         raise RuntimeError(
             "Failed to ensure ICESEE-Spack through connector\n"
@@ -1249,7 +1260,7 @@ echo "[spack] running install.sh {install_flag}"
 {env_prefix} ./scripts/install.sh {install_flag}
 echo "[spack] install completed"
 """
-        ires = connector_ssh(session_id, host, user, port, install_cmd, timeout=7200)
+        ires = connector_ssh(session_id, host, user, port, install_cmd, timeout=7200, cluster_name=cluster_name)
         if not ires.get("ok"):
             raise RuntimeError(
                 "Remote ICESEE-Spack install failed through connector\n"
@@ -1270,7 +1281,7 @@ echo "[spack] install completed"
         user,
         port,
         f"test -d {sh_quote(remote_example_dir)} && echo OK || echo MISSING",
-        timeout=30,
+        timeout=30, cluster_name=cluster_name,
     )
 
     if not chk.get("ok") or "OK" not in (chk.get("stdout") or ""):
@@ -1290,7 +1301,7 @@ echo "[spack] install completed"
             user,
             port,
             f"test -f {sh_quote(sbatch_path)} && echo OK || echo MISSING",
-            timeout=30,
+            timeout=30, cluster_name=cluster_name,
         )
 
         if chk2.get("ok") and "OK" in (chk2.get("stdout") or ""):
@@ -1305,7 +1316,7 @@ echo "[spack] install completed"
             )
 
             copy_cmd = f"cp {sh_quote(rdir + '/params.yaml')} {sh_quote(remote_example_dir + '/params.yaml')}"
-            cres = connector_ssh(session_id, host, user, port, copy_cmd, timeout=30)
+            cres = connector_ssh(session_id, host, user, port, copy_cmd, timeout=30, cluster_name=cluster_name)
             if not cres.get("ok"):
                 raise RuntimeError(
                     "Failed to copy params.yaml into example dir through connector\n"
@@ -1319,7 +1330,7 @@ cd {sh_quote(remote_example_dir)}
 source {sh_quote(spack_path + '/scripts/activate.sh')}
 sbatch {sh_quote(remote_sbatch)}
 """
-            sres = connector_ssh(session_id, host, user, port, submit_cmd, timeout=60)
+            sres = connector_ssh(session_id, host, user, port, submit_cmd, timeout=60, cluster_name=cluster_name)
             if not sres.get("ok"):
                 raise RuntimeError(
                     "Failed to submit existing sbatch through connector\n"
@@ -1397,6 +1408,7 @@ sbatch {sh_quote(remote_sbatch)}
         remote_dir=rdir,
         params_text=params_text,
         slurm_text=slurm_text,
+        cluster_name=cluster_name,
     )
 
     messages.append("[connector] ✅ Submitted generated slurm_run.sh")
@@ -1444,6 +1456,7 @@ def submit_remote_example_container_via_connector(
     cluster_model_nprocs: int,
     container_source: str,
     container_image_uri: str,
+    cluster_name: str,
 ) -> RemoteSubmitResult:
     messages: list[str] = []
 
@@ -1462,7 +1475,7 @@ def submit_remote_example_container_via_connector(
         )
     )
 
-    rbase = connector_ssh(session_id, host, user, port, rbase_cmd, timeout=60)
+    rbase = connector_ssh(session_id, host, user, port, rbase_cmd, timeout=60, cluster_name=cluster_name)
     if not rbase.get("ok"):
         raise RuntimeError(
             "Failed to resolve remote base dir through connector\n"
@@ -1498,7 +1511,7 @@ test -f {sh_quote(spack_path + '/scripts/activate.sh')}
 echo {sh_quote(spack_path)}
 """
 
-    eres = connector_ssh(session_id, host, user, port, ensure_cmd, timeout=600)
+    eres = connector_ssh(session_id, host, user, port, ensure_cmd, timeout=600, cluster_name=cluster_name)
     if not eres.get("ok"):
         raise RuntimeError(
             "Failed to ensure ICESEE-Spack through connector\n"
@@ -1519,7 +1532,7 @@ echo {sh_quote(spack_path)}
         user,
         port,
         f"test -d {sh_quote(remote_example_dir)} && echo OK || echo MISSING",
-        timeout=30,
+        timeout=30, cluster_name=cluster_name,
     )
 
     if not chk.get("ok") or "OK" not in (chk.get("stdout") or ""):
@@ -1637,6 +1650,7 @@ echo "=== Finished ==="
         remote_dir=rdir,
         params_text=params_text,
         slurm_text=slurm_text,
+        cluster_name=cluster_name,
     )
 
     messages.append("[connector] ✅ Submitted container-based slurm_run.sh")
