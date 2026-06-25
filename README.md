@@ -1,8 +1,8 @@
-# ICESEE on GHUB
+# CryoLauncher
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**ICESEE-GHUB** is an interactive **Jupyter Book** environment that brings the ICESEE (Ice-sheet Coupled Ensemble Simulator and Estimator) framework to the cloud through GHUB. This tool enables users to explore ensemble data assimilation workflows, run lightweight examples, and understand the ICESEE framework without requiring a full HPC setup.
+**CryoLauncher** is an interactive **Jupyter Book** environment that brings the ICESEE (Ice-sheet Coupled Ensemble Simulator and Estimator) framework to the cloud through GHUB. This tool enables users to explore ensemble data assimilation workflows, run lightweight examples, and understand the ICESEE framework without requiring a full HPC setup.
 
 ## What is ICESEE?
 
@@ -33,9 +33,9 @@ For detailed implementation and broader documentation, see the [ICESEE Wiki](htt
 
 ##  Quick Start
 
-### On GHUB
+### On CryoLauncher
 
-1. Navigate to the ICESEE tool on GHUB
+1. Navigate to the Run Center
 2. Launch the tool
 3. The Jupyter Book will open automatically
 4. Start with the **Lorenz-96 tutorial** for a complete end-to-end example
@@ -70,7 +70,7 @@ For upstream ICESEE documentation: [ICESEE Wiki](https://github.com/ICESEE-proje
 ##  Project Structure
 
 ```
-ICESEE-GHUB/
+CryoLauncher/
 ├── icesee_jupyter_book/     # Jupyter Book source files
 │   ├── icesee_jupyter_notebooks/  # Tutorial notebooks
 │   ├── _config.yml          # Book configuration
