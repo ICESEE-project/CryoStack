@@ -1,0 +1,305 @@
+#!/bin/bash -l
+set -e
+
+# ============================================================
+# go.icesee1 — RHEL9 / Gatech VM version
+# Creates ICESEE conda environment from icesee1_environment.yml
+# Installs ICESEE and registers Jupyter kernel.
+# ============================================================
+
+version_number="1"
+
+# Environment naming
+environment="${ICESEE_ENV_NAME:-icesee${version_number}-rhel}"
+
+# Local writable conda/kernel roots
+conda_root="${ICESEE_CONDA_ROOT:-${HOME}/.icesee_conda}"
+kernel_root="${ICESEE_KERNEL_ROOT:-${HOME}/.local}"
+
+# Environment files
+conda_list="./icesee${version_number}_conda_list_rhel.txt"
+conda_env_yml="./icesee${version_number}_environment.yml"
+
+echo "=================================================="
+echo "ICESEE RHEL9 install"
+echo "conda_root: ${conda_root}"
+echo "kernel_root: ${kernel_root}"
+echo "environment: ${environment}"
+echo "conda_env_yml: ${conda_env_yml}"
+echo "=================================================="
+
+# ------------------------------------------------------------
+# Conda setup
+# ------------------------------------------------------------
+# command -v conda >/dev/null 2>&1 || {
+#     echo "ERROR: conda not found in PATH."
+#     echo "Install/activate Miniforge or Anaconda first."
+#     exit 2
+# }
+
+# ------------------------------------------------------------
+# Conda bootstrap (install Miniforge if missing)
+# ------------------------------------------------------------
+if ! command -v conda >/dev/null 2>&1; then
+    echo "Conda not found. Installing Miniforge..."
+
+    MINIFORGE_DIR="${HOME}/miniforge3"
+    INSTALLER="Miniforge3-Linux-x86_64.sh"
+
+    if [[ ! -d "${MINIFORGE_DIR}" ]]; then
+        cd /tmp
+
+        curl -L -o "${INSTALLER}" \
+          https://github.com/conda-forge/miniforge/releases/latest/download/${INSTALLER}
+
+        bash "${INSTALLER}" -b -p "${MINIFORGE_DIR}"
+    fi
+
+    export PATH="${MINIFORGE_DIR}/bin:${PATH}"
+
+    # Initialize shell
+    "${MINIFORGE_DIR}/bin/conda" init bash >/dev/null 2>&1 || true
+fi
+
+# Final check
+command -v conda >/dev/null 2>&1 || {
+    echo "ERROR: conda installation failed."
+    exit 2
+}
+
+eval "$($(which conda) shell.bash hook)"
+
+eval "$(conda shell.bash hook)"
+
+echo "which conda: $(which conda)"
+echo "which python: $(which python || true)"
+echo "which jupyter: $(which jupyter || true)"
+
+mkdir -p "${conda_root}/envs" "${conda_root}/pkgs"
+
+if [[ ! -f "${conda_env_yml}" ]]; then
+    echo "ERROR: ${conda_env_yml} not found."
+    echo ""
+    echo "Run the RHEL version of create_icesee1_environment_yml.sh first:"
+    echo "    ./create_icesee1_environment_yml.sh"
+    echo ""
+    echo "Or make sure you are running this script from the CryoLauncher root."
+    exit 2
+fi
+
+# ------------------------------------------------------------
+# Configure conda dirs
+# ------------------------------------------------------------
+conda config --add envs_dirs "${conda_root}/envs" || true
+conda config --add pkgs_dirs "${conda_root}/pkgs" || true
+conda config --add channels conda-forge || true
+conda config --set channel_priority strict || true
+
+# ------------------------------------------------------------
+# Remove old env
+# ------------------------------------------------------------
+start1=$(date +%s)
+
+echo "Removing env ${environment} if it exists..."
+conda remove --name "${environment}" --all -y || true
+
+# ------------------------------------------------------------
+# Create env from YAML
+# ------------------------------------------------------------
+echo "Creating env ${environment} from ${conda_env_yml}..."
+conda env create --name "${environment}" -f "${conda_env_yml}"
+
+echo "Activating env ${environment}..."
+conda activate "${environment}"
+
+echo "Env activated"
+echo "which python: $(which python)"
+echo "which jupyter: $(which jupyter || true)"
+echo "python version: $(python --version)"
+
+# ------------------------------------------------------------
+# ICESEE source discovery
+# Priority:
+# 1) ICESEE_REPO
+# 2) current directory if it has pyproject.toml
+# 3) ./external/ICESEE
+# 4) search upward from PWD
+# 5) search upward from script location
+# ------------------------------------------------------------
+
+find_icesee_repo_from() {
+    d="$1"
+    while [[ "${d}" != "/" ]]; do
+        if [[ -f "${d}/pyproject.toml" && -d "${d}/src" ]]; then
+            echo "${d}"
+            return 0
+        fi
+
+        if [[ -f "${d}/external/ICESEE/pyproject.toml" ]]; then
+            echo "${d}/external/ICESEE"
+            return 0
+        fi
+
+        d="$(dirname "${d}")"
+    done
+    return 1
+}
+
+ICESEE_REPO="${ICESEE_REPO:-}"
+
+if [[ -n "${ICESEE_REPO}" && ! -f "${ICESEE_REPO}/pyproject.toml" ]]; then
+    echo "WARNING: ICESEE_REPO was set but pyproject.toml not found:"
+    echo "  ICESEE_REPO=${ICESEE_REPO}"
+    ICESEE_REPO=""
+fi
+
+if [[ -z "${ICESEE_REPO}" && -f "${PWD}/pyproject.toml" ]]; then
+    ICESEE_REPO="${PWD}"
+fi
+
+if [[ -z "${ICESEE_REPO}" && -f "${PWD}/external/ICESEE/pyproject.toml" ]]; then
+    ICESEE_REPO="${PWD}/external/ICESEE"
+fi
+
+if [[ -z "${ICESEE_REPO}" ]]; then
+    ICESEE_REPO="$(find_icesee_repo_from "${PWD}" || true)"
+fi
+
+if [[ -z "${ICESEE_REPO}" ]]; then
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    ICESEE_REPO="$(find_icesee_repo_from "${script_dir}" || true)"
+fi
+
+if [[ -z "${ICESEE_REPO}" || ! -f "${ICESEE_REPO}/pyproject.toml" ]]; then
+    echo "ERROR: Could not locate ICESEE source checkout."
+    echo ""
+    echo "Expected one of:"
+    echo "  ${PWD}/external/ICESEE/pyproject.toml"
+    echo "  /path/to/ICESEE/pyproject.toml"
+    echo ""
+    echo "Fix:"
+    echo "  export ICESEE_REPO=/home/bkyanjo3/CryoLauncher/external/ICESEE"
+    echo "  ./go.icesee1"
+    exit 2
+fi
+
+echo "ICESEE_REPO: ${ICESEE_REPO}"
+
+# ------------------------------------------------------------
+# Install ICESEE
+# ------------------------------------------------------------
+echo "Installing pip tools..."
+python -m pip install -U pip setuptools wheel
+python -m pip install -U voila aiohttp ipykernel
+
+echo "Installing ICESEE editable..."
+python -m pip install -e "${ICESEE_REPO}[viz,mpi]"
+
+# Add ICESEE parent directory through .pth for package-layout safety
+ICESEE_PARENT_DIR="$(dirname "${ICESEE_REPO}")"
+
+python - <<PY
+import os, site
+pth_target = "${ICESEE_PARENT_DIR}"
+sp = site.getsitepackages()[0]
+pth = os.path.join(sp, "icesee_repo.pth")
+with open(pth, "w") as f:
+    f.write(pth_target + "\n")
+print("Wrote:", pth, "->", pth_target)
+PY
+
+# ------------------------------------------------------------
+# Sanity checks
+# ------------------------------------------------------------
+echo "Running sanity checks..."
+
+python - <<PY
+import importlib
+from mpi4py import MPI
+import h5py
+
+cfg = h5py.get_config()
+print("MPI size:", MPI.COMM_WORLD.Get_size())
+print("h5py mpi:", getattr(cfg, "mpi", None))
+
+for name in ["icesee", "ICESEE"]:
+    try:
+        m = importlib.import_module(name)
+        print("Imported:", name)
+        print("  file:", getattr(m, "__file__", None))
+        print("  version:", getattr(m, "__version__", None))
+        break
+    except Exception as e:
+        print("Tried import", name, "->", repr(e))
+else:
+    raise SystemExit("ERROR: ICESEE installed but import name not found.")
+PY
+
+# ------------------------------------------------------------
+# Jupyter kernel install
+# ------------------------------------------------------------
+echo "Installing Jupyter kernel for ${environment}..."
+
+jupyter kernelspec uninstall "${environment}" -y || true
+
+python -m ipykernel install \
+    --sys-prefix \
+    --name "${environment}" \
+    --display-name "Python3 (${environment})"
+
+python -m ipykernel install \
+    --prefix "${kernel_root}" \
+    --name "${environment}" \
+    --display-name "Python3 (${environment})"
+
+# Patch kernel PATH if jq exists
+tool_env_dir="${conda_root}/envs/${environment}"
+kernel_json_path="${kernel_root}/share/jupyter/kernels/${environment}/kernel.json"
+
+if [[ -f "${kernel_json_path}" ]]; then
+    env_path="${tool_env_dir}/bin:${conda_root}/bin:${HOME}/miniforge3/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin"
+
+    if command -v jq >/dev/null 2>&1; then
+        jq --arg value "${env_path}" \
+           '.env += {"PATH": $value}' \
+           "${kernel_json_path}" > "${kernel_json_path}.tmp" && \
+           mv "${kernel_json_path}.tmp" "${kernel_json_path}"
+
+        echo "Updated PATH in ${kernel_json_path}"
+    else
+        echo "WARNING: jq not found; skipped kernel.json PATH patch."
+    fi
+
+    cat "${kernel_json_path}"
+else
+    echo "WARNING: kernel.json not found at ${kernel_json_path}"
+fi
+
+# ------------------------------------------------------------
+# Save package list
+# ------------------------------------------------------------
+conda list > "${conda_list}"
+echo "Wrote package list: ${conda_list}"
+
+# ------------------------------------------------------------
+# Deactivate and cleanup conda config
+# ------------------------------------------------------------
+conda deactivate
+
+conda config --remove envs_dirs "${conda_root}/envs" || true
+conda config --remove pkgs_dirs "${conda_root}/pkgs" || true
+
+end=$(date +%s)
+
+echo ""
+echo "=================================================="
+echo "Done."
+echo "Elapsed time: $(( (end-start1)/60 )) minutes"
+echo "Environment: ${environment}"
+echo ""
+echo "Activate with:"
+echo "  conda activate ${environment}"
+echo ""
+echo "If running from CryoLauncher root, default ICESEE path should be:"
+echo "  ${PWD}/external/ICESEE"
+echo "=================================================="
