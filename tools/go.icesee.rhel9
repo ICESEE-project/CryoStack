@@ -10,7 +10,7 @@ set -e
 version_number="1"
 
 # Environment naming
-environment="${ICESEE_ENV_NAME:-icesee${version_number}-rhel}"
+environment="${ICESEE_ENV_NAME:-icesee${version_number}-dev}"
 
 # Local writable conda/kernel roots
 conda_root="${ICESEE_CONDA_ROOT:-${HOME}/.icesee_conda}"

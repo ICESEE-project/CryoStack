@@ -8,7 +8,7 @@ set -e
 # ============================================================
 
 version_number="1"
-environment="${ICESEE_ENV_NAME:-icesee${version_number}-rhel}"
+environment="${ICESEE_ENV_NAME:-icesee${version_number}-dev}"
 
 # Use conda-forge OpenMPI inside the environment.
 # Allowed: openmpi | mpich
