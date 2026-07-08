@@ -12,7 +12,7 @@ import subprocess
 import websockets
 
 # DEFAULT_RELAY = "https://cryolauncher.com"
-DEFAULT_RELAY = "http://cryostack.eas.gatech.edu"
+DEFAULT_RELAY = "https://cryostack.eas.gatech.edu"
 
 async def run_shell(payload: dict):
     command = payload.get("command", "")
@@ -400,12 +400,22 @@ def resolve_ws_url(relay: str, session: str | None = None, ws_url: str | None = 
             print("[connector] response preview:", response.text[:120])
             return None
 
+        # try:
+        #     resp = response.json()
+        # except Exception:
+        #     print("[connector] relay did not return JSON")
+        #     print("[connector] response preview:", response.text[:120])
+        #     return None
         try:
             resp = response.json()
-        except Exception:
-            print("[connector] relay did not return JSON")
-            print("[connector] response preview:", response.text[:120])
-            return None
+        except Exception as e:
+            print("[connector][ERROR] Failed to parse JSON response")
+            print("[connector][ERROR] URL:", response.url)
+            print("[connector][ERROR] status:", response.status_code)
+            print("[connector][ERROR] content-type:", response.headers.get("content-type"))
+            print("[connector][ERROR] text:")
+            print(response.text[:1000])
+            raise
 
         print("[connector] latest response:", resp)
 

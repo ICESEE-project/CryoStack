@@ -41,10 +41,10 @@ def connector_installer_url() -> str:
     os_name = detect_client_os()
 
     urls = {
-        "macos": "http://cryostack.eas.gatech.edu/downloads/ICESEE-Connector-macOS.pkg",
-        "windows": "http://cryostack.eas.gatech.edu/downloads/ICESEE-Connector-Windows.exe",
-        "linux": "http://cryostack.eas.gatech.edu/downloads/ICESEE-Connector-Linux.AppImage",
-        "unknown": "http://cryostack.eas.gatech.edu/downloads/",
+        "macos": "https://cryostack.eas.gatech.edu/downloads/ICESEE-Connector-macOS.pkg",
+        "windows": "https://cryostack.eas.gatech.edu/downloads/ICESEE-Connector-Windows.exe",
+        "linux": "https://cryostack.eas.gatech.edu/downloads/ICESEE-Connector-Linux.AppImage",
+        "unknown": "https://cryostack.eas.gatech.edu/downloads/",
     }
 
     return urls.get(os_name, urls["unknown"])
@@ -140,7 +140,7 @@ def connector_prompt_html(error: str = "") -> str:
       the bridge to VPN-protected clusters.
       <br><br>
 
-      <a href="http://cryostack.eas.gatech.edu/connect/" target="_blank"
+      <a href="https://cryostack.eas.gatech.edu/connect/" target="_blank"
          style="
            display:inline-block;
            margin-top:8px;

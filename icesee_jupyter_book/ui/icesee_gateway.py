@@ -871,7 +871,7 @@ def build_icesee_ui():
                     SESSION["ws_url"] = sess["ws_url"]
 
                     connector_setup_link.value = f"""
-                    <a href="http://cryostack.eas.gatech.edu/connect/?session={SESSION['id']}"
+                    <a href="https://cryostack.eas.gatech.edu/connect/?session={SESSION['id']}"
                     target="_blank"
                     style="
                         display:inline-block;
