@@ -1,7 +1,7 @@
 import requests
 
 # RELAY_URL = "http://127.0.0.1:8899"  # later: https://cryolauncher.com
-RELAY_URL = "https://cryolauncher.com"
+RELAY_URL = "http://cryostack.eas.gatech.edu"
 
 
 def create_session():

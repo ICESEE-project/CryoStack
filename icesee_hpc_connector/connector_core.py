@@ -11,7 +11,8 @@ import subprocess
 
 import websockets
 
-DEFAULT_RELAY = "https://cryolauncher.com"
+# DEFAULT_RELAY = "https://cryolauncher.com"
+DEFAULT_RELAY = "http://cryostack.eas.gatech.edu"
 
 async def run_shell(payload: dict):
     command = payload.get("command", "")

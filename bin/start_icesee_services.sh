@@ -18,5 +18,5 @@ if [ ! -f "${BOOK_HTML}" ]; then
     exit 2
 fi
 
-echo "[ICESEE] Starting single GHUB app on 127.0.0.1:8080"
+echo "[ICESEE] Starting single CryoStack app on 127.0.0.1:8080"
 exec python "${scriptDir}/icesee_app.py"

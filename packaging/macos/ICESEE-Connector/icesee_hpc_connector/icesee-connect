@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-RELAY="${ICESEE_RELAY:-https://cryolauncher.com}"
+RELAY="${ICESEE_RELAY:-http://cryostack.eas.gatech.edu}"
 SESSION=""
 
 while [[ $# -gt 0 ]]; do

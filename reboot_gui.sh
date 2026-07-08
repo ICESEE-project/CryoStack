@@ -6,7 +6,7 @@
 
 set -e
 
-cd ~/ICESEE-GHUB
+cd  ~/CryoLauncher
 
 echo "=================================================="
 echo "Stopping existing ICESEE services..."
@@ -63,8 +63,8 @@ echo "Relay PID:      $RELAY_PID"
 
 echo
 echo "Logs:"
-echo "  tail -f ~/ICESEE-GHUB/icesee.log"
-echo "  tail -f ~/ICESEE-GHUB/relay.log"
+echo "  tail -f ~/CryoLauncher/icesee.log"
+echo "  tail -f ~/CryoLauncher/relay.log"
 
 echo
 echo "Ports:"

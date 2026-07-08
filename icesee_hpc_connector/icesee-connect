@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-RELAY="${ICESEE_RELAY:-https://cryolauncher.com}"
+RELAY="${ICESEE_RELAY:-http://cryostack.eas.gatech.edu}"
 SESSION=""
 WS_URL=""
 NO_POLL=""

@@ -14,8 +14,8 @@ app = FastAPI(title="ICESEE HPC Bridge Connector", version=APP_VERSION)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://cryolauncher.com",
-        "http://cryolauncher.com",
+        "http://cryostack.eas.gatech.edu",
+        "https://cryostack.eas.gatech.edu",
         "http://127.0.0.1:8080",
         "http://localhost:8080",
     ],

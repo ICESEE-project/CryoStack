@@ -11,8 +11,8 @@ from icesee_hpc_connector.connector_core import run_connector
 
 
 APP_NAME = "ICESEE Connector"
-RELAY_URL = "https://cryolauncher.com"
-SETUP_URL = "https://cryolauncher.com/connect/"
+RELAY_URL = "http://cryostack.eas.gatech.edu"
+SETUP_URL = "http://cryostack.eas.gatech.edu/connect/"
 LOG_FILE = Path.home() / "icesee_connector.log"
 
 OS_NAME = platform.system().lower()
