@@ -1,37 +1,7 @@
 format: jb-book
 root: index
 
-parts:
-  - caption: Getting Started
-    numbered: false
-    chapters:
-      - file: intro
-      - file: quickstart
-      - file: icesee_workflow
-
-  - caption: Deployment Notes
-    numbered: false
-    chapters:
-      - file: running_with_containers
-      - file: icesee_hpc_coupling
-      - file: user_manual
-
-  - caption: ICESEE-OnLINE
-    numbered: false
-    chapters:
-      - file: icesee_jupyter_notebooks/run_center
-        title: Run Center
-      # - file: icesee_jupyter_notebooks/icesheet_models
-      #   title: Ice-sheet Modeling
-
-  - caption: ICESEE Tutorials
-    numbered: false
-    chapters:
-      - file: icesee_jupyter_notebooks/run_lorenz96_da
-        title: Lorenz-96
-      # - file: icesee_jupyter_notebooks/run_flowline_da.ipynb
-      #   title: Flowline Model
-      # - file: icesee_jupyter_notebooks/run_icepack_da.ipynb
-      #   title: Icepack
-      # - file: icesee_jupyter_notebooks/run_issm_da.ipynb
-      #   title: ISSM
+chapters:
+  - file: documentation
+  - file: resources
+  - file: about
