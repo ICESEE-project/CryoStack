@@ -1,0 +1,3 @@
+[submodule "external/living-ice-sheet-temperature"]
+	path = external/living-ice-sheet-temperature
+	url = https://github.com/ICESEE-project/living-ice-sheet-temperature.git
