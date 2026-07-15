@@ -288,9 +288,76 @@ back_link = W.HTML("""
 </style>
 
 <div class="icesee-back-wrap">
-  <a href="/icesee_jupyter_notebooks/run_center.html" class="icesee-back">
+  <a href="https://cryostack.eas.gatech.edu/index.html#" class="icesee-back">
     ← Back to ICESEE Run Center
   </a>
+</div>
+""")
+
+app_menu = W.HTML("""
+<style>
+.app-header{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:8px 0 12px 0;
+    margin:0 0 20px 0;
+    border-bottom:1px solid rgba(15,23,42,.10);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+
+.app-home{
+    display:inline-block;
+    background:#1565c0;
+    color:white !important;
+    text-decoration:none !important;
+    font-size:14px;
+    font-weight:750;
+    padding:8px 15px;
+    border-radius:9px;
+}
+
+.app-nav{
+    display:flex;
+    align-items:center;
+    gap:4px;
+    flex-wrap:wrap;
+}
+
+.app-nav a{
+    text-decoration:none !important;
+    color:#475569;
+    font-weight:650;
+    font-size:14px;
+    padding:8px 11px;
+    border-radius:9px;
+    border:1px solid transparent;
+}
+
+.app-nav a:hover{
+    background:#f1f5f9;
+    color:#1565c0;
+}
+
+.app-nav a.active{
+    background:#eef5ff;
+    color:#1565c0;
+}
+</style>
+
+<div class="app-header">
+
+<a class="app-home"
+   href="https://cryostack.eas.gatech.edu/icesee-gui/#">
+   ICEESEE
+</a>
+
+<div class="app-nav">
+    <a class="active" href="#">Getting Started</a>
+    <a href="#">User Manual</a>
+    <a href="#">Resources</a>
+</div>
+
 </div>
 """)
 
@@ -1790,6 +1857,65 @@ def build_icesee_ui():
         /* Optional: if you're in Jupyter Book and it's still constrained, uncomment:
         .bd-main .bd-content, .bd-container, .container-xl, .container-lg { max-width: 100% !important; }
         */
+
+
+        .cryo-appbar{
+            display:flex;
+            align-items:center;
+            gap:12px;
+            padding:6px 0 8px 0;
+            margin:0 0 8px 0;
+            border-bottom:1px solid #e5e7eb;
+        }
+
+        .app-home{
+            background:#2563eb;
+            color:#fff !important;
+            padding:7px 14px;
+            border-radius:9px;
+            font-size:14px;
+            font-weight:700;
+            text-decoration:none !important;
+        }
+
+        .app-home:hover{
+            background:#1d4ed8;
+        }
+
+        .app-links{
+            display:flex;
+            align-items:center;
+            gap:0;
+        }
+
+        .app-links a{
+            color:#334155;
+            text-decoration:none !important;
+            font-size:14px;
+            font-weight:650;
+            padding:7px 10px;
+        }
+
+        .app-links a:hover{
+            color:#2563eb;
+        }
+
+        .app-links a:not(:last-child)::after{
+            content:"|";
+            margin-left:18px;
+            color:#cbd5e1;
+        }
+        .app-nav a{
+            padding:0 12px;
+            border-radius:0;
+            background:none;
+        }
+
+        .app-nav a:not(:last-child)::after{
+            content:"|";
+            margin-left:22px;
+            color:#cbd5e1;
+        }
         </style>
         """
         display(W.HTML(css))
@@ -1799,7 +1925,7 @@ def build_icesee_ui():
         # =========================================================
         header = W.HTML(
             "<div class='icesee-wrap'>"
-            "<div class='icesee-title'>Run ICESEE examples with one click.</div>"
+            "<div class='icesee-title'>Ice-Sheet Modeling with Data Assimilation</div>"
             "<div class='icesee-subtitle'>Outputs and reports are saved and previewed on the right.</div>"
             "</div>"
         )
@@ -2118,7 +2244,7 @@ def build_icesee_ui():
         row = W.HBox([left_card, right_card], layout=W.Layout(width="100%", display="flex", gap="26px"))
         row.add_class("icesee-row")
 
-        page = W.VBox([header, row, actions_card, back_link], layout=W.Layout(width="100%"))
+        page = W.VBox([app_menu, header, row, actions_card, back_link], layout=W.Layout(width="100%"))
         page.add_class("icesee-page")
 
         # cloud_submit_btn.layout.display = "none"

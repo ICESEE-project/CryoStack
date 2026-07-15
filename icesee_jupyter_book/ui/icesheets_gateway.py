@@ -190,7 +190,7 @@ def build_sidebar():
 
         <div class="icesee-nav-group">ICESEE-OnLINE</div>
         <a class="active" href="/voila/render/icesee_jupyter_notebooks/icesee_app.ipynb">ICESEE GUI</a>
-        <a href="/icesee_jupyter_notebooks/icesheet_models.html">ICE-Sheet Modeling</a>
+        <a href="/icesee_jupyter_notebooks/icesheet_models.html">CryoLauncher</a>
 
         <div class="icesee-nav-group">Tutorials</div>
         <a href="/icesee_jupyter_notebooks/run_lorenz96_da.html">Tutorial: Lorenz-96</a>
@@ -228,9 +228,76 @@ back_link = W.HTML("""
 </style>
 
 <div class="icesee-back-wrap">
-  <a href="/icesee_jupyter_notebooks/run_center.html" class="icesee-back">
+  <a href="https://cryostack.eas.gatech.edu/index.html#" class="icesee-back">
     ← Back to ICESEE Run Center
   </a>
+</div>
+""")
+
+app_menu = W.HTML("""
+<style>
+.app-header{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:8px 0 12px 0;
+    margin:0 0 20px 0;
+    border-bottom:1px solid rgba(15,23,42,.10);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+
+.app-home{
+    display:inline-block;
+    background:#1565c0;
+    color:white !important;
+    text-decoration:none !important;
+    font-size:14px;
+    font-weight:750;
+    padding:8px 15px;
+    border-radius:9px;
+}
+
+.app-nav{
+    display:flex;
+    align-items:center;
+    gap:4px;
+    flex-wrap:wrap;
+}
+
+.app-nav a{
+    text-decoration:none !important;
+    color:#475569;
+    font-weight:650;
+    font-size:14px;
+    padding:8px 11px;
+    border-radius:9px;
+    border:1px solid transparent;
+}
+
+.app-nav a:hover{
+    background:#f1f5f9;
+    color:#1565c0;
+}
+
+.app-nav a.active{
+    background:#eef5ff;
+    color:#1565c0;
+}
+</style>
+
+<div class="app-header">
+
+<a class="app-home"
+   href="https://cryostack.eas.gatech.edu/icesheets/#">
+   CryoLauncher
+</a>
+
+<div class="app-nav">
+    <a class="active" href="#">Getting Started</a>
+    <a href="#">User Manual</a>
+    <a href="#">Resources</a>
+</div>
+
 </div>
 """)
 
@@ -3681,7 +3748,7 @@ fi
         <style>
         .icesee-page { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; width: 100%; }
         .icesee-title { font-size: 20px; font-weight: 700; margin: 4px 0 6px; color: #1f2937; }
-        .icesee-subtitle { color: rgba(0,0,0,.68); margin-bottom: 18px; line-height: 1.55; max-width: 900px; }
+        .icesee-subtitle { color: rgba(0,0,0,.68); margin-bottom: 10px; line-height: 1.45; max-width: 900px; }
         .icesee-h { font-size: 18px; font-weight: 750; margin: 2px 0 14px; color: #1f2937; }
         .icesee-card { border: 1px solid rgba(0,0,0,.08); border-radius: 16px; padding: 18px; background: #fff; box-shadow: 0 8px 24px rgba(0,0,0,.04); }
         .icesee-lbl { font-weight: 600; color: rgba(0,0,0,.78); padding-top: 8px; }
@@ -3706,7 +3773,65 @@ fi
             overflow-x: auto;
             white-space: pre-wrap;
             word-break: break-word;
-            }
+        }
+
+        .cryo-appbar{
+            display:flex;
+            align-items:center;
+            gap:12px;
+            padding:6px 0 8px 0;
+            margin:0 0 8px 0;
+            border-bottom:1px solid #e5e7eb;
+        }
+
+        .app-home{
+            background:#2563eb;
+            color:#fff !important;
+            padding:7px 14px;
+            border-radius:9px;
+            font-size:14px;
+            font-weight:700;
+            text-decoration:none !important;
+        }
+
+        .app-home:hover{
+            background:#1d4ed8;
+        }
+
+        .app-links{
+            display:flex;
+            align-items:center;
+            gap:0;
+        }
+
+        .app-links a{
+            color:#334155;
+            text-decoration:none !important;
+            font-size:14px;
+            font-weight:650;
+            padding:7px 10px;
+        }
+
+        .app-links a:hover{
+            color:#2563eb;
+        }
+
+        .app-links a:not(:last-child)::after{
+            content:"|";
+            margin-left:18px;
+            color:#cbd5e1;
+        }
+        .app-nav a{
+            padding:0 12px;
+            border-radius:0;
+            background:none;
+        }
+
+        .app-nav a:not(:last-child)::after{
+            content:"|";
+            margin-left:22px;
+            color:#cbd5e1;
+        }
         
         </style>
         """
@@ -3716,7 +3841,7 @@ fi
         # =========================================================
         header = W.HTML("""
         <div class="icesee-page">
-          <div class="icesee-title">Ice-Sheet Modeling GUI</div>
+          <div class="icesee-title">Ice-Sheet Modeling</div>
           <div class="icesee-subtitle">
             Launch supported ice-sheet models without the ICESEE data assimilation layer.
             Basic mode helps beginners discover native ISSM and Icepack examples automatically.
@@ -4086,7 +4211,7 @@ fi
         refresh_example_picker()
         apply_selected_example()
 
-        page = W.VBox([W.HTML(css), header, row, actions_card, back_link], layout=W.Layout(width="100%"))
+        page = W.VBox([W.HTML(css), app_menu, header, row, actions_card, back_link], layout=W.Layout(width="100%"))
 
         update_visibility()
         update_summary()

@@ -1,1 +1,15 @@
 ICESEE-Connector-macOS.dmg
+
+# CryoStack runtime and build outputs
+icesee.log
+relay.log
+icesee_jupyter_book/_build/
+**/__pycache__/
+*.py[cod]
+
+# Local and generated test outputs
+external/ICESEE/applications/lorenz_model/examples/lorenz96/_modelrun_datasets/
+
+# Local environment snapshots
+tools/icesee1_conda_list_rhel.txt
+tools/icesee1_environment.yml

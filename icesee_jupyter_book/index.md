@@ -1,6 +1,14 @@
 # CryoStack
 
 :::{raw} html
+<style>
+.bd-article-container section:first-child > h1:first-child {
+  display: none !important;
+}
+</style>
+:::
+
+:::{raw} html
 <div class="cryostack-home">
 
   <section class="cryostack-hero-simple">
@@ -28,14 +36,9 @@
       <div class="cryostack-card featured">
         <div class="cryostack-card-tag">Model Simulation</div>
         <h3>CryoLauncher</h3>
-        <p>
-          Run supported ice-sheet models directly through an interactive browser interface.
-        </p>
+        <p>Run supported ice-sheet models directly through an interactive browser interface.</p>
         <div class="cryostack-mini-list">
-          <span>ISSM</span>
-          <span>Icepack</span>
-          <span>Containers</span>
-          <span>Spack</span>
+          <span>ISSM</span><span>Icepack</span><span>Containers</span><span>Spack</span>
         </div>
         <a class="cryostack-card-btn" href="/icesheets/">Open Modeling GUI</a>
       </div>
@@ -48,73 +51,33 @@
           and ensemble-based data assimilation with supported ice-sheet models.
         </p>
         <div class="cryostack-mini-list green-list">
-          <span>EnKF</span>
-          <span>DEnKF</span>
-          <span>EnTKF</span>
-          <span>EnRSKF</span>
+          <span>EnKF</span><span>DEnKF</span><span>EnTKF</span><span>EnRSKF</span>
         </div>
         <a class="cryostack-card-btn green-btn" href="/icesee-gui/">Open ICESEE GUI</a>
       </div>
 
-      <div class="cryostack-card muted">
-        <div class="cryostack-card-tag gray">Coming Soon</div>
-        <h3>Application 3</h3>
-        <p>
-          A new CryoStack application will be added as the platform expands.
-        </p>
-        <a class="cryostack-card-link" href="resources.html">View roadmap →</a>
-      </div>
+    <div class="cryostack-card">
+      <div class="cryostack-card-tag green">Radar-Derived Products</div>
+
+      <h3>Living Ice Sheet Temperature</h3>
+
+      <p>
+        Explore Antarctic ice-sheet temperatures inferred from radar observations
+        and constrained by borehole measurements.
+      </p>
+
+      <a class="cryostack-card-btn green-btn" href="/livist/">
+        Open LIVIST
+      </a>
+    </div>
 
       <div class="cryostack-card muted">
         <div class="cryostack-card-tag gray">Coming Soon</div>
         <h3>Application 4</h3>
-        <p>
-          Additional cryosphere tools will be integrated into the platform.
-        </p>
+        <p>Additional cryosphere tools will be integrated into the platform.</p>
         <a class="cryostack-card-link" href="resources.html">View roadmap →</a>
       </div>
 
-    </div>
-  </section>
-
-  <!-- <section class="cryostack-section cryostack-stats">
-    <div>
-      <strong>4</strong>
-      <span>Application slots</span>
-    </div>
-    <div>
-      <strong>2</strong>
-      <span>Active workflows</span>
-    </div>
-    <div>
-      <strong>HPC</strong>
-      <span>PACE and Slurm ready</span>
-    </div>
-    <div>
-      <strong>Cloud</strong>
-      <span>Backend-ready design</span>
-    </div>
-  </section> -->
-
-  <section class="cryostack-section">
-    <div class="cryostack-section-label">Platform</div>
-    <h2>Built for scalable cryosphere workflows.</h2>
-
-    <div class="cryostack-feature-row">
-      <div>
-        <h3>Browser-based</h3>
-        <p>Configure, launch, monitor, and inspect workflows without local installation.</p>
-      </div>
-
-      <div>
-        <h3>HPC enabled</h3>
-        <p>Submit jobs to remote clusters while keeping the user experience simple.</p>
-      </div>
-
-      <div>
-        <h3>Cloud enabled</h3>
-        <p>Use cloud compute resources with AWS</p>
-      </div>
     </div>
   </section>
 
