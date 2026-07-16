@@ -2,10 +2,10 @@
 # date  : January 2026
 
 # Book settings --------------------  
-title                : ICESEE on GHUB
-author               : Brian KYANJO
+title                : CryoStack
+author               : ICCL & PGSL 
 copyright            : "2026"
-logo                 : icesee_logo.png
+logo                 : cryostack.png
 exclude_patterns     : [_build, Thumbs.db, .DS_Store, "**.ipynb_checkpoints"]
 only_build_toc_files : true
 
@@ -40,7 +40,7 @@ html:
   use_repository_button  : true
   use_issues_button      : true
   use_download_button    : true
-  home_page_in_navbar.   : true
+  home_page_in_navbar    : true
   use_multitoc_numbering    : true
   analytics:
     plausible_analytics_domain: ""
@@ -48,14 +48,13 @@ html:
     google_analytics_id       : ""  # A GA id that can be used to track book views.
   
   extra_navbar: |
-    <a class="navbar-brand" href="./index.html">ICESEE-OnLINE</a>
-    <span style="margin-left:10px"></span>
-    # <a href="/icesee-gui/">Run Center</a>
-    <a href="/icesee-gui/" target="_blank" rel="noopener noreferrer">Open GUI</a>
-    <span style="margin:0 8px; opacity:.4">|</span>
-    <a href="./icesee_jupyter_notebooks/run_lorenz96_da.html">Tutorials</a>
-    <span style="margin:0 8px; opacity:.4">|</span>
-    <a href="https://github.com/ICESEE-project/ICESEE/wiki">Wiki</a>
+    <a class="navbar-brand" href="./index.html">CryoStack</a>
+    <span style="margin-left:18px"></span>
+    <a href="./documentation.html">Documentation</a>
+    <span style="margin:0 10px; opacity:.35">|</span>
+    <a href="./resources.html">Resources</a>
+    <span style="margin:0 10px; opacity:.35">|</span>
+    <a href="./about.html">About</a>
 
   theme:
     name: sphinx_book_theme
@@ -91,7 +90,7 @@ launch_buttons:
   deepnote_url              : "" # The URL of Deepnote (https://deepnote.com)
 
 repository:
-  url                       : https://github.com/ICESEE-project/ICESEE-GHUB # The URL to your book's repository
+  url                       : https://github.com/ICESEE-project/CryoLauncher # The URL to your book's repository
   path_to_book              : ""  # A path to your book's folder, relative to the repository root.
   branch                    : main  # Which branch of the repository should be used when creating links
 bibtex_bibfiles:

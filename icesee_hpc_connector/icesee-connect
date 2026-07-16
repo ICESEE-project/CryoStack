@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -e
+
+RELAY="${ICESEE_RELAY:-https://cryostack.eas.gatech.edu}"
+SESSION=""
+WS_URL=""
+NO_POLL=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --relay)
+      RELAY="$2"
+      shift 2
+      ;;
+    --session)
+      SESSION="$2"
+      shift 2
+      ;;
+    --ws-url)
+      WS_URL="$2"
+      shift 2
+      ;;
+    --no-poll)
+      NO_POLL="--no-poll"
+      shift
+      ;;
+    *)
+      echo "Unknown argument: $1"
+      exit 1
+      ;;
+  esac
+done
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+export PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}"
+
+ARGS=(--relay "$RELAY")
+
+if [[ -n "$SESSION" ]]; then
+  ARGS+=(--session "$SESSION")
+fi
+
+if [[ -n "$WS_URL" ]]; then
+  ARGS+=(--ws-url "$WS_URL")
+fi
+
+if [[ -n "$NO_POLL" ]]; then
+  ARGS+=("$NO_POLL")
+fi
+
+python "$SCRIPT_DIR/connector_ws_client.py" "${ARGS[@]}"

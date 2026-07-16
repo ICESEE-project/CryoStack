@@ -31,6 +31,22 @@ def repo_root() -> Path:
 def book_root() -> Path:
     return repo_root() / "icesee_jupyter_book" / "_build" / "html"
 
+def livist_root() -> Path:
+    return (
+        repo_root()
+        / "external"
+        / "living-ice-sheet-temperature"
+        / "frontend"
+        / "dist"
+    )
+
+def livist_docs_root() -> Path:
+    return (
+        repo_root()
+        / "external"
+        / "living-ice-sheet-temperature"
+        / "site"
+    )
 
 def run_center_nb() -> Path:
     return repo_root() / "icesee_jupyter_book" / "icesee_jupyter_notebooks" / "run_center_voila.ipynb"
@@ -54,6 +70,45 @@ def wait_for_port(host: str, port: int, timeout: float = 30.0) -> bool:
 async def root_redirect(request: web.Request) -> web.StreamResponse:
     raise web.HTTPFound("/index.html")
 
+async def livist_redirect(request: web.Request) -> web.StreamResponse:
+    raise web.HTTPFound("/livist/")
+
+async def livist_docs_redirect(
+    request: web.Request,
+) -> web.StreamResponse:
+    raise web.HTTPFound("/livist/docs/")
+
+async def livist_index(request: web.Request) -> web.StreamResponse:
+    index_file = livist_root() / "index.html"
+
+    if not index_file.exists():
+        raise web.HTTPNotFound(
+            text=(
+                "LIVIST frontend has not been built. "
+                "Run `yarn build` in "
+                "external/living-ice-sheet-temperature/frontend."
+            )
+        )
+
+    return web.FileResponse(index_file)
+
+async def livist_docs_redirect(request: web.Request) -> web.StreamResponse:
+    raise web.HTTPFound("/livist/docs/")
+
+
+async def livist_docs_index(request: web.Request) -> web.StreamResponse:
+    index_file = livist_docs_root() / "index.html"
+
+    if not index_file.exists():
+        raise web.HTTPNotFound(
+            text=(
+                "LIVIST documentation has not been built. "
+                "Run `uv run zensical build` in "
+                "external/living-ice-sheet-temperature."
+            )
+        )
+
+    return web.FileResponse(index_file)
 
 class ManagedProcess:
     def __init__(self, command: list[str], cwd: Path):
@@ -257,6 +312,24 @@ def make_app() -> web.Application:
 
     app.router.add_route("*", "/icesheets", proxy_icesheets)
     app.router.add_route("*", "/icesheets/{tail:.*}", proxy_icesheets)
+
+    app.router.add_get("/livist/docs", livist_docs_redirect)
+    app.router.add_get("/livist/docs/", livist_docs_index)
+
+    app.router.add_static(
+        "/livist/docs/",
+        path=str(livist_docs_root()),
+        show_index=False,
+    )
+
+    app.router.add_get("/livist", livist_redirect)
+    app.router.add_get("/livist/", livist_index)
+
+    app.router.add_static(
+        "/livist/",
+        path=str(livist_root()),
+        show_index=False,
+    )
 
     app.router.add_get("/", root_redirect)
     app.router.add_static("/", path=str(book_root()), show_index=True)

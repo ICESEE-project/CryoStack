@@ -127,3 +127,434 @@ nav.bd-links p.caption.icesee-caption {
 nav.bd-links p.caption.icesee-caption:hover {
   background: rgba(2, 6, 23, 0.06);
 }
+/* ================================
+   CryoStack platform landing page
+   ================================ */
+
+.cryostack-hero {
+  max-width: 1050px;
+  margin: 30px auto 55px;
+  padding: 56px 54px;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top left, rgba(13,110,253,.16), transparent 32%),
+    linear-gradient(135deg, #ffffff 0%, #f7fbff 55%, #eef7fb 100%);
+  border: 1px solid rgba(15, 23, 42, .08);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, .08);
+}
+
+.cryostack-kicker,
+.cryostack-section-label,
+.cryostack-card-tag {
+  display: inline-block;
+  padding: 7px 13px;
+  border-radius: 999px;
+  background: rgba(13,110,253,.10);
+  color: #0d6efd;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: .02em;
+  margin-bottom: 16px;
+}
+
+.cryostack-hero h1 {
+  max-width: 900px;
+  font-size: 48px;
+  line-height: 1.06;
+  letter-spacing: -0.045em;
+  margin: 0 0 20px;
+  color: #111827;
+}
+
+.cryostack-hero p {
+  max-width: 830px;
+  font-size: 19px;
+  line-height: 1.7;
+  color: rgba(17,24,39,.72);
+  margin-bottom: 28px;
+}
+
+.cryostack-actions {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.cryostack-btn {
+  display: inline-block;
+  padding: 13px 20px;
+  border-radius: 12px;
+  font-weight: 800;
+  text-decoration: none !important;
+}
+
+.cryostack-btn.primary {
+  color: white !important;
+  background: #0d6efd;
+  box-shadow: 0 12px 28px rgba(13,110,253,.24);
+}
+
+.cryostack-btn.secondary {
+  color: #0d6efd !important;
+  background: rgba(13,110,253,.09);
+}
+
+.cryostack-section {
+  max-width: 1050px;
+  margin: 0 auto 54px;
+}
+
+.cryostack-section h2 {
+  font-size: 34px;
+  line-height: 1.16;
+  letter-spacing: -0.035em;
+  margin: 0 0 22px;
+  color: #111827;
+}
+
+.cryostack-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+}
+
+.cryostack-card {
+  padding: 28px;
+  border-radius: 22px;
+  background: white;
+  border: 1px solid rgba(15,23,42,.09);
+  box-shadow: 0 16px 42px rgba(15,23,42,.06);
+}
+
+.cryostack-card h3 {
+  font-size: 25px;
+  margin: 0 0 10px;
+  letter-spacing: -0.025em;
+  color: #111827;
+}
+
+.cryostack-card p {
+  color: rgba(17,24,39,.72);
+  line-height: 1.65;
+  margin-bottom: 18px;
+}
+
+.cryostack-card a {
+  font-weight: 800;
+  color: #0d6efd;
+  text-decoration: none;
+}
+
+.cryostack-card-tag.green {
+  background: rgba(25,135,84,.10);
+  color: #198754;
+}
+
+.cryostack-card-tag.purple {
+  background: rgba(111,66,193,.10);
+  color: #6f42c1;
+}
+
+.cryostack-card-tag.gray {
+  background: rgba(100,116,139,.12);
+  color: #64748b;
+}
+
+.cryostack-card.muted {
+  background: #fafafa;
+}
+
+.cryostack-feature-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.cryostack-feature-row > div {
+  padding: 24px;
+  border-radius: 18px;
+  background: #fff;
+  border: 1px solid rgba(15,23,42,.08);
+}
+
+.cryostack-feature-row h3 {
+  margin-top: 0;
+  font-size: 20px;
+}
+
+.cryostack-feature-row p {
+  color: rgba(17,24,39,.70);
+  line-height: 1.6;
+}
+
+@media (max-width: 900px) {
+  .cryostack-hero {
+    padding: 34px 28px;
+  }
+
+  .cryostack-hero h1 {
+    font-size: 36px;
+  }
+
+  .cryostack-grid,
+  .cryostack-feature-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ================================
+   CryoStack Platform UI
+   ================================ */
+
+.cryostack-home {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.cryostack-hero-simple {
+  margin: 30px 0 54px;
+  padding: 58px 54px;
+  border-radius: 30px;
+  background:
+    radial-gradient(circle at 12% 12%, rgba(14,165,233,.18), transparent 30%),
+    linear-gradient(135deg, #ffffff 0%, #f7fbff 55%, #eef7fb 100%);
+  border: 1px solid rgba(15,23,42,.08);
+  box-shadow: 0 24px 70px rgba(15,23,42,.08);
+}
+
+.cryostack-kicker,
+.cryostack-section-label,
+.cryostack-card-tag {
+  display: inline-block;
+  padding: 7px 13px;
+  border-radius: 999px;
+  background: rgba(13,110,253,.10);
+  color: #0d6efd;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: .02em;
+  margin-bottom: 16px;
+}
+
+.cryostack-hero-simple h1 {
+  font-size: 58px;
+  line-height: 1;
+  letter-spacing: -0.055em;
+  margin: 0 0 18px;
+  color: #111827;
+}
+
+.cryostack-hero-simple p {
+  max-width: 820px;
+  font-size: 19px;
+  line-height: 1.7;
+  color: rgba(17,24,39,.74);
+  margin-bottom: 28px;
+}
+
+.cryostack-actions {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.cryostack-btn,
+.cryostack-card-btn {
+  display: inline-block;
+  padding: 13px 20px;
+  border-radius: 12px;
+  font-weight: 800;
+  text-decoration: none !important;
+}
+
+.cryostack-btn.primary,
+.cryostack-card-btn {
+  color: white !important;
+  background: #0d6efd;
+  box-shadow: 0 12px 28px rgba(13,110,253,.24);
+}
+
+.cryostack-btn.secondary {
+  color: #0d6efd !important;
+  background: rgba(13,110,253,.09);
+}
+
+.cryostack-section {
+  margin-bottom: 56px;
+}
+
+.cryostack-section h2 {
+  font-size: 34px;
+  line-height: 1.16;
+  letter-spacing: -0.035em;
+  margin: 0 0 22px;
+  color: #111827;
+}
+
+.cryostack-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+}
+
+.cryostack-card {
+  padding: 28px;
+  border-radius: 22px;
+  background: white;
+  border: 1px solid rgba(15,23,42,.09);
+  box-shadow: 0 16px 42px rgba(15,23,42,.06);
+}
+
+.cryostack-card h3 {
+  font-size: 25px;
+  margin: 0 0 10px;
+  letter-spacing: -0.025em;
+  color: #111827;
+}
+
+.cryostack-card p {
+  color: rgba(17,24,39,.72);
+  line-height: 1.65;
+  margin-bottom: 18px;
+}
+
+.cryostack-card-link {
+  font-weight: 800;
+  color: #0d6efd;
+  text-decoration: none !important;
+}
+
+.cryostack-card-tag.green {
+  background: rgba(25,135,84,.10);
+  color: #198754;
+}
+
+.cryostack-card-tag.gray {
+  background: rgba(100,116,139,.12);
+  color: #64748b;
+}
+
+.cryostack-card.muted {
+  background: #fafafa;
+}
+
+.cryostack-mini-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 22px;
+}
+
+.cryostack-mini-list span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(14,165,233,.10);
+  color: #0369a1;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.cryostack-feature-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.cryostack-feature-row > div {
+  padding: 24px;
+  border-radius: 18px;
+  background: #fff;
+  border: 1px solid rgba(15,23,42,.08);
+}
+
+.cryostack-feature-row h3 {
+  margin-top: 0;
+  font-size: 20px;
+}
+
+.cryostack-feature-row p {
+  color: rgba(17,24,39,.70);
+  line-height: 1.6;
+}
+
+@media (max-width: 900px) {
+  .cryostack-hero-simple {
+    padding: 34px 28px;
+  }
+
+  .cryostack-hero-simple h1 {
+    font-size: 40px;
+  }
+
+  .cryostack-grid,
+  .cryostack-feature-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Mobile cleanup */
+@media (max-width: 900px) {
+  .cryostack-home {
+    max-width: 100%;
+    padding: 0 14px;
+  }
+
+  .cryostack-hero-simple {
+    margin: 18px 0 36px;
+    padding: 30px 22px;
+    border-radius: 22px;
+  }
+
+  .cryostack-hero-simple h1 {
+    font-size: 40px;
+    line-height: 1.05;
+  }
+
+  .cryostack-hero-simple p {
+    font-size: 16px;
+    line-height: 1.55;
+  }
+
+  .cryostack-actions {
+    flex-direction: column;
+  }
+
+  .cryostack-btn,
+  .cryostack-card-btn {
+    width: 100%;
+    text-align: center;
+  }
+
+  .cryostack-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cryostack-card {
+    padding: 22px;
+  }
+
+  .cryostack-section h2 {
+    font-size: 28px;
+  }
+}
+
+.app-menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 18px 0 28px;
+}
+
+.app-menu a {
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(13,110,253,.09);
+  color: #0d6efd;
+  font-weight: 800;
+  text-decoration: none !important;
+}
+
+.app-menu a:hover {
+  background: rgba(13,110,253,.16);
+}
+

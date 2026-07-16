@@ -10,6 +10,9 @@ import subprocess
 from pathlib import Path
 from IPython.display import FileLink
 
+from IPython.display import HTML
+import base64
+
 import ipywidgets as W
 from IPython.display import display, Image
 
@@ -29,13 +32,24 @@ from icesee_jupyter_book.core.remote_runner import (
     resolve_remote_abs_path,
     remote_stage_and_submit,
     sanitize_multiline,
+    bootstrap_passwordless_ssh,
+    connector_ssh,
+    connector_fetch_archive,
+    connector_stage_archive,
+    connector_slurm_submit,
+    connector_get_public_key,
 )
 from icesee_jupyter_book.core.cloud_runner import (
     AWSBatchConfig,
     aws_batch_status,
 )
+from icesee_jupyter_book.core.local_connector import build_connector_panel
 from icesee_jupyter_book.ui.shared_ssh_widgets import build_ssh_key_manager
-
+from icesee_jupyter_book.core.connector_relay_client import (
+    create_session,
+    check_status as relay_check_status,
+    send_command,
+)
 
 # ============================================================
 # Params widgets factory
@@ -167,36 +181,29 @@ def build_sidebar():
       <h2>ICESEE</h2>
 
       <div class="icesee-nav">
-        <a href="http://127.0.0.1:8080/index.html">Home</a>
+        <a href="/index.html">Home</a>
 
         <div class="icesee-nav-group">Getting Started</div>
-        <a href="http://127.0.0.1:8080/intro.html">ICESEE on GHUB</a>
-        <a href="http://127.0.0.1:8080/quickstart.html">Quickstart</a>
-        <a href="http://127.0.0.1:8080/icesee_workflow.html">ICESEE Workflow Overview</a>
+        <a href="/intro.html">ICESEE on GHUB</a>
+        <a href="/quickstart.html">Quickstart</a>
+        <a href="/icesee_workflow.html">ICESEE Workflow Overview</a>
 
         <div class="icesee-nav-group">ICESEE-OnLINE</div>
-        <a class="active" href="http://127.0.0.1:8866/">ICESEE GUI</a>
-        <a href="http://127.0.0.1:8080/icesee_jupyter_notebooks/icesheet_models.html">ICE-Sheet Modeling</a>
+        <a class="active" href="/voila/render/icesee_jupyter_notebooks/icesee_app.ipynb">ICESEE GUI</a>
+        <a href="/icesee_jupyter_notebooks/icesheet_models.html">CryoLauncher</a>
 
         <div class="icesee-nav-group">Tutorials</div>
-        <a href="http://127.0.0.1:8080/icesee_jupyter_notebooks/run_lorenz96_da.html">Tutorial: Lorenz-96</a>
+        <a href="/icesee_jupyter_notebooks/run_lorenz96_da.html">Tutorial: Lorenz-96</a>
 
         <div class="icesee-nav-group">Deployment Notes</div>
-        <a href="http://127.0.0.1:8080/running_with_containers.html">Running with Containers</a>
-        <a href="http://127.0.0.1:8080/icesee_hpc_coupling.html">ICESEE-HPC Coupling</a>
-        <a href="http://127.0.0.1:8080/user_manual.html">User Manual</a>
+        <a href="/running_with_containers.html">Running with Containers</a>
+        <a href="/icesee_hpc_coupling.html">ICESEE-HPC Coupling</a>
+        <a href="/user_manual.html">User Manual</a>
       </div>
     </div>
     """
     return W.HTML(sidebar_html)
 
-# back_link = W.HTML(
-#     '<div style="margin-bottom:12px;">'
-#     '<a href="http://127.0.0.1:8080/" style="font-weight:700; text-decoration:none;">'
-#     '← Back to ICESEE Book'
-#     '</a>'
-#     '</div>'
-# )
 back_link = W.HTML("""
 <style>
 .icesee-back {
@@ -221,25 +228,78 @@ back_link = W.HTML("""
 </style>
 
 <div class="icesee-back-wrap">
-  <a href="http://127.0.0.1:8080/icesee_jupyter_notebooks/run_center.html" class="icesee-back">
+  <a href="https://cryostack.eas.gatech.edu/index.html#" class="icesee-back">
     ← Back to ICESEE Run Center
   </a>
 </div>
 """)
 
-# def expand_remote_home(path: str) -> str:
-#     if path is None:
-#         return ""
-#     path = str(path).strip()
-#     if not path:
-#         return ""
-#     if path.startswith("/"):
-#         return path
-#     if path.startswith("~/"):
-#         return f"$HOME/{path[2:]}"
-#     if path == "~":
-#         return "$HOME"
-#     return path
+app_menu = W.HTML("""
+<style>
+.app-header{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:8px 0 12px 0;
+    margin:0 0 20px 0;
+    border-bottom:1px solid rgba(15,23,42,.10);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+
+.app-home{
+    display:inline-block;
+    background:#1565c0;
+    color:white !important;
+    text-decoration:none !important;
+    font-size:14px;
+    font-weight:750;
+    padding:8px 15px;
+    border-radius:9px;
+}
+
+.app-nav{
+    display:flex;
+    align-items:center;
+    gap:4px;
+    flex-wrap:wrap;
+}
+
+.app-nav a{
+    text-decoration:none !important;
+    color:#475569;
+    font-weight:650;
+    font-size:14px;
+    padding:8px 11px;
+    border-radius:9px;
+    border:1px solid transparent;
+}
+
+.app-nav a:hover{
+    background:#f1f5f9;
+    color:#1565c0;
+}
+
+.app-nav a.active{
+    background:#eef5ff;
+    color:#1565c0;
+}
+</style>
+
+<div class="app-header">
+
+<a class="app-home"
+   href="https://cryostack.eas.gatech.edu/icesheets/#">
+   CryoLauncher
+</a>
+
+<div class="app-nav">
+    <a class="active" href="#">Getting Started</a>
+    <a href="#">User Manual</a>
+    <a href="#">Resources</a>
+</div>
+
+</div>
+""")
 
 def expand_remote_home(path: str) -> str:
     if path is None:
@@ -262,6 +322,576 @@ def normalize_remote_path(path: str) -> str:
     while "//" in path:
         path = path.replace("//", "/")
     return path
+
+def build_issm_md_config_script(md_config: dict) -> str:
+    lines = [
+        "disp('[ICESEE-GUI] Applying editable md configuration...');",
+        "if ~exist('md','var')",
+        "    disp('[ICESEE-GUI][WARN] md does not exist yet. Skipping md configuration.');",
+        "    return;",
+        "end",
+    ]
+
+    for key, item in (md_config or {}).items():
+        key = str(key).strip()
+        if not key:
+            continue
+
+        target = key if key.startswith("md.") else f"md.{key}"
+
+        if isinstance(item, dict):
+            raw_value = str(item.get("value", "")).strip()
+            vtype = item.get("type", "string")
+        else:
+            raw_value = str(item).strip()
+            vtype = "string"
+
+        if vtype == "number":
+            matlab_val = raw_value
+        elif vtype == "bool":
+            matlab_val = "true" if raw_value.lower() in {"true", "1", "yes", "on"} else "false"
+        elif vtype == "expr":
+            matlab_val = raw_value
+        else:
+            matlab_val = "'" + raw_value.replace("'", "''") + "'"
+
+        lines.append("try")
+        lines.append(f"    {target} = {matlab_val};")
+        lines.append(f"    disp('[ICESEE-GUI] set {target} = {raw_value}');")
+        lines.append("catch ME")
+        lines.append(f"    disp(['[ICESEE-GUI][WARN] could not set {target}: ' ME.message]);")
+        lines.append("end")
+
+    return "\n".join(lines) + "\n"
+
+def build_issm_postprocess_script() -> str:
+    return r"""
+disp('[ICESEE-GUI] Running ISSM postprocess...');
+
+if ~exist('ICESEE_RUN_DIR', 'var') || isempty(ICESEE_RUN_DIR)
+    ICESEE_RUN_DIR = pwd;
+end
+
+figdir   = fullfile(ICESEE_RUN_DIR, 'outputs', 'figures');
+modeldir = fullfile(ICESEE_RUN_DIR, 'outputs', 'model');
+
+if ~exist(figdir, 'dir'); mkdir(figdir); end
+if ~exist(modeldir, 'dir'); mkdir(modeldir); end
+
+if ~exist('md', 'var')
+    disp('[ICESEE-GUI][WARN] Variable md does not exist. Nothing to postprocess.');
+    return;
+end
+
+try
+    save(fullfile(modeldir, 'md_final.mat'), 'md', '-v7.3');
+    disp(['[ICESEE-GUI] Saved model: ' fullfile(modeldir, 'md_final.mat')]);
+catch ME
+    disp(['[ICESEE-GUI][WARN] Could not save md_final.mat: ' ME.message]);
+end
+
+try
+    results = md.results;
+catch ME
+    disp(['[ICESEE-GUI][WARN] Could not access md.results: ' ME.message]);
+    return;
+end
+
+if isempty(results)
+    disp('[ICESEE-GUI][WARN] md.results is empty. Nothing to plot.');
+    return;
+end
+
+try
+    if isfield(results, 'StressbalanceSolution')
+        sol = results.StressbalanceSolution;
+
+        if isfield(sol, 'Vel')
+            f = figure('Visible', 'off');
+            plotmodel(md, 'data', sol.Vel);
+            title('Stressbalance velocity');
+            saveas(f, fullfile(figdir, 'stressbalance_velocity.png'));
+            close(f);
+            disp('[ICESEE-GUI] Saved stressbalance_velocity.png');
+        end
+
+        if isfield(sol, 'Pressure')
+            f = figure('Visible', 'off');
+            plotmodel(md, 'data', sol.Pressure);
+            title('Stressbalance pressure');
+            saveas(f, fullfile(figdir, 'stressbalance_pressure.png'));
+            close(f);
+            disp('[ICESEE-GUI] Saved stressbalance_pressure.png');
+        end
+
+        return;
+    end
+
+    if isfield(results, 'TransientSolution')
+        sol = results.TransientSolution;
+        last = sol(numel(sol));
+
+        if isfield(last, 'Vel')
+            f = figure('Visible', 'off');
+            plotmodel(md, 'data', last.Vel);
+            title('Final transient velocity');
+            saveas(f, fullfile(figdir, 'transient_final_velocity.png'));
+            close(f);
+            disp('[ICESEE-GUI] Saved transient_final_velocity.png');
+        end
+
+        if isfield(last, 'Thickness')
+            f = figure('Visible', 'off');
+            plotmodel(md, 'data', last.Thickness);
+            title('Final transient thickness');
+            saveas(f, fullfile(figdir, 'transient_final_thickness.png'));
+            close(f);
+            disp('[ICESEE-GUI] Saved transient_final_thickness.png');
+        end
+
+        if isfield(last, 'Surface')
+            f = figure('Visible', 'off');
+            plotmodel(md, 'data', last.Surface);
+            title('Final transient surface');
+            saveas(f, fullfile(figdir, 'transient_final_surface.png'));
+            close(f);
+            disp('[ICESEE-GUI] Saved transient_final_surface.png');
+        end
+
+        return;
+    end
+
+    if isfield(results, 'ThermalSolution')
+        sol = results.ThermalSolution;
+
+        if isfield(sol, 'Temperature')
+            f = figure('Visible', 'off');
+            plotmodel(md, 'data', sol.Temperature);
+            title('Thermal temperature');
+            saveas(f, fullfile(figdir, 'thermal_temperature.png'));
+            close(f);
+            disp('[ICESEE-GUI] Saved thermal_temperature.png');
+        end
+
+        return;
+    end
+
+    if isfield(results, 'MasstransportSolution')
+        sol = results.MasstransportSolution;
+
+        if isfield(sol, 'Thickness')
+            f = figure('Visible', 'off');
+            plotmodel(md, 'data', sol.Thickness);
+            title('Mass transport thickness');
+            saveas(f, fullfile(figdir, 'masstransport_thickness.png'));
+            close(f);
+            disp('[ICESEE-GUI] Saved masstransport_thickness.png');
+        end
+
+        return;
+    end
+
+    disp('[ICESEE-GUI][WARN] Solver type not recognized.');
+    disp(fieldnames(md.results));
+
+catch ME
+    disp(['[ICESEE-GUI][ERROR] Postprocess failed: ' ME.message]);
+end
+"""
+    
+def submit_remote_icesheets_via_connector(
+    *,
+    session_id: str,
+    host: str,
+    user: str,
+    port: int,
+    remote_base_dir: str,
+    remote_tag: str,
+    backend: str,
+    model: str,
+    example_dir: str,
+    exec_dir: str,
+    image_uri: str,
+    container_source: str,
+    spack_enable: bool,
+    spack_repo_url: str,
+    spack_dirname: str,
+    spack_install_if_needed: bool,
+    spack_install_mode: str,
+    spack_slurm_dir: str,
+    spack_pmix_dir: str,
+    slurm_time: str,
+    slurm_job_name: str,
+    slurm_nodes: int,
+    slurm_ntasks: int,
+    slurm_tpn: int,
+    slurm_part: str,
+    slurm_mem: str,
+    slurm_account: str,
+    slurm_mail: str,
+    remote_module_lines: str = "",
+    remote_export_lines: str = "",
+    test_mode: bool = False,
+    run_file: str = "",
+    md_config: dict | None = None,
+    cluster_name: str = "pace",
+):
+    import base64
+    import shlex
+
+    messages = []
+
+    if not session_id:
+        raise RuntimeError("Missing connector session ID.")
+
+    if not host or not user:
+        raise ValueError("Provide Host + User first.")
+
+    # Resolve remote base through connector.
+    remote_base_input = (remote_base_dir or "").strip() or "~/r-arobel3-0"
+
+    resolve_cmd = f'python3 -c "import os; print(os.path.abspath(os.path.expanduser({remote_base_input!r})))"'
+    rbase = connector_ssh(session_id, host, user, port, resolve_cmd, timeout=300, cluster_name=cluster_name)
+    if not rbase.get("ok"):
+        raise RuntimeError(f"Failed to resolve remote base dir:\n{rbase.get('stderr', '')}")
+
+    remote_base_abs = (rbase.get("stdout") or "").strip().splitlines()[-1]
+    tag = (remote_tag or "").strip() or "icesheets"
+
+    remote_run_dir = f"{remote_base_abs.rstrip('/')}/{tag}/runs/{model}_{backend}"
+    remote_submit_script = f"{remote_run_dir}/run_icesheets.sbatch"
+
+    messages.append("[connector] Using local connector / VPN bridge")
+    messages.append(f"[connector] Remote base dir : {remote_base_abs}")
+    messages.append(f"[connector] Remote run dir  : {remote_run_dir}")
+
+    account_line, mail_lines = slurm_optional_lines(
+        slurm_account.strip(),
+        slurm_mail.strip(),
+    )
+
+    run_file_name = Path(run_file).name if run_file else ""
+    run_file_py = Path(run_file_name).with_suffix(".py").name if run_file_name else ""
+
+    local_example_path = Path(example_dir).expanduser()
+    if not local_example_path.exists():
+        raise RuntimeError(f"Local example path does not exist: {local_example_path}")
+
+    local_parent = str(local_example_path.resolve().parent)
+    local_name = local_example_path.resolve().name
+
+    # Clean and create remote run dir.
+    clean_cmd = f'''
+rm -rf "{remote_run_dir}"
+mkdir -p "{remote_run_dir}"
+'''
+    cres = connector_ssh(session_id, host, user, port, clean_cmd, timeout=300, cluster_name=cluster_name)
+    if not cres.get("ok"):
+        raise RuntimeError(f"Failed to prepare remote run dir:\n{cres.get('stderr', '')}")
+
+    # Upload example using connector-side rsync.
+    local_upload_path = f"{local_parent}/{local_name}"
+    up = connector_stage_archive(
+        session_id,
+        host,
+        user,
+        port,
+        local_example_path,
+        remote_run_dir,
+        timeout=600,
+    )
+
+    if not up.get("ok"):
+        raise RuntimeError(
+            "Failed to copy local example to remote host through connector\n"
+            f"FULL RESPONSE:\n{up}\n\n"
+            f"STDOUT:\n{up.get('stdout','')}\n\n"
+            f"STDERR:\n{up.get('stderr','')}"
+        )
+
+    remote_example_dir = f"{remote_run_dir}/{local_name}"
+    remote_exec_dir = f"{remote_run_dir}/execution"
+
+    messages.append(f"[connector] staged example dir: {remote_example_dir}")
+    messages.append(f"[connector] staged exec dir   : {remote_exec_dir}")
+
+    # Backend setup.
+    spack_path = None
+
+    if backend == "spack":
+        if not spack_enable:
+            raise RuntimeError("ICESEE-Spack backend requires spack_enable=True")
+
+        spack_parent = remote_base_abs
+        spack_name = spack_dirname.strip() or "ICESEE-Spack"
+        repo = spack_repo_url.strip()
+        spack_path = f"{spack_parent.rstrip('/')}/{spack_name}"
+
+        ensure_cmd = f'''
+set -e
+mkdir -p "{spack_parent}"
+if [ ! -d "{spack_path}" ]; then
+    git clone "{repo}" "{spack_path}"
+fi
+test -f "{spack_path}/scripts/activate.sh"
+echo "{spack_path}"
+'''
+        eres = connector_ssh(session_id, host, user, port, ensure_cmd, timeout=600, cluster_name=cluster_name)
+        if not eres.get("ok"):
+            raise RuntimeError(
+                "Failed to ensure ICESEE-Spack on remote host through connector\n"
+                f"STDOUT:\n{eres.get('stdout','')}\n\nSTDERR:\n{eres.get('stderr','')}"
+            )
+
+        messages.append("[connector] Spack backend enabled")
+        messages.append(f"[connector] ICESEE-Spack path: {spack_path}")
+
+        if spack_install_if_needed:
+            install_flag = spack_install_mode or ""
+            install_cmd = f'''
+set -e
+cd "{spack_path}"
+bash ./install.sh {install_flag}
+'''
+            ires = connector_ssh(session_id, host, user, port, install_cmd, timeout=7200, cluster_name=cluster_name)
+            if not ires.get("ok"):
+                raise RuntimeError(
+                    "Remote ICESEE-Spack install failed through connector\n"
+                    f"STDOUT:\n{ires.get('stdout','')}\n\nSTDERR:\n{ires.get('stderr','')}"
+                )
+
+    elif backend == "container":
+        messages.append("[connector] ICESEE-Container backend selected")
+    else:
+        raise RuntimeError(f"Unsupported backend: {backend}")
+
+    # Write ISSM postprocess if needed.
+    if model == "issm":
+        postprocess_path = f"{remote_run_dir}/postprocess_icesee.m"
+        postprocess_text = build_issm_postprocess_script()
+        encoded_post = base64.b64encode(postprocess_text.encode("utf-8")).decode("ascii")
+
+        write_post_cmd = (
+            "python3 -c "
+            + shlex.quote(
+                "import base64, pathlib; "
+                f"p = pathlib.Path({postprocess_path!r}); "
+                "p.parent.mkdir(parents=True, exist_ok=True); "
+                f"p.write_text(base64.b64decode({encoded_post!r}).decode('utf-8'), encoding='utf-8'); "
+                "print(str(p))"
+            )
+        )
+
+        pres = connector_ssh(session_id, host, user, port, write_post_cmd, timeout=60, cluster_name=cluster_name)
+        if not pres.get("ok"):
+            raise RuntimeError(
+                "Failed to write ISSM postprocess script through connector\n"
+                f"STDOUT:\n{pres.get('stdout','')}\n\nSTDERR:\n{pres.get('stderr','')}"
+            )
+
+        messages.append(f"[connector] wrote postprocess script: {postprocess_path}")
+
+    # Build run block.
+    if backend == "spack":
+        issm_matlab_setup = (
+            "addpath([getenv('ISSM_DIR') '/bin'], [getenv('ISSM_DIR') '/lib']); "
+            "issmversion; "
+        )
+
+        if test_mode:
+            if model == "issm":
+                run_block = f'''
+cd "{remote_example_dir}"
+matlab -nodesktop -nosplash -r "{issm_matlab_setup}; exit"
+'''
+            elif model == "icepack":
+                run_block = f'''
+cd "{remote_example_dir}"
+python -c "import icepack; print('Icepack import successful')"
+'''
+            else:
+                raise RuntimeError(f"Unsupported model: {model}")
+        else:
+            if model == "issm":
+                target_m = run_file_name if run_file_name.endswith(".m") else "runme.m"
+                run_block = f'''
+cd "{remote_example_dir}"
+matlab -nodesktop -nosplash -r "{issm_matlab_setup} ICESEE_RUN_DIR='{remote_run_dir}'; run('{target_m}'); run('../postprocess_icesee.m'); exit"
+'''
+            elif model == "icepack":
+                if run_file_name.endswith(".py"):
+                    run_block = f'''
+cd "{remote_example_dir}"
+python "{run_file_name}"
+'''
+                elif run_file_name.endswith(".ipynb"):
+                    run_block = f'''
+cd "{remote_example_dir}"
+jupyter nbconvert --to script "{run_file_name}"
+python "{run_file_py}"
+'''
+                else:
+                    run_block = f'''
+cd "{remote_example_dir}"
+python -c "import icepack; print('Icepack import successful')"
+'''
+            else:
+                raise RuntimeError(f"Unsupported model: {model}")
+
+        body = f'''
+cd "{spack_path}"
+source "{spack_path}/scripts/activate.sh"
+
+{run_block}
+'''
+
+    else:
+        container_root = f"{remote_base_abs.rstrip('/')}/{tag}/ICESEE-Containers"
+        container_dir = f"{container_root}/spack-managed/combined-container"
+        sif_path = f"{container_dir}/combined-env.sif"
+        def_path = f"{container_dir}/combined-env-inbuilt-matlab.def"
+
+        container_setup = f'''
+echo "[icesheets] Checking apptainer..."
+
+if ! command -v apptainer >/dev/null 2>&1; then
+    echo "[icesheets] apptainer not found in PATH. Trying module load apptainer..."
+    source /etc/profile >/dev/null 2>&1 || true
+    module load apptainer >/dev/null 2>&1 || true
+fi
+
+if ! command -v apptainer >/dev/null 2>&1; then
+    echo "[icesheets][ERROR] apptainer not found, and module load apptainer failed."
+    exit 2
+fi
+
+container_root="{container_root}"
+container_dir="{container_dir}"
+sif_path="{sif_path}"
+def_path="{def_path}"
+
+mkdir -p "{remote_base_abs.rstrip('/')}/{tag}"
+
+if [ ! -d "$container_root" ]; then
+    git clone https://github.com/ICESEE-project/ICESEE-Containers.git "$container_root"
+fi
+
+cd "$container_dir"
+
+if [ ! -f "$sif_path" ]; then
+    apptainer build combined-env.sif combined-env-inbuilt-matlab.def
+fi
+'''
+        if model == "issm":
+            target_m = run_file_name if run_file_name.endswith(".m") else "runme.m"
+            run_block = f'''
+mkdir -p "{remote_exec_dir}"
+srun --mpi=pmix -n {slurm_ntasks} apptainer exec \
+-B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution \
+"{sif_path}" with-issm matlab -nodesktop -nosplash -r "cd('/opt/ISSM/examples'); run('{target_m}'); exit"
+'''
+        else:
+            if run_file_name.endswith(".py"):
+                run_block = f'''
+mkdir -p "{remote_exec_dir}"
+apptainer exec \
+-B "{remote_example_dir}":/workspace/example,"{remote_exec_dir}":/workspace/run \
+"{sif_path}" with-icepack bash -lc 'cd /workspace/example && python "{run_file_name}"'
+'''
+            elif run_file_name.endswith(".ipynb"):
+                run_block = f'''
+mkdir -p "{remote_exec_dir}"
+apptainer exec \
+-B "{remote_example_dir}":/workspace/example,"{remote_exec_dir}":/workspace/run \
+"{sif_path}" with-icepack bash -lc 'cd /workspace/example && jupyter nbconvert --to script "{run_file_name}" && python "{run_file_py}"'
+'''
+            else:
+                run_block = f'''
+apptainer exec "{sif_path}" with-icepack python -c "import icepack; print('Icepack import successful')"
+'''
+        body = container_setup + "\n" + run_block
+
+    outfile = f"{remote_run_dir}/icesheets-%j.out"
+
+    slurm_text = f"""#!/bin/bash
+#SBATCH -J {slurm_job_name.strip() or "ICESHEETS"}
+#SBATCH -t {slurm_time.strip()}
+#SBATCH -N {int(slurm_nodes)}
+#SBATCH --ntasks={int(slurm_ntasks)}
+#SBATCH --ntasks-per-node={int(slurm_tpn)}
+#SBATCH -p {slurm_part.strip()}
+#SBATCH --mem={slurm_mem.strip()}
+{account_line}
+{mail_lines}
+#SBATCH -o {outfile}
+
+set -euo pipefail
+
+cd "{remote_run_dir}"
+mkdir -p outputs/model outputs/figures
+
+echo "[icesheets] Host: $(hostname)"
+echo "[icesheets] Date: $(date)"
+echo "[icesheets] PWD : $(pwd)"
+echo "[icesheets] Run dir: {remote_run_dir}"
+
+{sanitize_multiline(remote_module_lines)}
+{sanitize_multiline(remote_export_lines)}
+
+{body}
+"""
+
+    encoded = base64.b64encode(slurm_text.encode("utf-8")).decode("ascii")
+
+    write_cmd = (
+        "python3 -c "
+        + shlex.quote(
+            "import base64, pathlib; "
+            f"p = pathlib.Path({remote_submit_script!r}); "
+            "p.parent.mkdir(parents=True, exist_ok=True); "
+            f"p.write_text(base64.b64decode({encoded!r}).decode('utf-8'), encoding='utf-8'); "
+            "print(str(p))"
+        )
+    )
+
+    wres = connector_ssh(session_id, host, user, port, write_cmd, timeout=60, cluster_name=cluster_name)
+    if not wres.get("ok"):
+        raise RuntimeError(
+            "Failed to write remote sbatch script through connector\n"
+            f"STDOUT:\n{wres.get('stdout','')}\n\nSTDERR:\n{wres.get('stderr','')}"
+        )
+
+    messages.append(f"[connector] wrote script: {remote_submit_script}")
+
+    sres = connector_slurm_submit(
+        session_id,
+        host,
+        user,
+        port,
+        remote_submit_script,
+        timeout=60,
+    )
+
+    if not sres.get("ok") or not sres.get("submitted"):
+        raise RuntimeError(
+            "Failed to submit remote sbatch script through connector\n"
+            f"STDOUT:\n{sres.get('stdout','')}\n\nSTDERR:\n{sres.get('stderr','')}"
+        )
+
+    jobid = sres["jobid"]
+
+    messages.append("[connector] ✅ Submitted model-only slurm_run.sh")
+    messages.append(f"  jobid : {jobid}")
+    messages.append(f"  rdir  : {remote_run_dir}")
+
+    return {
+        "success": True,
+        "jobid": jobid,
+        "remote_dir": remote_run_dir,
+        "log_file": f"{remote_run_dir}/icesheets-{jobid}.out",
+        "spack_path": spack_path,
+        "messages": messages,
+    }
 
 def submit_remote_icesheets(
     *,
@@ -296,6 +926,7 @@ def submit_remote_icesheets(
     remote_export_lines: str = "",
     test_mode: bool = False,
     run_file: str = "",
+    md_config: dict | None = None,
 ):
     import base64
     import time
@@ -391,7 +1022,7 @@ def submit_remote_icesheets(
     rm -rf "{remote_run_dir}"
     mkdir -p "{remote_run_dir}"
     '''
-    mkres = ssh_run(host, user, port, clean_cmd, timeout=30)
+    mkres = ssh_run(host, user, port, clean_cmd, timeout=300)
 
     # ---------------------------------------------------------
     # Stage local example to remote run dir
@@ -400,7 +1031,7 @@ def submit_remote_icesheets(
     if not local_example_path.exists():
         raise RuntimeError(f"Local example path does not exist: {local_example_path}")
 
-    mkres = ssh_run(host, user, port, f'mkdir -p "{remote_run_dir}"', timeout=30)
+    mkres = ssh_run(host, user, port, f'mkdir -p "{remote_run_dir}"', timeout=300)
     if mkres.returncode != 0:
         raise RuntimeError(f"Failed to create remote run dir:\n{mkres.stderr}")
 
@@ -428,6 +1059,34 @@ def submit_remote_icesheets(
     messages.append(f"[remote] staged example dir: {remote_example_dir}")
     messages.append(f"[remote] staged exec dir   : {remote_exec_dir}")
 
+    if model == "issm":
+        import base64
+        import shlex
+
+        postprocess_path = f"{remote_run_dir}/postprocess_icesee.m"
+        postprocess_text = build_issm_postprocess_script()
+        encoded_post = base64.b64encode(postprocess_text.encode("utf-8")).decode("ascii")
+
+        write_post_cmd = (
+            "python3 -c "
+            + shlex.quote(
+                "import base64, pathlib; "
+                f"p = pathlib.Path({postprocess_path!r}); "
+                "p.parent.mkdir(parents=True, exist_ok=True); "
+                f"p.write_text(base64.b64decode({encoded_post!r}).decode('utf-8'), encoding='utf-8'); "
+                "print(str(p))"
+            )
+        )
+
+        pres = ssh_run(host, user, port, write_post_cmd, timeout=60)
+        if pres.returncode != 0:
+            raise RuntimeError(
+                "Failed to write ISSM postprocess script\n"
+                f"STDOUT:\n{pres.stdout}\n\nSTDERR:\n{pres.stderr}"
+            )
+
+        messages.append(f"[remote] wrote postprocess script: {postprocess_path}")
+
     # ---------------------------------------------------------
     # Build model-specific run block
     # ---------------------------------------------------------
@@ -454,7 +1113,7 @@ python -c "import icepack; print('Icepack import successful')"
                 target_m = run_file_name if run_file_name.endswith(".m") else "runme.m"
                 run_block = f'''
 cd "{remote_example_dir}"
-matlab -nodesktop -nosplash -r "{issm_matlab_setup} run('{target_m}'); exit"
+matlab -nodesktop -nosplash -r "{issm_matlab_setup} ICESEE_RUN_DIR='{remote_run_dir}'; run('{target_m}'); run('../postprocess_icesee.m'); exit"
 '''
             elif model == "icepack":
                 if run_file_name.endswith(".py"):
@@ -600,6 +1259,7 @@ apptainer exec "{sif_path}" with-icepack python -c "import icepack; print('Icepa
 set -euo pipefail
 
 cd "{remote_run_dir}"
+mkdir -p outputs/model outputs/figures # create expected output dirs
 
 echo "[icesheets] Host: $(hostname)"
 echo "[icesheets] Date: $(date)"
@@ -648,7 +1308,7 @@ echo "[icesheets] Run dir: {remote_run_dir}"
         f'(echo MISSING && ls -lah {remote_run_dir_q} && exit 1)'
     )
 
-    vres = ssh_run(host, user, port, verify_cmd, timeout=30)
+    vres = ssh_run(host, user, port, verify_cmd, timeout=60)
     if vres.returncode != 0:
         raise RuntimeError(
             "Remote submit script was not found after write step\n"
@@ -696,6 +1356,90 @@ echo "[icesheets] Run dir: {remote_run_dir}"
         "messages": messages,
     }
 
+def build_default_md_fields(section: str) -> dict:
+    """
+    Fallback field map. This avoids missing sections, but still lets users
+    add any field manually if a section is not pre-populated.
+    """
+    known = {
+        "geometry": ["surface", "thickness", "base", "bed"],
+        "mesh": ["x", "y", "elements", "numberofvertices", "numberofelements"],
+        "mask": ["ice_levelset", "ocean_levelset"],
+        "materials": ["rho_ice", "rho_water", "rheology_B", "rheology_n"],
+        "friction": ["coefficient", "p", "q"],
+        "stressbalance": ["restol", "reltol", "abstol", "maxiter", "requested_outputs"],
+        "timestepping": ["start_time", "final_time", "time_step"],
+        "transient": [
+            "isstressbalance", "ismasstransport", "isthermal",
+            "isgroundingline", "ismovingfront", "issmb",
+        ],
+        "cluster": ["np", "name", "login", "port"],
+        "verbose": ["solution", "module", "processor", "convergence", "control", "qmu"],
+        "smb": ["mass_balance"],
+        "basalforcings": ["groundedice_melting_rate", "floatingice_melting_rate"],
+        "initialization": ["vx", "vy", "vel", "pressure", "temperature"],
+        "masstransport": ["spcthickness", "requested_outputs"],
+        "thermal": ["spctemperature", "requested_outputs"],
+        "groundingline": ["migration"],
+        "flowequation": ["element_equation", "vertex_equation"],
+        "settings": ["results_on_nodes", "io_gather", "lowmem"],
+    }
+
+    fields = known.get(section, [])
+    return {
+        f: {
+            "label": f"{f}",
+            "type": "expr",
+            "default": f"md.{section}.{f}",
+        }
+        for f in fields
+    }
+
+def build_backend_check_cmd(backend: str, model: str, remote_base: str, remote_tag: str) -> str:
+    root = f"{remote_base.rstrip('/')}/{remote_tag}"
+    spack_path = f"{remote_base.rstrip('/')}/ICESEE-Spack"
+    container_dir = f"{root}/ICESEE-Containers/spack-managed/combined-container"
+    sif_path = f"{container_dir}/combined-env.sif"
+
+    if backend == "spack":
+        if model == "issm":
+            return f'''
+set -e
+test -d "{spack_path}" || {{ echo "[missing] ICESEE-Spack not found: {spack_path}"; exit 2; }}
+source "{spack_path}/scripts/activate.sh"
+test -n "${{ISSM_DIR:-}}" || {{ echo "[missing] ISSM_DIR is not set"; exit 3; }}
+test -d "$ISSM_DIR" || {{ echo "[missing] ISSM_DIR path does not exist: $ISSM_DIR"; exit 4; }}
+echo "[ok] ICESEE-Spack found"
+echo "[ok] ISSM_DIR=$ISSM_DIR"
+'''
+        if model == "icepack":
+            return f'''
+set -e
+test -d "{spack_path}" || {{ echo "[missing] ICESEE-Spack not found: {spack_path}"; exit 2; }}
+source "{spack_path}/scripts/activate.sh"
+python - <<'PY'
+import icepack
+print("[ok] icepack import successful")
+try:
+    import firedrake
+    print("[ok] firedrake import successful")
+except Exception as e:
+    print("[warn] firedrake import failed:", type(e).__name__, e)
+PY
+'''
+    else:
+        return f'''
+set -e
+if ! command -v apptainer >/dev/null 2>&1; then
+    source /etc/profile >/dev/null 2>&1 || true
+    module load apptainer >/dev/null 2>&1 || true
+fi
+command -v apptainer >/dev/null 2>&1 || {{ echo "[missing] apptainer not found"; exit 2; }}
+test -f "{sif_path}" || {{ echo "[missing] container image not found: {sif_path}"; exit 3; }}
+echo "[ok] apptainer found: $(command -v apptainer)"
+echo "[ok] container image found: {sif_path}"
+'''
+
 def build_icesheets_ui():
     try:
         # =========================================================
@@ -708,6 +1452,10 @@ def build_icesheets_ui():
             "batch_job_id": None,
             "cloud_run": None,
             "selected_example_path": None,
+        }
+        SESSION = {
+            "id": None,
+            "ws_url": None,
         }
 
         AUTO_TAIL = {
@@ -790,6 +1538,16 @@ def build_icesheets_ui():
             layout=W.Layout(width="100%"),
         )
 
+        access_mode_dd = W.Dropdown(
+            options=[
+                ("Auto", "auto"),
+                ("Direct SSH from server", "direct"),
+                ("Local Connector / VPN bridge", "connector"),
+            ],
+            value="connector",
+            layout=W.Layout(width="100%"),
+        )
+
         file_editor = W.Textarea(
             value="",
             layout=W.Layout(width="100%", height="280px"),
@@ -849,7 +1607,21 @@ def build_icesheets_ui():
         description="Auto tail",
         icon="refresh",
         button_style="info",
-    )
+        )
+
+        connector_panel, refresh_connector = build_connector_panel(mode_dd)
+        relay_status = W.HTML("")
+        start_connector_session_btn = W.Button(
+            description="Create connector session",
+            icon="plug",
+            button_style="info",
+        )
+
+        check_backend_btn = W.Button(
+            description="Check backend",
+            icon="check-circle",
+            button_style="info",
+        )
 
         # -----------------------------
         # Remote controls
@@ -857,6 +1629,8 @@ def build_icesheets_ui():
         cluster_host = W.Text(value="login-phoenix-rh9.pace.gatech.edu", layout=W.Layout(width="320px"))
         cluster_user = W.Text(value=os.environ.get("USER", ""), placeholder="username", layout=W.Layout(width="320px"))
         cluster_port = W.IntText(value=22, layout=W.Layout(width="120px"))
+        # cluster_name_for_keys = W.Text(value="pace" , layout=W.Layout(width="320px"))
+        cluster_name_for_keys = W.Text(value="pace", placeholder="e.g. pace, ub-ccr, frontera", layout=W.Layout(width="320px"))
 
         remote_base_dir = W.Text(value="~/r-arobel3-0", layout=W.Layout(width="320px"))
         remote_tag = W.Text(value="icesheets", layout=W.Layout(width="220px"))
@@ -879,6 +1653,12 @@ def build_icesheets_ui():
             button_style="warning",
         )
 
+        preview_results_btn = W.Button(
+            description="Preview results",
+            icon="eye",
+            button_style="info",
+        )
+
         slurm_job_name = W.Text(value="ICESHEETS", layout=W.Layout(width="100%"))
         slurm_time = W.Text(value="04:00:00", layout=W.Layout(width="100%"))
         slurm_nodes = W.IntText(value=1, layout=W.Layout(width="100%"))
@@ -893,6 +1673,267 @@ def build_icesheets_ui():
         status_btn = W.Button(description="Check status", icon="tasks")
         tail_btn = W.Button(description="Tail log", icon="file-text")
         terminate_btn = W.Button(description="Terminate job", icon="stop", button_style="danger")
+
+        ISSM_MD_SECTIONS = [
+            "mesh", "mask", "geometry", "constants", "smb", "basalforcings",
+            "materials", "damage", "friction", "flowequation", "timestepping",
+            "initialization", "rifts", "solidearth", "dsl", "debug", "verbose",
+            "settings", "toolkits", "cluster", "balancethickness",
+            "stressbalance", "groundingline", "hydrology", "debris",
+            "masstransport", "memmasstransport", "thermal", "steadystate",
+            "transient", "levelset", "calving", "frontalforcings", "esa",
+            "love", "sampling", "autodiff", "inversion", "qmu", "amr",
+            "outputdefinition", "results", "radaroverlay", "miscellaneous",
+            "stochasticforcing",
+        ]
+
+        ISSM_MD_FIELDS = {section: {} for section in ISSM_MD_SECTIONS}
+
+        md_config_enabled = W.Checkbox(
+            value=True,
+            description="Apply md configuration before solve",
+        )
+
+        md_section_dd = W.Dropdown(
+            options=ISSM_MD_SECTIONS,
+            value="stressbalance",
+            layout=W.Layout(width="100%"),
+        )
+
+        md_field_dd = W.Dropdown(
+            options=[],
+            layout=W.Layout(width="100%"),
+        )
+
+        md_value_text = W.Textarea(
+            value="",
+            placeholder="current/default value",
+            layout=W.Layout(width="100%", height="70px"),
+        )
+
+        md_value_type_hidden = W.Text(
+            value="string",
+            layout=W.Layout(display="none"),
+        )
+
+        md_help = W.HTML("")
+
+        add_md_override_btn = W.Button(
+            description="Add md override",
+            icon="plus",
+            button_style="info",
+        )
+
+        clear_md_overrides_btn = W.Button(
+            description="Clear overrides",
+            icon="trash",
+        )
+
+        md_overrides = {}
+        md_overrides_view = W.Textarea(
+            value="No md overrides added yet.",
+            disabled=True,
+            layout=W.Layout(width="100%", height="120px"),
+        )
+
+        def show_connector_public_key_help():
+            if not SESSION.get("id"):
+                create_or_refresh_connector_session()
+
+            result = connector_get_public_key(
+                SESSION["id"],
+                cluster_name=cluster_name_for_keys.value or "pace",
+            )
+
+            with log_out:
+                print()
+            #     print("[ssh] Automatic key installation did not complete.")
+            #     print("[ssh] Some clusters require SSH keys to be added through a web portal.")
+            #     print()
+            #     print("[ssh] Copy this public key and add it to the cluster SSH key portal:")
+            #     print()
+            #     print(result.get("public_key_text", "").strip())
+            #     print()
+            #     print("[ssh] After adding the key, return here and click Test SSH.")
+            #     print("[ssh] Then continue using Key-only mode.")
+
+            return result
+
+        def on_bootstrap_keys(_=None):
+            log_out.clear_output()
+            status_chip.value = status_html("running")
+
+            host = cluster_host.value.strip()
+            user = cluster_user.value.strip()
+            port = int(cluster_port.value)
+            password = cluster_password.value
+
+            if not host or not user:
+                status_chip.value = status_html("fail")
+                with log_out:
+                    print("[auth][ERROR] Provide Host + User first.")
+                return
+
+            if not password:
+                status_chip.value = status_html("fail")
+                with log_out:
+                    print("[auth][ERROR] Enter your password. It is used once and not stored.")
+                return
+
+            try:
+                use_connector = should_use_connector()
+
+                if use_connector:
+                    if not SESSION.get("id"):
+                        create_or_refresh_connector_session()
+
+                    st = relay_check_status(SESSION["id"])
+                    if not st.get("online"):
+                        status_chip.value = status_html("fail")
+                        with log_out:
+                            print("[connector][ERROR] Connector session is not online.")
+                            print("Open the connector setup page and start the local connector first.")
+                        return
+
+                result = bootstrap_passwordless_ssh(
+                    host=host,
+                    user=user,
+                    port=port,
+                    password=password,
+                    access_mode="connector" if access_mode_dd.value == "connector" else "direct",
+                    session_id=SESSION.get("id"),
+                    cluster_name=cluster_name_for_keys.value or "pace",
+                )
+
+                with log_out:
+                    for msg in result.get("messages", []):
+                        print(msg)
+
+                    if (result.get("stdout") or "").strip():
+                        print("--- stdout ---")
+                        print(result["stdout"].strip())
+
+                    if (result.get("stderr") or "").strip():
+                        print("--- stderr ---")
+                        print(result["stderr"].strip())
+
+                if result.get("ok"):
+                    status_chip.value = status_html("done")
+                    auth_mode.value = "key"
+                    cluster_password.value = ""
+                    with log_out:
+                        print("[auth] ✅ Passwordless SSH is working.")
+                else:
+                    status_chip.value = status_html("fail")
+
+                    if should_use_connector():
+                        show_connector_public_key_help()
+                    else:
+                        with log_out:
+                            print()
+                            print("[ssh] Direct/server-side bootstrap failed.")
+                            print("[ssh] Use the SSH Key Manager below only for direct SSH from this server.")
+
+            except Exception as e:
+                status_chip.value = status_html("fail")
+                with log_out:
+                    print("[auth][ERROR]", type(e).__name__, e)
+
+        def create_or_refresh_connector_session(_=None):
+            log_out.clear_output()
+
+            try:
+                if SESSION.get("id") is None:
+                    sess = create_session()
+                    SESSION["id"] = sess["session_id"]
+                    SESSION["ws_url"] = sess["ws_url"]
+
+                    connector_setup_link.value = f"""
+                    <a href="https://cryostack.eas.gatech.edu/connect/?session={SESSION['id']}"
+                    target="_blank"
+                    style="
+                        display:inline-block;
+                        background:#0d6efd;
+                        color:white;
+                        padding:8px 12px;
+                        border-radius:8px;
+                        text-decoration:none;
+                        font-weight:700;
+                        margin:6px 0;">
+                    Open ICESEE Connector Setup
+                    </a>
+                    """
+
+                st = relay_check_status(SESSION["id"])
+
+                relay_status.value = f"""
+                <div style="
+                    border:1px solid rgba(13,110,253,.18);
+                    background:rgba(13,110,253,.06);
+                    border-radius:12px;
+                    padding:12px;
+                    line-height:1.5;
+                    margin:8px 0;
+                ">
+                <b>Connector session:</b> {SESSION["id"]}<br>
+                <b>Status:</b> {"online" if st.get("online") else "waiting for connector"}<br>
+                <b>WebSocket path:</b> {SESSION["ws_url"]}
+                </div>
+                """
+                # is_online = st.get("online")
+
+                # relay_status.value = f"""
+                # <div style="
+                #     border:1px solid {'rgba(25,135,84,.25)' if is_online else 'rgba(13,110,253,.18)'};
+                #     background:{'rgba(25,135,84,.08)' if is_online else 'rgba(13,110,253,.06)'};
+                #     border-radius:12px;
+                #     padding:12px;
+                #     line-height:1.55;
+                #     margin:8px 0;
+                # ">
+                # <b>Connector session:</b> {SESSION["id"]}<br>
+                # <b>Status:</b> {'online ✅' if is_online else 'waiting for connector'}<br>
+                # <b>WebSocket path:</b> {SESSION["ws_url"]}
+                # </div>
+                # """
+
+                with log_out:
+                    print("[connector] Session ID:", SESSION["id"])
+                    print("[connector] Status:", st)
+
+            except Exception as e:
+                relay_status.value = ""
+                with log_out:
+                    print("[connector][ERROR]", type(e).__name__, e)
+
+        def refresh_md_field_dropdown(_=None):
+            section = md_section_dd.value
+            fields = ISSM_MD_FIELDS.get(section, {}) or build_default_md_fields(section)
+
+            if not fields:
+                md_field_dd.options = [("(custom field)", "__custom__")]
+                md_field_dd.value = "__custom__"
+                md_value_text.value = ""
+                md_value_type_hidden.value = "string"
+                md_help.value = "<div class='icesee-subtle'>No predefined fields yet. Use Advanced mode or add this section later.</div>"
+                return
+
+            opts = [(info["label"], name) for name, info in fields.items()]
+            md_field_dd.options = opts
+            md_field_dd.value = opts[0][1]
+            refresh_md_value_from_field()
+
+
+        def refresh_md_value_from_field(_=None):
+            section = md_section_dd.value
+            field = md_field_dd.value
+            info = ISSM_MD_FIELDS.get(section, {}).get(field, {})
+
+            md_value_text.value = str(info.get("default", ""))
+            md_value_type_hidden.value = info.get("type", "string")
+
+            label = info.get("label", field)
+            md_help.value = f"<div class='icesee-subtle'><b>{section}.{field}</b>: {label}</div>"
 
         def build_spack_activation_block() -> str:
             remote_root = f"{expand_remote_home(remote_base_dir.value)}/{remote_tag.value}"
@@ -1118,6 +2159,7 @@ def build_icesheets_ui():
         # =========================================================
         summary_html = W.HTML()
         command_preview = W.Textarea(layout=W.Layout(width="100%", height="130px"))
+        connector_setup_link = W.HTML("")
 
         log_out = W.Output(layout=W.Layout(
             border="1px solid rgba(0,0,0,.10)",
@@ -1530,33 +2572,168 @@ def build_icesheets_ui():
                     if p.is_file():
                         zf.write(p, arcname=p.relative_to(src_dir))
 
+        def local_run_cache_dir() -> Path:
+            root = current_example_root()
+            return root / "_icesee_remote_runs" / f"{model_dd.value}_{backend_dd.value}"
+        
+        def auto_download_file(path: Path, filename: str | None = None):
+            import time
+            import uuid
+            import base64
+            import html
+            from IPython.display import HTML, display
+
+            path = Path(path).resolve()
+            stamp = time.strftime("%Y%m%d_%H%M%S")
+            filename = filename or path.name
+
+            stem = Path(filename).stem
+            suffix = Path(filename).suffix or ".zip"
+            download_name = f"{stem}_{stamp}{suffix}"
+
+            data = base64.b64encode(path.read_bytes()).decode("ascii")
+            elem_id = f"icesee_download_{uuid.uuid4().hex}"
+
+            display(HTML(f"""
+            <div id="{elem_id}"></div>
+            <script>
+            (function() {{
+                const a = document.createElement("a");
+                a.href = "data:application/zip;base64,{data}";
+                a.download = "{html.escape(download_name)}";
+                a.style.display = "none";
+                document.body.appendChild(a);
+                setTimeout(() => {{
+                    a.click();
+                    document.body.removeChild(a);
+                }}, 100);
+            }})();
+            </script>
+            """))
+
+        def remote_outputs_dir() -> str:
+            rdir = normalize_remote_path(STATUS.get("remote_dir") or "")
+            return f"{rdir}/outputs"
+
+        def fetch_remote_outputs_to_local() -> Path | None:
+            rdir = normalize_remote_path(STATUS.get("remote_dir") or "")
+            if not rdir:
+                with results_out:
+                    print("[results] No remote run directory found. Submit a job first.")
+                return None
+
+            host = cluster_host.value.strip()
+            user = cluster_user.value.strip()
+            port = int(cluster_port.value)
+
+            local_cache = local_run_cache_dir()
+            outputs_dir = local_cache / "outputs"
+
+            if outputs_dir.exists():
+                shutil.rmtree(outputs_dir)
+            outputs_dir.mkdir(parents=True, exist_ok=True)
+
+            # Fetch everything useful, not only rdir/outputs
+            # remote_source = f"{rdir.rstrip('/')}/"
+            remote_outputs = remote_outputs_dir()
+
+            rsync_cmd = [
+                "rsync",
+                "-az",
+                "-e",
+                f"ssh -p {port}",
+                f"{user}@{host}:{remote_outputs.rstrip('/')}/",
+                f"{outputs_dir}/",
+            ]
+
+            if access_mode_dd.value == "connector":
+                result = connector_fetch_archive(
+                    SESSION["id"],
+                    host,
+                    user,
+                    port,
+                    f"{remote_outputs.rstrip('/')}/",
+                    timeout=600,
+                )
+
+                if not result.get("ok"):
+                    with results_out:
+                        print("[results][ERROR] Could not fetch remote outputs through connector.")
+                        print("Remote source:", remote_outputs)
+                        print("FULL RESPONSE:")
+                        print(result)
+                        print("--- stdout ---")
+                        print(result.get("stdout", ""))
+                        print("--- stderr ---")
+                        print(result.get("stderr", ""))
+                    return None
+
+                try:
+                    import base64
+                    import tarfile
+                    import tempfile
+
+                    archive_b64 = result.get("archive_b64")
+                    if not archive_b64:
+                        raise RuntimeError("Connector response did not include archive_b64.")
+
+                    with tempfile.TemporaryDirectory() as td:
+                        archive_path = Path(td) / "outputs.tar.gz"
+                        archive_path.write_bytes(base64.b64decode(archive_b64))
+
+                        if outputs_dir.exists():
+                            shutil.rmtree(outputs_dir)
+                        outputs_dir.mkdir(parents=True, exist_ok=True)
+
+                        with tarfile.open(archive_path, "r:gz") as tar:
+                            tar.extractall(outputs_dir)
+
+                    return outputs_dir
+
+                except Exception as e:
+                    with results_out:
+                        print("[results][ERROR] Could not unpack connector archive.")
+                        print(type(e).__name__, e)
+                    return None
+            else:
+                rs = subprocess.run(rsync_cmd, capture_output=True, text=True)
+
+                if rs.returncode != 0:
+                    with results_out:
+                        print("[results][ERROR] Could not fetch remote outputs.")
+                        print("Remote source:", remote_outputs)
+                        print("--- stdout ---")
+                        print(rs.stdout)
+                        print("--- stderr ---")
+                        print(rs.stderr)
+                    return None
+
+                return outputs_dir
+
         def download_results_bundle(_=None):
             results_out.clear_output()
 
-            root = current_example_root()
-            if root is None:
-                with results_out:
-                    print("[download][ERROR] Example directory is not available.")
+            outputs_dir = fetch_remote_outputs_to_local()
+            if outputs_dir is None:
                 return
 
-            candidates = [
-                root / "results",
-                root / "_modelrun_datasets",
-                root / "output",
-            ]
-            src = next((p for p in candidates if p.exists() and p.is_dir()), None)
+            zip_path = local_run_cache_dir() / "results_bundle.zip"
 
-            if src is None:
-                with results_out:
-                    print("[download] No results directory found.")
-                return
-
-            zip_path = root / "results_bundle.zip"
             try:
-                make_zip_from_dir(src, zip_path)
+                if zip_path.exists():
+                    zip_path.unlink()
+
+                make_zip_from_dir(outputs_dir, zip_path)
+
+                # sanity check
+                if not zipfile.is_zipfile(zip_path):
+                    raise RuntimeError(f"Created file is not a valid zip: {zip_path}")
+
                 with results_out:
-                    print(f"Created: {zip_path}")
-                    display(FileLink(str(zip_path), result_html_prefix="Download: "))
+                    print(f"Preparing download: {zip_path.name}")
+                    print("If the browser blocks repeated downloads, allow multiple downloads for this page.")
+                    auto_download_file(zip_path, "results_bundle.zip")
+
             except Exception as e:
                 with results_out:
                     print("[download][ERROR]", type(e).__name__, e)
@@ -1564,33 +2741,131 @@ def build_icesheets_ui():
         def download_figures_bundle(_=None):
             results_out.clear_output()
 
-            root = current_example_root()
-            if root is None:
-                with results_out:
-                    print("[download][ERROR] Example directory is not available.")
+            outputs_dir = fetch_remote_outputs_to_local()
+            if outputs_dir is None:
                 return
 
-            candidates = [
-                root / "figures",
-                root / "results" / "figures",
-            ]
-            src = next((p for p in candidates if p.exists() and p.is_dir()), None)
-
-            if src is None:
+            pngs = sorted(outputs_dir.rglob("*.png"))
+            if not pngs:
                 with results_out:
-                    print("[download] No figures directory found.")
+                    print("[download] No PNG figures found.")
+                    print("Checked recursively under:", outputs_dir)
                 return
 
-            zip_path = root / "figures_bundle.zip"
+            fig_tmp = local_run_cache_dir() / "_figures_only"
+            if fig_tmp.exists():
+                shutil.rmtree(fig_tmp)
+            fig_tmp.mkdir(parents=True, exist_ok=True)
+
+            for p in pngs:
+                shutil.copy2(p, fig_tmp / p.name)
+
+            zip_path = local_run_cache_dir() / "figures_bundle.zip"
+
             try:
-                make_zip_from_dir(src, zip_path)
+                if zip_path.exists():
+                    zip_path.unlink()
+
+                make_zip_from_dir(fig_tmp, zip_path)
+
+                # sanity check
+                if not zipfile.is_zipfile(zip_path):
+                    raise RuntimeError(f"Created file is not a valid zip: {zip_path}")
+
                 with results_out:
-                    print(f"Created: {zip_path}")
-                    display(FileLink(str(zip_path), result_html_prefix="Download: "))
+                    print(f"Preparing download: {zip_path.name}")
+                    print("If the browser blocks repeated downloads, allow multiple downloads for this page.")
+                    auto_download_file(zip_path, "figures_bundle.zip")
+
             except Exception as e:
                 with results_out:
                     print("[download][ERROR]", type(e).__name__, e)
 
+        def inspect_remote_outputs():
+            rdir = normalize_remote_path(STATUS.get("remote_dir") or "")
+            outputs = f"{rdir}/outputs"
+
+            host = cluster_host.value.strip()
+            user = cluster_user.value.strip()
+            port = int(cluster_port.value)
+
+            cmd = f'''
+        set -e
+        echo "[remote] run dir : {rdir}"
+        echo "[remote] outputs : {outputs}"
+        echo
+
+        echo "[remote] output tree:"
+        find "{outputs}" -maxdepth 5 -print || true
+
+        echo
+        echo "[remote] png/mat/h5 files:"
+        find "{outputs}" -maxdepth 6 -type f \\( -name "*.png" -o -name "*.mat" -o -name "*.h5" \\) -print || true
+        '''
+            if should_use_connector():
+                payload = connector_ssh(
+                    SESSION["id"],
+                    host,
+                    user,
+                    port,
+                    cmd,
+                    timeout=300,
+                    cluster_name=cluster_name_for_keys.value or "pace",
+                )
+
+                class Result:
+                    returncode = 0 if payload.get("ok") else 1
+                    stdout = payload.get("stdout", "")
+                    stderr = payload.get("stderr", "")
+
+                return Result()
+            return ssh_run(host, user, port, cmd, timeout=30)
+
+        def preview_remote_results(_=None):
+            results_out.clear_output()
+
+            rcheck = inspect_remote_outputs()
+
+            outputs_dir = fetch_remote_outputs_to_local()
+            if outputs_dir is None:
+                return
+
+            pngs = sorted(outputs_dir.rglob("*.png"))
+            mats = sorted(outputs_dir.rglob("*.mat"))
+            h5s = sorted(outputs_dir.rglob("*.h5"))
+            all_files = sorted([p for p in outputs_dir.rglob("*") if p.is_file()])
+
+            with results_out:
+                print("Fetched outputs:", outputs_dir)
+                print(f"Figures: {len(pngs)}")
+                print(f"Model files: {len(mats)}")
+                print(f"H5 files: {len(h5s)}\n")
+
+                if all_files:
+                    print("Output tree:")
+                    for p in all_files[:40]:
+                        print(" -", p.relative_to(outputs_dir))
+                    print()
+
+                if pngs:
+                    print("Found figures at:")
+                    for p in pngs[:10]:
+                        print(" -", p)
+
+                if pngs:
+                    print("Preview figures:")
+                    for p in pngs:
+                        print("\n", p.name)
+                        display(Image(filename=str(p)))
+                else:
+                    print("No PNG figures found locally after fetch.\n")
+                    print("--- Remote inspection ---")
+                    print((rcheck.stdout or "").strip())
+                    if (rcheck.stderr or "").strip():
+                        print("--- stderr ---")
+                        print(rcheck.stderr.strip())
+                
+        
         def maybe_seed_run_target_from_file(_=None):
             current = (run_target.value or "").strip()
             selected_file = file_picker.value or ""
@@ -1599,11 +2874,99 @@ def build_icesheets_ui():
 
             run_target.value = Path(selected_file).name
 
+        def display_download_button(path: Path, label: str):
+            href = path.as_posix()
+            display(W.HTML(f"""
+            <a href="files/{href}" download
+            style="
+                display:inline-block;
+                background:#28a745;
+                color:white;
+                padding:8px 14px;
+                border-radius:6px;
+                text-decoration:none;
+                font-weight:700;
+                margin-top:8px;">
+            ⬇ {label}
+            </a>
+            """))
+
+        def on_check_backend(_=None):
+            log_out.clear_output()
+            status_chip.value = status_html("running")
+
+            host = cluster_host.value.strip()
+            user = cluster_user.value.strip()
+            port = int(cluster_port.value)
+
+            cmd = build_backend_check_cmd(
+                backend_dd.value,
+                model_dd.value,
+                remote_base_dir.value,
+                remote_tag.value,
+            )
+
+            try:
+                if should_use_connector():
+                    if not SESSION.get("id"):
+                        create_or_refresh_connector_session()
+
+                    res = connector_ssh(
+                        SESSION["id"],
+                        host,
+                        user,
+                        port,
+                        cmd,
+                        timeout=120,
+                        cluster_name=cluster_name_for_keys.value or "pace",
+                    )
+
+                    rc = res.get("returncode", 1)
+                    out = res.get("stdout", "")
+                    err = res.get("stderr", "")
+                    ok = res.get("ok", False)
+                else:
+                    res = ssh_run(host, user, port, cmd, timeout=120)
+                    rc = res.returncode
+                    out = res.stdout
+                    err = res.stderr
+                    ok = rc == 0
+
+                with log_out:
+                    print("[backend] Check", backend_dd.value, "for", model_dd.value)
+                    print("returncode:", rc)
+                    if out.strip():
+                        print("--- stdout ---")
+                        print(out.strip())
+                    if err.strip():
+                        print("--- stderr ---")
+                        print(err.strip())
+
+                status_chip.value = status_html("done" if ok else "fail")
+
+            except Exception as e:
+                status_chip.value = status_html("fail")
+                with log_out:
+                    print("[backend][ERROR]", type(e).__name__, e)
+
+
         # =========================================================
         # Dynamic logic
         # =========================================================
         def update_visibility(_=None):
             is_container = backend_dd.value == "container"
+
+            container_source.layout.display = "" if is_container else "none"
+            image_uri.layout.display = "" if is_container else "none"
+
+            spack_enable.layout.display = "none" if is_container else ""
+            spack_repo_url.layout.display = "none" if is_container else ""
+            spack_dirname.layout.display = "none" if is_container else ""
+            spack_install_if_needed.layout.display = "none" if is_container else ""
+            spack_install_mode.layout.display = "none" if is_container else ""
+            # spack_slurm_dir.layout.display = "none" if is_container else ""
+            # spack_pmix_dir.layout.display = "none" if is_container else ""
+
             is_remote = mode_dd.value == "remote"
             is_cloud = mode_dd.value == "cloud"
             is_basic = ui_mode_dd.value == "basic"
@@ -1632,6 +2995,11 @@ def build_icesheets_ui():
             new_example_row.layout.display = "" if is_advanced else "none"
             dataset_upload_row.layout.display = "" if is_advanced else "none"
             download_buttons_row.layout.display = ""
+
+            md_config_panel.layout.display = "" if model_dd.value == "issm" else "none"
+
+            if is_remote and access_mode_dd.value == "connector" and SESSION.get("id") is None:
+                create_or_refresh_connector_session()
 
             update_summary()
 
@@ -1711,6 +3079,10 @@ def build_icesheets_ui():
         file_picker.observe(load_selected_file, names="value")
         # run_target.observe(update_summary, names="value")
         file_picker.observe(maybe_seed_run_target_from_file, names="value")
+        md_section_dd.observe(refresh_md_field_dropdown, names="value")
+        md_field_dd.observe(refresh_md_value_from_field, names="value")
+        refresh_md_field_dropdown()
+        access_mode_dd.observe(lambda change: create_or_refresh_connector_session() if change["new"] == "connector" else None, names="value")
         
 
         # =========================================================
@@ -1719,6 +3091,26 @@ def build_icesheets_ui():
         run_btn = W.Button(description="Submit job", button_style="success", icon="play")
         clear_btn = W.Button(description="Clear", icon="trash")
         status_chip = W.HTML(status_html("idle"))
+
+        def should_use_connector() -> bool:
+            mode = access_mode_dd.value
+
+            if mode == "connector":
+                return True
+
+            if mode == "direct":
+                return False
+
+            # auto mode: use connector only if direct SSH fails
+            try:
+                result = remote_test_connection(
+                    cluster_host.value.strip(),
+                    cluster_user.value.strip(),
+                    int(cluster_port.value),
+                )
+                return not result.get("ok", False)
+            except Exception:
+                return True
 
         def on_run(_=None):
             log_out.clear_output()
@@ -1757,6 +3149,17 @@ def build_icesheets_ui():
                     print("[cloud] Next step is to adapt submit_cloud_example for model-only workflows.")
                 status_chip.value = status_html("done")
                 return
+            
+            if mode == "remote" and access_mode_dd.value == "connector":
+                create_or_refresh_connector_session()
+
+                st = relay_check_status(SESSION["id"])
+                if not st.get("online"):
+                    status_chip.value = status_html("fail")
+                    with log_out:
+                        print("[connector][ERROR] Connector session is not online.")
+                        print("[connector] Start the local connector with the session WebSocket URL, then retry.")
+                    return
 
             host = cluster_host.value.strip()
             user = cluster_user.value.strip()
@@ -1786,37 +3189,75 @@ def build_icesheets_ui():
                 return
 
             try:
-                result = submit_remote_icesheets(
-                    host=host,
-                    user=user,
-                    port=port,
-                    remote_base_dir=remote_base_dir.value,
-                    remote_tag=remote_tag.value,
-                    backend=backend_dd.value,
-                    model=model_dd.value,
-                    example_dir=example_dir.value,
-                    exec_dir=exec_dir.value,
-                    image_uri=image_uri.value,
-                    container_source=container_source.value,
-                    spack_enable=True,
-                    spack_repo_url="https://github.com/ICESEE-project/ICESEE-Spack.git",
-                    spack_dirname="ICESEE-Spack",
-                    spack_install_if_needed=False,
-                    spack_install_mode="--with-issm" if model_dd.value == "issm" else "--with-icepack",
-                    spack_slurm_dir="",
-                    spack_pmix_dir="",
-                    slurm_time=slurm_time.value,
-                    slurm_job_name=slurm_job_name.value,
-                    slurm_nodes=slurm_nodes.value,
-                    slurm_ntasks=slurm_ntasks.value,
-                    slurm_tpn=slurm_tpn.value,
-                    slurm_part=slurm_part.value,
-                    slurm_mem=slurm_mem.value,
-                    slurm_account=slurm_account.value,
-                    slurm_mail=slurm_mail.value,
-                    test_mode=test_mode,
-                    run_file=selected_run_file(),
-                )
+                use_connector = should_use_connector()
+                if use_connector:
+                    result = submit_remote_icesheets_via_connector(
+                        session_id=SESSION["id"],
+                        host=host,
+                        user=user,
+                        port=port,
+                        remote_base_dir=remote_base_dir.value,
+                        remote_tag=remote_tag.value,
+                        backend=backend_dd.value,
+                        model=model_dd.value,
+                        example_dir=example_dir.value,
+                        exec_dir=exec_dir.value,
+                        image_uri=image_uri.value,
+                        container_source=container_source.value,
+                        spack_enable=spack_enable.value,
+                        spack_repo_url=spack_repo_url.value,
+                        spack_dirname=spack_dirname.value,
+                        spack_install_if_needed=spack_install_if_needed.value,
+                        spack_install_mode=spack_install_mode.value,
+                        spack_slurm_dir=spack_slurm_dir.value,
+                        spack_pmix_dir=spack_pmix_dir.value,
+                        slurm_time=slurm_time.value,
+                        slurm_job_name=slurm_job_name.value,
+                        slurm_nodes=slurm_nodes.value,
+                        slurm_ntasks=slurm_ntasks.value,
+                        slurm_tpn=slurm_tpn.value,
+                        slurm_part=slurm_part.value,
+                        slurm_mem=slurm_mem.value,
+                        slurm_account=slurm_account.value,
+                        slurm_mail=slurm_mail.value,
+                        test_mode=test_mode,
+                        run_file=selected_run_file(),
+                        md_config=collect_md_config(),
+                        cluster_name=cluster_name_for_keys.value or "pace",
+                    )
+                else:
+                    result = submit_remote_icesheets(
+                        host=host,
+                        user=user,
+                        port=port,
+                        remote_base_dir=remote_base_dir.value,
+                        remote_tag=remote_tag.value,
+                        backend=backend_dd.value,
+                        model=model_dd.value,
+                        example_dir=example_dir.value,
+                        exec_dir=exec_dir.value,
+                        image_uri=image_uri.value,
+                        container_source=container_source.value,
+                        spack_enable=True,
+                        spack_repo_url="https://github.com/ICESEE-project/ICESEE-Spack.git",
+                        spack_dirname="ICESEE-Spack",
+                        spack_install_if_needed=False,
+                        spack_install_mode="--with-issm" if model_dd.value == "issm" else "--with-icepack",
+                        spack_slurm_dir="",
+                        spack_pmix_dir="",
+                        slurm_time=slurm_time.value,
+                        slurm_job_name=slurm_job_name.value,
+                        slurm_nodes=slurm_nodes.value,
+                        slurm_ntasks=slurm_ntasks.value,
+                        slurm_tpn=slurm_tpn.value,
+                        slurm_part=slurm_part.value,
+                        slurm_mem=slurm_mem.value,
+                        slurm_account=slurm_account.value,
+                        slurm_mail=slurm_mail.value,
+                        test_mode=test_mode,
+                        run_file=selected_run_file(),
+                        md_config=collect_md_config(),
+                    )
 
                 STATUS["remote_dir"] = result["remote_dir"]
                 STATUS["jobid"] = result["jobid"]
@@ -1845,22 +3286,135 @@ def build_icesheets_ui():
         def on_test_remote(_=None):
             log_out.clear_output()
             status_chip.value = status_html("running")
+
             try:
-                result = remote_test_connection(
+                access_mode = access_mode_dd.value
+
+                # -----------------------------------------------------
+                # 1. Direct SSH from server
+                # -----------------------------------------------------
+                if access_mode == "direct":
+                    result = remote_test_connection(
+                        cluster_host.value.strip(),
+                        cluster_user.value.strip(),
+                        int(cluster_port.value),
+                    )
+
+                    with log_out:
+                        print("[direct] Test SSH")
+                        print("returncode:", result["returncode"])
+                        if (result["stdout"] or "").strip():
+                            print("--- stdout ---")
+                            print(result["stdout"].strip())
+                        if (result["stderr"] or "").strip():
+                            print("--- stderr ---")
+                            print(result["stderr"].strip())
+
+                    status_chip.value = status_html("done" if result["ok"] else "fail")
+                    return
+
+                # -----------------------------------------------------
+                # 2. Connector / VPN bridge
+                # -----------------------------------------------------
+                if access_mode == "connector":
+                    from icesee_jupyter_book.core.connector_relay_client import send_command
+
+                    if not SESSION.get("id"):
+                        status_chip.value = status_html("fail")
+                        with log_out:
+                            print("[connector][ERROR] No connector session found.")
+                            print("Create/start a connector session first.")
+                        return
+
+                    result = send_command(
+                        SESSION["id"],
+                        "ssh-run",
+                        {
+                            "host": cluster_host.value.strip(),
+                            "user": cluster_user.value.strip(),
+                            "port": int(cluster_port.value),
+                            "command": "hostname && whoami && pwd",
+                            "timeout": 30,
+                        },
+                    )
+
+                    payload = result.get("result", result)
+
+                    with log_out:
+                        print("[connector] Test SSH via relay")
+                        print("ok:", payload.get("ok"))
+                        print("returncode:", payload.get("returncode"))
+                        if (payload.get("stdout") or "").strip():
+                            print("--- stdout ---")
+                            print(payload["stdout"].strip())
+                        if (payload.get("stderr") or "").strip():
+                            print("--- stderr ---")
+                            print(payload["stderr"].strip())
+
+                    status_chip.value = status_html("done" if payload.get("ok") else "fail")
+                    return
+
+                # -----------------------------------------------------
+                # 3. Auto: try direct first, fallback to connector
+                # -----------------------------------------------------
+                direct = remote_test_connection(
                     cluster_host.value.strip(),
                     cluster_user.value.strip(),
                     int(cluster_port.value),
                 )
+
+                if direct.get("ok"):
+                    with log_out:
+                        print("[auto] Direct SSH works.")
+                        print("returncode:", direct["returncode"])
+                        if (direct["stdout"] or "").strip():
+                            print("--- stdout ---")
+                            print(direct["stdout"].strip())
+                        if (direct["stderr"] or "").strip():
+                            print("--- stderr ---")
+                            print(direct["stderr"].strip())
+
+                    status_chip.value = status_html("done")
+                    return
+
+                from icesee_jupyter_book.core.connector_relay_client import send_command
+
+                if not SESSION.get("id"):
+                    status_chip.value = status_html("fail")
+                    with log_out:
+                        print("[auto] Direct SSH failed.")
+                        print("[connector][ERROR] No connector session found for fallback.")
+                        print("--- direct stderr ---")
+                        print((direct.get("stderr") or "").strip())
+                    return
+
+                result = send_command(
+                    SESSION["id"],
+                    "ssh-run",
+                    {
+                        "host": cluster_host.value.strip(),
+                        "user": cluster_user.value.strip(),
+                        "port": int(cluster_port.value),
+                        "command": "hostname && whoami && pwd",
+                        "timeout": 30,
+                    },
+                )
+
+                payload = result.get("result", result)
+
                 with log_out:
-                    print("[remote] Test SSH")
-                    print("returncode:", result["returncode"])
-                    if (result["stdout"] or "").strip():
+                    print("[auto] Direct SSH failed. Used connector fallback.")
+                    print("ok:", payload.get("ok"))
+                    print("returncode:", payload.get("returncode"))
+                    if (payload.get("stdout") or "").strip():
                         print("--- stdout ---")
-                        print(result["stdout"].strip())
-                    if (result["stderr"] or "").strip():
+                        print(payload["stdout"].strip())
+                    if (payload.get("stderr") or "").strip():
                         print("--- stderr ---")
-                        print(result["stderr"].strip())
-                status_chip.value = status_html("done" if result["ok"] else "fail")
+                        print(payload["stderr"].strip())
+
+                status_chip.value = status_html("done" if payload.get("ok") else "fail")
+
             except Exception as e:
                 status_chip.value = status_html("fail")
                 with log_out:
@@ -1869,22 +3423,49 @@ def build_icesheets_ui():
         def on_status(_=None):
             log_out.clear_output()
             jobid = STATUS.get("jobid")
+
             if not jobid:
                 with log_out:
                     print("[remote] No JobID yet. Submit first.")
                 return
 
             try:
+                if access_mode_dd.value == "connector":
+                    payload = send_command(
+                        SESSION["id"],
+                        "ssh-run",
+                        {
+                            "host": cluster_host.value.strip(),
+                            "user": cluster_user.value.strip(),
+                            "port": int(cluster_port.value),
+                            "command": f"squeue -j {jobid}",
+                            "timeout": 30,
+                        },
+                    )
+
+                    result = payload.get("result", payload)
+
+                    with log_out:
+                        print("[connector] Status")
+                        print((result.get("stdout") or "").strip())
+
+                    status_chip.value = status_html("done" if result.get("ok") else "fail")
+                    return
+
+                # fallback (direct)
                 result = remote_job_status(
                     cluster_host.value.strip(),
                     cluster_user.value.strip(),
                     int(cluster_port.value),
                     jobid,
                 )
+
                 with log_out:
                     print("[remote] Status")
-                    print((result["stdout"] or "").strip() or "(no output)")
+                    print((result["stdout"] or "").strip())
+
                 status_chip.value = status_html("done" if result["returncode"] == 0 else "fail")
+
             except Exception as e:
                 status_chip.value = status_html("fail")
                 with log_out:
@@ -1934,6 +3515,33 @@ fi
 """
 
             try:
+
+                if access_mode_dd.value == "connector":
+                    payload = send_command(
+                        SESSION["id"],
+                        "ssh-run",
+                        {
+                            "host": host,
+                            "user": user,
+                            "port": port,
+                            "command": tail_cmd,
+                            "timeout": 30,
+                        },
+                    )
+
+                    result = payload.get("result", payload)
+
+                    with log_out:
+                        print("[connector] Tail log")
+                        if (result.get("stdout") or "").strip():
+                            print(result["stdout"].rstrip())
+                        if (result.get("stderr") or "").strip():
+                            print("--- stderr ---")
+                            print(result["stderr"].strip())
+
+                    status_chip.value = status_html("done" if result.get("ok") else "fail")
+                    return
+                
                 result = ssh_run(host, user, port, tail_cmd, timeout=30)
 
                 with log_out:
@@ -1990,25 +3598,55 @@ fi
         def on_terminate(_=None):
             log_out.clear_output()
             jobid = STATUS.get("jobid")
+
             if not jobid:
                 with log_out:
                     print("[remote] No JobID found.")
                 return
 
+            host = cluster_host.value.strip()
+            user = cluster_user.value.strip()
+            port = int(cluster_port.value)
+
             try:
-                result = remote_cancel_job(
-                    cluster_host.value.strip(),
-                    cluster_user.value.strip(),
-                    int(cluster_port.value),
-                    jobid,
-                )
+                if access_mode_dd.value == "connector":
+                    payload = connector_ssh(
+                        SESSION["id"],
+                        host,
+                        user,
+                        port,
+                        f"scancel {jobid}",
+                        timeout=300,
+                        cluster_name=cluster_name_for_keys.value or "pace",
+                    )
+
+                    with log_out:
+                        print("[connector] Cancel job")
+                        print("ok:", payload.get("ok"))
+                        print("returncode:", payload.get("returncode"))
+                        if (payload.get("stdout") or "").strip():
+                            print("--- stdout ---")
+                            print(payload["stdout"].strip())
+                        if (payload.get("stderr") or "").strip():
+                            print("--- stderr ---")
+                            print(payload["stderr"].strip())
+
+                    status_chip.value = status_html("done" if payload.get("ok") else "fail")
+                    return
+
+                result = remote_cancel_job(host, user, port, jobid)
+
                 with log_out:
                     print("returncode:", result["returncode"])
                     if (result["stdout"] or "").strip():
                         print(result["stdout"].strip())
                     if (result["stderr"] or "").strip():
                         print(result["stderr"].strip())
+
+                status_chip.value = status_html("done" if result.get("ok") else "fail")
+
             except Exception as e:
+                status_chip.value = status_html("fail")
                 with log_out:
                     print("[remote][ERROR]", type(e).__name__, e)
 
@@ -2046,6 +3684,42 @@ fi
                 if STATUS.get("cloud_run"):
                     print("Cloud run:", STATUS["cloud_run"])
 
+        def refresh_md_overrides_view():
+            if not md_overrides:
+                md_overrides_view.value = "No md overrides added yet."
+                return
+
+            lines = []
+            for k, item in md_overrides.items():
+                lines.append(f"{k} = {item['value']}   ({item['type']})")
+            md_overrides_view.value = "\n".join(lines)
+
+        def add_md_override(_=None):
+            section = (md_section_dd.value or "").strip()
+            field = (md_field_dd.value or "").strip()
+            value = (md_value_text.value or "").strip()
+            vtype = md_value_type_hidden.value or "string"
+
+            if not section or not field or field == "__custom__":
+                md_overrides_view.value = "[ERROR] Select a valid md field."
+                return
+
+            key = f"{section}.{field}"
+            md_overrides[key] = {
+                "value": value,
+                "type": vtype,
+            }
+            refresh_md_overrides_view()
+
+        def clear_md_overrides(_=None):
+            md_overrides.clear()
+            refresh_md_overrides_view()
+
+        def collect_md_config() -> dict:
+            if model_dd.value != "issm" or not md_config_enabled.value:
+                return {}
+            return dict(md_overrides)
+
         run_btn.on_click(on_run)
         clear_btn.on_click(on_clear)
         connect_btn.on_click(on_test_remote)
@@ -2060,6 +3734,12 @@ fi
         upload_dataset_btn.on_click(save_uploaded_datasets)
         results_download_btn.on_click(download_results_bundle)
         figures_download_btn.on_click(download_figures_bundle)
+        preview_results_btn.on_click(preview_remote_results)
+        add_md_override_btn.on_click(add_md_override)
+        clear_md_overrides_btn.on_click(clear_md_overrides)
+        start_connector_session_btn.on_click(create_or_refresh_connector_session)
+        bootstrap_btn.on_click(on_bootstrap_keys)
+        check_backend_btn.on_click(on_check_backend)
 
         # =========================================================
         # CSS
@@ -2068,7 +3748,7 @@ fi
         <style>
         .icesee-page { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; width: 100%; }
         .icesee-title { font-size: 20px; font-weight: 700; margin: 4px 0 6px; color: #1f2937; }
-        .icesee-subtitle { color: rgba(0,0,0,.68); margin-bottom: 18px; line-height: 1.55; max-width: 900px; }
+        .icesee-subtitle { color: rgba(0,0,0,.68); margin-bottom: 10px; line-height: 1.45; max-width: 900px; }
         .icesee-h { font-size: 18px; font-weight: 750; margin: 2px 0 14px; color: #1f2937; }
         .icesee-card { border: 1px solid rgba(0,0,0,.08); border-radius: 16px; padding: 18px; background: #fff; box-shadow: 0 8px 24px rgba(0,0,0,.04); }
         .icesee-lbl { font-weight: 600; color: rgba(0,0,0,.78); padding-top: 8px; }
@@ -2084,6 +3764,74 @@ fi
         .icesee-left { flex: 0 0 46%; min-width: 0; }
         .icesee-right { flex: 0 0 54%; min-width: 0; }
         .icesee-actions { display: flex; gap: 12px; align-items: center; }
+
+        pre {
+            background: #f6f8fa;
+            border: 1px solid rgba(0,0,0,.08);
+            padding: 12px;
+            border-radius: 10px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .cryo-appbar{
+            display:flex;
+            align-items:center;
+            gap:12px;
+            padding:6px 0 8px 0;
+            margin:0 0 8px 0;
+            border-bottom:1px solid #e5e7eb;
+        }
+
+        .app-home{
+            background:#2563eb;
+            color:#fff !important;
+            padding:7px 14px;
+            border-radius:9px;
+            font-size:14px;
+            font-weight:700;
+            text-decoration:none !important;
+        }
+
+        .app-home:hover{
+            background:#1d4ed8;
+        }
+
+        .app-links{
+            display:flex;
+            align-items:center;
+            gap:0;
+        }
+
+        .app-links a{
+            color:#334155;
+            text-decoration:none !important;
+            font-size:14px;
+            font-weight:650;
+            padding:7px 10px;
+        }
+
+        .app-links a:hover{
+            color:#2563eb;
+        }
+
+        .app-links a:not(:last-child)::after{
+            content:"|";
+            margin-left:18px;
+            color:#cbd5e1;
+        }
+        .app-nav a{
+            padding:0 12px;
+            border-radius:0;
+            background:none;
+        }
+
+        .app-nav a:not(:last-child)::after{
+            content:"|";
+            margin-left:22px;
+            color:#cbd5e1;
+        }
         
         </style>
         """
@@ -2093,7 +3841,7 @@ fi
         # =========================================================
         header = W.HTML("""
         <div class="icesee-page">
-          <div class="icesee-title">Ice-Sheet Modeling GUI</div>
+          <div class="icesee-title">Ice-Sheet Modeling</div>
           <div class="icesee-subtitle">
             Launch supported ice-sheet models without the ICESEE data assimilation layer.
             Basic mode helps beginners discover native ISSM and Icepack examples automatically.
@@ -2114,6 +3862,23 @@ fi
         file_picker_row = form_row("Files:", file_picker)
         file_editor_row = form_row("Editor:", file_editor)
         run_target_row = form_row("Run target:", run_target)
+        md_config_inner = W.VBox([
+            md_config_enabled,
+            form_row("md section:", md_section_dd),
+            form_row("field:", md_field_dd),
+            md_help,
+            form_row("value:", md_value_text),
+            md_value_type_hidden,
+            W.HBox(
+                [add_md_override_btn, clear_md_overrides_btn],
+                layout=W.Layout(gap="10px", flex_wrap="wrap"),
+            ),
+            md_overrides_view,
+        ], layout=W.Layout(gap="8px"))
+
+        md_config_panel = W.Accordion(children=[md_config_inner])
+        md_config_panel.set_title(0, "⚙️ Editable ISSM md configuration")
+        # md_config_panel.selected_index = 0  # open by default
         new_example_row = form_row("New name:", new_example_name)
         dataset_upload_row = form_row("Datasets:", dataset_upload)
         container_source_row = form_row("Source:", container_source)
@@ -2140,16 +3905,34 @@ fi
         slurm_account_row = form_pair("Acct:", slurm_account, "90px")
         slurm_mail_row = form_pair("Mail:", slurm_mail, "90px")
 
-        cluster_name_for_keys = W.Text(value="pace" , layout=W.Layout(width="320px"))
         ssh_key_manager = build_ssh_key_manager(
             cluster_name_widget=cluster_name_for_keys,
             host_widget=cluster_host,
             user_widget=cluster_user,
         )
+        server_key_note = W.HTML("""
+        <div class='icesee-subtle' style='line-height:1.5; margin-bottom:8px;'>
+        This manages SSH keys on the web server/GHUB side for direct SSH.
+        For Local Connector / VPN bridge mode, the connector creates the key on your workstation.
+        </div>
+        """)
 
-        ssh_key_manager_box = W.Accordion(children=[ssh_key_manager])
-        ssh_key_manager_box.set_title(0, "🔐 SSH Key Manager")
+        ssh_key_manager_box = W.Accordion(
+            children=[
+                W.VBox([
+                    server_key_note,
+                    ssh_key_manager,
+                ], layout=W.Layout(gap="8px"))
+            ]
+        )
+
+        ssh_key_manager_box.set_title(0, "🔐 Server-side SSH Key Manager")
         ssh_key_manager_box.selected_index = None
+
+        # ssh_key_manager_box = W.Accordion(children=[ssh_key_manager])
+        # # ssh_key_manager_box.set_title(0, "🔐 SSH Key Manager")
+        # ssh_key_manager_box.set_title(0, "🔐 Server-side SSH Key Manager")
+        # ssh_key_manager_box.selected_index = None
 
         ssh_key_manager_box.layout = W.Layout(
             width="100%",
@@ -2163,8 +3946,9 @@ fi
             layout=W.Layout(gap="10px", flex_wrap="wrap"),
         )
 
+        # [preview_results_btn, results_download_btn, figures_download_btn],
         download_buttons_row = W.HBox(
-            [results_download_btn, figures_download_btn],
+            [preview_results_btn, results_download_btn],
             layout=W.Layout(
                 gap="10px",
                 justify_content="flex-end",
@@ -2173,7 +3957,11 @@ fi
                 margin="10px 0 0 0",
             ),
         )
+
+        cluster_name_row = form_pair("Cluster:", cluster_name_for_keys, "90px")
         remote_conn_inner = W.VBox([
+            cluster_name_row,
+            form_pair("Access:", access_mode_dd, "90px"),
             cluster_host_row,
             W.HBox([cluster_user_row, cluster_port_row], layout=W.Layout(gap="12px", width="100%")),
             W.HBox([remote_base_dir_row, remote_tag_row], layout=W.Layout(gap="12px", width="100%")),
@@ -2205,30 +3993,122 @@ fi
         auth_box = W.Accordion(children=[auth_inner])
         auth_box.set_title(0, "🔒 Authentication")
 
+        exec_backend_choice = W.Dropdown(
+            options=[("ICESEE-Spack", "spack"), ("ICESEE-Container", "container")],
+            value="spack",
+            layout=W.Layout(width="320px"),
+        )
+
+        spack_enable = W.Checkbox(value=True, description="Use ICESEE-Spack on Remote")
+
+        spack_repo_url = W.Text(
+            value="https://github.com/ICESEE-project/ICESEE-Spack.git",
+            layout=W.Layout(width="100%"),
+        )
+
+        spack_dirname = W.Text(value="ICESEE-Spack", layout=W.Layout(width="100%"))
+
+        spack_install_if_needed = W.Checkbox(
+            value=False,
+            description="Run install.sh if not installed",
+        )
+
+        spack_install_mode = W.Dropdown(
+            options=[
+                ("Default", ""),
+                ("With ISSM", "--with-issm"),
+                ("With Icepack", "--with-icepack"),
+                ("With Firedrake", "--with-firedrake"),
+            ],
+            value="--with-issm",
+            layout=W.Layout(width="100%"),
+        )
+
+        spack_slurm_dir = W.Text(
+            value="",
+            placeholder="e.g. /opt/slurm/current",
+            layout=W.Layout(width="100%"),
+        )
+
+        spack_pmix_dir = W.Text(
+            value="",
+            placeholder="e.g. /opt/pmix/5.0.1",
+            layout=W.Layout(width="100%"),
+        )
+
+        backend_row = form_row("Backend:", backend_dd)
+
+        container_source_row = form_row("Source:", container_source)
+        image_uri_row = form_row("Image:", image_uri)
+
+        spack_enable_row = W.Box([spack_enable], layout=W.Layout(margin="0 0 0 120px"))
+        spack_repo_row = form_row("Repo:", spack_repo_url)
+        spack_dir_row = form_row("Dir name:", spack_dirname)
+        spack_install_row = W.Box([spack_install_if_needed], layout=W.Layout(margin="0 0 0 120px"))
+        spack_install_mode_row = form_row("Install:", spack_install_mode)
+        spack_slurm_row = form_row("SLURM_DIR:", spack_slurm_dir)
+        spack_pmix_row = form_row("PMIX_DIR:", spack_pmix_dir)
+
+        exec_backend_inner = W.VBox([
+            backend_row,
+            container_source_row,
+            image_uri_row,
+            spack_enable_row,
+            spack_repo_row,
+            spack_dir_row,
+            spack_install_row,
+            spack_install_mode_row,
+            # spack_slurm_row,
+            # spack_pmix_row,
+        ], layout=W.Layout(gap="8px"))
+
+        def _toggle_exec_backend_ui(_=None):
+            is_container = backend_dd.value == "container"
+
+            container_source_row.layout.display = "flex" if is_container else "none"
+            image_uri_row.layout.display = "flex" if is_container else "none"
+
+            spack_display = "none" if is_container else "flex"
+            spack_box_display = "none" if is_container else "block"
+
+            spack_enable_row.layout.display = spack_box_display
+            spack_repo_row.layout.display = spack_display
+            spack_dir_row.layout.display = spack_display
+            spack_install_row.layout.display = spack_box_display
+            spack_install_mode_row.layout.display = spack_display
+            spack_slurm_row.layout.display = spack_display
+            spack_pmix_row.layout.display = spack_display
+        
+        backend_dd.observe(_toggle_exec_backend_ui, names="value")
+        _toggle_exec_backend_ui()
+        # exec_backend_inner = W.VBox([
+        #     form_row("Backend:", backend_dd),
+        #     form_row("Source:", container_source),
+        #     form_row("Image:", image_uri),
+        #     spack_enable,
+        #     form_row("Repo:", spack_repo_url),
+        #     form_row("Dir name:", spack_dirname),
+        #     spack_install_if_needed,
+        #     form_row("Install:", spack_install_mode),
+        #     # form_row("SLURM_DIR:", spack_slurm_dir),
+        #     # form_row("PMIX_DIR:", spack_pmix_dir),
+        # ], layout=W.Layout(gap="8px"))
+
+        exec_backend_box = W.Accordion(children=[exec_backend_inner])
+        exec_backend_box.set_title(0, "⚙️ Execution backend")
+        exec_backend_box.selected_index = None
+
         remote_box = W.VBox([
-            # W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>Remote connection</div>"),
-            # cluster_host_row,
-            # W.HBox([cluster_user_row, cluster_port_row], layout=W.Layout(gap="12px", width="100%")),
-            # W.HBox([remote_base_dir_row, remote_tag_row], layout=W.Layout(gap="12px", width="100%")),
             remote_conn_box,
-
-
-            # W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>Authentication</div>"),
-            # W.HBox([W.HTML("<div class='icesee-lbl'>Method:</div>"), auth_mode], layout=W.Layout(gap="10px")),
-            # cluster_password,
-            # bootstrap_btn,
+            exec_backend_box,
             auth_box,
-
-            # W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>SSH key manager</div>"),
-            # ssh_key_manager,
+            # server_key_note,
             ssh_key_manager_box,
-
-            # W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>Slurm resources</div>"),
-            # W.HBox([slurm_job_name_row, slurm_time_row], layout=W.Layout(gap="12px", width="100%")),
-            # W.HBox([slurm_nodes_row, slurm_ntasks_row, slurm_tpn_row], layout=W.Layout(gap="12px", width="100%")),
-            # W.HBox([slurm_part_row, slurm_mem_row], layout=W.Layout(gap="12px", width="100%")),
-            # W.HBox([slurm_account_row, slurm_mail_row], layout=W.Layout(gap="12px", width="100%")),
             slurm_box,
+            relay_status,
+            start_connector_session_btn,
+            connector_setup_link,
+            # connector_panel,
         ], layout=W.Layout(gap="10px"))
 
         cloud_box = W.VBox([
@@ -2249,7 +4129,7 @@ fi
             W.HTML("<div class='icesee-h'>Run settings</div>"),
             ui_mode_row,
             mode_row,
-            backend_row,
+            # backend_row,
             model_row,
             example_picker_row,
             example_info_row,
@@ -2259,11 +4139,12 @@ fi
             file_picker_row,
             file_editor_row,
             run_target_row,
+            md_config_panel,
             new_example_row,
             advanced_buttons_row,
             dataset_upload_row,
-            container_source_row,
-            image_uri_row,
+            # container_source_row,
+            # image_uri_row,
             remote_box,
             cloud_box,
             W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>Execution summary</div>"),
@@ -2330,7 +4211,7 @@ fi
         refresh_example_picker()
         apply_selected_example()
 
-        page = W.VBox([W.HTML(css), header, row, actions_card, back_link], layout=W.Layout(width="100%"))
+        page = W.VBox([W.HTML(css), app_menu, header, row, actions_card, back_link], layout=W.Layout(width="100%"))
 
         update_visibility()
         update_summary()

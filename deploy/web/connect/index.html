@@ -1,0 +1,568 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Cryolauncher HPC Bridge Connector</title>
+
+  <style>
+    :root {
+      --blue: #0d6efd;
+      --green: #198754;
+      --ink: #1f2937;
+      --muted: #5f6b7a;
+      --border: rgba(0,0,0,.08);
+      --soft-blue: rgba(13,110,253,.09);
+      --soft-green: rgba(25,135,84,.09);
+    }
+
+    body {
+      margin: 0;
+      background: #fff;
+      color: var(--ink);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    }
+
+    .page {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 70px 28px;
+    }
+
+    .badge {
+      display: inline-block;
+      background: var(--soft-blue);
+      color: var(--blue);
+      font-weight: 800;
+      font-size: 13px;
+      padding: 7px 13px;
+      border-radius: 999px;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      font-size: 42px;
+      line-height: 1.1;
+      margin: 0 0 16px;
+      letter-spacing: -0.03em;
+    }
+
+    .lead {
+      color: var(--muted);
+      font-size: 18px;
+      max-width: 780px;
+      line-height: 1.65;
+      margin-bottom: 34px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.05fr .95fr;
+      gap: 24px;
+      align-items: stretch;
+    }
+
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 28px;
+      background: #fff;
+      box-shadow: 0 10px 30px rgba(0,0,0,.05);
+    }
+
+    .card h2 {
+      margin: 0 0 14px;
+      font-size: 23px;
+      letter-spacing: -0.02em;
+    }
+
+    .osbox {
+      background: linear-gradient(
+        to bottom,
+        rgba(13,110,253,.04),
+        rgba(13,110,253,.08)
+      );
+
+      border: 1px solid rgba(13,110,253,.12);
+      border-radius: 14px;
+      padding: 16px;
+      margin: 18px 0;
+    }
+
+    .osline {
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    #os {
+      font-size: 22px;
+      font-weight: 850;
+      color: var(--ink);
+    }
+
+    .btn {
+      display: inline-block;
+      background: var(--blue);
+      color: white;
+      padding: 12px 18px;
+      border-radius: 10px;
+      text-decoration: none;
+      font-weight: 800;
+      box-shadow: 0 8px 18px rgba(13,110,253,.20);
+      margin-top: 8px;
+    }
+
+    .btn:hover {
+      background: #0b5ed7;
+    }
+
+    .steps {
+      margin: 14px 0 0;
+      padding-left: 22px;
+      line-height: 1.9;
+      color: var(--ink);
+    }
+
+    .manual {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
+
+    .manual a {
+      display: inline-block;
+      color: var(--blue);
+      background: var(--soft-blue);
+      text-decoration: none;
+      font-weight: 750;
+      padding: 8px 12px;
+      border-radius: 9px;
+      cursor: pointer;
+    }
+
+    .manual a:hover {
+      background: rgba(13,110,253,.15);
+    }
+
+    .status {
+      background: var(--soft-green);
+      border: 1px solid rgba(25,135,84,.13);
+      border-radius: 14px;
+      padding: 15px;
+      color: var(--ink);
+      line-height: 1.55;
+      margin-top: 16px;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .footer {
+      margin-top: 34px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    code {
+      word-break: break-word;
+    }
+
+    @media (max-width: 860px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 34px;
+      }
+    }
+
+    .download-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-top: 14px;
+    }
+
+    .download-card {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px 12px;
+      text-align: center;
+      background: #fff;
+    }
+
+    .download-icon {
+      font-size: 42px;
+      margin-bottom: 8px;
+    }
+
+    .download-card h3 {
+      margin: 4px 0 10px;
+      font-size: 18px;
+    }
+
+    .download-card .mini {
+      display: inline-block;
+      margin: 4px;
+      padding: 7px 10px;
+      border-radius: 8px;
+      background: var(--soft-blue);
+      color: var(--blue);
+      font-weight: 750;
+      text-decoration: none;
+      font-size: 13px;
+    }
+
+    .download-card .mini:hover {
+      background: rgba(13,110,253,.15);
+    }
+
+    @media (max-width: 860px) {
+      .download-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <main class="page">
+
+    <div class="badge">
+      Remote HPC Connector
+    </div>
+
+    <h1>
+      Install Cryolauncher HPC Bridge Connector
+    </h1>
+
+    <p class="lead">
+      Cryolauncher detected that you want to run a remote HPC workflow.
+      The connector lets your workstation act as the secure bridge
+      to VPN-protected clusters while the Cryolauncher web interface
+      remains simple and browser-based.
+    </p>
+
+    <div class="grid">
+
+      <!-- LEFT CARD -->
+
+      <section class="card">
+        <h2>Download Connector</h2>
+
+        <div class="osbox">
+          <div class="osline">Recommended download</div>
+          <div id="os">detecting...</div>
+
+          <a id="download" class="btn" href="/downloads/">
+            Download Recommended Connector
+          </a>
+
+          <p class="small" id="detect-note">
+            If this does not match your machine, choose manually below.
+          </p>
+        </div>
+
+        <h2 style="margin-top:24px;">Choose manually</h2>
+
+        <div class="download-grid">
+
+          <div class="download-card">
+            <div class="download-icon"></div>
+            <h3>macOS</h3>
+            <a class="mini" href="/downloads/Cryolauncher_Connector_macOS_arm64.dmg">Apple Silicon</a>
+            <a class="mini" href="/downloads/Cryolauncher_Connector_macOS_x86_64.dmg">Intel</a>
+          </div>
+
+          <div class="download-card">
+            <div class="download-icon">🐧</div>
+            <h3>Linux</h3>
+            <a class="mini" href="/downloads/Cryolauncher_Connector_Linux_x86_64.tar.gz">x86_64</a>
+            <a class="mini" href="/downloads/Cryolauncher_Connector_Linux_arm64.tar.gz">ARM64</a>
+          </div>
+
+          <div class="download-card">
+            <div class="download-icon">▦</div>
+            <h3>Windows</h3>
+            <a class="mini" href="/downloads/Cryolauncher_Connector_Windows_x86_64.exe">x86_64</a>
+            <a class="mini" href="/downloads/Cryolauncher_Connector_Windows_arm64.exe">ARM64</a>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- RIGHT CARD -->
+
+      <section class="card">
+
+        <h2>
+          Connector Session
+        </h2>
+
+        <div class="status"
+             id="session-box"
+             style="display:none;">
+
+          <b>Session detected</b><br>
+
+          Session ID:
+          <code id="session-id"></code>
+
+          <p class="small"
+             id="session-instructions">
+          </p>
+
+          <p class="small">
+            Once started, the connector automatically finds
+            the active Cryolauncher session and connects.
+          </p>
+
+        </div>
+
+        <h2 style="margin-top:24px;">
+          After installation
+        </h2>
+
+        <ol class="steps"
+            id="after-steps">
+        </ol>
+
+        <div class="status">
+
+          <b>What this connector does</b><br>
+
+          It allows Cryolauncher to submit, monitor, and retrieve
+          remote HPC jobs through your local VPN-connected
+          workstation without exposing your cluster directly
+          to the public web.
+
+        </div>
+
+      </section>
+
+    </div>
+
+    <div class="footer">
+      Cryolauncher OnLine · HPC bridge setup · cryostack.eas.gatech.edu
+    </div>
+
+  </main>
+
+  <script>
+
+    function normalizeArch(raw) {
+      raw = (raw || "").toLowerCase();
+
+      if (
+        raw.includes("arm64") ||
+        raw.includes("aarch64") ||
+        raw.includes("arm")
+      ) {
+        return "arm64";
+      }
+
+      if (
+        raw.includes("x86_64") ||
+        raw.includes("x64") ||
+        raw.includes("amd64") ||
+        raw.includes("win64")
+      ) {
+        return "x86_64";
+      }
+
+      return "x86_64";
+    }
+
+    async function detectOS() {
+      const ua = navigator.userAgent.toLowerCase();
+      const platform = (
+        navigator.userAgentData?.platform ||
+        navigator.platform ||
+        ""
+      ).toLowerCase();
+
+      let archRaw = "";
+
+      if (navigator.userAgentData?.getHighEntropyValues) {
+        try {
+          const data = await navigator.userAgentData.getHighEntropyValues(["architecture", "bitness"]);
+          archRaw = `${data.architecture || ""} ${data.bitness || ""}`;
+        } catch (e) {
+          archRaw = "";
+        }
+      }
+
+      archRaw = archRaw || navigator.platform || navigator.userAgent;
+
+      const arch = normalizeArch(archRaw);
+
+      if (platform.includes("mac") || ua.includes("mac os")) {
+        if (navigator.userAgent.includes("Mac") && navigator.maxTouchPoints > 1) {
+          return "macos-arm64";
+        }
+        return `macos-${arch}`;
+      }
+
+      if (platform.includes("win") || ua.includes("windows")) {
+        return `windows-${arch}`;
+      }
+
+      if (platform.includes("linux") || ua.includes("linux")) {
+        return `linux-${arch}`;
+      }
+
+      return "unknown";
+    }
+
+    async function initPage() {
+      let selectedOS = await detectOS();
+      setOS(selectedOS);
+
+      const params = new URLSearchParams(window.location.search);
+      const session = params.get("session");
+
+      if (session) {
+        document.getElementById("session-box").style.display = "block";
+        document.getElementById("session-id").textContent = session;
+      }
+    }
+
+    initPage();
+
+    const urls = {
+      "macos-arm64": "/downloads/Cryolauncher_Connector_macOS_arm64.dmg",
+      "macos-x86_64": "/downloads/Cryolauncher_Connector_macOS_x86_64.dmg",
+      "windows-x86_64": "/downloads/Cryolauncher_Connector_Windows_x86_64.exe",
+      "windows-arm64": "/downloads/Cryolauncher_Connector_Windows_arm64.exe",
+      "linux-x86_64": "/downloads/Cryolauncher_Connector_Linux_x86_64.tar.gz",
+      "linux-arm64": "/downloads/Cryolauncher_Connector_Linux_arm64.tar.gz",
+      unknown: "/downloads/"
+    };
+
+    const labels = {
+      "macos-arm64": "macOS Apple Silicon",
+      "macos-x86_64": "macOS Intel",
+      "windows-x86_64": "Windows x86_64",
+      "windows-arm64": "Windows ARM64",
+      "linux-x86_64": "Linux x86_64",
+      "linux-arm64": "Linux ARM64",
+      unknown: "Unknown"
+    };
+
+    const sessionInstructions = {
+      "macos-arm64": "Download the connector, open the DMG, drag Cryolauncher_Connector.app to Applications, then double-click it.",
+      "macos-x86_64": "Download the connector, open the DMG, drag Cryolauncher_Connector.app to Applications, then double-click it.",
+      "windows-x86_64": "Download the connector installer, run Cryolauncher_Connector.exe, and allow it to start the local bridge.",
+      "windows-arm64": "Download the connector installer, run Cryolauncher_Connector.exe, and allow it to start the local bridge.",
+      "linux-x86_64": "Download the Linux x86_64 tar.gz file, extract it, then run the connector binary.",
+      "linux-arm64": "Download the Linux ARM64 tar.gz file, extract it, then run the connector binary.",
+      unknown: "Download the connector for your operating system, start it, and return to Cryolauncher."
+    };
+
+    const afterSteps = {
+      "macos-arm64": [
+        "Turn on your university VPN.",
+        "Start Cryolauncher_Connector.app.",
+        "Return to Cryolauncher. The connector status should change to online automatically."
+      ],
+      "macos-x86_64": [
+        "Turn on your university VPN.",
+        "Start Cryolauncher_Connector.app.",
+        "Return to Cryolauncher. The connector status should change to online automatically."
+      ],
+      "windows-x86_64": [
+        "Turn on your university VPN.",
+        "Start Cryolauncher_Connector.exe.",
+        "Return to Cryolauncher. The connector status should change to online automatically."
+      ],
+      "windows-arm64": [
+        "Turn on your university VPN.",
+        "Start Cryolauncher_Connector.exe.",
+        "Return to Cryolauncher. The connector status should change to online automatically."
+      ],
+      "linux-x86_64": [
+        "Turn on your university VPN.",
+        "Extract the tar.gz file.",
+        "Run ./Cryolauncher_Connector from the extracted folder.",
+        "Return to Cryolauncher. The connector status should change to online automatically."
+      ],
+      "linux-arm64": [
+        "Turn on your university VPN.",
+        "Extract the tar.gz file.",
+        "Run ./Cryolauncher_Connector from the extracted folder.",
+        "Return to Cryolauncher. The connector status should change to online automatically."
+      ],
+      unknown: [
+        "Turn on your university VPN.",
+        "Start the Cryolauncher Connector.",
+        "Return to Cryolauncher. The connector status should change to online automatically."
+      ]
+    };
+
+    function setOS(os) {
+
+      os = urls[os] ? os : "unknown";
+
+      document.getElementById("os").textContent =
+        labels[os] || labels.unknown;
+
+      document.getElementById("download").href =
+        urls[os] || urls.unknown;
+
+      const sessionText =
+        document.getElementById("session-instructions");
+
+      if (sessionText) {
+        sessionText.textContent =
+          sessionInstructions[os] ||
+          sessionInstructions.unknown;
+      }
+
+      const steps =
+        document.getElementById("after-steps");
+
+      if (steps) {
+
+        steps.innerHTML = "";
+
+        (afterSteps[os] || afterSteps.unknown)
+          .forEach((step) => {
+
+            const li =
+              document.createElement("li");
+
+            li.textContent = step;
+
+            steps.appendChild(li);
+          });
+      }
+    }
+
+    let selectedOS = detectOS();
+
+    setOS(selectedOS);
+
+    const params =
+      new URLSearchParams(window.location.search);
+
+    const session =
+      params.get("session");
+
+    if (session) {
+
+      document.getElementById("session-box")
+        .style.display = "block";
+
+      document.getElementById("session-id")
+        .textContent = session;
+    }
+
+  </script>
+
+</body>
+</html>
