@@ -110,6 +110,24 @@ async def livist_docs_index(request: web.Request) -> web.StreamResponse:
 
     return web.FileResponse(index_file)
 
+async def livist_docs_page(request: web.Request) -> web.StreamResponse:
+    tail = request.match_info.get("tail", "").strip("/")
+
+    docs_root = livist_docs_root().resolve()
+    requested_path = (docs_root / tail).resolve()
+
+    # Prevent paths such as ../../ from escaping the docs directory.
+    if docs_root not in requested_path.parents and requested_path != docs_root:
+        raise web.HTTPForbidden(text="Invalid documentation path.")
+
+    if requested_path.is_dir():
+        requested_path = requested_path / "index.html"
+
+    if not requested_path.exists() or not requested_path.is_file():
+        raise web.HTTPNotFound(text="LIVIST documentation page not found.")
+
+    return web.FileResponse(requested_path)
+
 class ManagedProcess:
     def __init__(self, command: list[str], cwd: Path):
         self.command = command
@@ -316,11 +334,7 @@ def make_app() -> web.Application:
     app.router.add_get("/livist/docs", livist_docs_redirect)
     app.router.add_get("/livist/docs/", livist_docs_index)
 
-    app.router.add_static(
-        "/livist/docs/",
-        path=str(livist_docs_root()),
-        show_index=False,
-    )
+    app.router.add_get("/livist/docs/{tail:.*}", livist_docs_page)
 
     app.router.add_get("/livist", livist_redirect)
     app.router.add_get("/livist/", livist_index)

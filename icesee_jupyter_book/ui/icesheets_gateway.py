@@ -293,9 +293,17 @@ app_menu = W.HTML("""
 </a>
 
 <div class="app-nav">
-    <a class="active" href="#">Getting Started</a>
-    <a href="#">User Manual</a>
-    <a href="#">Resources</a>
+    <a href="/applications/icesheets/getting_started.html">
+    Getting Started
+    </a>
+
+    <a href="/applications/icesheets/user_manual.html">
+    User Manual
+    </a>
+
+    <a href="/applications/icesheets/resources.html">
+    Resources
+    </a>
 </div>
 
 </div>
