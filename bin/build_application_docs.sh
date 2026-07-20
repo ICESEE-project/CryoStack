@@ -5,35 +5,80 @@ set -Eeuo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 BOOK="${ROOT}/icesee_jupyter_book"
 MAIN_BUILD="${BOOK}/_build/html"
-TMP_DIR="$(mktemp -d)"
+TOC_DIR="${BOOK}/toc"
+
 ORIGINAL_TOC="${BOOK}/_toc.yml"
-BACKUP_TOC="${TMP_DIR}/_toc.yml"
+TMP_ROOT="$(mktemp -d)"
+BACKUP_TOC="${TMP_ROOT}/_toc.yml"
 
 cp "${ORIGINAL_TOC}" "${BACKUP_TOC}"
 
 cleanup() {
     cp "${BACKUP_TOC}" "${ORIGINAL_TOC}"
-    rm -rf "${TMP_DIR}"
+    rm -rf "${TMP_ROOT}"
 }
 trap cleanup EXIT
 
-cat > "${BOOK}/_toc.yml" <<'EOF'
-format: jb-book
-root: index
+build_application() {
+    local name="$1"
+    local toc_file="$2"
+    local source_subdir="$3"
 
-parts:
-  - chapters:
-      - file: applications/icesheets/getting_started
-      - file: applications/icesheets/user_manual
-      - file: applications/icesheets/resources
-EOF
+    local slug
+    slug="$(basename "${toc_file}" .yml)"
 
-jupyter-book build "${BOOK}" --path-output "${TMP_DIR}"
+    local app_output="${TMP_ROOT}/${slug}"
 
-mkdir -p "${MAIN_BUILD}/applications/icesheets"
+    echo
+    echo "=================================================="
+    echo "Building ${name} documentation..."
+    echo "=================================================="
 
-cp -a \
-  "${TMP_DIR}/_build/html/applications/icesheets/." \
-  "${MAIN_BUILD}/applications/icesheets/"
+    if [[ ! -f "${toc_file}" ]]; then
+        echo "ERROR: TOC file not found: ${toc_file}" >&2
+        return 1
+    fi
 
-echo "CryoLauncher documentation pages copied into the main build."
+    cp "${toc_file}" "${BOOK}/_toc.yml"
+
+    rm -rf "${app_output}"
+
+    jupyter-book build \
+        "${BOOK}" \
+        --path-output "${app_output}"
+
+    local generated_dir="${app_output}/_build/html/${source_subdir}"
+    local destination_dir="${MAIN_BUILD}/${source_subdir}"
+
+    if [[ ! -d "${generated_dir}" ]]; then
+        echo "ERROR: Expected documentation output was not generated:" >&2
+        echo "       ${generated_dir}" >&2
+        return 1
+    fi
+
+    mkdir -p "${destination_dir}"
+
+    rm -rf "${destination_dir:?}/"*
+
+    cp -a \
+        "${generated_dir}/." \
+        "${destination_dir}/"
+
+    echo "${name} documentation copied to:"
+    echo "  ${destination_dir}"
+}
+
+build_application \
+    "CryoLauncher" \
+    "${TOC_DIR}/cryolauncher.yml" \
+    "applications/icesheets"
+
+build_application \
+    "ICESEE" \
+    "${TOC_DIR}/icesee.yml" \
+    "applications/icesee"
+
+echo
+echo "=================================================="
+echo "Application documentation build complete."
+echo "=================================================="

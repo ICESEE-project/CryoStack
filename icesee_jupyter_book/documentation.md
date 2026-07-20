@@ -167,21 +167,10 @@
         </div>
 
         <div class="cryostack-docs-card-actions">
-          <a href="/icesee-gui/">
-            Open Application
-          </a>
-
-          <a href="/icesee-gui/">
-            Getting Started
-          </a>
-
-          <a href="/icesee-gui/">
-            User Manual
-          </a>
-
-          <a href="/icesee-gui/">
-            Resources
-          </a>
+          <a href="/icesee-gui/">Open Application</a>
+          <a href="applications/icesee/getting_started.html">Getting Started</a>
+          <a href="applications/icesee/user_manual.html">User Manual</a>
+          <a href="applications/icesee/resources.html">Resources</a>
         </div>
 
       </article>

@@ -1,4 +1,4 @@
-# Getting Started with CryoLauncher
+# Getting Started 
 
 :::{raw} html
 <style>

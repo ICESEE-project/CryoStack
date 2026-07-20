@@ -1,0 +1,10 @@
+format: jb-book
+
+root: index
+
+parts:
+  - caption: ICESEE 
+    chapters:
+      - file: applications/icesee/getting_started
+      - file: applications/icesee/user_manual
+      - file: applications/icesee/resources

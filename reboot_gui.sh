@@ -61,9 +61,8 @@ echo
 echo "=================================================="
 echo "Building application documentation..."
 echo "=================================================="
-set -u
-bash "${REPO_ROOT}/bin/build_application_docs.sh"
-set +u
+
+"${REPO_ROOT}/bin/build_application_docs.sh"
 
 echo
 echo "=================================================="

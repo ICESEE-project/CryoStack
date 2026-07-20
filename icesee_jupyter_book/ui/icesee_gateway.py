@@ -347,15 +347,22 @@ app_menu = W.HTML("""
 
 <div class="app-header">
 
-<a class="app-home"
-   href="https://cryostack.eas.gatech.edu/icesee-gui/#">
-   ICEESEE
+<a class="app-home" href="/icesee-gui/#">
+  ICESEE
 </a>
 
-<div class="app-nav">
-    <a class="active" href="#">Getting Started</a>
-    <a href="#">User Manual</a>
-    <a href="#">Resources</a>
+<div class="app-links">
+  <a href="/applications/icesee/getting_started.html">
+    Getting Started
+  </a>
+
+  <a href="/applications/icesee/user_manual.html">
+    User Manual
+  </a>
+
+  <a href="/applications/icesee/resources.html">
+    Resources
+  </a>
 </div>
 
 </div>

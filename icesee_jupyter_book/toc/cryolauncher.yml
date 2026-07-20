@@ -1,0 +1,10 @@
+format: jb-book
+
+root: index
+
+parts:
+  - caption: CryoLauncher
+    chapters:
+      - file: applications/icesheets/getting_started
+      - file: applications/icesheets/user_manual
+      - file: applications/icesheets/resources

@@ -2711,3 +2711,162 @@ nav.bd-links p.caption.icesee-caption:hover {
         padding: 15px 17px 15px 36px;
     }
 }
+
+/* =========================================================
+   CryoLauncher manual and resource components
+   ========================================================= */
+
+.cryostack-manual-grid,
+.cryostack-resource-card-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+    margin: 24px 0 32px;
+}
+
+.cryostack-manual-card,
+.cryostack-resource-card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: 22px 21px;
+    border: 1px solid rgba(15, 23, 42, 0.09);
+    border-radius: 17px;
+    background: #ffffff;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.04);
+    transition:
+        transform 0.2s ease,
+        border-color 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.cryostack-manual-card:hover,
+.cryostack-resource-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(37, 99, 235, 0.20);
+    box-shadow: 0 16px 38px rgba(15, 23, 42, 0.075);
+}
+
+.cryostack-manual-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    align-self: flex-start;
+    width: 38px;
+    height: 38px;
+    margin-bottom: 15px;
+    border-radius: 11px;
+    background: rgba(37, 99, 235, 0.09);
+    color: #2563eb;
+    font-size: 11px;
+    font-weight: 850;
+}
+
+.cryostack-manual-card h3,
+.cryostack-resource-card h3 {
+    margin: 0 0 9px !important;
+    color: #1e293b;
+    font-size: 19px !important;
+}
+
+.cryostack-manual-card p,
+.cryostack-resource-card p {
+    flex: 1 1 auto;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    color: #64748b !important;
+    font-size: 14px !important;
+    line-height: 1.65 !important;
+}
+
+.cryostack-resource-tag {
+    align-self: flex-start;
+    margin-bottom: 14px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(37, 99, 235, 0.08);
+    color: #2563eb;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.cryostack-resource-card > a {
+    align-self: flex-start;
+    margin-top: 18px;
+    color: #2563eb;
+    font-size: 14px;
+    font-weight: 750;
+    text-decoration: none;
+}
+
+.cryostack-resource-card > a:hover {
+    text-decoration: underline;
+}
+
+.cryostack-resource-inline-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 18px;
+}
+
+.cryostack-resource-inline-links a {
+    display: inline-flex;
+    padding: 7px 10px;
+    border: 1px solid rgba(37, 99, 235, 0.13);
+    border-radius: 8px;
+    background: rgba(37, 99, 235, 0.06);
+    color: #2563eb;
+    font-size: 12px;
+    font-weight: 750;
+    text-decoration: none;
+}
+
+.cryostack-resource-inline-links a:hover {
+    background: rgba(37, 99, 235, 0.12);
+}
+
+.cryostack-troubleshooting {
+    margin: 24px 0 32px;
+}
+
+.cryostack-troubleshooting details {
+    margin-bottom: 10px;
+    overflow: hidden;
+    border: 1px solid rgba(15, 23, 42, 0.09);
+    border-radius: 12px;
+    background: #ffffff;
+}
+
+.cryostack-troubleshooting summary {
+    padding: 14px 17px;
+    color: #1e293b;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.cryostack-troubleshooting details[open] summary {
+    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+    background: rgba(37, 99, 235, 0.045);
+    color: #2563eb;
+}
+
+.cryostack-troubleshooting details p {
+    margin: 0 !important;
+    padding: 16px 18px !important;
+    border: 0 !important;
+    background: transparent !important;
+}
+
+@media (max-width: 750px) {
+    .cryostack-manual-grid,
+    .cryostack-resource-card-grid {
+        grid-template-columns: 1fr;
+        gap: 13px;
+    }
+}
