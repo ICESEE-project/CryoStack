@@ -33,6 +33,18 @@ class SessionRecord:
     last_seen_at: float
     expires_at: float
 
+@dataclass(frozen=True, slots=True)
+class SavedConfiguration:
+    id: str
+    user_id: str
+    application: str
+    name: str
+    description: str | None
+    configuration_json: str
+    schema_version: str
+    created_at: float
+    updated_at: float
+
 
 class AuthStorage:
     """Store users and sessions in a small SQLite database."""
@@ -78,6 +90,28 @@ class AuthStorage:
 
                 CREATE INDEX IF NOT EXISTS idx_sessions_user_id
                     ON sessions(user_id);
+
+                CREATE TABLE IF NOT EXISTS saved_configurations (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    application TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    configuration_json TEXT NOT NULL,
+                    schema_version TEXT NOT NULL DEFAULT '1.0',
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+
+                    FOREIGN KEY (user_id)
+                        REFERENCES users(id)
+                        ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_saved_configurations_user
+                    ON saved_configurations(user_id);
+
+                CREATE INDEX IF NOT EXISTS idx_saved_configurations_application
+                    ON saved_configurations(user_id, application);
                 """
             )
 
@@ -319,6 +353,183 @@ class AuthStorage:
 
         return self.get_user_by_id(user_id)
 
+
+    def create_configuration(
+        self,
+        *,
+        user_id: str,
+        application: str,
+        name: str,
+        description: str | None,
+        configuration_json: str,
+        schema_version: str = "1.0",
+        now: float | None = None,
+    ) -> SavedConfiguration:
+        timestamp = time.time() if now is None else now
+
+        configuration = SavedConfiguration(
+            id=uuid.uuid4().hex,
+            user_id=user_id,
+            application=application.strip().lower(),
+            name=name.strip(),
+            description=(description or "").strip() or None,
+            configuration_json=configuration_json,
+            schema_version=schema_version.strip() or "1.0",
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO saved_configurations (
+                    id,
+                    user_id,
+                    application,
+                    name,
+                    description,
+                    configuration_json,
+                    schema_version,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    configuration.id,
+                    configuration.user_id,
+                    configuration.application,
+                    configuration.name,
+                    configuration.description,
+                    configuration.configuration_json,
+                    configuration.schema_version,
+                    configuration.created_at,
+                    configuration.updated_at,
+                ),
+            )
+
+        return configuration
+
+
+    def list_configurations(
+        self,
+        *,
+        user_id: str,
+        application: str | None = None,
+    ) -> list[SavedConfiguration]:
+        query = """
+            SELECT *
+            FROM saved_configurations
+            WHERE user_id = ?
+        """
+
+        params: list[object] = [user_id]
+
+        if application:
+            query += " AND application = ?"
+            params.append(application.strip().lower())
+
+        query += " ORDER BY updated_at DESC"
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                query,
+                params,
+            ).fetchall()
+
+        return [
+            self._configuration_from_row(row)
+            for row in rows
+        ]
+
+
+    def get_configuration(
+        self,
+        *,
+        configuration_id: str,
+        user_id: str,
+    ) -> SavedConfiguration | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM saved_configurations
+                WHERE id = ? AND user_id = ?
+                """,
+                (
+                    configuration_id,
+                    user_id,
+                ),
+            ).fetchone()
+
+        return self._configuration_from_row(row)
+
+
+    def delete_configuration(
+        self,
+        *,
+        configuration_id: str,
+        user_id: str,
+    ) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                DELETE FROM saved_configurations
+                WHERE id = ? AND user_id = ?
+                """,
+                (
+                    configuration_id,
+                    user_id,
+                ),
+            )
+
+        return cursor.rowcount > 0
+
+
+    def update_configuration(
+        self,
+        *,
+        configuration_id: str,
+        user_id: str,
+        application: str,
+        name: str,
+        description: str | None,
+        configuration_json: str,
+        schema_version: str = "1.0",
+        now: float | None = None,
+    ) -> SavedConfiguration | None:
+        timestamp = time.time() if now is None else now
+
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE saved_configurations
+                SET
+                    application = ?,
+                    name = ?,
+                    description = ?,
+                    configuration_json = ?,
+                    schema_version = ?,
+                    updated_at = ?
+                WHERE id = ? AND user_id = ?
+                """,
+                (
+                    application.strip().lower(),
+                    name.strip(),
+                    (description or "").strip() or None,
+                    configuration_json,
+                    schema_version.strip() or "1.0",
+                    timestamp,
+                    configuration_id,
+                    user_id,
+                ),
+            )
+
+        return self.get_configuration(
+            configuration_id=configuration_id,
+            user_id=user_id,
+        )
+
     @staticmethod
     def _user_from_row(
         row: sqlite3.Row | None,
@@ -376,6 +587,25 @@ class AuthStorage:
             created_at=float(row["created_at"]),
             last_seen_at=float(row["last_seen_at"]),
             expires_at=float(row["expires_at"]),
+        )
+
+    @staticmethod
+    def _configuration_from_row(
+        row: sqlite3.Row | None,
+    ) -> SavedConfiguration | None:
+        if row is None:
+            return None
+
+        return SavedConfiguration(
+            id=row["id"],
+            user_id=row["user_id"],
+            application=row["application"],
+            name=row["name"],
+            description=row["description"],
+            configuration_json=row["configuration_json"],
+            schema_version=row["schema_version"],
+            created_at=float(row["created_at"]),
+            updated_at=float(row["updated_at"]),
         )
 
     @staticmethod

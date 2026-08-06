@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import time
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -18,6 +19,8 @@ from .storage import AuthStorage, SessionRecord, User
 from .templates import (
     account_settings_page,
     auth_page,
+    configuration_form_page,
+    configurations_page,
     login_fields,
     register_fields,
 )
@@ -71,6 +74,41 @@ class AuthManager:
         app.router.add_get("/account", self._account_redirect)
         app.router.add_get("/account/", self._account_page)
         app.router.add_post("/account/", self._account_update)
+
+        app.router.add_get(
+            "/configurations",
+            self._configurations_redirect,
+        )
+
+        app.router.add_get(
+            "/configurations/",
+            self._configurations_page,
+        )
+
+        app.router.add_get(
+            "/configurations/new",
+            self._configuration_new_page,
+        )
+
+        app.router.add_post(
+            "/configurations/new",
+            self._configuration_create,
+        )
+
+        app.router.add_get(
+            "/configurations/{configuration_id}/edit",
+            self._configuration_edit_page,
+        )
+
+        app.router.add_post(
+            "/configurations/{configuration_id}/edit",
+            self._configuration_update,
+        )
+
+        app.router.add_post(
+            "/configurations/{configuration_id}/delete",
+            self._configuration_delete,
+        )
 
     def authenticated_user(self, request: web.Request):
         session_id = request.cookies.get(self._cookie_name)
@@ -429,6 +467,343 @@ class AuthManager:
             path="/",
         )
         return response
+
+    async def _configurations_redirect(
+        self,
+        request: web.Request,
+    ) -> web.StreamResponse:
+        raise web.HTTPFound("/configurations/")
+
+
+    async def _configurations_page(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        user = self.current_user(request)
+
+        if user is None:
+            raise web.HTTPFound(
+                "/auth/login?return_to=%2Fconfigurations%2F"
+            )
+
+        configurations = self._storage.list_configurations(
+            user_id=user.id,
+        )
+
+        response = web.Response(
+            text=configurations_page(
+                user=user,
+                configurations=configurations,
+                message=request.query.get("message"),
+            ),
+            content_type="text/html",
+        )
+
+        self._prepare_no_cache(response)
+        return response
+
+
+    async def _configuration_new_page(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        user = self.current_user(request)
+
+        if user is None:
+            raise web.HTTPFound(
+                "/auth/login?return_to="
+                "%2Fconfigurations%2Fnew"
+            )
+
+        response = web.Response(
+            text=configuration_form_page(
+                title="New Configuration",
+                form_action="/configurations/new",
+            ),
+            content_type="text/html",
+        )
+
+        self._prepare_no_cache(response)
+        return response
+
+
+    async def _configuration_create(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        user = self.current_user(request)
+
+        if user is None:
+            raise web.HTTPFound(
+                "/auth/login?return_to="
+                "%2Fconfigurations%2Fnew"
+            )
+
+        form = await request.post()
+
+        application = str(
+            form.get("application", "")
+        ).strip().lower()
+
+        name = str(
+            form.get("name", "")
+        ).strip()
+
+        description = str(
+            form.get("description", "")
+        ).strip()
+
+        configuration_json = str(
+            form.get("configuration_json", "")
+        ).strip()
+
+        schema_version = str(
+            form.get("schema_version", "1.0")
+        ).strip()
+
+        error = self._validate_configuration(
+            application=application,
+            name=name,
+            configuration_json=configuration_json,
+        )
+
+        if error:
+            return self._configuration_form_error(
+                title="New Configuration",
+                form_action="/configurations/new",
+                error=error,
+            )
+
+        self._storage.create_configuration(
+            user_id=user.id,
+            application=application,
+            name=name,
+            description=description or None,
+            configuration_json=configuration_json,
+            schema_version=schema_version or "1.0",
+            now=self._clock(),
+        )
+
+        raise web.HTTPFound(
+            "/configurations/?message="
+            "Configuration%20saved."
+        )
+
+
+    async def _configuration_edit_page(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        user = self.current_user(request)
+
+        if user is None:
+            raise web.HTTPFound(
+                "/auth/login?return_to="
+                + quote(request.path_qs, safe="")
+            )
+
+        configuration_id = request.match_info[
+            "configuration_id"
+        ]
+
+        configuration = self._storage.get_configuration(
+            configuration_id=configuration_id,
+            user_id=user.id,
+        )
+
+        if configuration is None:
+            raise web.HTTPNotFound(
+                text="Saved configuration not found."
+            )
+
+        response = web.Response(
+            text=configuration_form_page(
+                title="Edit Configuration",
+                form_action=(
+                    f"/configurations/"
+                    f"{configuration.id}/edit"
+                ),
+                configuration=configuration,
+            ),
+            content_type="text/html",
+        )
+
+        self._prepare_no_cache(response)
+        return response
+
+
+    async def _configuration_update(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        user = self.current_user(request)
+
+        if user is None:
+            raise web.HTTPFound(
+                "/auth/login?return_to="
+                + quote(request.path_qs, safe="")
+            )
+
+        configuration_id = request.match_info[
+            "configuration_id"
+        ]
+
+        configuration = self._storage.get_configuration(
+            configuration_id=configuration_id,
+            user_id=user.id,
+        )
+
+        if configuration is None:
+            raise web.HTTPNotFound(
+                text="Saved configuration not found."
+            )
+
+        form = await request.post()
+
+        application = str(
+            form.get("application", "")
+        ).strip().lower()
+
+        name = str(
+            form.get("name", "")
+        ).strip()
+
+        description = str(
+            form.get("description", "")
+        ).strip()
+
+        configuration_json = str(
+            form.get("configuration_json", "")
+        ).strip()
+
+        schema_version = str(
+            form.get("schema_version", "1.0")
+        ).strip()
+
+        error = self._validate_configuration(
+            application=application,
+            name=name,
+            configuration_json=configuration_json,
+        )
+
+        if error:
+            response = web.Response(
+                text=configuration_form_page(
+                    title="Edit Configuration",
+                    form_action=(
+                        f"/configurations/"
+                        f"{configuration.id}/edit"
+                    ),
+                    configuration=configuration,
+                    error=error,
+                ),
+                content_type="text/html",
+                status=400,
+            )
+
+            self._prepare_no_cache(response)
+            return response
+
+        self._storage.update_configuration(
+            configuration_id=configuration.id,
+            user_id=user.id,
+            application=application,
+            name=name,
+            description=description or None,
+            configuration_json=configuration_json,
+            schema_version=schema_version or "1.0",
+            now=self._clock(),
+        )
+
+        raise web.HTTPFound(
+            "/configurations/?message="
+            "Configuration%20updated."
+        )
+
+
+    async def _configuration_delete(
+        self,
+        request: web.Request,
+    ) -> web.StreamResponse:
+        user = self.current_user(request)
+
+        if user is None:
+            raise web.HTTPFound(
+                "/auth/login?return_to=%2Fconfigurations%2F"
+            )
+
+        configuration_id = request.match_info[
+            "configuration_id"
+        ]
+
+        deleted = self._storage.delete_configuration(
+            configuration_id=configuration_id,
+            user_id=user.id,
+        )
+
+        if not deleted:
+            raise web.HTTPNotFound(
+                text="Saved configuration not found."
+            )
+
+        raise web.HTTPFound(
+            "/configurations/?message="
+            "Configuration%20deleted."
+        )
+
+
+    def _configuration_form_error(
+        self,
+        *,
+        title: str,
+        form_action: str,
+        error: str,
+    ) -> web.Response:
+        response = web.Response(
+            text=configuration_form_page(
+                title=title,
+                form_action=form_action,
+                error=error,
+            ),
+            content_type="text/html",
+            status=400,
+        )
+
+        self._prepare_no_cache(response)
+        return response
+
+
+    @staticmethod
+    def _validate_configuration(
+        *,
+        application: str,
+        name: str,
+        configuration_json: str,
+    ) -> str | None:
+        allowed_applications = {
+            "cryolauncher",
+            "icesee",
+            "livist",
+        }
+
+        if application not in allowed_applications:
+            return "Please select a valid CryoStack application."
+
+        if len(name) < 2:
+            return "Configuration name must contain at least 2 characters."
+
+        try:
+            parsed = json.loads(configuration_json)
+        except json.JSONDecodeError as error:
+            return (
+                "Configuration JSON is invalid: "
+                f"{error.msg} at line {error.lineno}."
+            )
+
+        if not isinstance(parsed, dict):
+            return "Configuration JSON must contain a JSON object."
+
+        return None
 
     def current_user(self, request: web.Request) -> User | None:
         """Return the authenticated user for the current request."""
