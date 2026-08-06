@@ -52,8 +52,8 @@
         <span>Data Products</span>
         <span>HPC Computing</span>
       </div>
-
     </div>
+
   </section>
 
   <section id="applications" class="cryostack-section">
@@ -86,7 +86,11 @@
           <span>Spack</span>
         </div>
 
-        <a class="cryostack-card-btn" href="/icesheets/">
+        <a
+          class="cryostack-card-btn"
+          href="/icesheets/"
+          data-requires-auth="true"
+        >
           Open Modeling GUI
         </a>
       </div>
@@ -114,7 +118,9 @@
 
         <a
           class="cryostack-card-btn green-btn"
-          href="/icesee-gui/">
+          href="/icesee-gui/"
+          data-requires-auth="true"
+        >
           Open ICESEE GUI
         </a>
       </div>
@@ -141,7 +147,9 @@
 
         <a
           class="cryostack-card-btn green-btn"
-          href="/livist/">
+          href="/livist/"
+          data-requires-auth="true"
+        >
           Open LIVIST
         </a>
       </div>

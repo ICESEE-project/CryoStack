@@ -134,7 +134,12 @@
         </div>
 
         <div class="cryostack-docs-card-actions">
-            <a href="/icesheets/">Open Application</a>
+            <a 
+              href="/icesheets/"
+              data-requires-auth="true"
+            >
+              Open Application
+            </a>
             <a href="applications/icesheets/getting_started.html">Getting Started</a>
             <a href="applications/icesheets/user_manual.html">User Manual</a>
             <a href="applications/icesheets/resources.html">Resources</a>
@@ -167,7 +172,12 @@
         </div>
 
         <div class="cryostack-docs-card-actions">
-          <a href="/icesee-gui/">Open Application</a>
+          <a 
+            href="/icesee-gui/"
+            data-requires-auth="true"
+          >
+            Open Application
+          </a>
           <a href="applications/icesee/getting_started.html">Getting Started</a>
           <a href="applications/icesee/user_manual.html">User Manual</a>
           <a href="applications/icesee/resources.html">Resources</a>
@@ -200,7 +210,10 @@
         </div>
 
         <div class="cryostack-docs-card-actions">
-          <a href="/livist/">
+          <a 
+            href="/livist/"
+            data-requires-auth="true"
+          >
             Open Application
           </a>
 

@@ -2870,3 +2870,408 @@ nav.bd-links p.caption.icesee-caption:hover {
         gap: 13px;
     }
 }
+
+/* =========================================================
+   CryoStack global account control
+   ========================================================= */
+
+.cryostack-global-account {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    margin-left: 0.45rem;
+    z-index: 1200;
+}
+
+.cryostack-global-account-button {
+    display: inline-flex;
+    min-height: 36px;
+    align-items: center;
+    justify-content: center;
+    gap: 0.42rem;
+    padding: 0.35rem 0.60rem;
+
+    border: 1px solid rgba(100, 116, 139, 0.18);
+    border-radius: 999px;
+
+    background: transparent;
+    color: #475569;
+
+    font-family: inherit;
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1;
+
+    cursor: pointer;
+
+    transition:
+        border-color 160ms ease,
+        background-color 160ms ease,
+        color 160ms ease,
+        transform 160ms ease;
+}
+
+.cryostack-global-account-button:hover {
+    transform: translateY(-1px);
+}
+
+.cryostack-global-account-icon {
+    font-size: 0.84rem;
+    line-height: 1;
+}
+
+.cryostack-global-account.loading {
+    opacity: 0.7;
+}
+
+.cryostack-global-account.guest
+.cryostack-global-account-button {
+    border-color: rgba(37, 99, 235, 0.20);
+    color: #334155;
+}
+
+.cryostack-global-account.guest
+.cryostack-global-account-button:hover {
+    border-color: rgba(37, 99, 235, 0.38);
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.cryostack-global-account.authenticated
+.cryostack-global-account-button {
+    border-color: rgba(22, 163, 74, 0.24);
+    background: rgba(240, 253, 244, 0.92);
+    color: #15803d;
+}
+
+.cryostack-global-account.unavailable
+.cryostack-global-account-button {
+    color: #64748b;
+    cursor: default;
+}
+
+.cryostack-global-account-menu {
+    position: absolute;
+    top: calc(100% + 0.6rem);
+    right: 0;
+    transform: translateX(10px);
+
+    display: grid;
+    width: 230px;
+    padding: 0.35rem 0.60rem;
+
+    border: 1px solid rgba(15, 23, 42, 0.10);
+    border-radius: 13px;
+
+    background: #ffffff;
+    box-shadow:
+        0 20px 45px rgba(15, 23, 42, 0.14),
+        0 3px 10px rgba(15, 23, 42, 0.05);
+}
+
+.cryostack-global-account-menu[hidden] {
+    display: none !important;
+}
+
+.cryostack-account-menu-identity {
+    display: grid;
+    gap: 0.2rem;
+    padding: 0.65rem 0.7rem 0.8rem;
+    margin-bottom: 0.35rem;
+
+    border-bottom: 1px solid rgba(148, 163, 184, 0.20);
+}
+
+.cryostack-account-menu-identity strong {
+    color: #0f172a;
+    font-size: 0.9rem;
+}
+
+.cryostack-account-menu-identity span {
+    overflow: hidden;
+    color: #64748b;
+    font-size: 0.76rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cryostack-global-account-menu a,
+.cryostack-global-account-menu button {
+    display: block;
+    width: 100%;
+    padding: 0.62rem 0.72rem;
+
+    border: 0;
+    border-radius: 8px;
+
+    background: transparent;
+    color: #334155;
+
+    font: inherit;
+    font-size: 0.84rem;
+    text-align: left;
+    text-decoration: none;
+
+    cursor: pointer;
+}
+
+.cryostack-global-account-menu a:hover,
+.cryostack-global-account-menu button:hover {
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+@media (max-width: 800px) {
+    .cryostack-global-account-label,
+    .cryostack-global-account-chevron {
+        display: none;
+    }
+
+    .cryostack-global-account-button {
+        width: 36px;
+        min-height: 36px;
+        padding: 0;
+        border-radius: 50%;
+    }
+
+    /* .cryostack-global-account-menu {
+        right: 0;
+        top: calc(100% + 8px);
+        width: min(290px, calc(100vw - 2rem));
+    } */
+}
+
+/* =========================================================
+   Keep account control in the global header row
+   ========================================================= */
+
+.navbar-header-items__end,
+.header-article-items__end {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    gap: 0.25rem;
+}
+
+.cryostack-global-account {
+    display: inline-flex !important;
+    flex: 0 0 auto !important;
+    align-items: center;
+    width: auto !important;
+    margin: 0 0 0 0.35rem !important;
+    white-space: nowrap;
+}
+
+.cryostack-global-account-button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+.cryostack-global-account-chevron {
+    margin-left: 0.08rem;
+    font-size: 0.65rem;
+    opacity: 0.72;
+}
+
+/* =========================================================
+   Anonymous account menu
+   ========================================================= */
+
+.cryostack-guest-account-header {
+    display: grid;
+    gap: 0.42rem;
+    padding: 0.75rem 0.75rem 0.9rem;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.20);
+}
+
+.cryostack-guest-account-header strong {
+    color: #0f172a;
+    font-size: 0.88rem;
+    font-weight: 700;
+}
+
+.cryostack-guest-account-header span {
+    color: #64748b;
+    font-size: 0.78rem;
+    line-height: 1.5;
+}
+
+.cryostack-guest-account-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+    padding: 0.7rem 0.65rem;
+}
+
+.cryostack-global-account-menu
+.cryostack-account-primary-action,
+.cryostack-global-account-menu
+.cryostack-account-secondary-action {
+    display: flex;
+    height: 34px;
+    padding: 0 0.8rem;
+    font-size: 0.8rem;
+    align-items: center;
+    justify-content: center;
+    padding: 0.58rem 0.8rem;
+    border-radius: 9px;
+    font-size: 0.83rem;
+    font-weight: 750;
+    text-align: center;
+    text-decoration: none !important;
+}
+
+.cryostack-global-account-menu
+.cryostack-account-primary-action {
+    border: 1px solid #2563eb;
+    background: #2563eb;
+    color: #ffffff !important;
+}
+
+.cryostack-global-account-menu
+.cryostack-account-primary-action:hover {
+    background: #1d4ed8;
+}
+
+.cryostack-global-account-menu
+.cryostack-account-secondary-action {
+    border: 1px solid rgba(37, 99, 235, 0.24);
+    background: #eff6ff;
+    color: #1d4ed8 !important;
+}
+
+.cryostack-global-account-menu
+.cryostack-account-secondary-action:hover {
+    border-color: rgba(37, 99, 235, 0.40);
+    background: #dbeafe;
+}
+
+.cryostack-global-account-menu {
+    width: 250px;
+    max-width: 250px;
+}
+
+.cryostack-account-benefits {
+    display: grid;
+    gap: 0.42rem;
+    padding: 0.55rem 0.65rem;
+    border-top: 1px solid rgba(148, 163, 184, 0.20);
+    color: #64748b;
+    font-size: 0.74rem;
+}
+
+.cryostack-account-benefits span {
+    position: relative;
+    padding-left: 1rem;
+    line-height: 1.35;
+}
+
+.cryostack-account-benefits span::before {
+    position: absolute;
+    left: 0;
+    color: #22c55e;
+    content: "✓";
+    font-weight: 800;
+}
+
+/* .cryostack-guest-account-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .25rem;
+} */
+
+
+.cryostack-global-account-button:hover {
+    background: #eff6ff;
+    border-color: #3b82f6;
+}
+
+/* =========================================================
+   compact account-menu overrides
+   ========================================================= */
+
+#cryostack-global-account {
+    margin-left: 0.3rem !important;
+}
+
+#cryostack-global-account
+.cryostack-global-account-button {
+    min-height: 32px !important;
+    padding: 0.32rem 0.58rem !important;
+    gap: 0.34rem !important;
+    font-size: 0.76rem !important;
+}
+
+#cryostack-global-account
+.cryostack-global-account-icon {
+    font-size: 0.78rem !important;
+}
+
+#cryostack-global-account
+.cryostack-global-account-chevron {
+    font-size: 0.56rem !important;
+}
+
+#cryostack-global-account
+.cryostack-global-account-menu {
+    top: calc(100% + 0.45rem) !important;
+    right: 0 !important;
+
+    width: 220px !important;
+    min-width: 220px !important;
+    max-width: 220px !important;
+
+    padding: 0.42rem !important;
+    border-radius: 11px !important;
+}
+
+#cryostack-global-account
+.cryostack-guest-account-header {
+    gap: 0.28rem !important;
+    padding: 0.52rem 0.58rem 0.62rem !important;
+}
+
+#cryostack-global-account
+.cryostack-guest-account-header strong {
+    font-size: 0.84rem !important;
+}
+
+#cryostack-global-account
+.cryostack-guest-account-header span {
+    font-size: 0.72rem !important;
+    line-height: 1.4 !important;
+}
+
+#cryostack-global-account
+/* .cryostack-guest-account-actions {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 0.35rem !important;
+    padding: 0.52rem 0.48rem !important;
+} */
+
+#cryostack-global-account
+.cryostack-account-primary-action,
+#cryostack-global-account
+.cryostack-account-secondary-action {
+    width: auto !important;
+    min-height: 32px !important;
+    height: 32px !important;
+    padding: 0 0.45rem !important;
+    font-size: 0.74rem !important;
+    white-space: nowrap !important;
+}
+
+#cryostack-global-account
+.cryostack-account-benefits {
+    gap: 0.28rem !important;
+    padding: 0.52rem 0.58rem !important;
+    font-size: 0.69rem !important;
+}
+
+#cryostack-global-account
+.cryostack-account-benefits span {
+    padding-left: 0.9rem !important;
+    line-height: 1.25 !important;
+}

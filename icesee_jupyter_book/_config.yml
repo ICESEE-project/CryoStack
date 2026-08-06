@@ -101,8 +101,11 @@ sphinx:
     bibtex_reference_style: author_year
     nb_execution_show_tb: False
     nb_render_plugin: default
+    html_js_files:
+      - cryostack_account.js
  
   extra_extensions:   # A list of extra extensions to load by Sphinx (added to those already used by JB).
     - sphinx_design
   local_extensions          :   # A list of local extensions to load by sphinx specified by "name: path" items
   recursive_update          : false # A boolean indicating whether to overwrite the Sphinx config (true) or recursively update (false)
+

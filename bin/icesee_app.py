@@ -12,6 +12,11 @@ from pathlib import Path
 
 from aiohttp import ClientSession, WSMsgType, web
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+from icesee_auth import AuthManager
+
 HOP_BY_HOP = {
     "connection",
     "keep-alive",
@@ -325,11 +330,50 @@ def make_app() -> web.Application:
     app.on_startup.append(state.startup)
     app.on_cleanup.append(state.cleanup)
 
-    app.router.add_route("*", "/icesee-gui", proxy_run_center)
-    app.router.add_route("*", "/icesee-gui/{tail:.*}", proxy_run_center)
+    # AuthManager().install(app)
 
-    app.router.add_route("*", "/icesheets", proxy_icesheets)
-    app.router.add_route("*", "/icesheets/{tail:.*}", proxy_icesheets)
+    # app.router.add_route("*", "/icesee-gui", proxy_run_center)
+    # app.router.add_route("*", "/icesee-gui/{tail:.*}", proxy_run_center)
+
+    # app.router.add_route("*", "/icesheets", proxy_icesheets)
+    # app.router.add_route("*", "/icesheets/{tail:.*}", proxy_icesheets)
+
+    auth = AuthManager()
+    auth.install(app)
+
+    protected_run_center = auth.require_login(
+        proxy_run_center
+    )
+
+    protected_icesheets = auth.require_login(
+        proxy_icesheets
+    )
+
+    # ICESEE application
+    app.router.add_route(
+        "*",
+        "/icesee-gui",
+        protected_run_center,
+    )
+
+    app.router.add_route(
+        "*",
+        "/icesee-gui/{tail:.*}",
+        protected_run_center,
+    )
+
+    # CryoLauncher application
+    app.router.add_route(
+        "*",
+        "/icesheets",
+        protected_icesheets,
+    )
+
+    app.router.add_route(
+        "*",
+        "/icesheets/{tail:.*}",
+        protected_icesheets,
+    )
 
     app.router.add_get("/livist/docs", livist_docs_redirect)
     app.router.add_get("/livist/docs/", livist_docs_index)
