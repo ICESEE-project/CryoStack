@@ -228,19 +228,46 @@ class ICESEEState:
         self.icesheets.stop()
 
 
-def build_upstream_headers(request: web.Request, upstream_port: int) -> dict[str, str]:
+def build_upstream_headers(
+    request: web.Request,
+    upstream_port: int,
+) -> dict[str, str]:
     headers = {
         k: v
         for k, v in request.headers.items()
-        if k.lower() not in HOP_BY_HOP and k.lower() not in {"host", "origin"}
+        if k.lower() not in HOP_BY_HOP
+        and k.lower()
+        not in {
+            "host",
+            "origin",
+            "x-cryostack-user-id",
+            "x-cryostack-user-email",
+            "x-cryostack-user-name",
+        }
     }
+
     headers["Host"] = f"127.0.0.1:{upstream_port}"
     headers["Origin"] = f"http://127.0.0.1:{upstream_port}"
+
     headers["X-Forwarded-Proto"] = "http"
     headers["X-Forwarded-Host"] = request.host
-    headers["X-Forwarded-For"] = request.remote or "127.0.0.1"
-    return headers
+    headers["X-Forwarded-For"] = (
+        request.remote or "127.0.0.1"
+    )
 
+    # ---------------------------------------------------------
+    # Trusted CryoStack identity
+    # ---------------------------------------------------------
+    user = request.get("cryostack_user")
+
+    if user is not None:
+        headers["X-CryoStack-User-Id"] = user.id
+        headers["X-CryoStack-User-Email"] = user.email
+        headers["X-CryoStack-User-Name"] = (
+            user.display_name
+        )
+
+    return headers
 
 async def proxy_http(request: web.Request, upstream_port: int) -> web.StreamResponse:
     state: ICESEEState = request.app["state"]

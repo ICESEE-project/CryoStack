@@ -60,6 +60,11 @@ from icesee_jupyter_book.ui.shared_app_styles import (
     shared_application_styles,
 )
 
+from icesee_jupyter_book.ui.experiment_bridge import (
+    ExperimentBridge,
+    load_experiment_bridge,
+)
+
 # ============================================================
 # Params widgets factory
 # ============================================================
@@ -1412,7 +1417,13 @@ echo "[ok] container image found: {sif_path}"
 def build_icesheets_ui():
     try:
         load_cryostack_account_assets()
-        shared_styles = shared_application_styles()
+        load_experiment_bridge()
+
+        shared_styles = (
+            shared_application_styles()
+        )
+
+        experiment_bridge = ExperimentBridge()
 
         # =========================================================
         # State
@@ -1711,6 +1722,78 @@ def build_icesheets_ui():
             disabled=True,
             layout=W.Layout(width="100%", height="120px"),
         )
+
+        def current_experiment_configuration() -> dict:
+            return {
+                "user_mode": ui_mode_dd.value,
+                "execution_mode": mode_dd.value,
+
+                "backend": backend_dd.value,
+                "model": model_dd.value,
+
+                "example": (
+                    example_picker.value or ""
+                ),
+
+                "example_directory": (
+                    example_dir.value.strip()
+                ),
+
+                "execution_directory": (
+                    exec_dir.value.strip()
+                ),
+
+                "run_target": (
+                    run_target.value or ""
+                ),
+
+                "access_mode": (
+                    access_mode_dd.value
+                ),
+
+                "cluster": {
+                    "name": (
+                        cluster_name_for_keys.value
+                        or ""
+                    ),
+                    "host": (
+                        cluster_host.value.strip()
+                    ),
+                    "port": int(
+                        cluster_port.value
+                    ),
+                },
+
+                "slurm": {
+                    "job_name": (
+                        slurm_job_name.value
+                    ),
+                    "time": (
+                        slurm_time.value
+                    ),
+                    "nodes": int(
+                        slurm_nodes.value
+                    ),
+                    "tasks": int(
+                        slurm_ntasks.value
+                    ),
+                    "tasks_per_node": int(
+                        slurm_tpn.value
+                    ),
+                    "partition": (
+                        slurm_part.value
+                    ),
+                    "memory": (
+                        slurm_mem.value
+                    ),
+                },
+
+                "issm_md": (
+                    collect_md_config()
+                    if model_dd.value == "issm"
+                    else {}
+                ),
+            }
 
         def show_connector_public_key_help():
             if not SESSION.get("id"):
@@ -3239,6 +3322,46 @@ def build_icesheets_ui():
                 STATUS["jobid"] = result["jobid"]
                 STATUS["log_file"] = result.get("log_file")
 
+                experiment_bridge.create(
+                    application="cryolauncher",
+
+                    name=(
+                        f"{model_dd.value.upper()} "
+                        f"{backend_dd.value} run"
+                    ),
+
+                    backend=backend_dd.value,
+
+                    status="running",
+
+                    job_id=str(result["jobid"]),
+
+                    cluster=(
+                        cluster_name_for_keys.value
+                        or cluster_host.value.strip()
+                    ),
+
+                    working_directory=(
+                        result["remote_dir"]
+                    ),
+
+                    output_directory=(
+                        f"{result['remote_dir']}/outputs"
+                    ),
+
+                    log_path=result.get("log_file"),
+
+                    configuration=(
+                        current_experiment_configuration()
+                    ),
+
+                    metadata={
+                        "execution_mode": mode_dd.value,
+                        "access_mode": access_mode_dd.value,
+                        "model": model_dd.value,
+                    },
+                )
+
                 with log_out:
                     for msg in result["messages"]:
                         print(msg)
@@ -4107,7 +4230,21 @@ fi
         refresh_example_picker()
         apply_selected_example()
 
-        page = W.VBox([shared_styles, W.HTML(css), app_menu, header, row, actions_card, back_link], layout=W.Layout(width="100%"))
+        page = W.VBox(
+            [
+                shared_styles,
+                W.HTML(css),
+
+                experiment_bridge.widget(),
+
+                app_menu,
+                header,
+                row,
+                actions_card,
+                back_link,
+            ],
+            layout=W.Layout(width="100%"),
+        )
 
         update_visibility()
         update_summary()
