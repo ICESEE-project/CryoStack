@@ -23,6 +23,7 @@ from .templates import (
     configurations_page,
     login_fields,
     register_fields,
+    experiments_page,
 )
 
 class AuthManager:
@@ -110,6 +111,51 @@ class AuthManager:
             self._configuration_delete,
         )
 
+        app.router.add_get(
+            "/api/v1/experiments",
+            self._api_list_experiments,
+        )
+
+        app.router.add_post(
+            "/api/v1/experiments",
+            self._api_create_experiment,
+        )
+
+        app.router.add_get(
+            "/api/v1/experiments/{experiment_id}",
+            self._api_get_experiment,
+        )
+
+        app.router.add_patch(
+            "/api/v1/experiments/{experiment_id}",
+            self._api_update_experiment,
+        )
+
+        app.router.add_delete(
+            "/api/v1/experiments/{experiment_id}",
+            self._api_delete_experiment,
+        )
+
+        app.router.add_get(
+            "/experiments",
+            self._experiments_redirect,
+        )
+
+        app.router.add_get(
+            "/experiments/",
+            self._experiments_page,
+        )
+
+        app.router.add_get(
+            "/experiments/{experiment_id}",
+            self._experiment_detail_page,
+        )
+
+        app.router.add_post(
+            "/experiments/{experiment_id}/delete",
+            self._experiment_delete,
+        )
+
     def authenticated_user(self, request: web.Request):
         session_id = request.cookies.get(self._cookie_name)
 
@@ -142,6 +188,19 @@ class AuthManager:
             return await handler(request)
 
         return wrapped
+
+    def _require_api_user(
+        self,
+        request: web.Request,
+    ) -> User:
+        user = self.current_user(request)
+
+        if user is None:
+            raise web.HTTPUnauthorized(
+                text="Authentication required."
+            )
+
+        return user
 
     async def _handle_me(self, request: web.Request) -> web.Response:
         session = self._get_or_create_session(request)
@@ -1123,3 +1182,430 @@ class AuthManager:
             .isoformat()
             .replace("+00:00", "Z")
         )
+
+    # @staticmethod
+    def _experiment_to_dict(experiment) -> dict:
+        import json
+
+        try:
+            configuration = json.loads(
+                experiment.configuration_snapshot_json
+            )
+        except Exception:
+            configuration = {}
+
+        try:
+            metadata = json.loads(
+                experiment.metadata_json
+            )
+        except Exception:
+            metadata = {}
+
+        return {
+            "id": experiment.id,
+            "configuration_id": experiment.configuration_id,
+            "application": experiment.application,
+            "name": experiment.name,
+            "backend": experiment.backend,
+            "status": experiment.status,
+            "configuration": configuration,
+            "job_id": experiment.job_id,
+            "cluster": experiment.cluster,
+            "working_directory": experiment.working_directory,
+            "output_directory": experiment.output_directory,
+            "log_path": experiment.log_path,
+            "exit_code": experiment.exit_code,
+            "error_message": experiment.error_message,
+            "metadata": metadata,
+            "created_at": self._format_timestamp(
+                experiment.created_at
+            ),
+            "started_at": (
+                self._format_timestamp(experiment.started_at)
+                if experiment.started_at is not None
+                else None
+            ),
+            "finished_at": (
+                self._format_timestamp(experiment.finished_at)
+                if experiment.finished_at is not None
+                else None
+            ),
+            "updated_at": self._format_timestamp(
+                experiment.updated_at
+            ),
+        }
+
+    async def _api_list_experiments(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        user = self._require_api_user(request)
+
+        experiments = self._storage.list_experiments(
+            user_id=user.id,
+            application=request.query.get("application"),
+            status=request.query.get("status"),
+        )
+
+        response = web.json_response(
+            {
+                "experiments": [
+                    self._experiment_to_dict(experiment)
+                    for experiment in experiments
+                ]
+            }
+        )
+
+        self._prepare_no_cache(response)
+        return response
+
+    async def _api_create_experiment(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        user = self._require_api_user(request)
+
+        try:
+            payload = await request.json()
+        except Exception:
+            raise web.HTTPBadRequest(
+                text="A valid JSON body is required."
+            )
+
+        application = str(
+            payload.get("application", "")
+        ).strip().lower()
+
+        name = str(
+            payload.get("name", "")
+        ).strip()
+
+        backend = str(
+            payload.get("backend", "")
+        ).strip().lower()
+
+        configuration_id = payload.get("configuration_id")
+        configuration = payload.get("configuration")
+
+        if application not in {
+            "cryolauncher",
+            "icesee",
+            "livist",
+        }:
+            raise web.HTTPBadRequest(
+                text="Invalid application."
+            )
+
+        if len(name) < 2:
+            raise web.HTTPBadRequest(
+                text="Experiment name is required."
+            )
+
+        if not backend:
+            raise web.HTTPBadRequest(
+                text="Execution backend is required."
+            )
+
+        if configuration_id:
+            saved = self._storage.get_configuration(
+                configuration_id=str(configuration_id),
+                user_id=user.id,
+            )
+
+            if saved is None:
+                raise web.HTTPBadRequest(
+                    text="Saved configuration not found."
+                )
+
+            configuration_snapshot_json = (
+                saved.configuration_json
+            )
+        else:
+            if not isinstance(configuration, dict):
+                raise web.HTTPBadRequest(
+                    text=(
+                        "Provide configuration_id or a "
+                        "configuration object."
+                    )
+                )
+
+            configuration_snapshot_json = json.dumps(
+                configuration,
+                sort_keys=True,
+            )
+
+        metadata = payload.get("metadata", {})
+
+        if not isinstance(metadata, dict):
+            raise web.HTTPBadRequest(
+                text="metadata must be a JSON object."
+            )
+
+        experiment = self._storage.create_experiment(
+            user_id=user.id,
+            configuration_id=(
+                str(configuration_id)
+                if configuration_id
+                else None
+            ),
+            application=application,
+            name=name,
+            backend=backend,
+            status=str(
+                payload.get("status", "queued")
+            ),
+            configuration_snapshot_json=(
+                configuration_snapshot_json
+            ),
+            job_id=payload.get("job_id"),
+            cluster=payload.get("cluster"),
+            working_directory=payload.get(
+                "working_directory"
+            ),
+            output_directory=payload.get(
+                "output_directory"
+            ),
+            log_path=payload.get("log_path"),
+            metadata_json=json.dumps(
+                metadata,
+                sort_keys=True,
+            ),
+            now=self._clock(),
+        )
+
+        response = web.json_response(
+            self._experiment_to_dict(experiment),
+            status=201,
+        )
+
+        self._prepare_no_cache(response)
+        return response
+
+    
+    async def _api_get_experiment(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        user = self._require_api_user(request)
+
+        experiment = self._storage.get_experiment(
+            experiment_id=request.match_info[
+                "experiment_id"
+            ],
+            user_id=user.id,
+        )
+
+        if experiment is None:
+            raise web.HTTPNotFound(
+                text="Experiment not found."
+            )
+
+        response = web.json_response(
+            self._experiment_to_dict(experiment)
+        )
+
+        self._prepare_no_cache(response)
+        return response
+
+
+    async def _api_update_experiment(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        user = self._require_api_user(request)
+
+        try:
+            payload = await request.json()
+        except Exception:
+            raise web.HTTPBadRequest(
+                text="A valid JSON body is required."
+            )
+
+        allowed_statuses = {
+            "queued",
+            "preparing",
+            "running",
+            "completed",
+            "failed",
+            "cancelled",
+        }
+
+        status = payload.get("status")
+
+        if status is not None:
+            status = str(status).strip().lower()
+
+            if status not in allowed_statuses:
+                raise web.HTTPBadRequest(
+                    text="Invalid experiment status."
+                )
+
+        metadata = payload.get("metadata")
+
+        if metadata is not None and not isinstance(
+            metadata,
+            dict,
+        ):
+            raise web.HTTPBadRequest(
+                text="metadata must be a JSON object."
+            )
+
+        experiment = self._storage.update_experiment(
+            experiment_id=request.match_info[
+                "experiment_id"
+            ],
+            user_id=user.id,
+            status=status,
+            job_id=payload.get("job_id"),
+            cluster=payload.get("cluster"),
+            working_directory=payload.get(
+                "working_directory"
+            ),
+            output_directory=payload.get(
+                "output_directory"
+            ),
+            log_path=payload.get("log_path"),
+            exit_code=payload.get("exit_code"),
+            error_message=payload.get(
+                "error_message"
+            ),
+            metadata_json=(
+                json.dumps(metadata, sort_keys=True)
+                if metadata is not None
+                else None
+            ),
+            now=self._clock(),
+        )
+
+        if experiment is None:
+            raise web.HTTPNotFound(
+                text="Experiment not found."
+            )
+
+        response = web.json_response(
+            self._experiment_to_dict(experiment)
+        )
+
+        self._prepare_no_cache(response)
+        return response
+
+
+    async def _api_delete_experiment(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        user = self._require_api_user(request)
+
+        deleted = self._storage.delete_experiment(
+            experiment_id=request.match_info[
+                "experiment_id"
+            ],
+            user_id=user.id,
+        )
+
+        if not deleted:
+            raise web.HTTPNotFound(
+                text="Experiment not found."
+            )
+
+        response = web.json_response(
+            {
+                "ok": True,
+                "deleted": True,
+            }
+        )
+
+        self._prepare_no_cache(response)
+        return response
+
+    async def _experiments_redirect(
+        self,
+        request: web.Request,
+    ) -> web.StreamResponse:
+        raise web.HTTPFound("/experiments/")
+
+    async def _experiments_page(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        user = self.current_user(request)
+
+        if user is None:
+            raise web.HTTPFound(
+                "/auth/login?return_to=%2Fexperiments%2F"
+            )
+
+        experiments = self._storage.list_experiments(
+            user_id=user.id,
+            application=request.query.get("application"),
+            status=request.query.get("status"),
+        )
+
+        response = web.Response(
+            text=experiments_page(
+                user=user,
+                experiments=experiments,
+            ),
+            content_type="text/html",
+        )
+
+        self._prepare_no_cache(response)
+        return response
+
+    async def _experiment_detail_page(
+        self,
+        request: web.Request,
+    ) -> web.StreamResponse:
+        user = self.current_user(request)
+
+        if user is None:
+            raise web.HTTPFound(
+                "/auth/login?return_to="
+                + quote(request.path_qs, safe="")
+            )
+
+        experiment = self._storage.get_experiment(
+            experiment_id=request.match_info[
+                "experiment_id"
+            ],
+            user_id=user.id,
+        )
+
+        if experiment is None:
+            raise web.HTTPNotFound(
+                text="Experiment not found."
+            )
+
+        return web.json_response(
+            self._experiment_to_dict(experiment)
+        )
+
+    async def _experiment_delete(
+        self,
+        request: web.Request,
+    ) -> web.StreamResponse:
+        user = self.current_user(request)
+
+        if user is None:
+            raise web.HTTPFound(
+                "/auth/login?return_to=%2Fexperiments%2F"
+            )
+
+        experiment_id = request.match_info[
+            "experiment_id"
+        ]
+
+        deleted = self._storage.delete_experiment(
+            experiment_id=experiment_id,
+            user_id=user.id,
+        )
+
+        if not deleted:
+            raise web.HTTPNotFound(
+                text="Experiment not found."
+            )
+
+        raise web.HTTPFound(
+            "/experiments/"
+        )
+    

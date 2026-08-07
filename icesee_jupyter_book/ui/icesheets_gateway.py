@@ -243,6 +243,30 @@ back_link = W.HTML("""
 </div>
 """)
 
+session_bridge = W.HTML("""
+<script>
+(async () => {
+    try {
+        const response = await fetch("/api/v1/me", {
+            credentials: "same-origin",
+            cache: "no-store"
+        });
+
+        if (!response.ok) {
+            return;
+        }
+
+        /*
+         * We cannot read the HttpOnly session cookie from JavaScript.
+         * Therefore this bridge intentionally does not expose credentials.
+         */
+    } catch (error) {
+        console.error("CryoStack session bridge failed:", error);
+    }
+})();
+</script>
+""")
+
 app_menu = build_icesheets_app_menu()
 shared_styles = shared_application_styles()
 
@@ -1429,6 +1453,10 @@ def build_icesheets_ui():
         # =========================================================
         # Controls
         # =========================================================
+        cryostack_session_cookie = W.Text(
+            value="",
+            layout=W.Layout(display="none"),
+        )
         ui_mode_dd = W.ToggleButtons(
             options=[("Basic", "basic"), ("Advanced", "advanced")],
             value="basic",

@@ -1658,3 +1658,321 @@ def configuration_form_page(
 </body>
 </html>
 """
+
+def experiments_page(
+    *,
+    user,
+    experiments,
+) -> str:
+    from datetime import datetime, timezone
+
+    def format_date(value: float) -> str:
+        return (
+            datetime
+            .fromtimestamp(value, tz=timezone.utc)
+            .strftime("%b %d, %Y %H:%M UTC")
+        )
+
+    status_labels = {
+        "queued": "Queued",
+        "preparing": "Preparing",
+        "running": "Running",
+        "completed": "Completed",
+        "failed": "Failed",
+        "cancelled": "Cancelled",
+    }
+
+    rows = []
+
+    for experiment in experiments:
+        rows.append(
+            f"""
+            <article class="experiment-card status-{escape(experiment.status)}">
+              <div class="experiment-main">
+                <div>
+                  <span class="experiment-application">
+                    {escape(experiment.application)}
+                  </span>
+
+                  <h3>
+                    <a href="/experiments/{escape(experiment.id)}">
+                      {escape(experiment.name)}
+                    </a>
+                  </h3>
+
+                  <p>
+                    {escape(experiment.backend)}
+                    {
+                      " · " + escape(experiment.cluster)
+                      if experiment.cluster
+                      else ""
+                    }
+                  </p>
+                </div>
+
+                <span class="experiment-status">
+                  {escape(
+                      status_labels.get(
+                          experiment.status,
+                          experiment.status.title(),
+                      )
+                  )}
+                </span>
+              </div>
+
+              <div class="experiment-meta">
+                Created {escape(format_date(experiment.created_at))}
+                {
+                  " · Job " + escape(experiment.job_id)
+                  if experiment.job_id
+                  else ""
+                }
+              </div>
+            </article>
+            """
+        )
+
+    experiment_list = (
+        "\n".join(rows)
+        if rows
+        else """
+        <div class="empty-state">
+          <h3>No experiments yet</h3>
+          <p>
+            Experiments will appear here when you launch
+            CryoLauncher or ICESEE workflows.
+          </p>
+        </div>
+        """
+    )
+
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+
+  <title>My Experiments | CryoStack</title>
+
+  <style>
+    * {{
+      box-sizing: border-box;
+    }}
+
+    body {{
+      margin: 0;
+      background: #f8fafc;
+      color: #0f172a;
+      font-family:
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+    }}
+
+    .page-header {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.9rem 1.5rem;
+      border-bottom: 1px solid #e2e8f0;
+      background: #ffffff;
+    }}
+
+    .page-brand {{
+      color: #0f172a;
+      font-size: 1.2rem;
+      font-weight: 800;
+      text-decoration: none;
+    }}
+
+    .page-brand span {{
+      color: #2563eb;
+    }}
+
+    .page-shell {{
+      width: min(100% - 2rem, 1100px);
+      margin: 2rem auto;
+    }}
+
+    .page-intro {{
+      margin-bottom: 1.4rem;
+    }}
+
+    .page-intro h1 {{
+      margin: 0 0 0.4rem;
+      font-size: 1.75rem;
+    }}
+
+    .page-intro p {{
+      margin: 0;
+      color: #64748b;
+    }}
+
+    .page-layout {{
+      display: grid;
+      grid-template-columns: 220px minmax(0, 1fr);
+      gap: 1.5rem;
+    }}
+
+    .page-sidebar {{
+      align-self: start;
+      padding: 0.65rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 16px;
+      background: #ffffff;
+    }}
+
+    .page-sidebar a {{
+      display: block;
+      padding: 0.7rem 0.8rem;
+      border-radius: 9px;
+      color: #475569;
+      font-size: 0.85rem;
+      font-weight: 650;
+      text-decoration: none;
+    }}
+
+    .page-sidebar a.active {{
+      background: #eff6ff;
+      color: #1d4ed8;
+    }}
+
+    .experiment-list {{
+      display: grid;
+      gap: 0.9rem;
+    }}
+
+    .experiment-card {{
+      padding: 1.15rem 1.25rem;
+      border: 1px solid #e2e8f0;
+      border-left: 4px solid #94a3b8;
+      border-radius: 14px;
+      background: #ffffff;
+    }}
+
+    .experiment-card.status-running {{
+      border-left-color: #2563eb;
+    }}
+
+    .experiment-card.status-completed {{
+      border-left-color: #16a34a;
+    }}
+
+    .experiment-card.status-failed {{
+      border-left-color: #dc2626;
+    }}
+
+    .experiment-card.status-cancelled {{
+      border-left-color: #64748b;
+    }}
+
+    .experiment-main {{
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+    }}
+
+    .experiment-application {{
+      color: #2563eb;
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }}
+
+    .experiment-card h3 {{
+      margin: 0.3rem 0;
+    }}
+
+    .experiment-card h3 a {{
+      color: #0f172a;
+      text-decoration: none;
+    }}
+
+    .experiment-card p {{
+      margin: 0;
+      color: #64748b;
+      font-size: 0.82rem;
+    }}
+
+    .experiment-status {{
+      align-self: flex-start;
+      padding: 0.35rem 0.6rem;
+      border-radius: 999px;
+      background: #f1f5f9;
+      color: #475569;
+      font-size: 0.72rem;
+      font-weight: 750;
+    }}
+
+    .experiment-meta {{
+      margin-top: 0.8rem;
+      color: #94a3b8;
+      font-size: 0.72rem;
+    }}
+
+    .empty-state {{
+      padding: 3rem 1.5rem;
+      border: 1px dashed #cbd5e1;
+      border-radius: 15px;
+      background: #ffffff;
+      text-align: center;
+    }}
+
+    @media (max-width: 760px) {{
+      .page-layout {{
+        grid-template-columns: 1fr;
+      }}
+    }}
+  </style>
+</head>
+
+<body>
+  <header class="page-header">
+    <a class="page-brand" href="/index.html">
+      Cryo<span>Stack</span>
+    </a>
+
+    <a href="/index.html">
+      Return to CryoStack
+    </a>
+  </header>
+
+  <main class="page-shell">
+    <div class="page-intro">
+      <h1>My Experiments</h1>
+
+      <p>
+        Track CryoLauncher and ICESEE workflows from submission
+        through completion.
+      </p>
+    </div>
+
+    <div class="page-layout">
+      <nav class="page-sidebar">
+        <a href="/account/">
+          Profile and Preferences
+        </a>
+
+        <a href="/configurations/">
+          Saved Configurations
+        </a>
+
+        <a class="active" href="/experiments/">
+          My Experiments
+        </a>
+      </nav>
+
+      <section class="experiment-list">
+        {experiment_list}
+      </section>
+    </div>
+  </main>
+</body>
+</html>
+"""
