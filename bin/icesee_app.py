@@ -12,6 +12,11 @@ from pathlib import Path
 
 from aiohttp import ClientSession, WSMsgType, web
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+from icesee_auth import AuthManager
+
 HOP_BY_HOP = {
     "connection",
     "keep-alive",
@@ -110,6 +115,24 @@ async def livist_docs_index(request: web.Request) -> web.StreamResponse:
 
     return web.FileResponse(index_file)
 
+async def livist_docs_page(request: web.Request) -> web.StreamResponse:
+    tail = request.match_info.get("tail", "").strip("/")
+
+    docs_root = livist_docs_root().resolve()
+    requested_path = (docs_root / tail).resolve()
+
+    # Prevent paths such as ../../ from escaping the docs directory.
+    if docs_root not in requested_path.parents and requested_path != docs_root:
+        raise web.HTTPForbidden(text="Invalid documentation path.")
+
+    if requested_path.is_dir():
+        requested_path = requested_path / "index.html"
+
+    if not requested_path.exists() or not requested_path.is_file():
+        raise web.HTTPNotFound(text="LIVIST documentation page not found.")
+
+    return web.FileResponse(requested_path)
+
 class ManagedProcess:
     def __init__(self, command: list[str], cwd: Path):
         self.command = command
@@ -205,19 +228,46 @@ class ICESEEState:
         self.icesheets.stop()
 
 
-def build_upstream_headers(request: web.Request, upstream_port: int) -> dict[str, str]:
+def build_upstream_headers(
+    request: web.Request,
+    upstream_port: int,
+) -> dict[str, str]:
     headers = {
         k: v
         for k, v in request.headers.items()
-        if k.lower() not in HOP_BY_HOP and k.lower() not in {"host", "origin"}
+        if k.lower() not in HOP_BY_HOP
+        and k.lower()
+        not in {
+            "host",
+            "origin",
+            "x-cryostack-user-id",
+            "x-cryostack-user-email",
+            "x-cryostack-user-name",
+        }
     }
+
     headers["Host"] = f"127.0.0.1:{upstream_port}"
     headers["Origin"] = f"http://127.0.0.1:{upstream_port}"
+
     headers["X-Forwarded-Proto"] = "http"
     headers["X-Forwarded-Host"] = request.host
-    headers["X-Forwarded-For"] = request.remote or "127.0.0.1"
-    return headers
+    headers["X-Forwarded-For"] = (
+        request.remote or "127.0.0.1"
+    )
 
+    # ---------------------------------------------------------
+    # Trusted CryoStack identity
+    # ---------------------------------------------------------
+    user = request.get("cryostack_user")
+
+    if user is not None:
+        headers["X-CryoStack-User-Id"] = user.id
+        headers["X-CryoStack-User-Email"] = user.email
+        headers["X-CryoStack-User-Name"] = (
+            user.display_name
+        )
+
+    return headers
 
 async def proxy_http(request: web.Request, upstream_port: int) -> web.StreamResponse:
     state: ICESEEState = request.app["state"]
@@ -307,20 +357,55 @@ def make_app() -> web.Application:
     app.on_startup.append(state.startup)
     app.on_cleanup.append(state.cleanup)
 
-    app.router.add_route("*", "/icesee-gui", proxy_run_center)
-    app.router.add_route("*", "/icesee-gui/{tail:.*}", proxy_run_center)
+    # AuthManager().install(app)
 
-    app.router.add_route("*", "/icesheets", proxy_icesheets)
-    app.router.add_route("*", "/icesheets/{tail:.*}", proxy_icesheets)
+    # app.router.add_route("*", "/icesee-gui", proxy_run_center)
+    # app.router.add_route("*", "/icesee-gui/{tail:.*}", proxy_run_center)
+
+    # app.router.add_route("*", "/icesheets", proxy_icesheets)
+    # app.router.add_route("*", "/icesheets/{tail:.*}", proxy_icesheets)
+
+    auth = AuthManager()
+    auth.install(app)
+
+    protected_run_center = auth.require_login(
+        proxy_run_center
+    )
+
+    protected_icesheets = auth.require_login(
+        proxy_icesheets
+    )
+
+    # ICESEE application
+    app.router.add_route(
+        "*",
+        "/icesee-gui",
+        protected_run_center,
+    )
+
+    app.router.add_route(
+        "*",
+        "/icesee-gui/{tail:.*}",
+        protected_run_center,
+    )
+
+    # CryoLauncher application
+    app.router.add_route(
+        "*",
+        "/icesheets",
+        protected_icesheets,
+    )
+
+    app.router.add_route(
+        "*",
+        "/icesheets/{tail:.*}",
+        protected_icesheets,
+    )
 
     app.router.add_get("/livist/docs", livist_docs_redirect)
     app.router.add_get("/livist/docs/", livist_docs_index)
 
-    app.router.add_static(
-        "/livist/docs/",
-        path=str(livist_docs_root()),
-        show_index=False,
-    )
+    app.router.add_get("/livist/docs/{tail:.*}", livist_docs_page)
 
     app.router.add_get("/livist", livist_redirect)
     app.router.add_get("/livist/", livist_index)

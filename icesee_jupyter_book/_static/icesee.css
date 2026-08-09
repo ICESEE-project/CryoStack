@@ -558,3 +558,2720 @@ nav.bd-links p.caption.icesee-caption:hover {
   background: rgba(13,110,253,.16);
 }
 
+.cryostack-hero-content {
+    width: 100%;
+    max-width: 860px;
+}
+
+.cryostack-hero-description {
+    max-width: 760px;
+    margin: 18px 0 14px;
+    color: #475569;
+    font-size: 18px;
+    line-height: 1.65;
+}
+
+.cryostack-hero-statements {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px 18px;
+    margin: 0 0 24px;
+}
+
+.cryostack-hero-statements span {
+    position: relative;
+    color: #1e293b;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.cryostack-hero-statements span:not(:last-child)::after {
+    content: "•";
+    margin-left: 18px;
+    color: #94a3b8;
+}
+
+.cryostack-capabilities {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 22px;
+}
+
+.cryostack-capabilities span {
+    display: inline-flex;
+    align-items: center;
+    padding: 7px 12px;
+    border: 1px solid rgba(37, 99, 235, 0.12);
+    border-radius: 999px;
+    background: rgba(37, 99, 235, 0.07);
+    color: #2563eb;
+    font-size: 12px;
+    font-weight: 750;
+    letter-spacing: 0.01em;
+}
+
+@media (max-width: 700px) {
+    .cryostack-hero-description {
+        font-size: 16px;
+        line-height: 1.55;
+    }
+
+    .cryostack-hero-statements {
+        flex-direction: column;
+        gap: 7px;
+    }
+
+    .cryostack-hero-statements span:not(:last-child)::after {
+        content: "";
+        margin-left: 0;
+    }
+
+    .cryostack-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .cryostack-actions .cryostack-btn {
+        width: 100%;
+        text-align: center;
+    }
+
+    .cryostack-capabilities {
+        gap: 6px;
+    }
+}
+
+.cryostack-section-intro {
+    max-width: 760px;
+    margin: 8px 0 28px;
+    color: #64748b;
+    font-size: 16px;
+    line-height: 1.65;
+}
+
+.cryostack-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+.cryostack-card-eyebrow {
+    margin-bottom: 10px;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.cryostack-card h3 {
+    margin-top: 14px;
+}
+
+.cryostack-card p {
+    flex: 1 1 auto;
+}
+
+.cryostack-card-btn,
+.cryostack-card-link {
+    align-self: flex-start;
+    margin-top: 18px;
+}
+
+.cryostack-card.featured {
+    border-color: rgba(37, 99, 235, 0.18);
+}
+
+.cryostack-card.featured::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 28px;
+    right: 28px;
+    height: 3px;
+    border-radius: 0 0 6px 6px;
+    background: linear-gradient(
+        90deg,
+        rgba(37, 99, 235, 0.95),
+        rgba(14, 165, 233, 0.75)
+    );
+}
+
+@media (max-width: 700px) {
+    .cryostack-section-intro {
+        margin-bottom: 20px;
+        font-size: 15px;
+    }
+
+    .cryostack-card-eyebrow {
+        font-size: 10px;
+    }
+}
+
+/* =========================================================
+   CryoStack connected workflow
+   ========================================================= */
+
+.cryostack-workflow-section {
+    padding-top: 26px;
+}
+
+.cryostack-workflow {
+    display: grid;
+    grid-template-columns:
+        minmax(0, 1fr) auto
+        minmax(0, 1fr) auto
+        minmax(0, 1fr) auto
+        minmax(0, 1fr) auto
+        minmax(0, 1fr);
+    align-items: stretch;
+    gap: 12px;
+    margin-top: 28px;
+}
+
+.cryostack-workflow-card {
+    position: relative;
+    min-width: 0;
+    padding: 20px 18px;
+    border: 1px solid rgba(15, 23, 42, 0.09);
+    border-radius: 16px;
+    background:
+        linear-gradient(
+            180deg,
+            rgba(248, 250, 252, 0.96),
+            rgba(255, 255, 255, 1)
+        );
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.035);
+}
+
+.cryostack-workflow-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(37, 99, 235, 0.2);
+    box-shadow: 0 14px 32px rgba(15, 23, 42, 0.07);
+    transition:
+        transform 0.2s ease,
+        border-color 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.cryostack-workflow-number {
+    position: absolute;
+    top: 14px;
+    right: 15px;
+    color: #cbd5e1;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+}
+
+.cryostack-workflow-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    margin-bottom: 16px;
+    border-radius: 12px;
+    background: rgba(37, 99, 235, 0.09);
+    color: #2563eb;
+    font-size: 11px;
+    font-weight: 850;
+    letter-spacing: 0.05em;
+}
+
+.cryostack-workflow-card h3 {
+    margin: 0 0 8px;
+    color: #1e293b;
+    font-size: 16px;
+    line-height: 1.3;
+}
+
+.cryostack-workflow-card p {
+    margin: 0;
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.cryostack-workflow-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #94a3b8;
+    font-size: 22px;
+    font-weight: 400;
+}
+
+/* Tablet workflow */
+@media (max-width: 1100px) {
+    .cryostack-workflow {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+    }
+
+    .cryostack-workflow-arrow {
+        display: none;
+    }
+
+    .cryostack-workflow-card:last-child {
+        grid-column: 1 / -1;
+    }
+}
+
+/* Mobile workflow */
+@media (max-width: 700px) {
+    .cryostack-workflow-section {
+        padding-top: 18px;
+    }
+
+    .cryostack-workflow {
+        grid-template-columns: 1fr;
+        gap: 12px;
+        margin-top: 20px;
+    }
+
+    .cryostack-workflow-card:last-child {
+        grid-column: auto;
+    }
+
+    .cryostack-workflow-card {
+        padding: 18px 16px;
+    }
+}
+
+/* =========================================================
+   Why CryoStack
+   ========================================================= */
+
+.cryostack-value-section {
+    padding-top: 34px;
+}
+
+.cryostack-value-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 18px;
+    margin-top: 28px;
+}
+
+.cryostack-value-card {
+    position: relative;
+    min-width: 0;
+    padding: 24px 22px;
+    border: 1px solid rgba(15, 23, 42, 0.09);
+    border-radius: 18px;
+    background: #ffffff;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.04);
+    transition:
+        transform 0.2s ease,
+        border-color 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.cryostack-value-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(37, 99, 235, 0.2);
+    box-shadow: 0 16px 38px rgba(15, 23, 42, 0.075);
+}
+
+.cryostack-value-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 46px;
+    height: 46px;
+    margin-bottom: 18px;
+    padding: 0 10px;
+    border-radius: 13px;
+    background:
+        linear-gradient(
+            135deg,
+            rgba(37, 99, 235, 0.12),
+            rgba(14, 165, 233, 0.08)
+        );
+    color: #2563eb;
+    font-size: 11px;
+    font-weight: 850;
+    letter-spacing: 0.05em;
+}
+
+.cryostack-value-card h3 {
+    margin: 0 0 10px;
+    color: #1e293b;
+    font-size: 17px;
+    line-height: 1.3;
+}
+
+.cryostack-value-card p {
+    margin: 0;
+    color: #64748b;
+    font-size: 14px;
+    line-height: 1.65;
+}
+
+@media (max-width: 1050px) {
+    .cryostack-value-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 700px) {
+    .cryostack-value-section {
+        padding-top: 22px;
+    }
+
+    .cryostack-value-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+        margin-top: 20px;
+    }
+
+    .cryostack-value-card {
+        padding: 20px 18px;
+    }
+}
+
+/* =========================================================
+   CryoStack latest updates
+   ========================================================= */
+
+.cryostack-updates-section {
+    padding-top: 34px;
+}
+
+.cryostack-updates-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+    margin-top: 28px;
+}
+
+.cryostack-update-card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: 22px;
+    border: 1px solid rgba(15, 23, 42, 0.09);
+    border-radius: 18px;
+    background: #ffffff;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.04);
+    transition:
+        transform 0.2s ease,
+        border-color 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.cryostack-update-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(37, 99, 235, 0.2);
+    box-shadow: 0 16px 38px rgba(15, 23, 42, 0.07);
+}
+
+.cryostack-update-status {
+    align-self: flex-start;
+    margin-bottom: 15px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(37, 99, 235, 0.08);
+    color: #2563eb;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.cryostack-update-card h3 {
+    margin: 0 0 10px;
+    color: #1e293b;
+    font-size: 17px;
+    line-height: 1.35;
+}
+
+.cryostack-update-card p {
+    flex: 1 1 auto;
+    margin: 0;
+    color: #64748b;
+    font-size: 14px;
+    line-height: 1.65;
+}
+
+.cryostack-update-card a {
+    align-self: flex-start;
+    margin-top: 18px;
+    color: #2563eb;
+    font-size: 14px;
+    font-weight: 750;
+    text-decoration: none;
+}
+
+.cryostack-update-card a:hover {
+    text-decoration: underline;
+}
+
+@media (max-width: 950px) {
+    .cryostack-updates-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 700px) {
+    .cryostack-updates-section {
+        padding-top: 22px;
+    }
+
+    .cryostack-updates-grid {
+        gap: 12px;
+        margin-top: 20px;
+    }
+
+    .cryostack-update-card {
+        padding: 20px 18px;
+    }
+}
+
+/* =========================================================
+   CryoStack footer
+   ========================================================= */
+
+.cryostack-footer {
+    margin-top: 54px;
+    padding: 40px 34px 22px;
+    border: 1px solid rgba(15, 23, 42, 0.09);
+    border-radius: 22px 22px 0 0;
+    background:
+        linear-gradient(
+            135deg,
+            rgba(248, 250, 252, 0.98),
+            rgba(241, 245, 249, 0.98)
+        );
+    color: #334155;
+}
+
+.cryostack-footer-main {
+    display: grid;
+    grid-template-columns: minmax(240px, 1.5fr) repeat(3, minmax(140px, 1fr));
+    gap: 34px;
+    padding-bottom: 30px;
+}
+
+.cryostack-footer-brand {
+    max-width: 440px;
+}
+
+.cryostack-footer-logo {
+    margin-bottom: 14px;
+    color: #0f172a;
+    font-size: 24px;
+    font-weight: 850;
+    letter-spacing: -0.02em;
+}
+
+.cryostack-footer-brand p {
+    margin: 0;
+    color: #64748b;
+    font-size: 14px;
+    line-height: 1.7;
+}
+
+.cryostack-footer-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.cryostack-footer-group h3 {
+    margin: 0 0 14px;
+    color: #1e293b;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.cryostack-footer-group a {
+    margin-bottom: 9px;
+    color: #64748b;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.cryostack-footer-group a:hover {
+    color: #2563eb;
+}
+
+.cryostack-footer-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(15, 23, 42, 0.09);
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.cryostack-footer-meta {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    white-space: nowrap;
+}
+
+@media (max-width: 950px) {
+    .cryostack-footer-main {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .cryostack-footer-brand {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 700px) {
+    .cryostack-footer {
+        margin-top: 36px;
+        padding: 30px 20px 18px;
+        border-radius: 18px 18px 0 0;
+    }
+
+    .cryostack-footer-main {
+        grid-template-columns: 1fr;
+        gap: 26px;
+    }
+
+    .cryostack-footer-brand {
+        grid-column: auto;
+    }
+
+    .cryostack-footer-bottom {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .cryostack-footer-meta {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 5px;
+        white-space: normal;
+    }
+}
+
+/* =========================================================
+   CryoStack documentation page
+   ========================================================= */
+
+.cryostack-docs-page {
+    width: 100%;
+    max-width: 1120px;
+    margin: 0 auto;
+    box-sizing: border-box;
+}
+
+/* ---------------------------------------------------------
+   Documentation hero
+   Matches the scale and proportions of the homepage hero
+   --------------------------------------------------------- */
+
+.cryostack-docs-hero {
+    width: 100%;
+    margin: 0 0 48px;
+    padding: 44px 48px;
+    border: 1px solid rgba(15, 23, 42, 0.09);
+    border-radius: 22px;
+    background:
+        radial-gradient(
+            circle at top left,
+            rgba(14, 165, 233, 0.10),
+            transparent 35%
+        ),
+        linear-gradient(
+            135deg,
+            rgba(239, 246, 255, 0.96),
+            rgba(248, 250, 252, 0.98)
+        );
+    box-shadow: 0 18px 48px rgba(15, 23, 42, 0.06);
+    box-sizing: border-box;
+}
+
+.cryostack-docs-hero h1 {
+    max-width: 760px;
+    margin: 14px 0 16px;
+    color: #0f172a;
+    font-size: clamp(32px, 3.2vw, 46px);
+    font-weight: 750;
+    line-height: 1.12;
+    letter-spacing: -0.03em;
+}
+
+.cryostack-docs-hero > p {
+    max-width: 700px;
+    margin: 0;
+    color: #475569;
+    font-size: 16px;
+    line-height: 1.75;
+}
+
+.cryostack-section-label{
+    font-size:11px;
+}
+
+.cryostack-docs-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 28px;
+}
+
+/* ---------------------------------------------------------
+   Documentation sections
+   --------------------------------------------------------- */
+
+.cryostack-docs-page > .cryostack-section {
+    width: 100%;
+    margin: 0 0 64px;
+    box-sizing: border-box;
+}
+
+.cryostack-docs-page .cryostack-section h2 {
+    margin: 12px 0 8px;
+    color: #0f172a;
+    font-size: clamp(27px, 3vw, 38px);
+    line-height: 1.15;
+    letter-spacing: -0.025em;
+}
+
+.cryostack-docs-page .cryostack-section-intro {
+    max-width: 790px;
+    margin: 10px 0 28px;
+    color: #64748b;
+    font-size: 16px;
+    line-height: 1.7;
+}
+
+/* ---------------------------------------------------------
+   Platform summary cards
+   --------------------------------------------------------- */
+
+.cryostack-docs-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px;
+    margin-top: 28px;
+}
+
+.cryostack-docs-summary-card {
+    min-width: 0;
+    padding: 22px 20px;
+    border: 1px solid rgba(15, 23, 42, 0.09);
+    border-radius: 17px;
+    background: #ffffff;
+    box-shadow: 0 10px 26px rgba(15, 23, 42, 0.04);
+    transition:
+        transform 0.2s ease,
+        border-color 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.cryostack-docs-summary-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(37, 99, 235, 0.22);
+    box-shadow: 0 16px 36px rgba(15, 23, 42, 0.075);
+}
+
+.cryostack-docs-summary-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    height: 44px;
+    margin-bottom: 17px;
+    padding: 0 10px;
+    border-radius: 12px;
+    background:
+        linear-gradient(
+            135deg,
+            rgba(37, 99, 235, 0.13),
+            rgba(14, 165, 233, 0.08)
+        );
+    color: #2563eb;
+    font-size: 11px;
+    font-weight: 850;
+    letter-spacing: 0.05em;
+}
+
+.cryostack-docs-summary-card h3 {
+    margin: 0 0 8px;
+    color: #1e293b;
+    font-size: 17px;
+    line-height: 1.3;
+}
+
+.cryostack-docs-summary-card p {
+    margin: 0;
+    color: #64748b;
+    font-size: 14px;
+    line-height: 1.65;
+}
+
+/* ---------------------------------------------------------
+   Application documentation cards
+   --------------------------------------------------------- */
+
+.cryostack-docs-app-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+    margin-top: 28px;
+}
+
+.cryostack-docs-app-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: 26px 25px;
+    border: 1px solid rgba(15, 23, 42, 0.09);
+    border-radius: 19px;
+    background: #ffffff;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.045);
+    transition:
+        transform 0.2s ease,
+        border-color 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.cryostack-docs-app-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(37, 99, 235, 0.21);
+    box-shadow: 0 18px 42px rgba(15, 23, 42, 0.075);
+}
+
+.cryostack-docs-app-card.muted {
+    background: rgba(248, 250, 252, 0.86);
+    box-shadow: none;
+}
+
+.cryostack-docs-app-card h3 {
+    margin: 14px 0 10px;
+    color: #1e293b;
+    font-size: 23px;
+    line-height: 1.25;
+}
+
+.cryostack-docs-app-card > p {
+    flex: 1 1 auto;
+    margin: 0;
+    color: #64748b;
+    font-size: 14px;
+    line-height: 1.7;
+}
+
+.cryostack-docs-app-card .cryostack-mini-list {
+    margin-top: 18px;
+}
+
+.cryostack-docs-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 22px;
+}
+
+.cryostack-docs-card-actions a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 34px;
+    padding: 8px 11px;
+    border: 1px solid rgba(37, 99, 235, 0.13);
+    border-radius: 9px;
+    background: rgba(37, 99, 235, 0.065);
+    color: #2563eb;
+    font-size: 12px;
+    font-weight: 750;
+    line-height: 1.2;
+    text-decoration: none;
+    transition:
+        background 0.18s ease,
+        border-color 0.18s ease,
+        transform 0.18s ease;
+}
+
+.cryostack-docs-card-actions a:hover {
+    transform: translateY(-1px);
+    border-color: rgba(37, 99, 235, 0.24);
+    background: rgba(37, 99, 235, 0.12);
+    text-decoration: none;
+}
+
+/* Make the first application action visually primary */
+
+.cryostack-docs-card-actions a:first-child {
+    border-color: #2563eb;
+    background: #2563eb;
+    color: #ffffff;
+}
+
+.cryostack-docs-card-actions a:first-child:hover {
+    background: #1d4ed8;
+}
+
+/* ---------------------------------------------------------
+   Architecture workflow
+   --------------------------------------------------------- */
+
+.cryostack-docs-architecture {
+    display: grid;
+    grid-template-columns:
+        minmax(0, 1fr) auto
+        minmax(0, 1fr) auto
+        minmax(0, 1fr) auto
+        minmax(0, 1fr);
+    align-items: stretch;
+    gap: 12px;
+    margin-top: 28px;
+}
+
+.cryostack-architecture-node {
+    min-width: 0;
+    padding: 22px 19px;
+    border: 1px solid rgba(15, 23, 42, 0.09);
+    border-radius: 16px;
+    background:
+        linear-gradient(
+            180deg,
+            rgba(248, 250, 252, 0.94),
+            #ffffff
+        );
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.035);
+}
+
+.cryostack-architecture-node > span {
+    color: #2563eb;
+    font-size: 11px;
+    font-weight: 850;
+    letter-spacing: 0.08em;
+}
+
+.cryostack-architecture-node h3 {
+    margin: 12px 0 8px;
+    color: #1e293b;
+    font-size: 17px;
+    line-height: 1.3;
+}
+
+.cryostack-architecture-node p {
+    margin: 0;
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.65;
+}
+
+.cryostack-architecture-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #94a3b8;
+    font-size: 22px;
+}
+
+/* ---------------------------------------------------------
+   Computing environments
+   --------------------------------------------------------- */
+
+.cryostack-docs-environments {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px;
+    margin-top: 28px;
+}
+
+.cryostack-docs-environments > div {
+    min-width: 0;
+    padding: 21px 19px;
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-top: 3px solid rgba(37, 99, 235, 0.72);
+    border-radius: 15px;
+    background: rgba(248, 250, 252, 0.82);
+}
+
+.cryostack-docs-environments h3 {
+    margin: 0 0 8px;
+    color: #1e293b;
+    font-size: 16px;
+    line-height: 1.3;
+}
+
+.cryostack-docs-environments p {
+    margin: 0;
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.65;
+}
+
+/* ---------------------------------------------------------
+   Next steps panel
+   --------------------------------------------------------- */
+
+.cryostack-docs-page > .cryostack-docs-next {
+    margin-bottom: 0;
+    padding: 36px 34px;
+    border: 1px solid rgba(37, 99, 235, 0.10);
+    border-radius: 20px;
+    background:
+        linear-gradient(
+            135deg,
+            rgba(37, 99, 235, 0.075),
+            rgba(14, 165, 233, 0.045)
+        );
+}
+
+.cryostack-docs-next > p {
+    max-width: 720px;
+    margin: 10px 0 0;
+    color: #64748b;
+    font-size: 16px;
+    line-height: 1.7;
+}
+
+/* ---------------------------------------------------------
+   Tablet
+   --------------------------------------------------------- */
+
+@media (max-width: 1050px) {
+    .cryostack-docs-summary-grid,
+    .cryostack-docs-environments {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .cryostack-docs-architecture {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+    }
+
+    .cryostack-architecture-arrow {
+        display: none;
+    }
+}
+
+/* ---------------------------------------------------------
+   Mobile
+   --------------------------------------------------------- */
+
+@media (max-width: 750px) {
+    .cryostack-docs-page {
+        max-width: 100%;
+    }
+
+    .cryostack-docs-hero {
+        margin-bottom: 38px;
+        padding: 32px 22px;
+        border-radius: 19px;
+    }
+
+    .cryostack-docs-hero h1 {
+        margin-top: 14px;
+        font-size: clamp(32px, 10vw, 43px);
+        line-height: 1.08;
+    }
+
+    .cryostack-docs-hero > p {
+        font-size: 16px;
+        line-height: 1.6;
+    }
+
+    .cryostack-docs-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .cryostack-docs-actions .cryostack-btn {
+        width: 100%;
+        text-align: center;
+    }
+
+    .cryostack-docs-page > .cryostack-section {
+        margin-bottom: 46px;
+    }
+
+    .cryostack-docs-summary-grid,
+    .cryostack-docs-app-grid,
+    .cryostack-docs-architecture,
+    .cryostack-docs-environments {
+        grid-template-columns: 1fr;
+        gap: 13px;
+    }
+
+    .cryostack-docs-app-card {
+        padding: 22px 19px;
+    }
+
+    .cryostack-docs-card-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .cryostack-docs-card-actions a {
+        width: 100%;
+    }
+
+    .cryostack-docs-page > .cryostack-docs-next {
+        padding: 28px 22px;
+    }
+}
+
+/* =========================================================
+   Final documentation hero sizing override
+   Keep this at the END of icesee.css
+   ========================================================= */
+
+.cryostack-docs-page .cryostack-docs-hero {
+    padding: 32px 42px !important;
+    min-height: 0 !important;
+}
+
+.cryostack-docs-page .cryostack-docs-hero h1 {
+    max-width: 680px !important;
+    margin: 18px 0 14px !important;
+
+    font-size: 38px !important;
+    font-weight: 700 !important;
+    line-height: 1.12 !important;
+    letter-spacing: -0.025em !important;
+}
+
+.cryostack-docs-page .cryostack-docs-hero > p {
+    max-width: 720px !important;
+    margin: 0 !important;
+
+    font-size: 16px !important;
+    line-height: 1.65 !important;
+}
+
+.cryostack-docs-page .cryostack-docs-actions {
+    margin-top: 22px !important;
+}
+
+.cryostack-docs-page .cryostack-docs-actions .cryostack-btn {
+    padding: 11px 18px !important;
+    font-size: 14px !important;
+}
+
+.cryostack-docs-page .cryostack-section-label {
+    padding: 6px 12px !important;
+    font-size: 12px !important;
+}
+
+@media (max-width: 750px) {
+    .cryostack-docs-page .cryostack-docs-hero {
+        padding: 26px 20px !important;
+    }
+
+    .cryostack-docs-page .cryostack-docs-hero h1 {
+        font-size: 31px !important;
+        line-height: 1.15 !important;
+    }
+
+    .cryostack-docs-page .cryostack-docs-hero > p {
+        font-size: 15px !important;
+    }
+}
+
+/* =========================================================
+   CryoStack resources page
+   ========================================================= */
+
+.cryostack-resources-page {
+    width: 100%;
+    max-width: 1120px;
+    margin: 0 auto;
+}
+
+.cryostack-resources-hero {
+    margin-bottom: 48px;
+    padding: 32px 42px;
+    border: 1px solid rgba(15, 23, 42, 0.09);
+    border-radius: 22px;
+    background:
+        radial-gradient(
+            circle at top left,
+            rgba(14, 165, 233, 0.10),
+            transparent 36%
+        ),
+        linear-gradient(
+            135deg,
+            rgba(239, 246, 255, 0.96),
+            rgba(248, 250, 252, 0.98)
+        );
+    box-shadow: 0 18px 48px rgba(15, 23, 42, 0.06);
+}
+
+.cryostack-resources-hero h1 {
+    max-width: 720px;
+    margin: 18px 0 14px;
+    color: #0f172a;
+    font-size: 38px;
+    font-weight: 700;
+    line-height: 1.12;
+    letter-spacing: -0.025em;
+}
+
+.cryostack-resources-hero > p {
+    max-width: 720px;
+    margin: 0;
+    color: #475569;
+    font-size: 16px;
+    line-height: 1.65;
+}
+
+.cryostack-resources-page > .cryostack-section {
+    margin-bottom: 64px;
+}
+
+.cryostack-resource-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+    margin-top: 28px;
+}
+
+.cryostack-resource-card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: 24px 22px;
+    border: 1px solid rgba(15, 23, 42, 0.09);
+    border-radius: 18px;
+    background: #ffffff;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.04);
+    transition:
+        transform 0.2s ease,
+        border-color 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.cryostack-resource-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(37, 99, 235, 0.20);
+    box-shadow: 0 16px 38px rgba(15, 23, 42, 0.075);
+}
+
+.cryostack-resource-tag {
+    align-self: flex-start;
+    margin-bottom: 14px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(37, 99, 235, 0.08);
+    color: #2563eb;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.cryostack-resource-card h3 {
+    margin: 0 0 9px;
+    color: #1e293b;
+    font-size: 19px;
+    line-height: 1.3;
+}
+
+.cryostack-resource-card p {
+    flex: 1 1 auto;
+    margin: 0;
+    color: #64748b;
+    font-size: 14px;
+    line-height: 1.65;
+}
+
+.cryostack-resource-card a {
+    align-self: flex-start;
+    margin-top: 18px;
+    color: #2563eb;
+    font-size: 14px;
+    font-weight: 750;
+    text-decoration: none;
+}
+
+.cryostack-resource-card a:hover {
+    text-decoration: underline;
+}
+
+.cryostack-resource-directory {
+    margin-top: 28px;
+    overflow: hidden;
+    border: 1px solid rgba(15, 23, 42, 0.09);
+    border-radius: 18px;
+    background: #ffffff;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.04);
+}
+
+.cryostack-resource-directory-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
+    align-items: center;
+    gap: 28px;
+    padding: 24px;
+}
+
+.cryostack-resource-directory-row + .cryostack-resource-directory-row {
+    border-top: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.cryostack-resource-directory-row span {
+    color: #2563eb;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.cryostack-resource-directory-row h3 {
+    margin: 8px 0 7px;
+    color: #1e293b;
+    font-size: 20px;
+}
+
+.cryostack-resource-directory-row p {
+    margin: 0;
+    color: #64748b;
+    font-size: 14px;
+    line-height: 1.65;
+}
+
+.cryostack-resource-links {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.cryostack-resource-links a {
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 11px;
+    border: 1px solid rgba(37, 99, 235, 0.13);
+    border-radius: 9px;
+    background: rgba(37, 99, 235, 0.06);
+    color: #2563eb;
+    font-size: 12px;
+    font-weight: 750;
+    text-decoration: none;
+}
+
+.cryostack-resource-links a:first-child {
+    border-color: #2563eb;
+    background: #2563eb;
+    color: #ffffff;
+}
+
+.cryostack-resource-links a:hover {
+    background: rgba(37, 99, 235, 0.12);
+}
+
+.cryostack-resource-links a:first-child:hover {
+    background: #1d4ed8;
+}
+
+.cryostack-resources-support {
+    padding: 34px;
+    border: 1px solid rgba(37, 99, 235, 0.10);
+    border-radius: 20px;
+    background:
+        linear-gradient(
+            135deg,
+            rgba(37, 99, 235, 0.075),
+            rgba(14, 165, 233, 0.045)
+        );
+}
+
+.cryostack-resources-support > p {
+    max-width: 760px;
+    color: #64748b;
+    font-size: 16px;
+    line-height: 1.7;
+}
+
+@media (max-width: 850px) {
+    .cryostack-resource-directory-row {
+        grid-template-columns: 1fr;
+        gap: 18px;
+    }
+
+    .cryostack-resource-links {
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 750px) {
+    .cryostack-resources-hero {
+        padding: 26px 20px;
+        border-radius: 19px;
+    }
+
+    .cryostack-resources-hero h1 {
+        font-size: 31px;
+        line-height: 1.15;
+    }
+
+    .cryostack-resources-hero > p {
+        font-size: 15px;
+    }
+
+    .cryostack-resource-grid {
+        grid-template-columns: 1fr;
+        gap: 13px;
+    }
+
+    .cryostack-resource-links {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .cryostack-resource-links a {
+        justify-content: center;
+        width: 100%;
+    }
+
+    .cryostack-resources-support {
+        padding: 28px 22px;
+    }
+}
+
+/* =========================================================
+   CryoStack About page
+   ========================================================= */
+
+.cryostack-about-page {
+    width: 100%;
+    max-width: 1120px;
+    margin: 0 auto;
+}
+
+.cryostack-about-hero {
+    margin-bottom: 48px;
+    padding: 32px 42px;
+    border: 1px solid rgba(15, 23, 42, 0.09);
+    border-radius: 22px;
+    background:
+        radial-gradient(
+            circle at top left,
+            rgba(14, 165, 233, 0.10),
+            transparent 36%
+        ),
+        linear-gradient(
+            135deg,
+            rgba(239, 246, 255, 0.96),
+            rgba(248, 250, 252, 0.98)
+        );
+    box-shadow: 0 18px 48px rgba(15, 23, 42, 0.06);
+}
+
+.cryostack-about-hero h1 {
+    max-width: 720px;
+    margin: 18px 0 14px;
+    color: #0f172a;
+    font-size: 38px;
+    font-weight: 700;
+    line-height: 1.12;
+    letter-spacing: -0.025em;
+}
+
+.cryostack-about-hero > p {
+    max-width: 720px;
+    margin: 0;
+    color: #475569;
+    font-size: 16px;
+    line-height: 1.65;
+}
+
+.cryostack-about-page > .cryostack-section {
+    margin-bottom: 64px;
+}
+
+.cryostack-about-mission,
+.cryostack-about-tech-grid,
+.cryostack-about-open-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px;
+    margin-top: 28px;
+}
+
+.cryostack-about-mission > div,
+.cryostack-about-tech-grid > div,
+.cryostack-about-open-grid > div {
+    min-width: 0;
+    padding: 22px 20px;
+    border: 1px solid rgba(15, 23, 42, 0.09);
+    border-radius: 17px;
+    background: #ffffff;
+    box-shadow: 0 10px 26px rgba(15, 23, 42, 0.04);
+}
+
+.cryostack-about-mission h3,
+.cryostack-about-tech-grid h3,
+.cryostack-about-open-grid h3 {
+    margin: 0 0 8px;
+    color: #1e293b;
+    font-size: 17px;
+}
+
+.cryostack-about-mission p,
+.cryostack-about-tech-grid p,
+.cryostack-about-open-grid p {
+    margin: 0;
+    color: #64748b;
+    font-size: 14px;
+    line-height: 1.65;
+}
+
+.cryostack-about-app-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+    margin-top: 28px;
+}
+
+.cryostack-about-app-card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: 25px 23px;
+    border: 1px solid rgba(15, 23, 42, 0.09);
+    border-radius: 18px;
+    background: #ffffff;
+    box-shadow: 0 11px 30px rgba(15, 23, 42, 0.04);
+}
+
+.cryostack-about-app-card.muted {
+    background: rgba(248, 250, 252, 0.86);
+    box-shadow: none;
+}
+
+.cryostack-about-app-card h3 {
+    margin: 14px 0 9px;
+    color: #1e293b;
+    font-size: 21px;
+}
+
+.cryostack-about-app-card p {
+    flex: 1 1 auto;
+    margin: 0;
+    color: #64748b;
+    font-size: 14px;
+    line-height: 1.65;
+}
+
+.cryostack-about-app-card a {
+    align-self: flex-start;
+    margin-top: 18px;
+    color: #2563eb;
+    font-size: 14px;
+    font-weight: 750;
+    text-decoration: none;
+}
+
+.cryostack-about-app-card a:hover {
+    text-decoration: underline;
+}
+
+.cryostack-about-principles {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px;
+    margin-top: 28px;
+}
+
+.cryostack-about-principle {
+    padding: 22px 19px;
+    border: 1px solid rgba(15, 23, 42, 0.09);
+    border-radius: 16px;
+    background:
+        linear-gradient(
+            180deg,
+            rgba(248, 250, 252, 0.94),
+            #ffffff
+        );
+}
+
+.cryostack-about-principle span {
+    color: #2563eb;
+    font-size: 11px;
+    font-weight: 850;
+    letter-spacing: 0.08em;
+}
+
+.cryostack-about-principle h3 {
+    margin: 12px 0 8px;
+    color: #1e293b;
+    font-size: 17px;
+}
+
+.cryostack-about-principle p {
+    margin: 0;
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.65;
+}
+
+.cryostack-about-development {
+    display: grid;
+    grid-template-columns: minmax(0, 1.3fr) minmax(260px, 0.7fr);
+    gap: 26px;
+    margin-top: 28px;
+    padding: 26px;
+    border: 1px solid rgba(15, 23, 42, 0.09);
+    border-radius: 18px;
+    background: #ffffff;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.04);
+}
+
+.cryostack-about-development-main h3 {
+    margin: 0 0 10px;
+    color: #1e293b;
+    font-size: 21px;
+}
+
+.cryostack-about-development-main p {
+    margin: 0 0 12px;
+    color: #64748b;
+    font-size: 14px;
+    line-height: 1.7;
+}
+
+.cryostack-about-development-links {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+}
+
+.cryostack-about-development-links a {
+    padding: 10px 12px;
+    border: 1px solid rgba(37, 99, 235, 0.13);
+    border-radius: 9px;
+    background: rgba(37, 99, 235, 0.06);
+    color: #2563eb;
+    font-size: 13px;
+    font-weight: 750;
+    text-decoration: none;
+}
+
+.cryostack-about-development-links a:hover {
+    background: rgba(37, 99, 235, 0.12);
+}
+
+.cryostack-about-citation {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+    margin-top: 28px;
+}
+
+.cryostack-about-citation > div {
+    padding: 24px 22px;
+    border: 1px solid rgba(15, 23, 42, 0.09);
+    border-radius: 17px;
+    background: #ffffff;
+}
+
+.cryostack-about-citation h3 {
+    margin: 0 0 9px;
+    color: #1e293b;
+    font-size: 18px;
+}
+
+.cryostack-about-citation p,
+.cryostack-about-citation-note {
+    margin: 0;
+    color: #64748b;
+    font-size: 14px;
+    line-height: 1.7;
+}
+
+.cryostack-about-citation-note {
+    margin-top: 16px;
+}
+
+.cryostack-about-contact {
+    padding: 34px;
+    border: 1px solid rgba(37, 99, 235, 0.10);
+    border-radius: 20px;
+    background:
+        linear-gradient(
+            135deg,
+            rgba(37, 99, 235, 0.075),
+            rgba(14, 165, 233, 0.045)
+        );
+}
+
+.cryostack-about-contact > p {
+    max-width: 760px;
+    color: #64748b;
+    font-size: 16px;
+    line-height: 1.7;
+}
+
+@media (max-width: 1050px) {
+    .cryostack-about-mission,
+    .cryostack-about-tech-grid,
+    .cryostack-about-open-grid,
+    .cryostack-about-principles {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 800px) {
+    .cryostack-about-development {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 750px) {
+    .cryostack-about-hero {
+        padding: 26px 20px;
+        border-radius: 19px;
+    }
+
+    .cryostack-about-hero h1 {
+        font-size: 31px;
+        line-height: 1.15;
+    }
+
+    .cryostack-about-hero > p {
+        font-size: 15px;
+    }
+
+    .cryostack-about-mission,
+    .cryostack-about-app-grid,
+    .cryostack-about-principles,
+    .cryostack-about-tech-grid,
+    .cryostack-about-open-grid,
+    .cryostack-about-citation {
+        grid-template-columns: 1fr;
+        gap: 13px;
+    }
+
+    .cryostack-about-development,
+    .cryostack-about-contact {
+        padding: 28px 22px;
+    }
+}
+
+/* =========================================================
+   CryoStack sidebar hierarchy
+   ========================================================= */
+
+.bd-sidebar-primary .caption {
+    margin: 18px 0 8px;
+    color: #1e293b;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.055em;
+    text-transform: uppercase;
+}
+
+.bd-sidebar-primary .toctree-l1 > li {
+    margin: 2px 0;
+}
+
+.bd-sidebar-primary .toctree-l1 > li > a {
+    display: block;
+    padding: 7px 10px;
+    border-radius: 9px;
+    color: #475569;
+    font-size: 0.93rem;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.bd-sidebar-primary .toctree-l1 > li > a:hover {
+    background: rgba(37, 99, 235, 0.06);
+    color: #2563eb;
+}
+
+.bd-sidebar-primary .toctree-l1.current > a,
+.bd-sidebar-primary .toctree-l1 > li.current > a,
+.bd-sidebar-primary a.current {
+    border-left: 4px solid #2563eb;
+    background: rgba(37, 99, 235, 0.10);
+    color: #2563eb !important;
+    font-weight: 700;
+}
+
+.bd-sidebar-primary a:visited {
+    color: inherit;
+}
+
+/* =========================================================
+   CryoLauncher documentation — CryoStack visual theme
+   ========================================================= */
+
+.bd-article-container:has(.cryostack-app-doc-page) {
+    max-width: 100% !important;
+}
+
+.cryostack-app-doc-page {
+    width: 100%;
+    max-width: 1120px;
+    margin: 0 auto;
+    box-sizing: border-box;
+}
+
+
+/* =========================================================
+   Hero card
+   ========================================================= */
+
+.cryostack-app-doc-page .cryostack-app-doc-hero {
+    position: relative;
+    width: 100%;
+    margin: 0 0 44px;
+    padding: 38px 42px 36px;
+    overflow: hidden;
+
+    border: 1px solid rgba(37, 99, 235, 0.12);
+    border-radius: 22px;
+
+    background:
+        radial-gradient(
+            circle at 8% 10%,
+            rgba(56, 189, 248, 0.18),
+            transparent 31%
+        ),
+        linear-gradient(
+            135deg,
+            #eff6ff 0%,
+            #f8fbff 58%,
+            #f1f7fd 100%
+        );
+
+    box-shadow:
+        0 20px 52px rgba(15, 23, 42, 0.07),
+        inset 0 1px 0 rgba(255, 255, 255, 0.85);
+
+    box-sizing: border-box;
+}
+
+/* Subtle decorative glow */
+
+/* .cryostack-app-doc-page .cryostack-app-doc-hero::after {
+    content: "";
+    position: absolute;
+    top: -100px;
+    right: -80px;
+    width: 310px;
+    height: 310px;
+    border-radius: 50%;
+    background: rgba(37, 99, 235, 0.035);
+    pointer-events: none;
+} */
+
+.cryostack-app-doc-page .cryostack-app-doc-hero > * {
+    position: relative;
+    z-index: 1;
+}
+
+.cryostack-app-doc-page .cryostack-section-label {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    padding: 7px 13px;
+    border: 1px solid rgba(37, 99, 235, 0.08);
+    border-radius: 999px;
+    background: rgba(37, 99, 235, 0.09);
+    color: #2563eb;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+}
+
+.cryostack-app-doc-page .cryostack-app-doc-hero h1 {
+    max-width: 850px;
+    margin: 18px 0 14px !important;
+    color: #0f172a;
+    font-size: clamp(34px, 3.6vw, 46px) !important;
+    font-weight: 720 !important;
+    line-height: 1.1 !important;
+    letter-spacing: -0.032em !important;
+}
+
+.cryostack-app-doc-page .cryostack-app-doc-hero > p {
+    max-width: 900px;
+    margin: 0;
+    color: #475569;
+    font-size: 16px;
+    line-height: 1.7;
+}
+
+
+/* =========================================================
+   Hero navigation buttons
+   ========================================================= */
+
+.cryostack-app-doc-page .cryostack-docs-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 11px;
+    margin-top: 27px;
+}
+
+.cryostack-app-doc-page .cryostack-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 11px 18px;
+    border-radius: 11px;
+    font-size: 14px;
+    font-weight: 750;
+    text-decoration: none !important;
+    transition:
+        transform 0.18s ease,
+        box-shadow 0.18s ease,
+        background 0.18s ease;
+}
+
+.cryostack-app-doc-page .cryostack-btn.primary {
+    border: 1px solid #1671f8;
+    background: linear-gradient(135deg, #1677ff, #1467df);
+    color: #ffffff !important;
+    box-shadow: 0 10px 22px rgba(37, 99, 235, 0.20);
+}
+
+.cryostack-app-doc-page .cryostack-btn.secondary {
+    border: 1px solid rgba(37, 99, 235, 0.08);
+    background: rgba(37, 99, 235, 0.075);
+    color: #1565d8 !important;
+}
+
+.cryostack-app-doc-page .cryostack-btn:hover {
+    transform: translateY(-2px);
+}
+
+.cryostack-app-doc-page .cryostack-btn.primary:hover {
+    background: linear-gradient(135deg, #0f6cf2, #125cc9);
+    box-shadow: 0 14px 28px rgba(37, 99, 235, 0.25);
+}
+
+.cryostack-app-doc-page .cryostack-btn.secondary:hover {
+    background: rgba(37, 99, 235, 0.13);
+}
+
+
+/* =========================================================
+   Main documentation content
+   ========================================================= */
+
+.cryostack-app-doc-page .cryostack-app-doc-content {
+    width: 100%;
+    max-width: 940px;
+    margin: 0 auto;
+    box-sizing: border-box;
+}
+
+/* Introductory paragraph */
+
+.cryostack-app-doc-page
+.cryostack-app-doc-content > p:first-child {
+    margin: 0 0 38px;
+    padding: 20px 22px;
+
+    border: 1px solid rgba(37, 99, 235, 0.10);
+    border-left: 4px solid #2563eb;
+    border-radius: 0 14px 14px 0;
+
+    background:
+        linear-gradient(
+            135deg,
+            rgba(37, 99, 235, 0.055),
+            rgba(14, 165, 233, 0.025)
+        );
+
+    color: #475569;
+    font-size: 16px;
+    line-height: 1.75;
+}
+
+
+/* =========================================================
+   Section headings
+   ========================================================= */
+
+.cryostack-app-doc-page .cryostack-app-doc-content h2 {
+    position: relative;
+    margin: 54px 0 22px !important;
+    padding: 0 0 12px 18px !important;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+
+    color: #0f172a;
+    font-size: 29px !important;
+    font-weight: 720 !important;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+}
+
+.cryostack-app-doc-page .cryostack-app-doc-content h2::before {
+    content: "";
+    position: absolute;
+    top: 2px;
+    bottom: 13px;
+    left: 0;
+    width: 5px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #2563eb, #38bdf8);
+}
+
+.cryostack-app-doc-page .cryostack-app-doc-content h3 {
+    margin: 32px 0 13px !important;
+    color: #1e293b;
+    font-size: 21px !important;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+
+/* =========================================================
+   Body text and links
+   ========================================================= */
+
+.cryostack-app-doc-page .cryostack-app-doc-content p,
+.cryostack-app-doc-page .cryostack-app-doc-content li {
+    color: #475569;
+    font-size: 16px;
+    line-height: 1.75;
+}
+
+.cryostack-app-doc-page .cryostack-app-doc-content p {
+    margin-bottom: 17px;
+}
+
+.cryostack-app-doc-page .cryostack-app-doc-content a {
+    color: #1565d8;
+    font-weight: 650;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+}
+
+.cryostack-app-doc-page .cryostack-app-doc-content a:hover {
+    color: #0f4fae;
+}
+
+
+/* =========================================================
+   Lists
+   ========================================================= */
+
+.cryostack-app-doc-page .cryostack-app-doc-content ul,
+.cryostack-app-doc-page .cryostack-app-doc-content ol {
+    margin: 15px 0 24px;
+    padding: 18px 24px 18px 44px;
+
+    border: 1px solid rgba(15, 23, 42, 0.075);
+    border-radius: 14px;
+
+    background: rgba(248, 250, 252, 0.72);
+}
+
+.cryostack-app-doc-page .cryostack-app-doc-content li {
+    margin: 7px 0;
+    padding-left: 3px;
+}
+
+.cryostack-app-doc-page
+.cryostack-app-doc-content li::marker {
+    color: #2563eb;
+    font-weight: 700;
+}
+
+
+/* =========================================================
+   Subsections displayed as soft cards
+   ========================================================= */
+
+.cryostack-app-doc-page
+.cryostack-app-doc-content h3 + p {
+    padding: 15px 17px;
+    border: 1px solid rgba(15, 23, 42, 0.07);
+    border-radius: 12px;
+    background: rgba(248, 250, 252, 0.68);
+}
+
+
+/* =========================================================
+   Inline code and code blocks
+   ========================================================= */
+
+.cryostack-app-doc-page
+.cryostack-app-doc-content code:not(pre code) {
+    padding: 2px 6px;
+    border: 1px solid rgba(37, 99, 235, 0.10);
+    border-radius: 6px;
+    background: rgba(37, 99, 235, 0.06);
+    color: #174f92;
+    font-size: 0.9em;
+}
+
+.cryostack-app-doc-page
+.cryostack-app-doc-content pre {
+    padding: 17px 19px;
+    border: 1px solid rgba(15, 23, 42, 0.09);
+    border-radius: 14px;
+    background: #f8fafc;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.035);
+}
+
+
+/* =========================================================
+   Horizontal rules
+   ========================================================= */
+
+.cryostack-app-doc-page
+.cryostack-app-doc-content hr {
+    height: 1px;
+    margin: 46px 0;
+    border: 0;
+    background:
+        linear-gradient(
+            90deg,
+            transparent,
+            rgba(37, 99, 235, 0.20),
+            transparent
+        );
+}
+
+
+/* =========================================================
+   Mobile
+   ========================================================= */
+
+@media (max-width: 750px) {
+
+    .cryostack-app-doc-page {
+        max-width: 100%;
+    }
+
+    .cryostack-app-doc-page .cryostack-app-doc-hero {
+        margin-bottom: 34px;
+        padding: 28px 21px;
+        border-radius: 19px;
+    }
+
+    .cryostack-app-doc-page .cryostack-app-doc-hero h1 {
+        font-size: 31px !important;
+        line-height: 1.14 !important;
+    }
+
+    .cryostack-app-doc-page .cryostack-app-doc-hero > p {
+        font-size: 15px;
+    }
+
+    .cryostack-app-doc-page .cryostack-docs-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .cryostack-app-doc-page .cryostack-btn {
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .cryostack-app-doc-page
+    .cryostack-app-doc-content > p:first-child {
+        padding: 17px 18px;
+        font-size: 15px;
+    }
+
+    .cryostack-app-doc-page
+    .cryostack-app-doc-content h2 {
+        margin-top: 44px !important;
+        font-size: 25px !important;
+    }
+
+    .cryostack-app-doc-page
+    .cryostack-app-doc-content h3 {
+        font-size: 19px !important;
+    }
+
+    .cryostack-app-doc-page
+    .cryostack-app-doc-content p,
+    .cryostack-app-doc-page
+    .cryostack-app-doc-content li {
+        font-size: 15px;
+    }
+
+    .cryostack-app-doc-page
+    .cryostack-app-doc-content ul,
+    .cryostack-app-doc-page
+    .cryostack-app-doc-content ol {
+        padding: 15px 17px 15px 36px;
+    }
+}
+
+/* =========================================================
+   CryoLauncher manual and resource components
+   ========================================================= */
+
+.cryostack-manual-grid,
+.cryostack-resource-card-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+    margin: 24px 0 32px;
+}
+
+.cryostack-manual-card,
+.cryostack-resource-card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: 22px 21px;
+    border: 1px solid rgba(15, 23, 42, 0.09);
+    border-radius: 17px;
+    background: #ffffff;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.04);
+    transition:
+        transform 0.2s ease,
+        border-color 0.2s ease,
+        box-shadow 0.2s ease;
+}
+
+.cryostack-manual-card:hover,
+.cryostack-resource-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(37, 99, 235, 0.20);
+    box-shadow: 0 16px 38px rgba(15, 23, 42, 0.075);
+}
+
+.cryostack-manual-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    align-self: flex-start;
+    width: 38px;
+    height: 38px;
+    margin-bottom: 15px;
+    border-radius: 11px;
+    background: rgba(37, 99, 235, 0.09);
+    color: #2563eb;
+    font-size: 11px;
+    font-weight: 850;
+}
+
+.cryostack-manual-card h3,
+.cryostack-resource-card h3 {
+    margin: 0 0 9px !important;
+    color: #1e293b;
+    font-size: 19px !important;
+}
+
+.cryostack-manual-card p,
+.cryostack-resource-card p {
+    flex: 1 1 auto;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    color: #64748b !important;
+    font-size: 14px !important;
+    line-height: 1.65 !important;
+}
+
+.cryostack-resource-tag {
+    align-self: flex-start;
+    margin-bottom: 14px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(37, 99, 235, 0.08);
+    color: #2563eb;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.cryostack-resource-card > a {
+    align-self: flex-start;
+    margin-top: 18px;
+    color: #2563eb;
+    font-size: 14px;
+    font-weight: 750;
+    text-decoration: none;
+}
+
+.cryostack-resource-card > a:hover {
+    text-decoration: underline;
+}
+
+.cryostack-resource-inline-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 18px;
+}
+
+.cryostack-resource-inline-links a {
+    display: inline-flex;
+    padding: 7px 10px;
+    border: 1px solid rgba(37, 99, 235, 0.13);
+    border-radius: 8px;
+    background: rgba(37, 99, 235, 0.06);
+    color: #2563eb;
+    font-size: 12px;
+    font-weight: 750;
+    text-decoration: none;
+}
+
+.cryostack-resource-inline-links a:hover {
+    background: rgba(37, 99, 235, 0.12);
+}
+
+.cryostack-troubleshooting {
+    margin: 24px 0 32px;
+}
+
+.cryostack-troubleshooting details {
+    margin-bottom: 10px;
+    overflow: hidden;
+    border: 1px solid rgba(15, 23, 42, 0.09);
+    border-radius: 12px;
+    background: #ffffff;
+}
+
+.cryostack-troubleshooting summary {
+    padding: 14px 17px;
+    color: #1e293b;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.cryostack-troubleshooting details[open] summary {
+    border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+    background: rgba(37, 99, 235, 0.045);
+    color: #2563eb;
+}
+
+.cryostack-troubleshooting details p {
+    margin: 0 !important;
+    padding: 16px 18px !important;
+    border: 0 !important;
+    background: transparent !important;
+}
+
+@media (max-width: 750px) {
+    .cryostack-manual-grid,
+    .cryostack-resource-card-grid {
+        grid-template-columns: 1fr;
+        gap: 13px;
+    }
+}
+
+/* =========================================================
+   CryoStack global account control
+   ========================================================= */
+
+.cryostack-global-account {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    margin-left: 0.45rem;
+    z-index: 1200;
+}
+
+.cryostack-global-account-button {
+    display: inline-flex;
+    min-height: 36px;
+    align-items: center;
+    justify-content: center;
+    gap: 0.42rem;
+    padding: 0.35rem 0.60rem;
+
+    border: 1px solid rgba(100, 116, 139, 0.18);
+    border-radius: 999px;
+
+    background: transparent;
+    color: #475569;
+
+    font-family: inherit;
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1;
+
+    cursor: pointer;
+
+    transition:
+        border-color 160ms ease,
+        background-color 160ms ease,
+        color 160ms ease,
+        transform 160ms ease;
+}
+
+.cryostack-global-account-button:hover {
+    transform: translateY(-1px);
+}
+
+.cryostack-global-account-icon {
+    font-size: 0.84rem;
+    line-height: 1;
+}
+
+.cryostack-global-account.loading {
+    opacity: 0.7;
+}
+
+.cryostack-global-account.guest
+.cryostack-global-account-button {
+    border-color: rgba(37, 99, 235, 0.20);
+    color: #334155;
+}
+
+.cryostack-global-account.guest
+.cryostack-global-account-button:hover {
+    border-color: rgba(37, 99, 235, 0.38);
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+.cryostack-global-account.authenticated
+.cryostack-global-account-button {
+    border-color: rgba(22, 163, 74, 0.24);
+    background: rgba(240, 253, 244, 0.92);
+    color: #15803d;
+}
+
+.cryostack-global-account.unavailable
+.cryostack-global-account-button {
+    color: #64748b;
+    cursor: default;
+}
+
+.cryostack-global-account-menu {
+    position: absolute;
+    top: calc(100% + 0.6rem);
+    right: 0;
+    transform: translateX(10px);
+
+    display: grid;
+    width: 230px;
+    padding: 0.35rem 0.60rem;
+
+    border: 1px solid rgba(15, 23, 42, 0.10);
+    border-radius: 13px;
+
+    background: #ffffff;
+    box-shadow:
+        0 20px 45px rgba(15, 23, 42, 0.14),
+        0 3px 10px rgba(15, 23, 42, 0.05);
+}
+
+.cryostack-global-account-menu[hidden] {
+    display: none !important;
+}
+
+.cryostack-account-menu-identity {
+    display: grid;
+    gap: 0.2rem;
+    padding: 0.65rem 0.7rem 0.8rem;
+    margin-bottom: 0.35rem;
+
+    border-bottom: 1px solid rgba(148, 163, 184, 0.20);
+}
+
+.cryostack-account-menu-identity strong {
+    color: #0f172a;
+    font-size: 0.9rem;
+}
+
+.cryostack-account-menu-identity span {
+    overflow: hidden;
+    color: #64748b;
+    font-size: 0.76rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cryostack-global-account-menu a,
+.cryostack-global-account-menu button {
+    display: block;
+    width: 100%;
+    padding: 0.62rem 0.72rem;
+
+    border: 0;
+    border-radius: 8px;
+
+    background: transparent;
+    color: #334155;
+
+    font: inherit;
+    font-size: 0.84rem;
+    text-align: left;
+    text-decoration: none;
+
+    cursor: pointer;
+}
+
+.cryostack-global-account-menu a:hover,
+.cryostack-global-account-menu button:hover {
+    background: #eff6ff;
+    color: #1d4ed8;
+}
+
+@media (max-width: 800px) {
+    .cryostack-global-account-label,
+    .cryostack-global-account-chevron {
+        display: none;
+    }
+
+    .cryostack-global-account-button {
+        width: 36px;
+        min-height: 36px;
+        padding: 0;
+        border-radius: 50%;
+    }
+
+    /* .cryostack-global-account-menu {
+        right: 0;
+        top: calc(100% + 8px);
+        width: min(290px, calc(100vw - 2rem));
+    } */
+}
+
+/* =========================================================
+   Keep account control in the global header row
+   ========================================================= */
+
+.navbar-header-items__end,
+.header-article-items__end {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    gap: 0.25rem;
+}
+
+.cryostack-global-account {
+    display: inline-flex !important;
+    flex: 0 0 auto !important;
+    align-items: center;
+    width: auto !important;
+    margin: 0 0 0 0.35rem !important;
+    white-space: nowrap;
+}
+
+.cryostack-global-account-button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+.cryostack-global-account-chevron {
+    margin-left: 0.08rem;
+    font-size: 0.65rem;
+    opacity: 0.72;
+}
+
+/* =========================================================
+   Anonymous account menu
+   ========================================================= */
+
+.cryostack-guest-account-header {
+    display: grid;
+    gap: 0.42rem;
+    padding: 0.75rem 0.75rem 0.9rem;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.20);
+}
+
+.cryostack-guest-account-header strong {
+    color: #0f172a;
+    font-size: 0.88rem;
+    font-weight: 700;
+}
+
+.cryostack-guest-account-header span {
+    color: #64748b;
+    font-size: 0.78rem;
+    line-height: 1.5;
+}
+
+.cryostack-guest-account-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+    padding: 0.7rem 0.65rem;
+}
+
+.cryostack-global-account-menu
+.cryostack-account-primary-action,
+.cryostack-global-account-menu
+.cryostack-account-secondary-action {
+    display: flex;
+    height: 34px;
+    padding: 0 0.8rem;
+    font-size: 0.8rem;
+    align-items: center;
+    justify-content: center;
+    padding: 0.58rem 0.8rem;
+    border-radius: 9px;
+    font-size: 0.83rem;
+    font-weight: 750;
+    text-align: center;
+    text-decoration: none !important;
+}
+
+.cryostack-global-account-menu
+.cryostack-account-primary-action {
+    border: 1px solid #2563eb;
+    background: #2563eb;
+    color: #ffffff !important;
+}
+
+.cryostack-global-account-menu
+.cryostack-account-primary-action:hover {
+    background: #1d4ed8;
+}
+
+.cryostack-global-account-menu
+.cryostack-account-secondary-action {
+    border: 1px solid rgba(37, 99, 235, 0.24);
+    background: #eff6ff;
+    color: #1d4ed8 !important;
+}
+
+.cryostack-global-account-menu
+.cryostack-account-secondary-action:hover {
+    border-color: rgba(37, 99, 235, 0.40);
+    background: #dbeafe;
+}
+
+.cryostack-global-account-menu {
+    width: 250px;
+    max-width: 250px;
+}
+
+.cryostack-account-benefits {
+    display: grid;
+    gap: 0.42rem;
+    padding: 0.55rem 0.65rem;
+    border-top: 1px solid rgba(148, 163, 184, 0.20);
+    color: #64748b;
+    font-size: 0.74rem;
+}
+
+.cryostack-account-benefits span {
+    position: relative;
+    padding-left: 1rem;
+    line-height: 1.35;
+}
+
+.cryostack-account-benefits span::before {
+    position: absolute;
+    left: 0;
+    color: #22c55e;
+    content: "✓";
+    font-weight: 800;
+}
+
+/* .cryostack-guest-account-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .25rem;
+} */
+
+
+.cryostack-global-account-button:hover {
+    background: #eff6ff;
+    border-color: #3b82f6;
+}
+
+/* =========================================================
+   compact account-menu overrides
+   ========================================================= */
+
+#cryostack-global-account {
+    margin-left: 0.3rem !important;
+}
+
+#cryostack-global-account
+.cryostack-global-account-button {
+    min-height: 32px !important;
+    padding: 0.32rem 0.58rem !important;
+    gap: 0.34rem !important;
+    font-size: 0.76rem !important;
+}
+
+#cryostack-global-account
+.cryostack-global-account-icon {
+    font-size: 0.78rem !important;
+}
+
+#cryostack-global-account
+.cryostack-global-account-chevron {
+    font-size: 0.56rem !important;
+}
+
+#cryostack-global-account
+.cryostack-global-account-menu {
+    top: calc(100% + 0.45rem) !important;
+    right: 0 !important;
+
+    width: 220px !important;
+    min-width: 220px !important;
+    max-width: 220px !important;
+
+    padding: 0.42rem !important;
+    border-radius: 11px !important;
+}
+
+#cryostack-global-account
+.cryostack-guest-account-header {
+    gap: 0.28rem !important;
+    padding: 0.52rem 0.58rem 0.62rem !important;
+}
+
+#cryostack-global-account
+.cryostack-guest-account-header strong {
+    font-size: 0.84rem !important;
+}
+
+#cryostack-global-account
+.cryostack-guest-account-header span {
+    font-size: 0.72rem !important;
+    line-height: 1.4 !important;
+}
+
+#cryostack-global-account
+/* .cryostack-guest-account-actions {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 0.35rem !important;
+    padding: 0.52rem 0.48rem !important;
+} */
+
+#cryostack-global-account
+.cryostack-account-primary-action,
+#cryostack-global-account
+.cryostack-account-secondary-action {
+    width: auto !important;
+    min-height: 32px !important;
+    height: 32px !important;
+    padding: 0 0.45rem !important;
+    font-size: 0.74rem !important;
+    white-space: nowrap !important;
+}
+
+#cryostack-global-account
+.cryostack-account-benefits {
+    gap: 0.28rem !important;
+    padding: 0.52rem 0.58rem !important;
+    font-size: 0.69rem !important;
+}
+
+#cryostack-global-account
+.cryostack-account-benefits span {
+    padding-left: 0.9rem !important;
+    line-height: 1.25 !important;
+}

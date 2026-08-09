@@ -51,6 +51,20 @@ from icesee_jupyter_book.core.connector_relay_client import (
     send_command,
 )
 
+from icesee_jupyter_book.ui.application_menus import (
+    build_icesheets_app_menu,
+    load_cryostack_account_assets,
+)
+
+from icesee_jupyter_book.ui.shared_app_styles import (
+    shared_application_styles,
+)
+
+from icesee_jupyter_book.ui.experiment_bridge import (
+    ExperimentBridge,
+    load_experiment_bridge,
+)
+
 # ============================================================
 # Params widgets factory
 # ============================================================
@@ -234,72 +248,32 @@ back_link = W.HTML("""
 </div>
 """)
 
-app_menu = W.HTML("""
-<style>
-.app-header{
-    display:flex;
-    align-items:center;
-    gap:10px;
-    padding:8px 0 12px 0;
-    margin:0 0 20px 0;
-    border-bottom:1px solid rgba(15,23,42,.10);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-}
+session_bridge = W.HTML("""
+<script>
+(async () => {
+    try {
+        const response = await fetch("/api/v1/me", {
+            credentials: "same-origin",
+            cache: "no-store"
+        });
 
-.app-home{
-    display:inline-block;
-    background:#1565c0;
-    color:white !important;
-    text-decoration:none !important;
-    font-size:14px;
-    font-weight:750;
-    padding:8px 15px;
-    border-radius:9px;
-}
+        if (!response.ok) {
+            return;
+        }
 
-.app-nav{
-    display:flex;
-    align-items:center;
-    gap:4px;
-    flex-wrap:wrap;
-}
-
-.app-nav a{
-    text-decoration:none !important;
-    color:#475569;
-    font-weight:650;
-    font-size:14px;
-    padding:8px 11px;
-    border-radius:9px;
-    border:1px solid transparent;
-}
-
-.app-nav a:hover{
-    background:#f1f5f9;
-    color:#1565c0;
-}
-
-.app-nav a.active{
-    background:#eef5ff;
-    color:#1565c0;
-}
-</style>
-
-<div class="app-header">
-
-<a class="app-home"
-   href="https://cryostack.eas.gatech.edu/icesheets/#">
-   CryoLauncher
-</a>
-
-<div class="app-nav">
-    <a class="active" href="#">Getting Started</a>
-    <a href="#">User Manual</a>
-    <a href="#">Resources</a>
-</div>
-
-</div>
+        /*
+         * We cannot read the HttpOnly session cookie from JavaScript.
+         * Therefore this bridge intentionally does not expose credentials.
+         */
+    } catch (error) {
+        console.error("CryoStack session bridge failed:", error);
+    }
+})();
+</script>
 """)
+
+app_menu = build_icesheets_app_menu()
+shared_styles = shared_application_styles()
 
 def expand_remote_home(path: str) -> str:
     if path is None:
@@ -1442,6 +1416,15 @@ echo "[ok] container image found: {sif_path}"
 
 def build_icesheets_ui():
     try:
+        load_cryostack_account_assets()
+        load_experiment_bridge()
+
+        shared_styles = (
+            shared_application_styles()
+        )
+
+        experiment_bridge = ExperimentBridge()
+
         # =========================================================
         # State
         # =========================================================
@@ -1481,6 +1464,10 @@ def build_icesheets_ui():
         # =========================================================
         # Controls
         # =========================================================
+        cryostack_session_cookie = W.Text(
+            value="",
+            layout=W.Layout(display="none"),
+        )
         ui_mode_dd = W.ToggleButtons(
             options=[("Basic", "basic"), ("Advanced", "advanced")],
             value="basic",
@@ -1735,6 +1722,78 @@ def build_icesheets_ui():
             disabled=True,
             layout=W.Layout(width="100%", height="120px"),
         )
+
+        def current_experiment_configuration() -> dict:
+            return {
+                "user_mode": ui_mode_dd.value,
+                "execution_mode": mode_dd.value,
+
+                "backend": backend_dd.value,
+                "model": model_dd.value,
+
+                "example": (
+                    example_picker.value or ""
+                ),
+
+                "example_directory": (
+                    example_dir.value.strip()
+                ),
+
+                "execution_directory": (
+                    exec_dir.value.strip()
+                ),
+
+                "run_target": (
+                    run_target.value or ""
+                ),
+
+                "access_mode": (
+                    access_mode_dd.value
+                ),
+
+                "cluster": {
+                    "name": (
+                        cluster_name_for_keys.value
+                        or ""
+                    ),
+                    "host": (
+                        cluster_host.value.strip()
+                    ),
+                    "port": int(
+                        cluster_port.value
+                    ),
+                },
+
+                "slurm": {
+                    "job_name": (
+                        slurm_job_name.value
+                    ),
+                    "time": (
+                        slurm_time.value
+                    ),
+                    "nodes": int(
+                        slurm_nodes.value
+                    ),
+                    "tasks": int(
+                        slurm_ntasks.value
+                    ),
+                    "tasks_per_node": int(
+                        slurm_tpn.value
+                    ),
+                    "partition": (
+                        slurm_part.value
+                    ),
+                    "memory": (
+                        slurm_mem.value
+                    ),
+                },
+
+                "issm_md": (
+                    collect_md_config()
+                    if model_dd.value == "issm"
+                    else {}
+                ),
+            }
 
         def show_connector_public_key_help():
             if not SESSION.get("id"):
@@ -3263,6 +3322,46 @@ def build_icesheets_ui():
                 STATUS["jobid"] = result["jobid"]
                 STATUS["log_file"] = result.get("log_file")
 
+                experiment_bridge.create(
+                    application="cryolauncher",
+
+                    name=(
+                        f"{model_dd.value.upper()} "
+                        f"{backend_dd.value} run"
+                    ),
+
+                    backend=backend_dd.value,
+
+                    status="running",
+
+                    job_id=str(result["jobid"]),
+
+                    cluster=(
+                        cluster_name_for_keys.value
+                        or cluster_host.value.strip()
+                    ),
+
+                    working_directory=(
+                        result["remote_dir"]
+                    ),
+
+                    output_directory=(
+                        f"{result['remote_dir']}/outputs"
+                    ),
+
+                    log_path=result.get("log_file"),
+
+                    configuration=(
+                        current_experiment_configuration()
+                    ),
+
+                    metadata={
+                        "execution_mode": mode_dd.value,
+                        "access_mode": access_mode_dd.value,
+                        "model": model_dd.value,
+                    },
+                )
+
                 with log_out:
                     for msg in result["messages"]:
                         print(msg)
@@ -3745,96 +3844,16 @@ fi
         # CSS
         # =========================================================
         css = """
-        <style>
-        .icesee-page { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; width: 100%; }
-        .icesee-title { font-size: 20px; font-weight: 700; margin: 4px 0 6px; color: #1f2937; }
-        .icesee-subtitle { color: rgba(0,0,0,.68); margin-bottom: 10px; line-height: 1.45; max-width: 900px; }
-        .icesee-h { font-size: 18px; font-weight: 750; margin: 2px 0 14px; color: #1f2937; }
-        .icesee-card { border: 1px solid rgba(0,0,0,.08); border-radius: 16px; padding: 18px; background: #fff; box-shadow: 0 8px 24px rgba(0,0,0,.04); }
-        .icesee-lbl { font-weight: 600; color: rgba(0,0,0,.78); padding-top: 8px; }
-        .icesee-subtle { color: rgba(0,0,0,.56); font-size: 12px; margin-bottom: 6px; }
-        .icesee-status { display:inline-block; padding: 8px 14px; border-radius:999px; font-weight:700; border:1px solid rgba(0,0,0,.10); }
-        .icesee-idle { background: rgba(0,0,0,.04); }
-        .icesee-running { background: rgba(16,122,255,.12); }
-        .icesee-done { background: rgba(30,170,80,.14); }
-        .icesee-fail { background: rgba(220,60,60,.14); }
-        .icesee-summary { border: 1px solid rgba(0,0,0,.08); background: linear-gradient(to bottom, rgba(0,0,0,.015), rgba(0,0,0,.03)); border-radius: 14px; padding: 14px 16px; line-height: 1.75; color: rgba(0,0,0,.78); }
-        .icesee-summary-k { font-weight: 700; color: rgba(0,0,0,.9); }
-        .icesee-grid { display: flex; gap: 24px; width: 100%; align-items: stretch; }
-        .icesee-left { flex: 0 0 46%; min-width: 0; }
-        .icesee-right { flex: 0 0 54%; min-width: 0; }
-        .icesee-actions { display: flex; gap: 12px; align-items: center; }
+            <style>
 
-        pre {
-            background: #f6f8fa;
-            border: 1px solid rgba(0,0,0,.08);
-            padding: 12px;
-            border-radius: 10px;
-            overflow-x: auto;
-            white-space: pre-wrap;
-            word-break: break-word;
-        }
+            /*
+            * CryoLauncher-specific styles remain here.
+            * Shared cards, labels, layout, statuses, and typography
+            * come from shared_app_styles.py.
+            */
 
-        .cryo-appbar{
-            display:flex;
-            align-items:center;
-            gap:12px;
-            padding:6px 0 8px 0;
-            margin:0 0 8px 0;
-            border-bottom:1px solid #e5e7eb;
-        }
-
-        .app-home{
-            background:#2563eb;
-            color:#fff !important;
-            padding:7px 14px;
-            border-radius:9px;
-            font-size:14px;
-            font-weight:700;
-            text-decoration:none !important;
-        }
-
-        .app-home:hover{
-            background:#1d4ed8;
-        }
-
-        .app-links{
-            display:flex;
-            align-items:center;
-            gap:0;
-        }
-
-        .app-links a{
-            color:#334155;
-            text-decoration:none !important;
-            font-size:14px;
-            font-weight:650;
-            padding:7px 10px;
-        }
-
-        .app-links a:hover{
-            color:#2563eb;
-        }
-
-        .app-links a:not(:last-child)::after{
-            content:"|";
-            margin-left:18px;
-            color:#cbd5e1;
-        }
-        .app-nav a{
-            padding:0 12px;
-            border-radius:0;
-            background:none;
-        }
-
-        .app-nav a:not(:last-child)::after{
-            content:"|";
-            margin-left:22px;
-            color:#cbd5e1;
-        }
-        
-        </style>
-        """
+            </style>
+            """
 
         # =========================================================
         # Layout
@@ -4211,7 +4230,21 @@ fi
         refresh_example_picker()
         apply_selected_example()
 
-        page = W.VBox([W.HTML(css), app_menu, header, row, actions_card, back_link], layout=W.Layout(width="100%"))
+        page = W.VBox(
+            [
+                shared_styles,
+                W.HTML(css),
+
+                experiment_bridge.widget(),
+
+                app_menu,
+                header,
+                row,
+                actions_card,
+                back_link,
+            ],
+            layout=W.Layout(width="100%"),
+        )
 
         update_visibility()
         update_summary()

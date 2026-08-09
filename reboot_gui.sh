@@ -37,8 +37,13 @@ sleep 2
 
 echo
 echo "=================================================="
-echo "Building Jupyter Book..."
+echo "Building CryoStack..."
 echo "=================================================="
+
+# Remove the existing Jupyter Book build directory to ensure a clean build.
+if [ -d "${BOOK_DIR}/_build" ]; then
+    rm -rf "${BOOK_DIR}/_build"
+fi
 
 if ! command -v jupyter-book >/dev/null 2>&1; then
     echo "[CryoStack][ERROR] jupyter-book was not found in PATH."
@@ -51,6 +56,13 @@ if [ ! -f "${BOOK_DIR}/_build/html/index.html" ]; then
     echo "[CryoStack][ERROR] Jupyter Book build did not produce index.html."
     exit 1
 fi
+
+echo
+echo "=================================================="
+echo "Building application documentation..."
+echo "=================================================="
+
+"${REPO_ROOT}/bin/build_application_docs.sh"
 
 echo
 echo "=================================================="
