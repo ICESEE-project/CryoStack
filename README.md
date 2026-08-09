@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**CryoLauncher** is an interactive **Jupyter Book** environment that brings the ICESEE (Ice-sheet Coupled Ensemble Simulator and Estimator) framework to the cloud through GHUB. This tool enables users to explore ensemble data assimilation workflows, run lightweight examples, and understand the ICESEE framework without requiring a full HPC setup.
+**CryoLauncher** is an interactive **Jupyter Book** environment that brings the ICESEE (Ice-sheet Coupled Ensemble Simulator and Estimator) framework to the cloud through CryoStack. This tool enables users to explore ensemble data assimilation workflows, run lightweight examples, and understand the ICESEE framework without requiring a full HPC setup.
 
 ## What is ICESEE?
 
@@ -10,7 +10,7 @@ ICESEE supports ensemble data assimilation workflows (e.g., EnKF-style methods) 
 
 - **Modular structure** — Reuse the same DA logic across different models
 - **Model coupling** — Integrate external codes/workflows while keeping the assimilation engine consistent  
-- **Scalability** — Execute on HPC and cloud-style environments, including GHUB
+- **Scalability** — Execute on HPC and cloud-style environments, including CryoStack
 
 For detailed implementation and broader documentation, see the [ICESEE Wiki](https://github.com/ICESEE-project/ICESEE/wiki).
 
@@ -18,14 +18,14 @@ For detailed implementation and broader documentation, see the [ICESEE Wiki](htt
 
 - **Interactive Jupyter Book** format with comprehensive documentation
 - **Runnable tutorials** including the Lorenz-96 data assimilation demo
-- **Cloud-ready deployment** through GHUB infrastructure
+- **Cloud-ready deployment** through CryoStack infrastructure
 - **Ensemble data assimilation** workflows (EnKF-style methods)
 - **Modular design** for coupling with ice-sheet models (ISSM, Icepack, flowline solvers)
 - **No HPC required** for lightweight examples
 
 ## Prerequisites
 
-- Access to GHUB (https://theghub.org)
+- Access to CryoStack (https://theCryoStack.org)
 - For local development:
   - Python 3.8+
   - Anaconda or Miniconda
@@ -44,8 +44,8 @@ For detailed implementation and broader documentation, see the [ICESEE Wiki](htt
 
 ```bash
 # Clone the repository
-git clone  https://github.com/ICESEE-project/ICESEE-GHUB.git
-cd ICESEE-GHUB
+git clone  https://github.com/ICESEE-project/CryoStack.git
+cd CryoStack
 
 # Get dependencies and the kernal installed and activated
 ./tools/go.icesee1 && source ./tools/create_icesee1_environment_yml.sh
@@ -59,7 +59,7 @@ This repository provides comprehensive documentation through a Jupyter Book, inc
 - **[User Manual](icesee_jupyter_book/user_manual.md)** — Practical usage notes
 - **[ICESEE Workflow](icesee_jupyter_book/icesee_workflow.md)** — Conceptual overview of the DA cycle
 - **[Tutorial Notebooks](icesee_jupyter_book/icesee_jupyter_notebooks/)** — Interactive examples including:
-  - Lorenz-96 data assimilation demo (runnable in GHUB)
+  - Lorenz-96 data assimilation demo (runnable in CryoStack)
   - Flowline model coupling
   - ISSM and Icepack integration examples
 - **[HPC Coupling Guide](icesee_jupyter_book/icesee_hpc_coupling.md)** — Advanced deployment patterns
@@ -79,7 +79,7 @@ CryoLauncher/
 ├── external/
 │   └── ICESEE/             # ICESEE core (git subtree)
 ├── bin/                    # Scripts for launching the book
-├── middleware/             # GHUB integration scripts
+├── middleware/             # CryoStack integration scripts
 ├── src/                    # Build system
 │   ├── Makefile           # Build commands
 │   └── readme.txt         # Build instructions
@@ -180,13 +180,13 @@ If you use ICESEE in your research, please cite:
 
 ##  Support
 
-- **Issues**: [GitHub Issues](https://github.com/ICESEE-project/ICESEE-GHUB/issues)
+- **Issues**: [GitHub Issues](https://github.com/ICESEE-project/CryoStack/issues)
 - **Documentation**: [ICESEE Wiki](https://github.com/ICESEE-project/ICESEE/wiki)
-- **GHUB Support**: https://theghub.org/support
+- **CryoStack Support**: https://theCryoStack.org/support
 
 ##  Acknowledgments
 
-This work builds upon the ICESEE framework and leverages GHUB infrastructure for cloud-based scientific computing.
+This work builds upon the ICESEE framework and leverages CryoStack infrastructure for cloud-based scientific computing.
 
 ---
 
