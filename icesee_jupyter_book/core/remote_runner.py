@@ -850,28 +850,90 @@ def remote_test_connection(host: str, user: str, port: int) -> dict:
     }
 
 
-def remote_job_status(host: str, user: str, port: int, jobid: str) -> dict:
-    r = ssh_run(host, user, port, f"squeue -j {jobid} -o '%i %T %M %D %R'", timeout=15)
-    if r.returncode == 0 and r.stdout.strip():
-        return {
-            "source": "squeue",
-            "returncode": r.returncode,
-            "stdout": r.stdout,
-            "stderr": r.stderr,
-        }
-
-    r2 = ssh_run(
+def remote_job_status(
+    host: str,
+    user: str,
+    port: int,
+    jobid: str,
+) -> dict:
+    # ---------------------------------------------------------
+    # First: live queue
+    # ---------------------------------------------------------
+    r = ssh_run(
         host,
         user,
         port,
-        f"sacct -j {jobid} --format=JobID,JobName%20,Partition,Account,State,ExitCode,Elapsed -X",
+        (
+            f"squeue -j {jobid} "
+            "-h -o '%i|%T|%M|%D|%R'"
+        ),
         timeout=15,
     )
+
+    squeue_out = (r.stdout or "").strip()
+
+    if r.returncode == 0 and squeue_out:
+        parts = squeue_out.splitlines()[0].split("|")
+
+        return {
+            "returncode": r.returncode,
+            "stdout": r.stdout,
+            "stderr": r.stderr,
+            "source": "squeue",
+            "state": (
+                parts[1].strip()
+                if len(parts) > 1
+                else None
+            ),
+            "exit_code": None,
+        }
+
+    # ---------------------------------------------------------
+    # Job left squeue: query Slurm accounting
+    # ---------------------------------------------------------
+    a = ssh_run(
+        host,
+        user,
+        port,
+        (
+            f"sacct -j {jobid} "
+            "--noheader "
+            "--parsable2 "
+            "--format=JobIDRaw,State,ExitCode"
+        ),
+        timeout=15,
+    )
+
+    state = None
+    exit_code = None
+
+    if a.returncode == 0:
+        for line in (a.stdout or "").splitlines():
+            line = line.strip()
+
+            if not line:
+                continue
+
+            parts = line.split("|")
+
+            if len(parts) < 3:
+                continue
+
+            row_jobid = parts[0].strip()
+
+            # Prefer the parent job, not .batch/.extern steps.
+            if row_jobid == str(jobid):
+                state = parts[1].strip()
+                exit_code = parts[2].strip()
+                break
+
     return {
+        "returncode": a.returncode,
+        "stdout": a.stdout,
+        "stderr": a.stderr,
         "source": "sacct",
-        "returncode": r2.returncode,
-        "stdout": r2.stdout,
-        "stderr": r2.stderr,
+        "state": state,
+        "exit_code": exit_code,
     }
 
 

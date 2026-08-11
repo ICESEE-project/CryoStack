@@ -100,6 +100,30 @@ class ExperimentBridge:
             action="update",
         )
 
+    def update_by_job(
+        self,
+        *,
+        job_id: str,
+        **fields,
+    ) -> None:
+        """
+        Update the current user's tracked experiment using
+        its scheduler job ID.
+
+        This avoids requiring the Voilà kernel to retain the
+        CryoStack experiment UUID after submission.
+        """
+
+        self._dispatch(
+            method="PATCH",
+            url=(
+                "/api/v1/experiments/job/"
+                + str(job_id)
+            ),
+            payload=fields,
+            action="update-by-job",
+        )
+
     def delete(
         self,
         *,
@@ -160,22 +184,6 @@ class ExperimentBridge:
     data-cryostack-command="{encoded}"
 ></div>
 """
-
-    def update_by_job(
-        self,
-        *,
-        job_id: str,
-        **fields,
-    ) -> None:
-        self._dispatch(
-            method="PATCH",
-            url=(
-                "/api/v1/experiments/job/"
-                + str(job_id)
-            ),
-            payload=fields,
-            action="update",
-        )
 
 
 def load_experiment_bridge() -> None:

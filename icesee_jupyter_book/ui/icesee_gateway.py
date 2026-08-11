@@ -92,6 +92,10 @@ from icesee_jupyter_book.ui.workspace_bridge import (
     load_workspace_bridge,
 )
 
+from icesee_jupyter_book.core.experiment_status import (
+    experiment_update_from_job_status,
+)
+
 # ============================================================
 # Params widgets factory
 # ============================================================
@@ -1580,21 +1584,62 @@ def build_icesee_ui():
                 return
 
             try:
-                result = remote_job_status(host, user, port, jobid)
+                result = remote_job_status(
+                    host,
+                    user,
+                    port,
+                    jobid,
+                )
+
+                experiment_update = (
+                    experiment_update_from_job_status(
+                        result
+                    )
+                )
+
+                if experiment_update:
+                    experiment_bridge.update_by_job(
+                        job_id=str(jobid),
+                        **experiment_update,
+                    )
 
                 with log_out:
                     if result["source"] == "squeue":
                         print("--- squeue ---")
-                        print((result["stdout"] or "").strip())
+                        print(
+                            (result["stdout"] or "").strip()
+                        )
                     else:
-                        print("(squeue empty; job likely finished or left the queue)")
+                        print(
+                            "(squeue empty; job likely "
+                            "finished or left the queue)"
+                        )
                         print("--- sacct ---")
-                        print((result["stdout"] or "").strip() or "(no sacct output)")
-                        if (result["stderr"] or "").strip():
-                            print("--- stderr ---")
-                            print(result["stderr"].strip())
+                        print(
+                            (result["stdout"] or "").strip()
+                            or "(no sacct output)"
+                        )
 
-                set_status("done" if result["returncode"] == 0 else "fail")
+                        if (
+                            result["stderr"] or ""
+                        ).strip():
+                            print("--- stderr ---")
+                            print(
+                                result["stderr"].strip()
+                            )
+
+                    if experiment_update:
+                        print()
+                        print(
+                            "[experiment] CryoStack status:",
+                            experiment_update["status"],
+                        )
+
+                set_status(
+                    "done"
+                    if result["returncode"] == 0
+                    else "fail"
+                )
 
             except subprocess.TimeoutExpired:
                 set_status("fail")

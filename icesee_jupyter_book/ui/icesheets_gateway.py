@@ -70,6 +70,10 @@ from icesee_jupyter_book.ui.workspace_bridge import (
     load_workspace_bridge,
 )
 
+from icesee_jupyter_book.core.experiment_status import (
+    experiment_update_from_job_status,
+)
+
 # ============================================================
 # Params widgets factory
 # ============================================================
@@ -3543,7 +3547,36 @@ def build_icesheets_ui():
                 return
 
             try:
+                # =====================================================
+                # Connector mode
+                # =====================================================
                 if access_mode_dd.value == "connector":
+                    status_cmd = f"""
+        set +e
+
+        live=$(
+            squeue -j {jobid} \
+                -h \
+                -o '%i|%T|%M|%D|%R' \
+                2>/dev/null
+        )
+
+        if [ -n "$live" ]; then
+            echo "__CRYOSTACK_SOURCE__=squeue"
+            echo "$live"
+            exit 0
+        fi
+
+        echo "__CRYOSTACK_SOURCE__=sacct"
+
+        sacct -j {jobid} \
+            --noheader \
+            --parsable2 \
+            --format=JobIDRaw,State,ExitCode
+
+        exit $?
+        """
+
                     payload = send_command(
                         SESSION["id"],
                         "ssh-run",
@@ -3551,21 +3584,116 @@ def build_icesheets_ui():
                             "host": cluster_host.value.strip(),
                             "user": cluster_user.value.strip(),
                             "port": int(cluster_port.value),
-                            "command": f"squeue -j {jobid}",
+                            "command": status_cmd,
                             "timeout": 30,
                         },
                     )
 
                     result = payload.get("result", payload)
 
+                    raw_output = result.get("stdout") or ""
+
+                    lines = [
+                        line.strip()
+                        for line in raw_output.splitlines()
+                        if line.strip()
+                    ]
+
+                    source = None
+                    status_lines = []
+
+                    for line in lines:
+                        if line == "__CRYOSTACK_SOURCE__=squeue":
+                            source = "squeue"
+                            continue
+
+                        if line == "__CRYOSTACK_SOURCE__=sacct":
+                            source = "sacct"
+                            continue
+
+                        status_lines.append(line)
+
+                    state = None
+                    exit_code = None
+
+                    if source == "squeue":
+                        if status_lines:
+                            parts = status_lines[0].split("|")
+
+                            if len(parts) > 1:
+                                state = parts[1].strip()
+
+                    elif source == "sacct":
+                        for line in status_lines:
+                            parts = line.split("|")
+
+                            if len(parts) < 3:
+                                continue
+
+                            if parts[0].strip() == str(jobid):
+                                state = parts[1].strip()
+                                exit_code = parts[2].strip()
+                                break
+
+                    normalized_result = {
+                        "source": source,
+                        "state": state,
+                        "exit_code": exit_code,
+                        "stdout": "\n".join(status_lines),
+                        "stderr": result.get("stderr", ""),
+                        "returncode": result.get(
+                            "returncode",
+                            0 if result.get("ok") else 1,
+                        ),
+                    }
+
+                    experiment_update = (
+                        experiment_update_from_job_status(
+                            normalized_result
+                        )
+                    )
+
+                    if experiment_update:
+                        experiment_bridge.update_by_job(
+                            job_id=str(jobid),
+                            **experiment_update,
+                        )
+
                     with log_out:
                         print("[connector] Status")
-                        print((result.get("stdout") or "").strip())
 
-                    status_chip.value = status_html("done" if result.get("ok") else "fail")
+                        if source == "squeue":
+                            print("--- squeue ---")
+
+                        elif source == "sacct":
+                            print(
+                                "(squeue empty; using Slurm accounting)"
+                            )
+                            print("--- sacct ---")
+
+                        print(
+                            normalized_result["stdout"]
+                            or "(no status output)"
+                        )
+
+                        if experiment_update:
+                            print()
+                            print(
+                                "[experiment] CryoStack status:",
+                                experiment_update["status"],
+                            )
+
+                    status_chip.value = status_html(
+                        "done"
+                        if normalized_result["returncode"] == 0
+                        else "fail"
+                    )
+
                     return
 
-                # fallback (direct)
+                # =====================================================
+                # Direct SSH mode
+                # =====================================================
                 result = remote_job_status(
                     cluster_host.value.strip(),
                     cluster_user.value.strip(),
@@ -3573,16 +3701,56 @@ def build_icesheets_ui():
                     jobid,
                 )
 
+                experiment_update = (
+                    experiment_update_from_job_status(
+                        result
+                    )
+                )
+
+                if experiment_update:
+                    experiment_bridge.update_by_job(
+                        job_id=str(jobid),
+                        **experiment_update,
+                    )
+
                 with log_out:
                     print("[remote] Status")
-                    print((result["stdout"] or "").strip())
 
-                status_chip.value = status_html("done" if result["returncode"] == 0 else "fail")
+                    if result["source"] == "squeue":
+                        print("--- squeue ---")
+                    else:
+                        print(
+                            "(squeue empty; using Slurm accounting)"
+                        )
+                        print("--- sacct ---")
+
+                    print(
+                        (result["stdout"] or "").strip()
+                        or "(no status output)"
+                    )
+
+                    if experiment_update:
+                        print()
+                        print(
+                            "[experiment] CryoStack status:",
+                            experiment_update["status"],
+                        )
+
+                status_chip.value = status_html(
+                    "done"
+                    if result["returncode"] == 0
+                    else "fail"
+                )
 
             except Exception as e:
                 status_chip.value = status_html("fail")
+
                 with log_out:
-                    print("[remote][ERROR]", type(e).__name__, e)
+                    print(
+                        "[remote][ERROR]",
+                        type(e).__name__,
+                        e,
+                    )
 
         def on_tail(_=None):
             log_out.clear_output()
