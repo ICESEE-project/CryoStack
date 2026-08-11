@@ -6,7 +6,28 @@ from typing import Any
 
 from .storage import AuthStorage, Experiment
 
+from .application_registry import get_application
 
+
+def account_navigation(source_application: str = ""):
+    source_application = (
+        source_application or ""
+    ).strip().lower()
+
+    app = get_application(source_application)
+
+    source_query = (
+        f"?from={source_application}"
+        if source_application
+        else ""
+    )
+
+    return (
+        app["url"],
+        f"← Back to {app['title']}",
+        source_query,
+    )
+    
 class ExperimentService:
     def __init__(
         self,

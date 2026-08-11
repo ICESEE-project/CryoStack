@@ -65,6 +65,11 @@ from icesee_jupyter_book.ui.experiment_bridge import (
     load_experiment_bridge,
 )
 
+from icesee_jupyter_book.ui.workspace_bridge import (
+    WorkspaceBridge,
+    load_workspace_bridge,
+)
+
 # ============================================================
 # Params widgets factory
 # ============================================================
@@ -1424,6 +1429,10 @@ def build_icesheets_ui():
         )
 
         experiment_bridge = ExperimentBridge()
+
+        load_workspace_bridge()
+
+        workspace_bridge = WorkspaceBridge()
 
         # =========================================================
         # State
@@ -3362,6 +3371,11 @@ def build_icesheets_ui():
                     },
                 )
 
+                workspace_bridge.save(
+                    application="cryolauncher",
+                    state=current_workspace_state(),
+                )
+
                 with log_out:
                     for msg in result["messages"]:
                         print(msg)
@@ -3810,6 +3824,63 @@ fi
             }
             refresh_md_overrides_view()
 
+        def current_workspace_state() -> dict:
+            return {
+                "model": model_dd.value,
+                "backend": backend_dd.value,
+                "execution_mode": mode_dd.value,
+                "user_mode": ui_mode_dd.value,
+
+                "example": (
+                    example_picker.value or ""
+                ),
+
+                "example_directory": (
+                    example_dir.value.strip()
+                ),
+
+                "run_target": (
+                    run_target.value or ""
+                ),
+
+                "access_mode": (
+                    access_mode_dd.value
+                ),
+
+                "cluster": {
+                    "name": (
+                        cluster_name_for_keys.value
+                        or ""
+                    ),
+                    "host": (
+                        cluster_host.value.strip()
+                    ),
+                    "port": int(
+                        cluster_port.value
+                    ),
+                },
+
+                "slurm": {
+                    "job_name": slurm_job_name.value,
+                    "time": slurm_time.value,
+                    "nodes": slurm_nodes.value,
+                    "tasks": slurm_ntasks.value,
+                    "tasks_per_node": slurm_tpn.value,
+                    "partition": slurm_part.value,
+                    "memory": slurm_mem.value,
+                },
+
+                "job": {
+                    "job_id": STATUS.get("jobid"),
+                    "remote_directory": (
+                        STATUS.get("remote_dir")
+                    ),
+                    "log_file": (
+                        STATUS.get("log_file")
+                    ),
+                },
+            }
+
         def clear_md_overrides(_=None):
             md_overrides.clear()
             refresh_md_overrides_view()
@@ -4236,6 +4307,7 @@ fi
                 W.HTML(css),
 
                 experiment_bridge.widget(),
+                workspace_bridge.widget(),
 
                 app_menu,
                 header,

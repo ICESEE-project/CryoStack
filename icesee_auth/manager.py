@@ -156,6 +156,21 @@ class AuthManager:
             self._experiment_delete,
         )
 
+        app.router.add_get(
+            "/api/v1/workspaces/{application}",
+            self._api_get_workspace,
+        )
+
+        app.router.add_put(
+            "/api/v1/workspaces/{application}",
+            self._api_save_workspace,
+        )
+
+        app.router.add_patch(
+            "/api/v1/experiments/job/{job_id}",
+            self._api_update_experiment_by_job,
+        )
+
     def authenticated_user(self, request: web.Request):
         session_id = request.cookies.get(self._cookie_name)
 
@@ -224,6 +239,76 @@ class AuthManager:
         self._set_session_cookie(request, response, session.id)
         return response
 
+    async def _api_update_experiment_by_job(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        user = self._require_api_user(request)
+
+        job_id = request.match_info[
+            "job_id"
+        ]
+
+        experiment = (
+            self._storage.get_experiment_by_job_id(
+                user_id=user.id,
+                job_id=job_id,
+            )
+        )
+
+        if experiment is None:
+            raise web.HTTPNotFound(
+                text="Experiment not found."
+            )
+
+        try:
+            payload = await request.json()
+        except Exception:
+            raise web.HTTPBadRequest(
+                text="A valid JSON body is required."
+            )
+
+        status = str(
+            payload.get(
+                "status",
+                experiment.status,
+            )
+        ).strip().lower()
+
+        allowed_statuses = {
+            "queued",
+            "preparing",
+            "running",
+            "completed",
+            "failed",
+            "cancelled",
+        }
+
+        if status not in allowed_statuses:
+            raise web.HTTPBadRequest(
+                text="Invalid experiment status."
+            )
+
+        updated = self._storage.update_experiment(
+            experiment_id=experiment.id,
+            user_id=user.id,
+            status=status,
+            exit_code=payload.get("exit_code"),
+            error_message=payload.get(
+                "error_message"
+            ),
+            now=self._clock(),
+        )
+
+        response = web.json_response(
+            self._experiment_to_dict(updated)
+        )
+
+        self._prepare_no_cache(response)
+
+        return response
+
+
     async def _account_redirect(
         self,
         request: web.Request,
@@ -242,14 +327,23 @@ class AuthManager:
                 "/auth/login?return_to=%2Faccount%2F"
             )
 
+        source_application = (
+            request.query.get("from", "")
+            .strip()
+            .lower()
+        )
+
         response = web.Response(
-            text=account_settings_page(user=user),
+            text=account_settings_page(
+                user=user,
+                source_application=source_application,
+            ),
             content_type="text/html",
         )
+
         self._prepare_no_cache(response)
 
         return response
-
 
     async def _account_update(
         self,
@@ -261,6 +355,12 @@ class AuthManager:
             raise web.HTTPFound(
                 "/auth/login?return_to=%2Faccount%2F"
             )
+
+        source_application = (
+            request.query.get("from", "")
+            .strip()
+            .lower()
+        )
 
         form = await request.post()
 
@@ -293,6 +393,7 @@ class AuthManager:
                 text=account_settings_page(
                     user=user,
                     error="Please enter a valid display name.",
+                    source_application=source_application,
                 ),
                 content_type="text/html",
                 status=400,
@@ -322,6 +423,7 @@ class AuthManager:
             text=account_settings_page(
                 user=updated_user,
                 message="Your account settings were updated.",
+                source_application=source_application,
             ),
             content_type="text/html",
         )
@@ -545,8 +647,16 @@ class AuthManager:
                 "/auth/login?return_to=%2Fconfigurations%2F"
             )
 
-        configurations = self._storage.list_configurations(
-            user_id=user.id,
+        source_application = (
+            request.query.get("from", "")
+            .strip()
+            .lower()
+        )
+
+        configurations = (
+            self._storage.list_configurations(
+                user_id=user.id,
+            )
         )
 
         response = web.Response(
@@ -554,11 +664,13 @@ class AuthManager:
                 user=user,
                 configurations=configurations,
                 message=request.query.get("message"),
+                source_application=source_application,
             ),
             content_type="text/html",
         )
 
         self._prepare_no_cache(response)
+
         return response
 
 
@@ -1535,21 +1647,35 @@ class AuthManager:
                 "/auth/login?return_to=%2Fexperiments%2F"
             )
 
-        experiments = self._storage.list_experiments(
-            user_id=user.id,
-            application=request.query.get("application"),
-            status=request.query.get("status"),
+        source_application = (
+            request.query.get("from", "")
+            .strip()
+            .lower()
+        )
+
+        experiments = (
+            self._storage.list_experiments(
+                user_id=user.id,
+                application=request.query.get(
+                    "application"
+                ),
+                status=request.query.get(
+                    "status"
+                ),
+            )
         )
 
         response = web.Response(
             text=experiments_page(
                 user=user,
                 experiments=experiments,
+                source_application=source_application,
             ),
             content_type="text/html",
         )
 
         self._prepare_no_cache(response)
+
         return response
 
     async def _experiment_detail_page(
@@ -1609,3 +1735,95 @@ class AuthManager:
             "/experiments/"
         )
     
+    async def _api_get_workspace(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        user = self._require_api_user(request)
+
+        application = request.match_info[
+            "application"
+        ].strip().lower()
+
+        workspace = self._storage.get_workspace(
+            user_id=user.id,
+            application=application,
+        )
+
+        if workspace is None:
+            return web.json_response({
+                "application": application,
+                "state": None,
+            })
+
+        try:
+            state = json.loads(workspace.state_json)
+        except Exception:
+            state = {}
+
+        response = web.json_response({
+            "id": workspace.id,
+            "application": workspace.application,
+            "state": state,
+            "updated_at": self._format_timestamp(
+                workspace.updated_at
+            ),
+        })
+
+        self._prepare_no_cache(response)
+        return response
+
+    async def _api_save_workspace(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        user = self._require_api_user(request)
+
+        application = request.match_info[
+            "application"
+        ].strip().lower()
+
+        if application not in {
+            "cryolauncher",
+            "icesee",
+            "livist",
+        }:
+            raise web.HTTPBadRequest(
+                text="Invalid application."
+            )
+
+        try:
+            payload = await request.json()
+        except Exception:
+            raise web.HTTPBadRequest(
+                text="A valid JSON body is required."
+            )
+
+        state = payload.get("state")
+
+        if not isinstance(state, dict):
+            raise web.HTTPBadRequest(
+                text="state must be a JSON object."
+            )
+
+        workspace = self._storage.save_workspace(
+            user_id=user.id,
+            application=application,
+            state_json=json.dumps(
+                state,
+                sort_keys=True,
+            ),
+            now=self._clock(),
+        )
+
+        response = web.json_response({
+            "ok": True,
+            "workspace_id": workspace.id,
+            "application": workspace.application,
+            "updated_at": self._format_timestamp(
+                workspace.updated_at
+            ),
+        })
+
+        self._prepare_no_cache(response)
+        return response

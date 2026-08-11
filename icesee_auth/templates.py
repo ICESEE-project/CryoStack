@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from html import escape
 
+from .application_registry import get_application
 
 def auth_page(
     *,
@@ -218,8 +219,8 @@ def auth_page(
       </p>
     </section>
 
-    <a class="back" href="/index.html">
-      ← Return to CryoStack
+    <a class="back" href="{escape(return_to)}">
+      Back to CryoStack
     </a>
   </main>
 </body>
@@ -316,13 +317,56 @@ def register_fields(
   >
 </label>
 """
+def account_navigation(
+    source_application: str = "",
+) -> tuple[str, str, str]:
+    """
+    Build navigation shared by CryoStack account pages.
+
+    The source application determines where the user returns when
+    leaving Account, Saved Configurations, or My Experiments.
+    """
+
+    source_application = (
+        source_application or ""
+    ).strip().lower()
+
+    app = get_application(
+        source_application
+    )
+
+    continue_url = app["url"]
+
+    continue_label = (
+        f"← Back to {app['title']}"
+    )
+
+    source_query = (
+        f"?from={source_application}"
+        if source_application
+        else ""
+    )
+
+    return (
+        continue_url,
+        continue_label,
+        source_query,
+    )
 
 def account_settings_page(
     *,
     user,
     message: str | None = None,
     error: str | None = None,
+    source_application: str = "",
 ) -> str:
+
+    continue_url, continue_label, source_query = (
+        account_navigation(
+            source_application
+        )
+    )
+
     safe_message = escape(message) if message else ""
     safe_error = escape(error) if error else ""
 
@@ -575,6 +619,30 @@ def account_settings_page(
       color: #b91c1c;
     }}
 
+    .return-app-btn {{
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 13px;
+      border: 1px solid #bfdbfe;
+      border-radius: 9px;
+      background: #eff6ff;
+      color: #1d4ed8 !important;
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-decoration: none !important;
+      transition:
+        background 0.15s ease,
+        border-color 0.15s ease,
+        transform 0.15s ease;
+    }}
+
+    .return-app-btn:hover {{
+      background: #dbeafe;
+      border-color: #93c5fd;
+      transform: translateX(-1px);
+    }}
+
     @media (max-width: 760px) {{
       .account-layout {{
         grid-template-columns: 1fr;
@@ -597,8 +665,11 @@ def account_settings_page(
       Cryo<span>Stack</span>
     </a>
 
-    <a class="account-back" href="/index.html">
-      Return to CryoStack
+    <a
+      class="return-app-btn"
+      href="{escape(continue_url)}"
+    >
+      {escape(continue_label)}
     </a>
   </header>
 
@@ -613,24 +684,26 @@ def account_settings_page(
 
     <div class="account-layout">
       <nav class="account-sidebar">
-        <a class="active" href="/account/">
+        <a
+          class="active"
+          href="/account/{source_query}"
+        >
           Profile and Preferences
         </a>
 
-        <a href="/configurations/">
+        <a href="/configurations/{source_query}">
           Saved Configurations
         </a>
 
-        <a href="/experiments/">
+        <a href="/experiments/{source_query}">
           My Experiments
         </a>
       </nav>
-
       <section class="account-card">
         {message_block}
         {error_block}
 
-        <form method="post" action="/account/">
+        <form method="post" action="/account/{source_query}">
           <div class="account-section">
             <h2>Profile</h2>
 
@@ -840,9 +913,16 @@ def configurations_page(
     configurations,
     message: str | None = None,
     error: str | None = None,
+    source_application: str = "",
 ) -> str:
     import json
     from datetime import datetime, timezone
+
+    continue_url, continue_label, source_query = (
+        account_navigation(
+            source_application
+        )
+    )
 
     safe_message = escape(message) if message else ""
     safe_error = escape(error) if error else ""
@@ -1248,6 +1328,35 @@ def configurations_page(
       color: #b91c1c;
     }}
 
+    .return-app-btn {{
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 14px;
+      border: 1px solid #bfdbfe;
+      border-radius: 10px;
+      background: #eff6ff;
+      color: #1d4ed8 !important;
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration: none !important;
+      transition:
+        background 0.15s ease,
+        border-color 0.15s ease,
+        transform 0.15s ease;
+    }}
+
+    .return-app-btn:hover {{
+      background: #dbeafe;
+      border-color: #93c5fd;
+      transform: translateX(-1px);
+    }}
+
+    .return-app-btn:focus-visible {{
+      outline: 3px solid rgba(37, 99, 235, 0.22);
+      outline-offset: 2px;
+    }}
+
     @media (max-width: 760px) {{
       .page-layout {{
         grid-template-columns: 1fr;
@@ -1263,13 +1372,18 @@ def configurations_page(
 
 <body>
   <header class="page-header">
+
     <a class="page-brand" href="/index.html">
-      Cryo<span>Stack</span>
+        Cryo<span>Stack</span>
     </a>
 
-    <a class="page-back" href="/index.html">
-      Return to CryoStack
+    <a
+      class="return-app-btn"
+      href="{escape(continue_url)}"
+    >
+      {escape(continue_label)}
     </a>
+
   </header>
 
   <main class="page-shell">
@@ -1292,15 +1406,18 @@ def configurations_page(
 
     <div class="page-layout">
       <nav class="page-sidebar">
-        <a href="/account/">
+        <a href="/account/{source_query}">
           Profile and Preferences
         </a>
 
-        <a class="active" href="/configurations/">
+        <a
+          class="active"
+          href="/configurations/{source_query}"
+        >
           Saved Configurations
         </a>
 
-        <a href="/experiments/">
+        <a href="/experiments/{source_query}">
           My Experiments
         </a>
       </nav>
@@ -1644,7 +1761,7 @@ def configuration_form_page(
         </label>
 
         <div class="form-actions">
-          <a href="/configurations/">
+          <a href="/configurations/{source_query}">
             Cancel
           </a>
 
@@ -1663,8 +1780,27 @@ def experiments_page(
     *,
     user,
     experiments,
+    source_application: str = "",
 ) -> str:
     from datetime import datetime, timezone
+
+    continue_url, continue_label, source_query = (
+        account_navigation(
+            source_application
+        )
+    )
+
+    # return_app = get_application(
+    #     source_application
+    # )
+
+    # source_query = ""
+
+    # if source_application:
+    #     source_query = (
+    #         "?from="
+    #         + escape(source_application)
+    #     )
 
     def format_date(value: float) -> str:
         return (
@@ -1924,6 +2060,30 @@ def experiments_page(
       text-align: center;
     }}
 
+    .return-app-btn {{
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 13px;
+      border: 1px solid #bfdbfe;
+      border-radius: 9px;
+      background: #eff6ff;
+      color: #1d4ed8 !important;
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-decoration: none !important;
+      transition:
+        background 0.15s ease,
+        border-color 0.15s ease,
+        transform 0.15s ease;
+    }}
+
+    .return-app-btn:hover {{
+      background: #dbeafe;
+      border-color: #93c5fd;
+      transform: translateX(-1px);
+    }}
+
     @media (max-width: 760px) {{
       .page-layout {{
         grid-template-columns: 1fr;
@@ -1938,8 +2098,11 @@ def experiments_page(
       Cryo<span>Stack</span>
     </a>
 
-    <a href="/index.html">
-      Return to CryoStack
+    <a
+      class="return-app-btn"
+      href="{escape(continue_url)}"
+    >
+      {escape(continue_label)}
     </a>
   </header>
 
@@ -1955,15 +2118,20 @@ def experiments_page(
 
     <div class="page-layout">
       <nav class="page-sidebar">
-        <a href="/account/">
+        <a href="/account/{source_query}">
           Profile and Preferences
         </a>
 
-        <a href="/configurations/">
+        <a 
+          href="/configurations/{source_query}"
+        >
           Saved Configurations
         </a>
 
-        <a class="active" href="/experiments/">
+        <a 
+          class="active"
+          href="/experiments/{source_query}"
+        >
           My Experiments
         </a>
       </nav>

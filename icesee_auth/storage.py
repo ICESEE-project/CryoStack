@@ -68,6 +68,15 @@ class Experiment:
     finished_at: float | None
     updated_at: float
 
+@dataclass(frozen=True, slots=True)
+class Workspace:
+    id: str
+    user_id: str
+    application: str
+    state_json: str
+    created_at: float
+    updated_at: float
+
 class AuthStorage:
     """Store users and sessions in a small SQLite database."""
 
@@ -182,6 +191,24 @@ class AuthStorage:
 
                 CREATE INDEX IF NOT EXISTS idx_experiments_created
                     ON experiments(user_id, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS workspaces (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    application TEXT NOT NULL,
+                    state_json TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+
+                    FOREIGN KEY (user_id)
+                        REFERENCES users(id)
+                        ON DELETE CASCADE,
+
+                    UNIQUE(user_id, application)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_workspaces_user
+                    ON workspaces(user_id);
                 """
             )
 
@@ -364,6 +391,96 @@ class AuthStorage:
             )
 
         return self.get_session(session_id, now=timestamp)
+
+    def save_workspace(
+        self,
+        *,
+        user_id: str,
+        application: str,
+        state_json: str,
+        now: float | None = None,
+    ) -> Workspace:
+        timestamp = time.time() if now is None else now
+        application = application.strip().lower()
+
+        with self._connect() as connection:
+            existing = connection.execute(
+                """
+                SELECT *
+                FROM workspaces
+                WHERE user_id = ? AND application = ?
+                """,
+                (user_id, application),
+            ).fetchone()
+
+            if existing is None:
+                workspace_id = uuid.uuid4().hex
+
+                connection.execute(
+                    """
+                    INSERT INTO workspaces (
+                        id,
+                        user_id,
+                        application,
+                        state_json,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        workspace_id,
+                        user_id,
+                        application,
+                        state_json,
+                        timestamp,
+                        timestamp,
+                    ),
+                )
+            else:
+                workspace_id = existing["id"]
+
+                connection.execute(
+                    """
+                    UPDATE workspaces
+                    SET
+                        state_json = ?,
+                        updated_at = ?
+                    WHERE id = ? AND user_id = ?
+                    """,
+                    (
+                        state_json,
+                        timestamp,
+                        workspace_id,
+                        user_id,
+                    ),
+                )
+
+        return self.get_workspace(
+            user_id=user_id,
+            application=application,
+        )
+
+    def get_workspace(
+        self,
+        *,
+        user_id: str,
+        application: str,
+    ) -> Workspace | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM workspaces
+                WHERE user_id = ? AND application = ?
+                """,
+                (
+                    user_id,
+                    application.strip().lower(),
+                ),
+            ).fetchone()
+
+        return self._workspace_from_row(row)
 
     def delete_session(self, session_id: str) -> None:
         with self._connect() as connection:
@@ -699,7 +816,29 @@ class AuthStorage:
 
         return experiment
 
+    def get_experiment_by_job_id(
+        self,
+        *,
+        user_id: str,
+        job_id: str,
+    ) -> Experiment | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM experiments
+                WHERE user_id = ?
+                AND job_id = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (
+                    user_id,
+                    str(job_id),
+                ),
+            ).fetchone()
 
+        return self._experiment_from_row(row)
 
     def list_experiments(
         self,
@@ -1038,3 +1177,19 @@ class AuthStorage:
                     ADD COLUMN {column_name} {column_type}
                     """
                 )
+
+    @staticmethod
+    def _workspace_from_row(
+        row: sqlite3.Row | None,
+    ) -> Workspace | None:
+        if row is None:
+            return None
+
+        return Workspace(
+            id=row["id"],
+            user_id=row["user_id"],
+            application=row["application"],
+            state_json=row["state_json"],
+            created_at=float(row["created_at"]),
+            updated_at=float(row["updated_at"]),
+        )
