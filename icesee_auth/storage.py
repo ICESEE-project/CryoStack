@@ -77,6 +77,28 @@ class Workspace:
     created_at: float
     updated_at: float
 
+@dataclass(frozen=True, slots=True)
+class UserIdentity:
+    id: str
+    user_id: str
+    provider: str
+    provider_subject: str
+    provider_username: str | None
+    provider_email: str | None
+    provider_profile_url: str | None
+    created_at: float
+    updated_at: float
+
+@dataclass(frozen=True, slots=True)
+class OAuthFlow:
+    state: str
+    session_id: str
+    provider: str
+    code_verifier: str
+    return_to: str
+    created_at: float
+    expires_at: float
+
 class AuthStorage:
     """Store users and sessions in a small SQLite database."""
 
@@ -209,6 +231,53 @@ class AuthStorage:
 
                 CREATE INDEX IF NOT EXISTS idx_workspaces_user
                     ON workspaces(user_id);
+
+                CREATE TABLE IF NOT EXISTS user_identities (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+
+                    provider TEXT NOT NULL,
+                    provider_subject TEXT NOT NULL,
+
+                    provider_username TEXT,
+                    provider_email TEXT,
+                    provider_profile_url TEXT,
+
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+
+                    FOREIGN KEY (user_id)
+                        REFERENCES users(id)
+                        ON DELETE CASCADE,
+
+                    UNIQUE(provider, provider_subject)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_user_identities_user
+                    ON user_identities(user_id);
+
+                CREATE INDEX IF NOT EXISTS idx_user_identities_provider
+                    ON user_identities(provider, provider_subject);
+
+                CREATE TABLE IF NOT EXISTS oauth_flows (
+                    state TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    provider TEXT NOT NULL,
+                    code_verifier TEXT NOT NULL,
+                    return_to TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    expires_at REAL NOT NULL,
+
+                    FOREIGN KEY (session_id)
+                        REFERENCES sessions(id)
+                        ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_oauth_flows_expires
+                    ON oauth_flows(expires_at);
+
+                CREATE INDEX IF NOT EXISTS idx_oauth_flows_session
+                    ON oauth_flows(session_id);
                 """
             )
 
@@ -498,6 +567,111 @@ class AuthStorage:
                 (timestamp,),
             )
 
+    def create_oauth_flow(
+        self,
+        *,
+        state: str,
+        session_id: str,
+        provider: str,
+        code_verifier: str,
+        return_to: str,
+        ttl_seconds: int = 600,
+        now: float | None = None,
+    ) -> OAuthFlow:
+        timestamp = time.time() if now is None else now
+
+        flow = OAuthFlow(
+            state=state,
+            session_id=session_id,
+            provider=provider.strip().lower(),
+            code_verifier=code_verifier,
+            return_to=return_to,
+            created_at=timestamp,
+            expires_at=timestamp + ttl_seconds,
+        )
+
+        with self._connect() as connection:
+            connection.execute(
+                """
+                DELETE FROM oauth_flows
+                WHERE expires_at <= ?
+                """,
+                (timestamp,),
+            )
+
+            connection.execute(
+                """
+                INSERT INTO oauth_flows (
+                    state,
+                    session_id,
+                    provider,
+                    code_verifier,
+                    return_to,
+                    created_at,
+                    expires_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    flow.state,
+                    flow.session_id,
+                    flow.provider,
+                    flow.code_verifier,
+                    flow.return_to,
+                    flow.created_at,
+                    flow.expires_at,
+                ),
+            )
+
+        return flow
+
+
+    def consume_oauth_flow(
+        self,
+        *,
+        state: str,
+        provider: str,
+        now: float | None = None,
+    ) -> OAuthFlow | None:
+        timestamp = time.time() if now is None else now
+
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM oauth_flows
+                WHERE state = ?
+                AND provider = ?
+                AND expires_at > ?
+                """,
+                (
+                    state,
+                    provider.strip().lower(),
+                    timestamp,
+                ),
+            ).fetchone()
+
+            if row is None:
+                return None
+
+            connection.execute(
+                """
+                DELETE FROM oauth_flows
+                WHERE state = ?
+                """,
+                (state,),
+            )
+
+        return OAuthFlow(
+            state=row["state"],
+            session_id=row["session_id"],
+            provider=row["provider"],
+            code_verifier=row["code_verifier"],
+            return_to=row["return_to"],
+            created_at=row["created_at"],
+            expires_at=row["expires_at"],
+        )
+
     def update_user_profile(
         self,
         *,
@@ -540,6 +714,136 @@ class AuthStorage:
 
         return self.get_user_by_id(user_id)
 
+    def create_user_identity(
+        self,
+        *,
+        user_id: str,
+        provider: str,
+        provider_subject: str,
+        provider_username: str | None = None,
+        provider_email: str | None = None,
+        provider_profile_url: str | None = None,
+        now: float | None = None,
+    ) -> UserIdentity:
+        timestamp = time.time() if now is None else now
+
+        identity = UserIdentity(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            provider=provider.strip().lower(),
+            provider_subject=str(provider_subject).strip(),
+            provider_username=(
+                provider_username.strip()
+                if provider_username
+                else None
+            ),
+            provider_email=(
+                provider_email.strip().lower()
+                if provider_email
+                else None
+            ),
+            provider_profile_url=(
+                provider_profile_url.strip()
+                if provider_profile_url
+                else None
+            ),
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO user_identities (
+                    id,
+                    user_id,
+                    provider,
+                    provider_subject,
+                    provider_username,
+                    provider_email,
+                    provider_profile_url,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    identity.id,
+                    identity.user_id,
+                    identity.provider,
+                    identity.provider_subject,
+                    identity.provider_username,
+                    identity.provider_email,
+                    identity.provider_profile_url,
+                    identity.created_at,
+                    identity.updated_at,
+                ),
+            )
+
+        return identity
+
+    def get_user_identity(
+        self,
+        *,
+        provider: str,
+        provider_subject: str,
+    ) -> UserIdentity | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM user_identities
+                WHERE provider = ?
+                AND provider_subject = ?
+                LIMIT 1
+                """,
+                (
+                    provider.strip().lower(),
+                    str(provider_subject).strip(),
+                ),
+            ).fetchone()
+
+        return self._user_identity_from_row(row)
+
+    def list_user_identities(
+        self,
+        *,
+        user_id: str,
+    ) -> list[UserIdentity]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM user_identities
+                WHERE user_id = ?
+                ORDER BY created_at ASC
+                """,
+                (user_id,),
+            ).fetchall()
+
+        return [
+            self._user_identity_from_row(row)
+            for row in rows
+        ]
+
+    @staticmethod
+    def _user_identity_from_row(
+        row: sqlite3.Row | None,
+    ) -> UserIdentity | None:
+        if row is None:
+            return None
+
+        return UserIdentity(
+            id=row["id"],
+            user_id=row["user_id"],
+            provider=row["provider"],
+            provider_subject=row["provider_subject"],
+            provider_username=row["provider_username"],
+            provider_email=row["provider_email"],
+            provider_profile_url=row["provider_profile_url"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
 
     def create_configuration(
         self,

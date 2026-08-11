@@ -9,7 +9,12 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
+
+import base64
+import hashlib
+import secrets
+import aiohttp
 
 from aiohttp import web
 
@@ -60,6 +65,20 @@ class AuthManager:
         self._session_ttl_seconds = session_ttl_seconds
         self._secure_cookies = secure_cookies
         self._clock = clock
+        self._github_client_id = os.environ.get(
+            "CRYOSTACK_GITHUB_CLIENT_ID",
+            "",
+        ).strip()
+
+        self._github_client_secret = os.environ.get(
+            "CRYOSTACK_GITHUB_CLIENT_SECRET",
+            "",
+        ).strip()
+
+        self._github_redirect_uri = os.environ.get(
+            "CRYOSTACK_GITHUB_REDIRECT_URI",
+            "",
+        ).strip()
 
     def install(self, app: web.Application) -> None:
         app.router.add_get("/api/v1/me", self._handle_me)
@@ -171,38 +190,496 @@ class AuthManager:
             self._api_update_experiment_by_job,
         )
 
-    def authenticated_user(self, request: web.Request):
-        session_id = request.cookies.get(self._cookie_name)
+        app.router.add_get(
+            "/auth/github",
+            self._github_begin,
+        )
 
-        if not session_id:
-            return None
+        app.router.add_get(
+            "/auth/github/callback",
+            self._github_callback,
+        )
 
-        session = self._sessions.get(session_id)
+    # def authenticated_user(self, request: web.Request):
+    #     session_id = request.cookies.get(self._cookie_name)
 
-        if session is None:
-            return None
+    #     if not session_id:
+    #         return None
 
-        if session.user is None:
-            return None
+    #     session = self._sessions.get(session_id)
 
-        return session.user
+    #     if session is None:
+    #         return None
 
-    def require_login(self, handler):
+    #     if session.user is None:
+    #         return None
 
-        async def wrapped(request):
+    #     return session.user
 
-            user = self.authenticated_user(request)
+    @staticmethod
+    def _pkce_verifier() -> str:
+        return secrets.token_urlsafe(64)
+
+
+    @staticmethod
+    def _pkce_challenge(verifier: str) -> str:
+        digest = hashlib.sha256(
+            verifier.encode("ascii")
+        ).digest()
+
+        return (
+            base64.urlsafe_b64encode(digest)
+            .rstrip(b"=")
+            .decode("ascii")
+        )
+
+    async def _github_begin(
+        self,
+        request: web.Request,
+    ) -> web.StreamResponse:
+
+        if (
+            not self._github_client_id
+            or not self._github_client_secret
+            or not self._github_redirect_uri
+        ):
+            raise web.HTTPServiceUnavailable(
+                text=(
+                    "GitHub authentication is not "
+                    "configured on this server."
+                )
+            )
+
+        return_to = safe_return_to(
+            request.query.get("return_to")
+        )
+
+        session = self._get_or_create_session(
+            request
+        )
+
+        state = secrets.token_urlsafe(32)
+        verifier = self._pkce_verifier()
+        challenge = self._pkce_challenge(
+            verifier
+        )
+
+        self._storage.create_oauth_flow(
+            state=state,
+            session_id=session.id,
+            provider="github",
+            code_verifier=verifier,
+            return_to=return_to,
+            ttl_seconds=600,
+            now=self._clock(),
+        )
+
+        query = urlencode(
+            {
+                "client_id": self._github_client_id,
+                "redirect_uri": (
+                    self._github_redirect_uri
+                ),
+                "scope": "read:user user:email",
+                "state": state,
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+            }
+        )
+
+        response = web.HTTPFound(
+            "https://github.com/login/oauth/authorize?"
+            + query
+        )
+
+        self._set_session_cookie(
+            request,
+            response,
+            session.id,
+        )
+
+        raise response
+
+    async def _github_exchange_code(
+        self,
+        *,
+        code: str,
+        code_verifier: str,
+    ) -> str:
+
+        payload = {
+            "client_id": self._github_client_id,
+            "client_secret": (
+                self._github_client_secret
+            ),
+            "code": code,
+            "redirect_uri": (
+                self._github_redirect_uri
+            ),
+            "code_verifier": code_verifier,
+        }
+
+        headers = {
+            "Accept": "application/json",
+        }
+
+        async with aiohttp.ClientSession() as client:
+            async with client.post(
+                "https://github.com/login/oauth/access_token",
+                data=payload,
+                headers=headers,
+            ) as response:
+                result = await response.json()
+
+        access_token = result.get(
+            "access_token"
+        )
+
+        if not access_token:
+            raise web.HTTPBadGateway(
+                text=(
+                    "GitHub did not return an "
+                    "access token."
+                )
+            )
+
+        return str(access_token)
+
+    async def _github_user(
+        self,
+        access_token: str,
+    ) -> tuple[dict, list[dict]]:
+
+        headers = {
+            "Accept": (
+                "application/vnd.github+json"
+            ),
+            "Authorization": (
+                f"Bearer {access_token}"
+            ),
+            "X-GitHub-Api-Version": (
+                "2022-11-28"
+            ),
+            "User-Agent": "CryoStack",
+        }
+
+        async with aiohttp.ClientSession() as client:
+            async with client.get(
+                "https://api.github.com/user",
+                headers=headers,
+            ) as response:
+                if response.status != 200:
+                    raise web.HTTPBadGateway(
+                        text=(
+                            "Unable to retrieve "
+                            "GitHub identity."
+                        )
+                    )
+
+                profile = await response.json()
+
+            async with client.get(
+                "https://api.github.com/user/emails",
+                headers=headers,
+            ) as response:
+                if response.status == 200:
+                    emails = await response.json()
+                else:
+                    emails = []
+
+        return profile, emails
+
+    @staticmethod
+    def _github_verified_email(
+        profile: dict,
+        emails: list[dict],
+    ) -> str | None:
+
+        # Prefer primary + verified.
+        for item in emails:
+            if (
+                item.get("primary") is True
+                and item.get("verified") is True
+                and item.get("email")
+            ):
+                return str(
+                    item["email"]
+                ).strip().lower()
+
+        # Otherwise any verified email.
+        for item in emails:
+            if (
+                item.get("verified") is True
+                and item.get("email")
+            ):
+                return str(
+                    item["email"]
+                ).strip().lower()
+
+        return None
+
+    async def _github_callback(
+        self,
+        request: web.Request,
+    ) -> web.StreamResponse:
+
+        error = request.query.get("error")
+
+        if error:
+            raise web.HTTPBadRequest(
+                text=(
+                    "GitHub authorization was "
+                    "not completed."
+                )
+            )
+
+        code = str(
+            request.query.get("code", "")
+        ).strip()
+
+        state = str(
+            request.query.get("state", "")
+        ).strip()
+
+        if not code or not state:
+            raise web.HTTPBadRequest(
+                text="Missing GitHub OAuth response."
+            )
+
+        flow = self._storage.consume_oauth_flow(
+            state=state,
+            provider="github",
+            now=self._clock(),
+        )
+
+        if flow is None:
+            raise web.HTTPBadRequest(
+                text=(
+                    "The GitHub authentication "
+                    "request is invalid or expired."
+                )
+            )
+
+        #
+        # Make sure callback belongs to the same
+        # browser session that started OAuth.
+        #
+        browser_session_id = request.cookies.get(
+            self._cookie_name
+        )
+
+        if browser_session_id != flow.session_id:
+            raise web.HTTPBadRequest(
+                text=(
+                    "GitHub authentication session "
+                    "does not match."
+                )
+            )
+
+        access_token = (
+            await self._github_exchange_code(
+                code=code,
+                code_verifier=flow.code_verifier,
+            )
+        )
+
+        profile, emails = (
+            await self._github_user(
+                access_token
+            )
+        )
+
+        github_id = str(
+            profile.get("id", "")
+        ).strip()
+
+        if not github_id:
+            raise web.HTTPBadGateway(
+                text=(
+                    "GitHub did not return a "
+                    "valid user identifier."
+                )
+            )
+
+        github_login = str(
+            profile.get("login", "")
+        ).strip()
+
+        github_email = (
+            self._github_verified_email(
+                profile,
+                emails,
+            )
+        )
+
+        github_profile_url = str(
+            profile.get("html_url", "")
+        ).strip() or None
+
+        #
+        # -----------------------------------------------------
+        # 1. Existing GitHub identity
+        # -----------------------------------------------------
+        #
+        identity = (
+            self._storage.get_user_identity(
+                provider="github",
+                provider_subject=github_id,
+            )
+        )
+
+        if identity is not None:
+            user = self._storage.get_user_by_id(
+                identity.user_id
+            )
 
             if user is None:
-                raise web.HTTPFound(
-                    "/login?next=" + request.path_qs
+                raise web.HTTPInternalServerError(
+                    text=(
+                        "GitHub identity references "
+                        "a missing CryoStack account."
+                    )
                 )
 
-            request["user"] = user
+        else:
+            #
+            # -------------------------------------------------
+            # 2. User is already signed into CryoStack:
+            #    link GitHub to that account.
+            # -------------------------------------------------
+            #
+            user = self.current_user(request)
 
-            return await handler(request)
+            if user is not None:
+                try:
+                    self._storage.create_user_identity(
+                        user_id=user.id,
+                        provider="github",
+                        provider_subject=github_id,
+                        provider_username=(
+                            github_login or None
+                        ),
+                        provider_email=github_email,
+                        provider_profile_url=(
+                            github_profile_url
+                        ),
+                        now=self._clock(),
+                    )
+                except sqlite3.IntegrityError:
+                    raise web.HTTPConflict(
+                        text=(
+                            "This GitHub account is "
+                            "already linked."
+                        )
+                    )
 
-        return wrapped
+            else:
+                #
+                # ---------------------------------------------
+                # 3. New GitHub user.
+                # ---------------------------------------------
+                #
+                if not github_email:
+                    raise web.HTTPBadRequest(
+                        text=(
+                            "CryoStack could not obtain "
+                            "a verified email address "
+                            "from GitHub."
+                        )
+                    )
+
+                existing = (
+                    self._storage.get_user_by_email(
+                        github_email
+                    )
+                )
+
+                if existing is not None:
+                    #
+                    # Deliberately DO NOT auto-link.
+                    #
+                    raise web.HTTPConflict(
+                        text=(
+                            "A CryoStack account already "
+                            "uses this email address. "
+                            "Sign in with your CryoStack "
+                            "password first, then connect "
+                            "GitHub from your account."
+                        )
+                    )
+
+                display_name = str(
+                    profile.get("name")
+                    or github_login
+                    or github_email.split("@")[0]
+                ).strip()
+
+                #
+                # Existing schema requires password_hash.
+                # Generate an unknown high-entropy password
+                # solely to make password authentication
+                # unusable for this OAuth-only account.
+                #
+                unusable_password = (
+                    secrets.token_urlsafe(64)
+                )
+
+                user = self._storage.create_user(
+                    email=github_email,
+                    display_name=display_name,
+                    institution=None,
+                    password_hash=hash_password(
+                        unusable_password
+                    ),
+                    now=self._clock(),
+                )
+
+                self._storage.create_user_identity(
+                    user_id=user.id,
+                    provider="github",
+                    provider_subject=github_id,
+                    provider_username=(
+                        github_login or None
+                    ),
+                    provider_email=github_email,
+                    provider_profile_url=(
+                        github_profile_url
+                    ),
+                    now=self._clock(),
+                )
+
+        #
+        # Authenticate the existing browser session exactly
+        # like _login_submit() and _register_submit().
+        #
+        authenticated = (
+            self._storage.authenticate_session(
+                flow.session_id,
+                user_id=user.id,
+                ttl_seconds=(
+                    self._session_ttl_seconds
+                ),
+                now=self._clock(),
+            )
+        )
+
+        if authenticated is None:
+            raise web.HTTPInternalServerError(
+                text="Unable to update the session."
+            )
+
+        response = web.HTTPFound(
+            safe_return_to(flow.return_to)
+        )
+
+        self._set_session_cookie(
+            request,
+            response,
+            authenticated.id,
+        )
+
+        raise response
+
 
     def _require_api_user(
         self,
@@ -976,49 +1453,6 @@ class AuthManager:
 
         return None
 
-    def current_user(self, request: web.Request) -> User | None:
-        """Return the authenticated user for the current request."""
-
-        session_id = request.cookies.get(self._cookie_name)
-
-        if not session_id:
-            return None
-
-        session = self._storage.get_session(
-            session_id,
-            now=self._clock(),
-        )
-
-        if session is None or not session.user_id:
-            return None
-
-        return self._storage.get_user_by_id(session.user_id)
-
-
-    def require_login(self, handler):
-        """Protect an aiohttp route while preserving its destination."""
-
-        async def protected(request: web.Request) -> web.StreamResponse:
-            user = self.current_user(request)
-
-            if user is None:
-                return_to = safe_return_to(
-                    request.path_qs,
-                    default="/index.html",
-                )
-
-                login_url = (
-                    "/auth/login?return_to="
-                    + quote(return_to, safe="")
-                )
-
-                raise web.HTTPFound(login_url)
-
-            request["cryostack_user"] = user
-            return await handler(request)
-
-        return protected
-
     def _get_or_create_session(
         self,
         request: web.Request,
@@ -1047,10 +1481,13 @@ class AuthManager:
             now=now,
         )
 
-    def current_user(self, request: web.Request) -> User | None:
-        """Return the authenticated user associated with this request."""
-
-        session_id = request.cookies.get(self._cookie_name)
+    def current_user(
+        self,
+        request: web.Request,
+    ) -> User | None:
+        session_id = request.cookies.get(
+            self._cookie_name
+        )
 
         if not session_id:
             return None
@@ -1060,25 +1497,32 @@ class AuthManager:
             now=self._clock(),
         )
 
-        if session is None or not session.user_id:
+        if session is None:
             return None
 
-        return self._storage.get_user_by_id(session.user_id)
+        if not session.user_id:
+            return None
+
+        return self._storage.get_user_by_id(
+            session.user_id
+        )
+
+
+    def authenticated_user(
+        self,
+        request: web.Request,
+    ) -> User | None:
+        return self.current_user(request)
 
 
     def require_login(self, handler):
-        """Wrap an aiohttp route so only authenticated users can access it."""
-
         async def protected(
             request: web.Request,
-        ) -> web.StreamResponse:
+        ):
             user = self.current_user(request)
 
             if user is None:
-                return_to = safe_return_to(
-                    request.path_qs,
-                    default="/index.html",
-                )
+                return_to = request.path_qs
 
                 login_url = (
                     "/auth/login?return_to="
@@ -1176,6 +1620,11 @@ class AuthManager:
             + quote(return_to, safe="")
         )
 
+        github_href = (
+            "/auth/github?return_to="
+            + quote(return_to, safe="")
+        )
+
         return auth_page(
             title="Sign in",
             subtitle=(
@@ -1190,6 +1639,7 @@ class AuthManager:
             alternate_href=register_href,
             alternate_label="Create an account",
             error=error,
+            github_href=github_href,
         )
 
     def _render_register(
@@ -1203,6 +1653,11 @@ class AuthManager:
     ) -> str:
         login_href = (
             "/auth/login?return_to="
+            + quote(return_to, safe="")
+        )
+
+        github_href = (
+            "/auth/github?return_to="
             + quote(return_to, safe="")
         )
 
@@ -1224,6 +1679,7 @@ class AuthManager:
             alternate_href=login_href,
             alternate_label="Sign in",
             error=error,
+            github_href=github_href,
         )
 
     def _registration_error_response(

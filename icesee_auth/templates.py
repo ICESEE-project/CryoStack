@@ -18,12 +18,31 @@ def auth_page(
     alternate_href: str,
     alternate_label: str,
     error: str | None = None,
+    github_href: str | None = None,
 ) -> str:
     safe_error = escape(error) if error else ""
 
     error_block = (
         f'<div class="auth-error" role="alert">{safe_error}</div>'
         if error
+        else ""
+    )
+
+    github_block = (
+        f"""
+        <a
+          class="oauth-button github"
+          href="{escape(github_href)}"
+        >
+            Continue with GitHub
+          
+        </a>
+
+        <div class="auth-divider">
+          <span>or continue with email</span>
+        </div>
+        """
+        if github_href
         else ""
     )
 
@@ -132,6 +151,64 @@ def auth_page(
       border-color: #2563eb;
     }}
 
+    .oauth-button {{
+      width: 100%;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 1.15rem;
+      padding: 0.7rem 1rem;
+      border: 1px solid #24292f;
+      border-radius: 10px;
+      # background: #ffffff;
+      background: #24292f;
+      color: white;
+      font-size: 0.9rem;
+      font-weight: 750;
+      text-decoration: none;
+      transition:
+        background 0.15s ease,
+        border-color 0.15s ease,
+        transform 0.15s ease;
+    }}
+
+    .oauth-button:hover {{
+      # background: #f8fafc;
+      # border-color: #94a3b8;
+      # transform: translateY(-1px);
+      background: #1b1f23;
+    }}
+
+    .oauth-icon {{
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }}
+
+    .auth-divider {{
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin: 0 0 1.15rem;
+      color: #94a3b8;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }}
+
+    .auth-divider::before,
+    .auth-divider::after {{
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: #e2e8f0;
+    }}
+
+    .auth-divider span {{
+      white-space: nowrap;
+    }}
     .submit {{
       width: 100%;
       min-height: 44px;
@@ -196,7 +273,7 @@ def auth_page(
       <p class="subtitle">{escape(subtitle)}</p>
 
       {error_block}
-
+      {github_block}
       <form method="post" action="{escape(form_action)}">
         <input
           type="hidden"
