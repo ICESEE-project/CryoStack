@@ -28,6 +28,7 @@ from .templates import (
     login_fields,
     register_fields,
     experiments_page,
+    experiment_detail_page,
 )
 
 from .providers import (
@@ -1014,6 +1015,8 @@ class AuthManager:
                 text="Invalid experiment status."
             )
 
+        previous_status = experiment.status
+
         updated = self._storage.update_experiment(
             experiment_id=experiment.id,
             user_id=user.id,
@@ -1024,6 +1027,30 @@ class AuthManager:
             ),
             now=self._clock(),
         )
+
+        if (
+            updated is not None
+            and updated.status != previous_status
+        ):
+            self._storage.create_experiment_event(
+                experiment_id=updated.id,
+                user_id=user.id,
+                event_type=updated.status,
+                message=(
+                    f"Experiment status changed from "
+                    f"{previous_status} to {updated.status}."
+                ),
+                metadata_json=json.dumps(
+                    {
+                        "previous_status": previous_status,
+                        "status": updated.status,
+                        "job_id": updated.job_id,
+                        "exit_code": updated.exit_code,
+                    },
+                    sort_keys=True,
+                ),
+                now=self._clock(),
+            )
 
         response = web.json_response(
             self._experiment_to_dict(updated)
@@ -2203,6 +2230,31 @@ class AuthManager:
             now=self._clock(),
         )
 
+        self._storage.create_experiment_event(
+            experiment_id=experiment.id,
+            user_id=user.id,
+            event_type="created",
+            message="Experiment created.",
+            metadata_json=json.dumps(
+                {
+                    "application": experiment.application,
+                    "backend": experiment.backend,
+                },
+                sort_keys=True,
+            ),
+            now=self._clock(),
+        )
+
+        if experiment.status == "running":
+            self._storage.create_experiment_event(
+                experiment_id=experiment.id,
+                user_id=user.id,
+                event_type="running",
+                message="Experiment entered running state.",
+                metadata_json="{}",
+                now=self._clock(),
+            )
+
         response = web.json_response(
             self._experiment_to_dict(experiment),
             status=201,
@@ -2280,6 +2332,7 @@ class AuthManager:
                 text="metadata must be a JSON object."
             )
 
+        previous_status = experiment.status
         experiment = self._storage.update_experiment(
             experiment_id=request.match_info[
                 "experiment_id"
@@ -2306,6 +2359,30 @@ class AuthManager:
             ),
             now=self._clock(),
         )
+
+        if (
+            updated is not None
+            and updated.status != previous_status
+        ):
+            self._storage.create_experiment_event(
+                experiment_id=updated.id,
+                user_id=user.id,
+                event_type=updated.status,
+                message=(
+                    f"Experiment status changed from "
+                    f"{previous_status} to {updated.status}."
+                ),
+                metadata_json=json.dumps(
+                    {
+                        "previous_status": previous_status,
+                        "status": updated.status,
+                        "job_id": updated.job_id,
+                        "exit_code": updated.exit_code,
+                    },
+                    sort_keys=True,
+                ),
+                now=self._clock(),
+            )
 
         if experiment is None:
             raise web.HTTPNotFound(
@@ -2420,9 +2497,30 @@ class AuthManager:
                 text="Experiment not found."
             )
 
-        return web.json_response(
-            self._experiment_to_dict(experiment)
+        events = self._storage.list_experiment_events(
+            experiment_id=experiment.id,
+            user_id=user.id,
         )
+
+        source_application = (
+            request.query.get("from", "")
+            .strip()
+            .lower()
+        )
+
+        response = web.Response(
+            text=experiment_detail_page(
+                user=user,
+                experiment=experiment,
+                events=events,
+                source_application=source_application,
+            ),
+            content_type="text/html",
+        )
+
+        self._prepare_no_cache(response)
+
+        return response
 
     async def _experiment_delete(
         self,

@@ -2088,7 +2088,7 @@ def experiments_page(
                   </span>
 
                   <h3>
-                    <a href="/experiments/{escape(experiment.id)}">
+                    <a href="/experiments/{escape(experiment.id)}{source_query}">
                       {escape(experiment.name)}
                     </a>
                   </h3>
@@ -2396,6 +2396,649 @@ def experiments_page(
       <section class="experiment-list">
         {experiment_list}
       </section>
+    </div>
+  </main>
+</body>
+</html>
+"""
+
+def experiment_detail_page(
+    *,
+    user,
+    experiment,
+    events,
+    source_application: str = "",
+) -> str:
+    import json
+    from datetime import datetime, timezone
+
+    continue_url, continue_label, source_query = (
+        account_navigation(
+            source_application
+        )
+    )
+
+    def format_date(
+        value: float | None,
+    ) -> str:
+        if value is None:
+            return "—"
+
+        return (
+            datetime
+            .fromtimestamp(
+                value,
+                tz=timezone.utc,
+            )
+            .strftime(
+                "%b %d, %Y %H:%M UTC"
+            )
+        )
+
+    def runtime_text() -> str:
+        start = (
+            experiment.started_at
+            or experiment.created_at
+        )
+
+        end = (
+            experiment.finished_at
+            or datetime.now(
+                timezone.utc
+            ).timestamp()
+        )
+
+        seconds = max(
+            0,
+            int(end - start),
+        )
+
+        hours, remainder = divmod(
+            seconds,
+            3600,
+        )
+
+        minutes, seconds = divmod(
+            remainder,
+            60,
+        )
+
+        if hours:
+            return (
+                f"{hours}h {minutes}m"
+            )
+
+        if minutes:
+            return (
+                f"{minutes}m {seconds}s"
+            )
+
+        return f"{seconds}s"
+
+    try:
+        configuration = json.loads(
+            experiment.configuration_snapshot_json
+        )
+    except Exception:
+        configuration = {}
+
+    try:
+        metadata = json.loads(
+            experiment.metadata_json
+        )
+    except Exception:
+        metadata = {}
+
+    configuration_text = json.dumps(
+        configuration,
+        indent=2,
+        sort_keys=True,
+    )
+
+    metadata_text = json.dumps(
+        metadata,
+        indent=2,
+        sort_keys=True,
+    )
+
+    event_rows = []
+
+    for event in events:
+        label = (
+            event.event_type
+            .replace("_", " ")
+            .title()
+        )
+
+        event_rows.append(
+            f"""
+            <div class="timeline-item">
+              <div class="timeline-dot"></div>
+
+              <div class="timeline-content">
+                <div class="timeline-title">
+                  {escape(label)}
+                </div>
+
+                <div class="timeline-time">
+                  {escape(format_date(event.created_at))}
+                </div>
+
+                {
+                    f'<div class="timeline-message">'
+                    f'{escape(event.message)}</div>'
+                    if event.message
+                    else ""
+                }
+              </div>
+            </div>
+            """
+        )
+
+    timeline_html = (
+        "\n".join(event_rows)
+        if event_rows
+        else """
+        <div class="empty-timeline">
+          No experiment activity has been recorded yet.
+        </div>
+        """
+    )
+
+    status_label = (
+        experiment.status
+        .replace("_", " ")
+        .title()
+    )
+
+    application_label = {
+        "cryolauncher": "CryoLauncher",
+        "icesee": "ICESEE",
+        "livist": "LIVIST",
+    }.get(
+        experiment.application,
+        experiment.application.title(),
+    )
+
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+
+  <title>
+    {escape(experiment.name)} | CryoStack
+  </title>
+
+  <style>
+    * {{
+      box-sizing: border-box;
+    }}
+
+    body {{
+      margin: 0;
+      background: #f8fafc;
+      color: #0f172a;
+      font-family:
+        Inter,
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+    }}
+
+    .page-header {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.9rem 1.5rem;
+      border-bottom: 1px solid #e2e8f0;
+      background: #ffffff;
+    }}
+
+    .page-brand {{
+      color: #0f172a;
+      font-size: 1.2rem;
+      font-weight: 800;
+      text-decoration: none;
+    }}
+
+    .page-brand span {{
+      color: #2563eb;
+    }}
+
+    .return-app-btn {{
+      display: inline-flex;
+      align-items: center;
+      min-height: 36px;
+      padding: 0 0.8rem;
+      border: 1px solid #bfdbfe;
+      border-radius: 9px;
+      background: #eff6ff;
+      color: #1d4ed8;
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-decoration: none;
+    }}
+
+    .shell {{
+      width: min(
+        100% - 2rem,
+        1180px
+      );
+      margin: 2rem auto;
+    }}
+
+    .breadcrumb {{
+      margin-bottom: 1.2rem;
+      font-size: 0.8rem;
+    }}
+
+    .breadcrumb a {{
+      color: #2563eb;
+      text-decoration: none;
+    }}
+
+    .hero {{
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }}
+
+    .hero h1 {{
+      margin: 0;
+      font-size: 1.8rem;
+      letter-spacing: -0.03em;
+    }}
+
+    .hero-meta {{
+      margin-top: 0.45rem;
+      color: #64748b;
+      font-size: 0.84rem;
+    }}
+
+    .status {{
+      padding: 0.45rem 0.8rem;
+      border-radius: 999px;
+      background: #eff6ff;
+      color: #1d4ed8;
+      font-size: 0.78rem;
+      font-weight: 750;
+    }}
+
+    .grid {{
+      display: grid;
+      grid-template-columns:
+        minmax(0, 2fr)
+        minmax(280px, 1fr);
+      gap: 1.3rem;
+    }}
+
+    .card {{
+      padding: 1.25rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 15px;
+      background: #ffffff;
+      box-shadow:
+        0 7px 22px
+        rgba(15, 23, 42, 0.04);
+    }}
+
+    .card + .card {{
+      margin-top: 1rem;
+    }}
+
+    .card h2 {{
+      margin: 0 0 1rem;
+      font-size: 1rem;
+    }}
+
+    .summary-grid {{
+      display: grid;
+      grid-template-columns:
+        repeat(2, minmax(0, 1fr));
+      gap: 0.9rem;
+    }}
+
+    .summary-item {{
+      padding: 0.85rem;
+      border-radius: 10px;
+      background: #f8fafc;
+    }}
+
+    .summary-label {{
+      color: #94a3b8;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }}
+
+    .summary-value {{
+      margin-top: 0.25rem;
+      color: #0f172a;
+      font-size: 0.86rem;
+      font-weight: 650;
+      word-break: break-word;
+    }}
+
+    pre {{
+      max-height: 360px;
+      overflow: auto;
+      padding: 1rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      background: #f8fafc;
+      color: #334155;
+      font-size: 0.74rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }}
+
+    details summary {{
+      cursor: pointer;
+      color: #475569;
+      font-size: 0.82rem;
+      font-weight: 700;
+    }}
+
+    .timeline {{
+      position: relative;
+      display: grid;
+      gap: 1rem;
+    }}
+
+    .timeline-item {{
+      position: relative;
+      display: grid;
+      grid-template-columns:
+        16px minmax(0, 1fr);
+      gap: 0.7rem;
+    }}
+
+    .timeline-dot {{
+      width: 10px;
+      height: 10px;
+      margin-top: 0.25rem;
+      border-radius: 50%;
+      background: #2563eb;
+    }}
+
+    .timeline-title {{
+      font-size: 0.83rem;
+      font-weight: 750;
+    }}
+
+    .timeline-time {{
+      margin-top: 0.12rem;
+      color: #94a3b8;
+      font-size: 0.7rem;
+    }}
+
+    .timeline-message {{
+      margin-top: 0.25rem;
+      color: #64748b;
+      font-size: 0.78rem;
+      line-height: 1.45;
+    }}
+
+    .empty-timeline {{
+      color: #64748b;
+      font-size: 0.8rem;
+    }}
+
+    .actions {{
+      display: grid;
+      gap: 0.6rem;
+    }}
+
+    .action {{
+      display: flex;
+      align-items: center;
+      min-height: 38px;
+      padding: 0 0.85rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 9px;
+      background: #ffffff;
+      color: #334155;
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-decoration: none;
+    }}
+
+    @media (max-width: 820px) {{
+      .grid {{
+        grid-template-columns: 1fr;
+      }}
+
+      .summary-grid {{
+        grid-template-columns: 1fr;
+      }}
+    }}
+  </style>
+</head>
+
+<body>
+  <header class="page-header">
+    <a
+      class="page-brand"
+      href="/index.html"
+    >
+      Cryo<span>Stack</span>
+    </a>
+
+    <a
+      class="return-app-btn"
+      href="{escape(continue_url)}"
+    >
+      {escape(continue_label)}
+    </a>
+  </header>
+
+  <main class="shell">
+    <div class="breadcrumb">
+      <a href="/experiments/{source_query}">
+        ← My Experiments
+      </a>
+    </div>
+
+    <div class="hero">
+      <div>
+        <h1>
+          {escape(experiment.name)}
+        </h1>
+
+        <div class="hero-meta">
+          {escape(application_label)}
+          ·
+          {escape(experiment.backend)}
+        </div>
+      </div>
+
+      <div class="status">
+        {escape(status_label)}
+      </div>
+    </div>
+
+    <div class="grid">
+      <section>
+        <div class="card">
+          <h2>Overview</h2>
+
+          <div class="summary-grid">
+            <div class="summary-item">
+              <div class="summary-label">
+                Application
+              </div>
+
+              <div class="summary-value">
+                {escape(application_label)}
+              </div>
+            </div>
+
+            <div class="summary-item">
+              <div class="summary-label">
+                Backend
+              </div>
+
+              <div class="summary-value">
+                {escape(experiment.backend)}
+              </div>
+            </div>
+
+            <div class="summary-item">
+              <div class="summary-label">
+                Job ID
+              </div>
+
+              <div class="summary-value">
+                {escape(experiment.job_id or "—")}
+              </div>
+            </div>
+
+            <div class="summary-item">
+              <div class="summary-label">
+                Cluster
+              </div>
+
+              <div class="summary-value">
+                {escape(experiment.cluster or "—")}
+              </div>
+            </div>
+
+            <div class="summary-item">
+              <div class="summary-label">
+                Created
+              </div>
+
+              <div class="summary-value">
+                {escape(format_date(experiment.created_at))}
+              </div>
+            </div>
+
+            <div class="summary-item">
+              <div class="summary-label">
+                Runtime
+              </div>
+
+              <div class="summary-value">
+                {escape(runtime_text())}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Execution Paths</h2>
+
+          <div class="summary-grid">
+            <div class="summary-item">
+              <div class="summary-label">
+                Working directory
+              </div>
+
+              <div class="summary-value">
+                {escape(experiment.working_directory or "—")}
+              </div>
+            </div>
+
+            <div class="summary-item">
+              <div class="summary-label">
+                Output directory
+              </div>
+
+              <div class="summary-value">
+                {escape(experiment.output_directory or "—")}
+              </div>
+            </div>
+
+            <div class="summary-item">
+              <div class="summary-label">
+                Log
+              </div>
+
+              <div class="summary-value">
+                {escape(experiment.log_path or "—")}
+              </div>
+            </div>
+
+            <div class="summary-item">
+              <div class="summary-label">
+                Exit code
+              </div>
+
+              <div class="summary-value">
+                {
+                    escape(str(experiment.exit_code))
+                    if experiment.exit_code is not None
+                    else "—"
+                }
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Configuration</h2>
+
+          <details>
+            <summary>
+              View configuration snapshot
+            </summary>
+
+            <pre>{escape(configuration_text)}</pre>
+          </details>
+        </div>
+
+        <div class="card">
+          <h2>Metadata</h2>
+
+          <details>
+            <summary>
+              View experiment metadata
+            </summary>
+
+            <pre>{escape(metadata_text)}</pre>
+          </details>
+        </div>
+      </section>
+
+      <aside>
+        <div class="card">
+          <h2>Activity</h2>
+
+          <div class="timeline">
+            {timeline_html}
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Actions</h2>
+
+          <div class="actions">
+            <a
+              class="action"
+              href="/experiments/{escape(experiment.id)}{source_query}"
+            >
+              Refresh
+            </a>
+
+            <a
+              class="action"
+              href="/experiments/{source_query}"
+            >
+              Back to experiments
+            </a>
+          </div>
+        </div>
+      </aside>
     </div>
   </main>
 </body>

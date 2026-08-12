@@ -99,6 +99,16 @@ class OAuthFlow:
     created_at: float
     expires_at: float
 
+@dataclass(frozen=True, slots=True)
+class ExperimentEvent:
+    id: str
+    experiment_id: str
+    user_id: str
+    event_type: str
+    message: str | None
+    metadata_json: str
+    created_at: float
+
 class AuthStorage:
     """Store users and sessions in a small SQLite database."""
 
@@ -278,6 +288,31 @@ class AuthStorage:
 
                 CREATE INDEX IF NOT EXISTS idx_oauth_flows_session
                     ON oauth_flows(session_id);
+
+                CREATE TABLE IF NOT EXISTS experiment_events (
+                    id TEXT PRIMARY KEY,
+                    experiment_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+
+                    event_type TEXT NOT NULL,
+                    message TEXT,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at REAL NOT NULL,
+
+                    FOREIGN KEY (experiment_id)
+                        REFERENCES experiments(id)
+                        ON DELETE CASCADE,
+
+                    FOREIGN KEY (user_id)
+                        REFERENCES users(id)
+                        ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_experiment_events_experiment
+                    ON experiment_events(experiment_id, created_at);
+
+                CREATE INDEX IF NOT EXISTS idx_experiment_events_user
+                    ON experiment_events(user_id, created_at);
                 """
             )
 
@@ -1496,4 +1531,98 @@ class AuthStorage:
             state_json=row["state_json"],
             created_at=float(row["created_at"]),
             updated_at=float(row["updated_at"]),
+        )
+
+    def create_experiment_event(
+        self,
+        *,
+        experiment_id: str,
+        user_id: str,
+        event_type: str,
+        message: str | None = None,
+        metadata_json: str = "{}",
+        now: float | None = None,
+    ) -> ExperimentEvent:
+        timestamp = time.time() if now is None else now
+
+        event = ExperimentEvent(
+            id=str(uuid.uuid4()),
+            experiment_id=experiment_id,
+            user_id=user_id,
+            event_type=event_type.strip().lower(),
+            message=message,
+            metadata_json=metadata_json,
+            created_at=timestamp,
+        )
+
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO experiment_events (
+                    id,
+                    experiment_id,
+                    user_id,
+                    event_type,
+                    message,
+                    metadata_json,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event.id,
+                    event.experiment_id,
+                    event.user_id,
+                    event.event_type,
+                    event.message,
+                    event.metadata_json,
+                    event.created_at,
+                ),
+            )
+
+        return event
+
+
+    def list_experiment_events(
+        self,
+        *,
+        experiment_id: str,
+        user_id: str,
+    ) -> list[ExperimentEvent]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM experiment_events
+                WHERE experiment_id = ?
+                AND user_id = ?
+                ORDER BY created_at ASC
+                """,
+                (
+                    experiment_id,
+                    user_id,
+                ),
+            ).fetchall()
+
+        return [
+            self._experiment_event_from_row(row)
+            for row in rows
+        ]
+
+
+    @staticmethod
+    def _experiment_event_from_row(
+        row: sqlite3.Row | None,
+    ) -> ExperimentEvent | None:
+        if row is None:
+            return None
+
+        return ExperimentEvent(
+            id=row["id"],
+            experiment_id=row["experiment_id"],
+            user_id=row["user_id"],
+            event_type=row["event_type"],
+            message=row["message"],
+            metadata_json=row["metadata_json"],
+            created_at=row["created_at"],
         )
