@@ -11,10 +11,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True, slots=True)
 class ExternalIdentity:
     """
-    Normalized identity returned by an external OAuth provider.
-
-    AuthManager should work with this structure instead of
-    provider-specific JSON responses.
+    Normalized identity returned by an external provider.
     """
 
     provider: str
@@ -26,29 +23,27 @@ class ExternalIdentity:
     profile_url: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class OAuthAuthentication:
+    """
+    Result of a successful provider OAuth exchange.
+
+    Some providers, such as ORCID, return identity information
+    during the token exchange itself. Others, such as GitHub,
+    require a subsequent profile request.
+    """
+
+    access_token: str
+    identity: ExternalIdentity | None = None
+
+
 class OAuthProvider(ABC):
-    """
-    Base interface implemented by CryoStack OAuth providers.
-
-    Providers are responsible only for communication with the
-    external identity service.
-
-    They do NOT manage:
-      - CryoStack sessions
-      - CryoStack users
-      - cookies
-      - redirects
-      - database identities
-    """
-
     name: str
     display_name: str
 
     @property
     @abstractmethod
     def configured(self) -> bool:
-        """Return True when the provider has required credentials."""
-
         raise NotImplementedError
 
     @abstractmethod
@@ -56,12 +51,8 @@ class OAuthProvider(ABC):
         self,
         *,
         state: str,
-        code_challenge: str,
+        code_challenge: str | None = None,
     ) -> str:
-        """
-        Build the external OAuth authorization URL.
-        """
-
         raise NotImplementedError
 
     @abstractmethod
@@ -69,21 +60,13 @@ class OAuthProvider(ABC):
         self,
         *,
         code: str,
-        code_verifier: str,
-    ) -> str:
-        """
-        Exchange an authorization code for an access token.
-        """
-
+        code_verifier: str | None = None,
+    ) -> OAuthAuthentication:
         raise NotImplementedError
 
     @abstractmethod
     async def fetch_identity(
         self,
-        access_token: str,
+        authentication: OAuthAuthentication,
     ) -> ExternalIdentity:
-        """
-        Retrieve and normalize the authenticated external identity.
-        """
-
         raise NotImplementedError

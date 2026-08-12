@@ -32,6 +32,7 @@ from .templates import (
 
 from .providers import (
     GitHubProvider,
+    ORCIDProvider,
 )
 
 class AuthManager:
@@ -82,6 +83,28 @@ class AuthManager:
             redirect_uri=os.environ.get(
                 "CRYOSTACK_GITHUB_REDIRECT_URI",
                 "",
+            ),
+        )
+
+        self._orcid_provider = ORCIDProvider(
+            client_id=os.environ.get(
+                "CRYOSTACK_ORCID_CLIENT_ID",
+                "",
+            ),
+
+            client_secret=os.environ.get(
+                "CRYOSTACK_ORCID_CLIENT_SECRET",
+                "",
+            ),
+
+            redirect_uri=os.environ.get(
+                "CRYOSTACK_ORCID_REDIRECT_URI",
+                "",
+            ),
+
+            base_url=os.environ.get(
+                "CRYOSTACK_ORCID_BASE_URL",
+                "https://sandbox.orcid.org",
             ),
         )
 
@@ -205,6 +228,16 @@ class AuthManager:
             self._github_callback,
         )
 
+        app.router.add_get(
+            "/auth/orcid",
+            self._orcid_begin,
+        )
+
+        app.router.add_get(
+            "/auth/orcid/callback",
+            self._orcid_callback,
+        )
+
 
     @staticmethod
     def _pkce_verifier() -> str:
@@ -222,6 +255,248 @@ class AuthManager:
             .rstrip(b"=")
             .decode("ascii")
         )
+
+    async def _orcid_begin(
+        self,
+        request: web.Request,
+    ) -> web.StreamResponse:
+
+        provider = self._orcid_provider
+
+        if not provider.configured:
+            raise web.HTTPServiceUnavailable(
+                text=(
+                    "ORCID authentication is not "
+                    "configured on this server."
+                )
+            )
+
+        return_to = safe_return_to(
+            request.query.get("return_to")
+        )
+
+        session = self._get_or_create_session(
+            request
+        )
+
+        state = secrets.token_urlsafe(32)
+
+        # OAuthFlow currently requires code_verifier.
+        # ORCID itself does not need it, so use a harmless
+        # random transaction value rather than weakening the
+        # database schema yet.
+        verifier = self._pkce_verifier()
+
+        self._storage.create_oauth_flow(
+            state=state,
+            session_id=session.id,
+            provider=provider.name,
+            code_verifier=verifier,
+            return_to=return_to,
+            ttl_seconds=600,
+            now=self._clock(),
+        )
+
+        authorization_url = (
+            provider.authorization_url(
+                state=state,
+                code_challenge=None,
+            )
+        )
+
+        response = web.HTTPFound(
+            authorization_url
+        )
+
+        self._set_session_cookie(
+            request,
+            response,
+            session.id,
+        )
+
+        raise response
+
+    async def _orcid_callback(
+        self,
+        request: web.Request,
+    ) -> web.StreamResponse:
+
+        provider = self._orcid_provider
+
+        if not provider.configured:
+            raise web.HTTPServiceUnavailable(
+                text=(
+                    "ORCID authentication is not "
+                    "configured on this server."
+                )
+            )
+
+        error = request.query.get("error")
+
+        if error:
+            raise web.HTTPBadRequest(
+                text=(
+                    "ORCID authorization was "
+                    "not completed."
+                )
+            )
+
+        code = str(
+            request.query.get("code", "")
+        ).strip()
+
+        state = str(
+            request.query.get("state", "")
+        ).strip()
+
+        if not code or not state:
+            raise web.HTTPBadRequest(
+                text="Missing ORCID OAuth response."
+            )
+
+        flow = self._storage.consume_oauth_flow(
+            state=state,
+            provider=provider.name,
+            now=self._clock(),
+        )
+
+        if flow is None:
+            raise web.HTTPBadRequest(
+                text=(
+                    "The ORCID authentication "
+                    "request is invalid or expired."
+                )
+            )
+
+        browser_session_id = request.cookies.get(
+            self._cookie_name
+        )
+
+        if browser_session_id != flow.session_id:
+            raise web.HTTPBadRequest(
+                text=(
+                    "ORCID authentication session "
+                    "does not match."
+                )
+            )
+
+        try:
+            authentication = (
+                await provider.exchange_code(
+                    code=code,
+                    code_verifier=None,
+                )
+            )
+
+            identity = (
+                await provider.fetch_identity(
+                    authentication
+                )
+            )
+
+        except RuntimeError as error:
+            raise web.HTTPBadGateway(
+                text=str(error)
+            )
+
+        stored_identity = (
+            self._storage.get_user_identity(
+                provider=identity.provider,
+                provider_subject=identity.subject,
+            )
+        )
+
+        current_user = self.current_user(
+            request
+        )
+
+        # --------------------------------------------------------
+        # Existing ORCID identity:
+        # allow it to authenticate the linked CryoStack account.
+        # --------------------------------------------------------
+
+        if stored_identity is not None:
+            user = self._storage.get_user_by_id(
+                stored_identity.user_id
+            )
+
+            if user is None:
+                raise web.HTTPInternalServerError(
+                    text=(
+                        "ORCID identity references "
+                        "a missing CryoStack account."
+                    )
+                )
+
+        else:
+            # ----------------------------------------------------
+            # New ORCID identity must be linked from an already
+            # authenticated CryoStack account.
+            # ----------------------------------------------------
+
+            if current_user is None:
+                raise web.HTTPConflict(
+                    text=(
+                        "This ORCID iD is not yet linked "
+                        "to a CryoStack account. Sign in "
+                        "to CryoStack first, then connect "
+                        "ORCID from Account Settings."
+                    )
+                )
+
+            try:
+                self._storage.create_user_identity(
+                    user_id=current_user.id,
+                    provider=identity.provider,
+                    provider_subject=identity.subject,
+                    provider_username=identity.username,
+                    provider_email=None,
+                    provider_profile_url=(
+                        identity.profile_url
+                    ),
+                    now=self._clock(),
+                )
+
+            except sqlite3.IntegrityError:
+                raise web.HTTPConflict(
+                    text=(
+                        "This ORCID iD is already "
+                        "linked to another CryoStack "
+                        "account."
+                    )
+                )
+
+            user = current_user
+
+        authenticated = (
+            self._storage.authenticate_session(
+                flow.session_id,
+                user_id=user.id,
+                ttl_seconds=(
+                    self._session_ttl_seconds
+                ),
+                now=self._clock(),
+            )
+        )
+
+        if authenticated is None:
+            raise web.HTTPInternalServerError(
+                text="Unable to update the session."
+            )
+
+        response = web.HTTPFound(
+            safe_return_to(
+                flow.return_to
+            )
+        )
+
+        self._set_session_cookie(
+            request,
+            response,
+            authenticated.id,
+        )
+
+        raise response
 
     async def _github_begin(
         self,
@@ -381,19 +656,13 @@ class AuthManager:
         # ========================================================
 
         try:
-            access_token = (
-                await provider.exchange_code(
-                    code=code,
-                    code_verifier=(
-                        flow.code_verifier
-                    ),
-                )
+            authentication = await provider.exchange_code(
+                code=code,
+                code_verifier=flow.code_verifier,
             )
 
-            identity = (
-                await provider.fetch_identity(
-                    access_token
-                )
+            identity = await provider.fetch_identity(
+                authentication
             )
 
         except RuntimeError as error:

@@ -8,7 +8,11 @@ from urllib.parse import urlencode
 
 import aiohttp
 
-from .base import ExternalIdentity, OAuthProvider
+from .base import (
+    ExternalIdentity,
+    OAuthAuthentication,
+    OAuthProvider,
+)
 
 
 class GitHubProvider(OAuthProvider):
@@ -67,8 +71,13 @@ class GitHubProvider(OAuthProvider):
         self,
         *,
         state: str,
-        code_challenge: str,
+        code_challenge: str | None = None,
     ) -> str:
+
+        if not code_challenge:
+            raise RuntimeError(
+                "GitHub authentication requires PKCE."
+            )
 
         query = urlencode(
             {
@@ -104,25 +113,21 @@ class GitHubProvider(OAuthProvider):
         self,
         *,
         code: str,
-        code_verifier: str,
-    ) -> str:
+        code_verifier: str | None = None,
+    ) -> OAuthAuthentication:
+
+        if not code_verifier:
+            raise RuntimeError(
+                "GitHub authentication requires "
+                "a PKCE code verifier."
+            )
 
         payload = {
             "client_id": self.client_id,
-
-            "client_secret": (
-                self.client_secret
-            ),
-
+            "client_secret": self.client_secret,
             "code": code,
-
-            "redirect_uri": (
-                self.redirect_uri
-            ),
-
-            "code_verifier": (
-                code_verifier
-            ),
+            "redirect_uri": self.redirect_uri,
+            "code_verifier": code_verifier,
         }
 
         headers = {
@@ -130,13 +135,11 @@ class GitHubProvider(OAuthProvider):
         }
 
         async with aiohttp.ClientSession() as client:
-
             async with client.post(
                 self.TOKEN_URL,
                 data=payload,
                 headers=headers,
             ) as response:
-
                 try:
                     result = await response.json()
                 except Exception:
@@ -147,29 +150,24 @@ class GitHubProvider(OAuthProvider):
                         f"an invalid response: {text}"
                     )
 
-        access_token = result.get(
-            "access_token"
-        )
+        access_token = result.get("access_token")
 
         if not access_token:
-            error = result.get(
-                "error_description"
-            ) or result.get(
-                "error"
-            ) or (
-                "GitHub did not return an "
-                "access token."
+            error = (
+                result.get("error_description")
+                or result.get("error")
+                or "GitHub did not return an access token."
             )
 
-            raise RuntimeError(
-                str(error)
-            )
+            raise RuntimeError(str(error))
 
-        return str(access_token)
+        return OAuthAuthentication(
+            access_token=str(access_token),
+        )
 
     async def fetch_identity(
         self,
-        access_token: str,
+        authentication: OAuthAuthentication,
     ) -> ExternalIdentity:
 
         headers = {

@@ -1,19 +1,17 @@
-# ============================================================
-# icesee_auth/providers/__init__.py
-# ============================================================
-
 from .base import (
     ExternalIdentity,
+    OAuthAuthentication,
     OAuthProvider,
 )
 
-from .github import (
-    GitHubProvider,
-)
+from .github import GitHubProvider
+from .orcid import ORCIDProvider
 
 
 __all__ = [
     "ExternalIdentity",
+    "OAuthAuthentication",
     "OAuthProvider",
     "GitHubProvider",
+    "ORCIDProvider",
 ]
