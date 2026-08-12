@@ -170,6 +170,14 @@ class GitHubProvider(OAuthProvider):
         authentication: OAuthAuthentication,
     ) -> ExternalIdentity:
 
+        access_token = authentication.access_token
+
+        if not access_token:
+            raise RuntimeError(
+                "GitHub authentication did not "
+                "contain an access token."
+            )
+
         headers = {
             "Accept": (
                 "application/vnd.github+json"
@@ -190,10 +198,6 @@ class GitHubProvider(OAuthProvider):
 
         async with aiohttp.ClientSession() as client:
 
-            # ------------------------------------------------
-            # GitHub user profile
-            # ------------------------------------------------
-
             async with client.get(
                 self.USER_URL,
                 headers=headers,
@@ -210,10 +214,6 @@ class GitHubProvider(OAuthProvider):
                     )
 
                 profile = await response.json()
-
-            # ------------------------------------------------
-            # GitHub verified emails
-            # ------------------------------------------------
 
             async with client.get(
                 self.EMAILS_URL,

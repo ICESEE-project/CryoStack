@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from html import escape
+from urllib.parse import quote
 
 from .application_registry import get_application
 
@@ -433,6 +434,7 @@ def account_navigation(
 def account_settings_page(
     *,
     user,
+    identities,
     message: str | None = None,
     error: str | None = None,
     source_application: str = "",
@@ -443,6 +445,14 @@ def account_settings_page(
             source_application
         )
     )
+
+    identity_map = {
+    identity.provider: identity
+    for identity in identities
+    }
+
+    github_identity = identity_map.get("github")
+    orcid_identity = identity_map.get("orcid")
 
     safe_message = escape(message) if message else ""
     safe_error = escape(error) if error else ""
@@ -467,6 +477,106 @@ def account_settings_page(
         else ""
     )
 
+    github_block = (
+        f"""
+        <div class="identity-row">
+          <div class="identity-main">
+            <div class="identity-name">
+              GitHub
+            </div>
+
+            <div class="identity-detail">
+              Connected
+              {
+                  " · @" + escape(github_identity.provider_username)
+                  if github_identity.provider_username
+                  else ""
+              }
+            </div>
+          </div>
+
+          <div class="identity-actions">
+            {
+                f'<a href="{escape(github_identity.provider_profile_url)}" '
+                f'target="_blank" rel="noopener noreferrer">View profile</a>'
+                if github_identity.provider_profile_url
+                else ""
+            }
+          </div>
+        </div>
+        """
+        if github_identity
+        else f"""
+        <div class="identity-row">
+          <div class="identity-main">
+            <div class="identity-name">
+              GitHub
+            </div>
+
+            <div class="identity-detail">
+              Not connected
+            </div>
+          </div>
+
+          <div class="identity-actions">
+            <a
+              class="identity-connect"
+              href="/auth/github?return_to={quote('/account/' + source_query, safe='')}"
+            >
+              Connect GitHub
+            </a>
+          </div>
+        </div>
+        """
+    )
+
+    orcid_block = (
+      f"""
+      <div class="identity-row">
+        <div class="identity-main">
+          <div class="identity-name">
+            ORCID
+          </div>
+
+          <div class="identity-detail">
+            Connected · {escape(orcid_identity.provider_subject)}
+          </div>
+        </div>
+
+        <div class="identity-actions">
+          {
+              f'<a href="{escape(orcid_identity.provider_profile_url)}" '
+              f'target="_blank" rel="noopener noreferrer">View ORCID</a>'
+              if orcid_identity.provider_profile_url
+              else ""
+          }
+        </div>
+      </div>
+      """
+      if orcid_identity
+      else f"""
+      <div class="identity-row">
+        <div class="identity-main">
+          <div class="identity-name">
+            ORCID
+          </div>
+
+          <div class="identity-detail">
+            Not connected
+          </div>
+        </div>
+
+        <div class="identity-actions">
+          <a
+            class="identity-connect"
+            href="/auth/orcid?return_to={quote('/account/' + source_query, safe='')}"
+          >
+            Connect ORCID
+          </a>
+        </div>
+      </div>
+      """
+  )
     def selected(value: str | None, expected: str) -> str:
         return "selected" if value == expected else ""
 
@@ -720,6 +830,62 @@ def account_settings_page(
       transform: translateX(-1px);
     }}
 
+    .identity-list {{
+      display: grid;
+      gap: 0.75rem;
+    }}
+
+    .identity-row {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.9rem 1rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 11px;
+      background: #f8fafc;
+    }}
+
+    .identity-main {{
+      min-width: 0;
+    }}
+
+    .identity-name {{
+      color: #0f172a;
+      font-size: 0.9rem;
+      font-weight: 750;
+    }}
+
+    .identity-detail {{
+      margin-top: 0.2rem;
+      color: #64748b;
+      font-size: 0.78rem;
+    }}
+
+    .identity-actions {{
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }}
+
+    .identity-actions a {{
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 0 0.75rem;
+      border-radius: 8px;
+      border: 1px solid #bfdbfe;
+      background: #eff6ff;
+      color: #1d4ed8;
+      font-size: 0.76rem;
+      font-weight: 700;
+      text-decoration: none;
+    }}
+
+    .identity-actions a:hover {{
+      background: #dbeafe;
+    }}
+
     @media (max-width: 760px) {{
       .account-layout {{
         grid-template-columns: 1fr;
@@ -968,6 +1134,20 @@ def account_settings_page(
                   </option>
                 </select>
               </label>
+            </div>
+          </div>
+
+          <div class="account-section">
+            <h2>Connected Accounts</h2>
+
+            <p class="account-section-intro">
+              Link external research and developer identities to your
+              CryoStack account.
+            </p>
+
+            <div class="identity-list">
+              {github_block}
+              {orcid_block}
             </div>
           </div>
 

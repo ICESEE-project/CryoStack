@@ -1058,9 +1058,14 @@ class AuthManager:
             .lower()
         )
 
+        identities = self._storage.list_user_identities(
+            user_id=user.id,
+        )
+
         response = web.Response(
             text=account_settings_page(
                 user=user,
+                identities=identities,
                 source_application=source_application,
             ),
             content_type="text/html",
@@ -1114,9 +1119,13 @@ class AuthManager:
         ).strip()
 
         if len(display_name) < 2:
+            identities = self._storage.list_user_identities(
+                user_id=user.id,
+            )
             response = web.Response(
                 text=account_settings_page(
                     user=user,
+                    identities=identities,
                     error="Please enter a valid display name.",
                     source_application=source_application,
                 ),
@@ -1144,9 +1153,14 @@ class AuthManager:
                 text="CryoStack account not found."
             )
 
+        identities = self._storage.list_user_identities(
+                user_id=user.id,
+            )
+
         response = web.Response(
             text=account_settings_page(
                 user=updated_user,
+                identities=identities,
                 message="Your account settings were updated.",
                 source_application=source_application,
             ),
