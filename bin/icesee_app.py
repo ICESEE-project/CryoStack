@@ -10,6 +10,25 @@ import sys
 import time
 from pathlib import Path
 
+
+REPO_ROOT = (
+    Path(__file__)
+    .resolve()
+    .parent
+    .parent
+)
+
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(
+        0,
+        str(REPO_ROOT),
+    )
+
+
+from control_center import (
+    install_control_center,
+)
+
 from aiohttp import ClientSession, WSMsgType, web
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -367,6 +386,8 @@ def make_app() -> web.Application:
 
     auth = AuthManager()
     auth.install(app)
+
+    install_control_center(app)
 
     protected_run_center = auth.require_login(
         proxy_run_center
