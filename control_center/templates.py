@@ -299,14 +299,323 @@ def control_layout(
       color: #94a3b8;
     }}
 
+    .page-heading-row {{
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    }}
+
+    .page-count {{
+    padding: 0.45rem 0.7rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #64748b;
+    font-size: 0.72rem;
+    font-weight: 750;
+    }}
+
+    .user-toolbar {{
+    display: flex;
+    margin-bottom: 1rem;
+    }}
+
+    .search-box {{
+    width: min(100%, 470px);
+    min-height: 42px;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0 0.85rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    background: #ffffff;
+    }}
+
+    .search-box span {{
+    color: #94a3b8;
+    }}
+
+    .search-box input {{
+    width: 100%;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: #0f172a;
+    font: inherit;
+    font-size: 0.82rem;
+    }}
+
+    .user-table-panel {{
+    overflow-x: auto;
+    }}
+
+    .user-row {{
+    cursor: pointer;
+    transition:
+        background 0.12s ease;
+    }}
+
+    .user-row:hover {{
+    background: #f8fafc;
+    }}
+
+    .user-cell {{
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    }}
+
+    .user-avatar {{
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 0.76rem;
+    font-weight: 850;
+    }}
+
+    .user-name {{
+    color: #0f172a;
+    font-weight: 750;
+    }}
+
+    .user-institution {{
+    margin-top: 0.15rem;
+    color: #94a3b8;
+    font-size: 0.68rem;
+    }}
+
+    .provider-list {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    }}
+
+    .provider-pill {{
+    display: inline-flex;
+    align-items: center;
+    min-height: 23px;
+    padding: 0 0.45rem;
+    border-radius: 999px;
+    font-size: 0.63rem;
+    font-weight: 800;
+    }}
+
+    .provider-pill.github {{
+    background: #f1f5f9;
+    color: #334155;
+    }}
+
+    .provider-pill.orcid {{
+    background: #f0fdf4;
+    color: #15803d;
+    }}
+
+    .provider-pill.password {{
+    background: #eff6ff;
+    color: #1d4ed8;
+    }}
+
+    .presence {{
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: #64748b;
+    font-size: 0.7rem;
+    font-weight: 700;
+    }}
+
+    .presence span {{
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #cbd5e1;
+    }}
+
+    .presence.active {{
+    color: #15803d;
+    }}
+
+    .presence.active span {{
+    background: #22c55e;
+    }}
+
+    .table-empty {{
+    padding: 2.5rem;
+    color: #64748b;
+    font-size: 0.82rem;
+    text-align: center;
+    }}
+
+    .detail-breadcrumb {{
+    margin-bottom: 1.2rem;
+    }}
+
+    .detail-breadcrumb a,
+    .table-link {{
+    color: #2563eb;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-decoration: none;
+    }}
+
+    .user-profile-header {{
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    }}
+
+    .large-avatar {{
+    width: 58px;
+    height: 58px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 1.2rem;
+    font-weight: 850;
+    }}
+
+    .detail-grid {{
+    display: grid;
+    grid-template-columns:
+        minmax(0, 2fr)
+        minmax(260px, 1fr);
+    gap: 1rem;
+    }}
+
+    .detail-list {{
+    display: grid;
+    }}
+
+    .detail-row {{
+    min-height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #f1f5f9;
+    color: #64748b;
+    font-size: 0.76rem;
+    }}
+
+    .detail-row:last-child {{
+    border-bottom: 0;
+    }}
+
+    .detail-row strong {{
+    color: #334155;
+    font-weight: 700;
+    text-align: right;
+    }}
+
+    .detail-primary {{
+    color: #0f172a;
+    font-weight: 750;
+    }}
+
+    .detail-secondary {{
+    margin-top: 0.15rem;
+    color: #64748b;
+    font-size: 0.7rem;
+    }}
+
+    .small-button {{
+    display: inline-flex;
+    align-items: center;
+    min-height: 30px;
+    padding: 0 0.65rem;
+    border: 1px solid #bfdbfe;
+    border-radius: 7px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 0.68rem;
+    font-weight: 750;
+    text-decoration: none;
+    }}
+
+    .panel-empty {{
+    padding: 2rem 1rem;
+    color: #94a3b8;
+    font-size: 0.78rem;
+    text-align: center;
+    }}
+
+    .mono-box {{
+    margin: 1rem;
+    padding: 0.75rem;
+    border-radius: 8px;
+    background: #f8fafc;
+    color: #475569;
+    font-family:
+        ui-monospace,
+        SFMono-Regular,
+        Menlo,
+        Monaco,
+        Consolas,
+        monospace;
+    font-size: 0.7rem;
+    word-break: break-all;
+    }}
+
+    .placeholder-state {{
+    min-height: 360px;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    padding: 3rem;
+    text-align: center;
+    }}
+
+    .placeholder-icon {{
+    width: 54px;
+    height: 54px;
+    display: grid;
+    place-items: center;
+    margin-bottom: 1rem;
+    border-radius: 14px;
+    background: #eff6ff;
+    color: #2563eb;
+    font-size: 1.45rem;
+    font-weight: 800;
+    }}
+
+    .placeholder-state h2 {{
+    margin: 0 0 0.45rem;
+    font-size: 1.1rem;
+    }}
+
+    .placeholder-state p {{
+    width: min(100%, 470px);
+    margin: 0;
+    color: #64748b;
+    font-size: 0.82rem;
+    line-height: 1.55;
+    }}
+
+    @media (max-width: 900px) {{
+    .detail-grid {{
+        grid-template-columns: 1fr;
+    }}
+    }}
+
     @media (max-width: 1050px) {{
-      .metric-grid {{
+    .metric-grid {{
         grid-template-columns:
-          repeat(
+        repeat(
             2,
             minmax(0, 1fr)
-          );
-      }}
+        );
+    }}
     }}
 
     @media (max-width: 760px) {{
@@ -628,14 +937,84 @@ def users_page(
             "orcid"
         )
 
+        identity_parts = []
+
+        if github:
+            identity_parts.append(
+                """
+                <span class="provider-pill github">
+                  GitHub
+                </span>
+                """
+            )
+
+        if orcid:
+            identity_parts.append(
+                """
+                <span class="provider-pill orcid">
+                  ORCID
+                </span>
+                """
+            )
+
+        if not identity_parts:
+            identity_parts.append(
+                """
+                <span class="provider-pill password">
+                  Password
+                </span>
+                """
+            )
+
+        is_active = (
+            user["active_sessions"] > 0
+        )
+
         rows.append(
             f"""
-            <tr>
+            <tr
+              class="user-row"
+              data-user-search="
+                {escape(user["display_name"])}
+                {escape(user["email"])}
+                {escape(user["institution"] or "")}
+              "
+              onclick="
+                window.location.href=
+                '/control/users/{escape(user["id"])}'
+              "
+            >
 
               <td>
-                <strong>
-                  {escape(user["display_name"])}
-                </strong>
+                <div class="user-cell">
+
+                  <div class="user-avatar">
+                    {
+                        escape(
+                            user["display_name"][0]
+                            .upper()
+                        )
+                        if user["display_name"]
+                        else "?"
+                    }
+                  </div>
+
+                  <div>
+                    <div class="user-name">
+                      {escape(user["display_name"])}
+                    </div>
+
+                    <div class="user-institution">
+                      {
+                          escape(
+                              user["institution"]
+                              or "No institution"
+                          )
+                      }
+                    </div>
+                  </div>
+
+                </div>
               </td>
 
               <td>
@@ -643,29 +1022,9 @@ def users_page(
               </td>
 
               <td>
-                {
-                    escape(
-                        github.get(
-                            "provider_username",
-                            "Connected",
-                        )
-                    )
-                    if github
-                    else '<span class="identity-none">—</span>'
-                }
-              </td>
-
-              <td>
-                {
-                    escape(
-                        orcid.get(
-                            "provider_subject",
-                            "Connected",
-                        )
-                    )
-                    if orcid
-                    else '<span class="identity-none">—</span>'
-                }
+                <div class="provider-list">
+                  {''.join(identity_parts)}
+                </div>
               </td>
 
               <td>
@@ -677,11 +1036,29 @@ def users_page(
               </td>
 
               <td>
-                {user["sessions"]}
+                {
+                    f'''
+                    <span class="presence active">
+                      <span></span>
+                      Active
+                    </span>
+                    '''
+                    if is_active
+                    else '''
+                    <span class="presence">
+                      <span></span>
+                      Offline
+                    </span>
+                    '''
+                }
               </td>
 
               <td>
-                {_date(user["created_at"])}
+                {
+                    _date(user["last_seen_at"])
+                    if user["last_seen_at"]
+                    else "Never"
+                }
               </td>
 
             </tr>
@@ -689,36 +1066,125 @@ def users_page(
         )
 
     content = f"""
-    <h1>Users</h1>
+    <div class="page-heading-row">
 
-    <p class="page-subtitle">
-      Registered CryoStack accounts and linked identities.
-    </p>
+      <div>
+        <h1>Users</h1>
 
-    <div class="panel">
+        <p class="page-subtitle">
+          Registered accounts, identities and platform activity.
+        </p>
+      </div>
+
+      <div class="page-count">
+        {len(users)} users
+      </div>
+
+    </div>
+
+    <div class="user-toolbar">
+
+      <div class="search-box">
+        <span>⌕</span>
+
+        <input
+          id="user-search"
+          type="search"
+          placeholder="
+            Search users by name, email or institution
+          "
+          autocomplete="off"
+        >
+      </div>
+
+    </div>
+
+    <div class="panel user-table-panel">
 
       <table>
 
         <thead>
           <tr>
-            <th>Name</th>
+            <th>User</th>
             <th>Email</th>
-            <th>GitHub</th>
-            <th>ORCID</th>
+            <th>Identity</th>
             <th>Experiments</th>
-            <th>Configurations</th>
-            <th>Sessions</th>
-            <th>Created</th>
+            <th>Configs</th>
+            <th>Status</th>
+            <th>Last Seen</th>
           </tr>
         </thead>
 
-        <tbody>
+        <tbody id="users-table-body">
           {''.join(rows)}
         </tbody>
 
       </table>
 
+      <div
+        id="user-search-empty"
+        class="table-empty"
+        hidden
+      >
+        No users match your search.
+      </div>
+
     </div>
+
+    <script>
+      (() => {{
+        const input =
+          document.getElementById(
+            "user-search"
+          );
+
+        const rows = [
+          ...document.querySelectorAll(
+            ".user-row"
+          )
+        ];
+
+        const empty =
+          document.getElementById(
+            "user-search-empty"
+          );
+
+        input?.addEventListener(
+          "input",
+          () => {{
+
+            const query =
+              input.value
+              .trim()
+              .toLowerCase();
+
+            let visible = 0;
+
+            for (const row of rows) {{
+
+              const haystack = (
+                row.dataset.userSearch || ""
+              ).toLowerCase();
+
+              const show =
+                !query ||
+                haystack.includes(query);
+
+              row.hidden = !show;
+
+              if (show) {{
+                visible += 1;
+              }}
+            }}
+
+            if (empty) {{
+              empty.hidden =
+                visible !== 0;
+            }}
+          }}
+        );
+      }})();
+    </script>
     """
 
     return control_layout(
@@ -726,7 +1192,6 @@ def users_page(
         active="users",
         content=content,
     )
-
 
 def experiments_page(
     *,
@@ -818,5 +1283,451 @@ def experiments_page(
     return control_layout(
         title="Experiments",
         active="experiments",
+        content=content,
+    )
+
+def user_detail_page(
+    *,
+    user: dict,
+) -> str:
+
+    identities = user.get(
+        "identities",
+        [],
+    )
+
+    sessions = user.get(
+        "sessions_detail",
+        [],
+    )
+
+    experiments = user.get(
+        "recent_experiments",
+        [],
+    )
+
+    configurations = user.get(
+        "recent_configurations",
+        [],
+    )
+
+    identity_rows = []
+
+    for identity in identities:
+
+        provider = (
+            identity["provider"]
+            .strip()
+            .title()
+        )
+
+        identifier = (
+            identity.get(
+                "provider_username"
+            )
+            or identity.get(
+                "provider_subject"
+            )
+            or "Connected"
+        )
+
+        profile_url = identity.get(
+            "provider_profile_url"
+        )
+
+        identity_rows.append(
+            f"""
+            <div class="detail-row">
+
+              <div>
+                <div class="detail-primary">
+                  {escape(provider)}
+                </div>
+
+                <div class="detail-secondary">
+                  {escape(identifier)}
+                </div>
+              </div>
+
+              {
+                  f'''
+                  <a
+                    class="small-button"
+                    href="{escape(profile_url)}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    View profile
+                  </a>
+                  '''
+                  if profile_url
+                  else ""
+              }
+
+            </div>
+            """
+        )
+
+    session_rows = []
+
+    for session in sessions[:8]:
+
+        session_rows.append(
+            f"""
+            <tr>
+              <td>
+                <code>
+                  {escape(session["id"][:12])}…
+                </code>
+              </td>
+
+              <td>
+                {_date(session["last_seen_at"])}
+              </td>
+
+              <td>
+                {
+                    '<span class="presence active">'
+                    '<span></span>Active</span>'
+                    if session["active"]
+                    else '<span class="presence">'
+                         '<span></span>Expired</span>'
+                }
+              </td>
+
+              <td>
+                {_date(session["expires_at"])}
+              </td>
+            </tr>
+            """
+        )
+
+    experiment_rows = []
+
+    for experiment in experiments:
+
+        experiment_rows.append(
+            f"""
+            <tr>
+              <td>
+                <a
+                  class="table-link"
+                  href="/experiments/{escape(experiment["id"])}"
+                >
+                  {escape(experiment["name"])}
+                </a>
+              </td>
+
+              <td>
+                {escape(experiment["application"])}
+              </td>
+
+              <td>
+                {escape(experiment["backend"])}
+              </td>
+
+              <td>
+                <span class="status-pill">
+                  {escape(experiment["status"])}
+                </span>
+              </td>
+
+              <td>
+                {_date(experiment["created_at"])}
+              </td>
+            </tr>
+            """
+        )
+
+    content = f"""
+    <div class="detail-breadcrumb">
+      <a href="/control/users">
+        ← Users
+      </a>
+    </div>
+
+    <div class="user-profile-header">
+
+      <div class="large-avatar">
+        {
+            escape(
+                user["display_name"][0].upper()
+            )
+            if user["display_name"]
+            else "?"
+        }
+      </div>
+
+      <div>
+        <h1>
+          {escape(user["display_name"])}
+        </h1>
+
+        <p class="page-subtitle">
+          {escape(user["email"])}
+        </p>
+      </div>
+
+    </div>
+
+    <div class="metric-grid">
+
+      <div class="metric-card">
+        <div class="metric-label">
+          Experiments
+        </div>
+
+        <div class="metric-value">
+          {user["experiment_count"]}
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">
+          Configurations
+        </div>
+
+        <div class="metric-value">
+          {user["configuration_count"]}
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">
+          Workspaces
+        </div>
+
+        <div class="metric-value">
+          {user["workspace_count"]}
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">
+          Sessions
+        </div>
+
+        <div class="metric-value">
+          {user["session_count"]}
+        </div>
+      </div>
+
+    </div>
+
+    <div class="detail-grid">
+
+      <section>
+
+        <div class="panel">
+          <div class="panel-header">
+            Account
+          </div>
+
+          <div class="detail-list">
+
+            <div class="detail-row">
+              <span>Email</span>
+              <strong>
+                {escape(user["email"])}
+              </strong>
+            </div>
+
+            <div class="detail-row">
+              <span>Institution</span>
+              <strong>
+                {escape(user["institution"] or "—")}
+              </strong>
+            </div>
+
+            <div class="detail-row">
+              <span>Research role</span>
+              <strong>
+                {escape(user["research_role"] or "—")}
+              </strong>
+            </div>
+
+            <div class="detail-row">
+              <span>Country</span>
+              <strong>
+                {escape(user["country"] or "—")}
+              </strong>
+            </div>
+
+            <div class="detail-row">
+              <span>Default application</span>
+              <strong>
+                {
+                    escape(
+                        user["default_application"]
+                        or "—"
+                    )
+                }
+              </strong>
+            </div>
+
+            <div class="detail-row">
+              <span>Registered</span>
+              <strong>
+                {_date(user["created_at"])}
+              </strong>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            Recent Experiments
+          </div>
+
+          {
+              f'''
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Application</th>
+                    <th>Backend</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {''.join(experiment_rows)}
+                </tbody>
+              </table>
+              '''
+              if experiment_rows
+              else '''
+              <div class="panel-empty">
+                No experiments for this user.
+              </div>
+              '''
+          }
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            Sessions
+          </div>
+
+          {
+              f'''
+              <table>
+                <thead>
+                  <tr>
+                    <th>Session</th>
+                    <th>Last Seen</th>
+                    <th>Status</th>
+                    <th>Expires</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {''.join(session_rows)}
+                </tbody>
+              </table>
+              '''
+              if session_rows
+              else '''
+              <div class="panel-empty">
+                No sessions recorded.
+              </div>
+              '''
+          }
+        </div>
+
+      </section>
+
+      <aside>
+
+        <div class="panel">
+          <div class="panel-header">
+            Linked Identities
+          </div>
+
+          <div class="detail-list">
+            {
+                ''.join(identity_rows)
+                if identity_rows
+                else '''
+                <div class="panel-empty">
+                  No external identities linked.
+                </div>
+                '''
+            }
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            User ID
+          </div>
+
+          <div class="mono-box">
+            {escape(user["id"])}
+          </div>
+        </div>
+
+      </aside>
+
+    </div>
+    """
+
+    return control_layout(
+        title=user["display_name"],
+        active="users",
+        content=content,
+    )
+
+def placeholder_page(
+    *,
+    title: str,
+    active: str,
+    description: str,
+    badge: str = "Coming next",
+) -> str:
+
+    content = f"""
+    <div class="page-heading-row">
+
+      <div>
+        <h1>{escape(title)}</h1>
+
+        <p class="page-subtitle">
+          {escape(description)}
+        </p>
+      </div>
+
+      <div class="page-count">
+        {escape(badge)}
+      </div>
+
+    </div>
+
+    <div class="panel">
+
+      <div class="placeholder-state">
+
+        <div class="placeholder-icon">
+          ◇
+        </div>
+
+        <h2>
+          {escape(title)}
+        </h2>
+
+        <p>
+          This Control Center module is connected
+          and ready for its operational services.
+        </p>
+
+      </div>
+
+    </div>
+    """
+
+    return control_layout(
+        title=title,
+        active=active,
         content=content,
     )
