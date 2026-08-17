@@ -1,1053 +1,982 @@
-document.addEventListener("DOMContentLoaded", async () => {
+document.addEventListener(
+  "DOMContentLoaded",
+  async () => {
 
-  // ============================================================
-  // Map
-  // ============================================================
+    // ============================================================
+    // Antarctic Polar Stereographic
+    // ============================================================
 
-  const map = new maplibregl.Map({
-    container: "frozen-legacies-map",
+    proj4.defs(
+      "EPSG:3031",
+      "+proj=stere " +
+      "+lat_0=-90 " +
+      "+lat_ts=-71 " +
+      "+lon_0=0 " +
+      "+x_0=0 " +
+      "+y_0=0 " +
+      "+datum=WGS84 " +
+      "+units=m " +
+      "+no_defs"
+    );
 
-    style: {
-      version: 8,
-
-      sources: {
-        osm: {
-          type: "raster",
-
-          tiles: [
-            "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-          ],
-
-          tileSize: 256,
-
-          attribution:
-            "© OpenStreetMap contributors"
-        }
-      },
-
-      layers: [
-        {
-          id: "osm",
-          type: "raster",
-          source: "osm",
-          paint: {
-            "raster-opacity": 0.72,
-            "raster-saturation": -0.4
-          }
-        }
-      ]
-    },
-
-    center: [
-      0,
-      -90
-    ],
-
-    zoom: 2.2,
-    bearing: 0,
-    pitch: 0,
-    minZoom: 1.4,
-    maxZoom: 12,
-    canvasContextAttributes: {antialias: true}
-  });
-
-  // ===========================================================
-  // IMPORTANT: Use globe rather than web Mercator.
-  // ==========================================================
-
-  map.on(
-    "style.load",
-    () => {
-      
-      map.setProjection({
-        type: "globe"
-      });
-    }
-  );
+    ol.proj.proj4.register(proj4);
 
 
-  map.addControl(
-    new maplibregl.NavigationControl(),
-    "top-right"
-  );
-
-  map.addControl(
-    new maplibregl.GlobeControl(),
-    "top-right"
-  );
-
-  // map.addControl(
-  //   new maplibregl.ScaleControl({
-  //     maxWidth: 140,
-  //     unit: "metric"
-  //   }),
-  //   "bottom-right"
-  // );
+    const antarcticProjection =
+      ol.proj.get("EPSG:3031");
 
 
-  // ============================================================
-  // Helpers
-  // ============================================================
-
-  /**
-   * Make a LineString continuous across the ±180° antimeridian.
-   *
-   * Example:
-   *
-   *   179, -179
-   *
-   * becomes approximately:
-   *
-   *   179, 181
-   *
-   * rather than drawing a line across the entire world.
-   */
-  function unwrapCoordinates(coordinates) {
-
-    if (!coordinates || coordinates.length === 0) {
-      return [];
-    }
-
-    const result = [];
-
-    let previousLon =
-      Number(coordinates[0][0]);
-
-    result.push([
-      previousLon,
-      Number(coordinates[0][1])
+    antarcticProjection.setExtent([
+      -3333134,
+      -3333134,
+       3333134,
+       3333134
     ]);
 
 
-    for (
-      let i = 1;
-      i < coordinates.length;
-      i++
+    // ============================================================
+    // Styles
+    // ============================================================
+
+    const defaultFlightStyle =
+      new ol.style.Style({
+        stroke:
+          new ol.style.Stroke({
+            color:
+              "rgba(8, 108, 153, 0.72)",
+
+            width: 2
+          })
+      });
+
+
+    const selectedFlightStyle =
+      new ol.style.Style({
+        stroke:
+          new ol.style.Stroke({
+            color:
+              "#ff8a1f",
+
+            width: 5
+          })
+      });
+
+
+    function observationStyle(
+      feature
     ) {
 
-      let lon =
-        Number(coordinates[i][0]);
+      const status =
+        String(
+          feature.get(
+            "echo_status"
+          ) || ""
+        ).toLowerCase();
 
-      const lat =
-        Number(coordinates[i][1]);
+
+      let color =
+        "#8b5cf6";
 
 
-      while (
-        lon - previousLon > 180
+      if (
+        status === "good"
       ) {
-        lon -= 360;
+        color =
+          "#22c55e";
+      }
+
+      else if (
+        status === "no_bed"
+      ) {
+        color =
+          "#ef4444";
+      }
+
+      else if (
+        status === "weak_bed"
+      ) {
+        color =
+          "#f59e0b";
       }
 
 
-      while (
-        lon - previousLon < -180
-      ) {
-        lon += 360;
-      }
+      return new ol.style.Style({
+        image:
+          new ol.style.Circle({
+            radius: 4,
 
+            fill:
+              new ol.style.Fill({
+                color
+              }),
 
-      result.push([
-        lon,
-        lat
-      ]);
+            stroke:
+              new ol.style.Stroke({
+                color:
+                  "#ffffff",
 
-
-      previousLon = lon;
+                width:
+                  1
+              })
+          })
+      });
     }
 
 
-    return result;
-  }
+    // ============================================================
+    // Base map
+    // ============================================================
+
+    /*
+     * Start simple.
+     *
+     * We deliberately DO NOT use OSM here because OSM tiles
+     * are Web Mercator and are not appropriate as our Antarctic
+     * polar base layer.
+     *
+     * Next we can add an EPSG:3031 Antarctic raster/WMS layer.
+     */
+
+    const backgroundLayer =
+      new ol.layer.Vector({
+        source:
+          new ol.source.Vector(),
+
+        style:
+          new ol.style.Style({
+            fill:
+              new ol.style.Fill({
+                color:
+                  "#d7eef5"
+              })
+          })
+      });
 
 
-  /**
-   * Build a display copy of the flight GeoJSON with continuous
-   * longitudes around the antimeridian.
-   */
-  function prepareFlightsForMap(flights) {
+    // ============================================================
+    // Flight layers
+    // ============================================================
 
-    return {
-      type: "FeatureCollection",
+    const flightSource =
+      new ol.source.Vector();
 
-      features:
-        flights.features.map(
+
+    const flightLayer =
+      new ol.layer.Vector({
+        source:
+          flightSource,
+
+        style:
+          defaultFlightStyle
+      });
+
+
+    const selectedFlightSource =
+      new ol.source.Vector();
+
+
+    const selectedFlightLayer =
+      new ol.layer.Vector({
+        source:
+          selectedFlightSource,
+
+        style:
+          selectedFlightStyle
+      });
+
+
+    // ============================================================
+    // Observation layer
+    // ============================================================
+
+    const observationSource =
+      new ol.source.Vector();
+
+
+    const observationLayer =
+      new ol.layer.Vector({
+        source:
+          observationSource,
+
+        style:
+          observationStyle
+      });
+
+
+    // ============================================================
+    // Map
+    // ============================================================
+
+    const map =
+      new ol.Map({
+
+        target:
+          "frozen-legacies-map",
+
+        layers: [
+          backgroundLayer,
+          flightLayer,
+          selectedFlightLayer,
+          observationLayer
+        ],
+
+        view:
+          new ol.View({
+
+            projection:
+              antarcticProjection,
+
+            center: [
+              0,
+              0
+            ],
+
+            zoom:
+              1.9,
+
+            minZoom:
+              1,
+
+            maxZoom:
+              12,
+
+            extent: [
+              -3500000,
+              -3500000,
+               3500000,
+               3500000
+            ]
+          }),
+
+        controls:
+          ol.control.defaults.defaults({
+            rotate:
+              false
+          }).extend([
+            new ol.control.ScaleLine({
+              units:
+                "metric"
+            })
+          ])
+      });
+
+
+    // ============================================================
+    // Data
+    // ============================================================
+
+    try {
+
+      const [
+        flightsResponse,
+        observationsResponse
+      ] =
+        await Promise.all([
+
+          fetch(
+            "/frozen-legacies/data/flights.geojson"
+          ),
+
+          fetch(
+            "/frozen-legacies/data/observations.geojson"
+          )
+
+        ]);
+
+
+      if (
+        !flightsResponse.ok
+      ) {
+
+        throw new Error(
+          `Flights HTTP ${
+            flightsResponse.status
+          }`
+        );
+
+      }
+
+
+      if (
+        !observationsResponse.ok
+      ) {
+
+        throw new Error(
+          `Observations HTTP ${
+            observationsResponse.status
+          }`
+        );
+
+      }
+
+
+      const flights =
+        await flightsResponse.json();
+
+
+      const observations =
+        await observationsResponse.json();
+
+
+      // ==========================================================
+      // Read WGS84 GeoJSON and project automatically to EPSG:3031
+      // ==========================================================
+
+      const geojsonFormat =
+        new ol.format.GeoJSON();
+
+
+      const flightFeatures =
+        geojsonFormat.readFeatures(
+          flights,
+          {
+            dataProjection:
+              "EPSG:4326",
+
+            featureProjection:
+              "EPSG:3031"
+          }
+        );
+
+
+      const observationFeatures =
+        geojsonFormat.readFeatures(
+          observations,
+          {
+            dataProjection:
+              "EPSG:4326",
+
+            featureProjection:
+              "EPSG:3031"
+          }
+        );
+
+
+      flightSource.addFeatures(
+        flightFeatures
+      );
+
+
+      observationSource.addFeatures(
+        observationFeatures
+      );
+
+
+      console.log(
+        "FrozenLegacies flights:",
+        flightFeatures.length
+      );
+
+
+      console.log(
+        "FrozenLegacies observations:",
+        observationFeatures.length
+      );
+
+
+      // ==========================================================
+      // Initial Antarctic view
+      // ==========================================================
+
+      map
+        .getView()
+        .fit(
+          [
+            -3100000,
+            -3100000,
+             3100000,
+             3100000
+          ],
+          {
+            padding: [
+              30,
+              30,
+              30,
+              30
+            ],
+
+            duration:
+              500
+          }
+        );
+
+
+      // ==========================================================
+      // Flight selector
+      // ==========================================================
+
+      const flightSelect =
+        document.getElementById(
+          "flight-select"
+        );
+
+
+      const flightNumbers =
+        [
+          ...new Set(
+            observationFeatures.map(
+              feature =>
+                String(
+                  feature.get(
+                    "flight"
+                  )
+                )
+            )
+          )
+        ].sort(
+          (a, b) =>
+            Number(a) -
+            Number(b)
+        );
+
+
+      for (
+        const flight
+        of flightNumbers
+      ) {
+
+        const option =
+          document.createElement(
+            "option"
+          );
+
+
+        option.value =
+          flight;
+
+
+        option.textContent =
+          `Flight ${flight}`;
+
+
+        flightSelect.appendChild(
+          option
+        );
+
+      }
+
+
+      // ==========================================================
+      // Filtering
+      // ==========================================================
+
+      function showAllFlights() {
+
+        selectedFlightSource.clear();
+
+
+        flightLayer.setStyle(
+          defaultFlightStyle
+        );
+
+
+        observationLayer.setStyle(
+          observationStyle
+        );
+
+
+        flightSource
+          .getFeatures()
+          .forEach(
+            feature => {
+              feature.set(
+                "_hidden",
+                false
+              );
+            }
+          );
+
+
+        observationSource
+          .getFeatures()
+          .forEach(
+            feature => {
+              feature.set(
+                "_hidden",
+                false
+              );
+            }
+          );
+
+
+        flightLayer.setStyle(
           feature => {
 
             if (
-              feature.geometry?.type !==
-              "LineString"
+              feature.get(
+                "_hidden"
+              )
             ) {
-              return feature;
+              return null;
             }
 
 
-            return {
-              ...feature,
-
-              geometry: {
-                ...feature.geometry,
-
-                coordinates:
-                  unwrapCoordinates(
-                    feature.geometry.coordinates
-                  )
-              }
-            };
+            return defaultFlightStyle;
           }
-        )
-    };
-  }
+        );
 
 
-  function fitToFlights(
-    flights,
-    {
-      padding = 70,
-      maxZoom = 5.5,
-      duration = 800
-    } = {}
-  ) {
+        observationLayer.setStyle(
+          feature => {
 
-    const bounds =
-      new maplibregl.LngLatBounds();
-
-
-    flights.features.forEach(
-      feature => {
-
-        const geometry =
-          feature.geometry;
+            if (
+              feature.get(
+                "_hidden"
+              )
+            ) {
+              return null;
+            }
 
 
-        if (!geometry) {
-          return;
-        }
+            return observationStyle(
+              feature
+            );
+          }
+        );
 
 
-        if (
-          geometry.type ===
-          "LineString"
-        ) {
+        map
+          .getView()
+          .fit(
+            [
+              -3100000,
+              -3100000,
+               3100000,
+               3100000
+            ],
+            {
+              padding: [
+                30,
+                30,
+                30,
+                30
+              ],
 
-          geometry.coordinates.forEach(
-            coord => {
+              duration:
+                500
+            }
+          );
+
+      }
+
+
+      function selectFlight(
+        flightNumber
+      ) {
+
+        selectedFlightSource.clear();
+
+
+        let selectedFeature =
+          null;
+
+
+        flightSource
+          .getFeatures()
+          .forEach(
+            feature => {
+
+              const selected =
+                String(
+                  feature.get(
+                    "flight"
+                  )
+                ) ===
+                String(
+                  flightNumber
+                );
+
+
+              feature.set(
+                "_hidden",
+                false
+              );
+
 
               if (
-                Array.isArray(coord) &&
-                coord.length >= 2
+                selected
               ) {
-                bounds.extend(coord);
+                selectedFeature =
+                  feature;
               }
 
             }
           );
 
+
+        if (
+          selectedFeature
+        ) {
+
+          selectedFlightSource.addFeature(
+            selectedFeature.clone()
+          );
+
         }
 
-      }
-    );
 
+        flightLayer.setStyle(
+          feature => {
 
-    if (!bounds.isEmpty()) {
-
-      map.fitBounds(
-        bounds,
-        {
-          padding,
-          maxZoom,
-          duration
-        }
-      );
-
-    }
-  }
-
-
-  function fitToFlight(
-    flights,
-    flightNumber
-  ) {
-
-    const feature =
-      flights.features.find(
-        item =>
-          String(
-            item.properties?.flight
-          ) === String(flightNumber)
-      );
-
-
-    if (!feature) {
-      return;
-    }
-
-
-    fitToFlights(
-      {
-        type: "FeatureCollection",
-        features: [feature]
-      },
-      {
-        padding: 100,
-        maxZoom: 7,
-        duration: 700
-      }
-    );
-  }
-
-
-  function flightFilter(
-    flightNumber
-  ) {
-
-    return [
-      "==",
-
-      [
-        "to-string",
-        ["get", "flight"]
-      ],
-
-      String(flightNumber)
-    ];
-  }
-
-  function resetAntarcticView() {
-
-    map.easeTo({
-      center: [
-        0,
-        -88
-      ],
-
-      zoom: 2.25,
-
-      bearing: 0,
-
-      pitch: 0,
-
-      duration: 700
-    });
-
-  }
-
-  function clearSelectedFlight() {
-
-    if (
-      map.getLayer(
-        "frozen-flight-selected"
-      )
-    ) {
-
-      map.setFilter(
-        "frozen-flight-selected",
-        [
-          "==",
-          [
-            "to-string",
-            ["get", "flight"]
-          ],
-          "__none__"
-        ]
-      );
-
-    }
-
-
-    if (
-      map.getLayer(
-        "frozen-flight-lines"
-      )
-    ) {
-
-      map.setPaintProperty(
-        "frozen-flight-lines",
-        "line-opacity",
-        0.72
-      );
-
-    }
-
-  }
-
-
-  // ============================================================
-  // Data
-  // ============================================================
-
-  try {
-
-    const [
-      flightsResponse,
-      observationsResponse
-    ] = await Promise.all([
-
-      fetch(
-        "/frozen-legacies/data/flights.geojson"
-      ),
-
-      fetch(
-        "/frozen-legacies/data/observations.geojson"
-      )
-
-    ]);
-
-
-    if (!flightsResponse.ok) {
-
-      throw new Error(
-        `Flights HTTP ${flightsResponse.status}`
-      );
-
-    }
-
-
-    if (!observationsResponse.ok) {
-
-      throw new Error(
-        `Observations HTTP ${observationsResponse.status}`
-      );
-
-    }
-
-
-    const rawFlights =
-      await flightsResponse.json();
-
-
-    const observations =
-      await observationsResponse.json();
-
-
-    // Important:
-    // use this version for displaying flight tracks.
-    const flights =
-      prepareFlightsForMap(
-        rawFlights
-      );
-
-
-    console.log(
-      "FrozenLegacies flights:",
-      flights.features.length
-    );
-
-
-    console.log(
-      "FrozenLegacies observations:",
-      observations.features.length
-    );
-
-
-    // ==========================================================
-    // Flight selector
-    // ==========================================================
-
-    const flightSelect =
-      document.getElementById(
-        "flight-select"
-      );
-
-
-    const flightNumbers = [
-      ...new Set(
-        observations.features.map(
-          feature =>
-            String(
-              feature.properties.flight
-            )
-        )
-      )
-    ].sort(
-      (a, b) =>
-        Number(a) - Number(b)
-    );
-
-
-    for (
-      const flight of flightNumbers
-    ) {
-
-      const option =
-        document.createElement(
-          "option"
-        );
-
-
-      option.value =
-        flight;
-
-
-      option.textContent =
-        `Flight ${flight}`;
-
-
-      flightSelect.appendChild(
-        option
-      );
-
-    }
-
-
-    // ==========================================================
-    // Map layers
-    // ==========================================================
-
-    map.on(
-      "load",
-      () => {
-
-        // --------------------------------------------------------
-        // Flight source
-        // --------------------------------------------------------
-
-        map.addSource(
-          "frozen-flights",
-          {
-            type: "geojson",
-            data: flights
-          }
-        );
-
-
-        // Base flight tracks
-        map.addLayer({
-          id: "frozen-flight-lines",
-
-          type: "line",
-
-          source: "frozen-flights",
-
-          layout: {
-            "line-cap": "round",
-            "line-join": "round"
-          },
-
-          paint: {
-
-            "line-color":
-              "#087ca9",
-
-            "line-width": [
-              "interpolate",
-              ["linear"],
-              ["zoom"],
-
-              2,
-              1.2,
-
-              5,
-              2.2,
-
-              8,
-              3.5
-            ],
-
-            "line-opacity":
-              0.72
-          }
-        });
-
-
-        // --------------------------------------------------------
-        // Selected flight highlight
-        // --------------------------------------------------------
-
-        map.addLayer({
-          id: "frozen-flight-selected",
-
-          type: "line",
-
-          source: "frozen-flights",
-
-          filter: [
-            "==",
-
-            [
-              "to-string",
-              ["get", "flight"]
-            ],
-
-            "__none__"
-          ],
-
-          layout: {
-            "line-cap": "round",
-            "line-join": "round"
-          },
-
-          paint: {
-
-            "line-color":
-              "#ff8a1f",
-
-            "line-width": [
-              "interpolate",
-              ["linear"],
-              ["zoom"],
-
-              2,
-              3,
-
-              5,
-              5,
-
-              8,
-              8
-            ],
-
-            "line-opacity":
-              1
-          }
-        });
-
-
-        // --------------------------------------------------------
-        // Observation source
-        // --------------------------------------------------------
-
-        map.addSource(
-          "frozen-observations",
-          {
-            type: "geojson",
-            data: observations
-          }
-        );
-
-
-        map.addLayer({
-          id: "frozen-observations",
-
-          type: "circle",
-
-          source:
-            "frozen-observations",
-
-          paint: {
-
-            "circle-radius": [
-              "interpolate",
-              ["linear"],
-              ["zoom"],
-
-              2,
-              2,
-
-              5,
-              3,
-
-              7,
-              5,
-
-              10,
-              8
-            ],
-
-
-            "circle-color": [
-              "match",
-
-              [
-                "downcase",
-                [
-                  "to-string",
-                  ["get", "echo_status"]
-                ]
-              ],
-
-              "good",
-              "#22c55e",
-
-              "no_bed",
-              "#ef4444",
-
-              "weak_bed",
-              "#f59e0b",
-
-              "#8b5cf6"
-            ],
-
-
-            "circle-opacity":
-              0.88,
-
-
-            "circle-stroke-color":
-              "#ffffff",
-
-
-            "circle-stroke-width":
-              0.8
-          }
-        });
-
-
-        // ========================================================
-        // Observation interactions
-        // ========================================================
-
-        map.on(
-          "mouseenter",
-          "frozen-observations",
-          () => {
-
-            map.getCanvas().style.cursor =
-              "pointer";
-
-          }
-        );
-
-
-        map.on(
-          "mouseleave",
-          "frozen-observations",
-          () => {
-
-            map.getCanvas().style.cursor =
-              "";
-
-          }
-        );
-
-
-        map.on(
-          "click",
-          "frozen-observations",
-          event => {
-
-            const feature =
-              event.features?.[0];
-
-
-            if (!feature) {
-              return;
-            }
-
-
-            const p =
-              feature.properties;
-
-
-            const coordinates =
-              feature.geometry.coordinates;
-
-
-            document.getElementById(
-              "selected-record"
-            ).innerHTML = `
-
-              <strong
-                style="
-                  font-size:15px;
-                  color:#17384d;
-                "
-              >
-                ${
-                  p.file_id ||
-                  "Radar observation"
-                }
-              </strong>
-
-              <br><br>
-
-              <strong>Flight:</strong>
-              ${p.flight ?? "—"}
-
-              <br>
-
-              <strong>CBD:</strong>
-              ${p.cbd ?? "—"}
-
-              <br>
-
-              <strong>Echo:</strong>
-              ${p.echo_status ?? "—"}
-
-              <br><br>
-
-              <strong>Latitude:</strong>
-              ${Number(
-                coordinates[1]
-              ).toFixed(5)}
-
-              <br>
-
-              <strong>Longitude:</strong>
-              ${Number(
-                coordinates[0]
-              ).toFixed(5)}
-
-              <br><br>
-
-              <strong>Ice thickness:</strong>
-              ${
-                p.h_ice_m ??
-                "—"
-              } m
-
-              <br>
-
-              <strong>Bed SNR:</strong>
-              ${
-                p.bed_snr_dB ??
-                "—"
-              } dB
-
-              <br>
-
-              <strong>
-                Surface temperature:
-              </strong>
-              ${
-                p.T_surface_C ??
-                "—"
-              } °C
-
-              <br>
-
-              <strong>
-                Reflectivity:
-              </strong>
-              ${
-                p.R0_dB ??
-                "—"
-              } dB
-            `;
-
-
-            // Also select the corresponding flight.
-            const flight =
+            const selected =
               String(
-                p.flight ?? ""
+                feature.get(
+                  "flight"
+                )
+              ) ===
+              String(
+                flightNumber
               );
 
 
             if (
-              flight &&
-              flightSelect.value !== flight
+              selected
             ) {
-
-              flightSelect.value =
-                flight;
-
-
-              flightSelect.dispatchEvent(
-                new Event("change")
-              );
-
-            }
-
-          }
-        );
-
-
-        // ========================================================
-        // Flight-line interactions
-        // ========================================================
-
-        map.on(
-          "mouseenter",
-          "frozen-flight-lines",
-          () => {
-
-            map.getCanvas().style.cursor =
-              "pointer";
-
-          }
-        );
-
-
-        map.on(
-          "mouseleave",
-          "frozen-flight-lines",
-          () => {
-
-            map.getCanvas().style.cursor =
-              "";
-
-          }
-        );
-
-
-        map.on(
-          "click",
-          "frozen-flight-lines",
-          event => {
-
-            const feature =
-              event.features?.[0];
-
-
-            if (!feature) {
-              return;
+              return null;
             }
 
 
-            const flight =
+            return new ol.style.Style({
+              stroke:
+                new ol.style.Stroke({
+                  color:
+                    "rgba(8,108,153,0.12)",
+
+                  width:
+                    1.5
+                })
+            });
+
+          }
+        );
+
+
+        observationLayer.setStyle(
+          feature => {
+
+            const selected =
               String(
-                feature.properties?.flight ??
-                ""
+                feature.get(
+                  "flight"
+                )
+              ) ===
+              String(
+                flightNumber
               );
 
 
-            if (!flight) {
-              return;
+            if (
+              !selected
+            ) {
+              return null;
             }
 
 
-            flightSelect.value =
-              flight;
-
-
-            flightSelect.dispatchEvent(
-              new Event("change")
+            return observationStyle(
+              feature
             );
 
           }
         );
 
 
-        // ========================================================
-        // Initial view
-        // ========================================================
-
-        fitToFlights(
-          flights,
-          {
-            padding: 80,
-            maxZoom: 5,
-            duration: 700
-          }
-        );
-
-      }
-    );
-
-
-    // ==========================================================
-    // Flight dropdown
-    // ==========================================================
-
-    flightSelect.addEventListener(
-      "change",
-      () => {
-
-        const value =
-          flightSelect.value;
-
-
         if (
-          !map.getLayer(
-            "frozen-observations"
-          )
+          selectedFeature
         ) {
-          return;
+
+          map
+            .getView()
+            .fit(
+              selectedFeature
+                .getGeometry()
+                .getExtent(),
+
+              {
+                padding: [
+                  80,
+                  80,
+                  80,
+                  80
+                ],
+
+                maxZoom:
+                  8,
+
+                duration:
+                  600
+              }
+            );
+
         }
 
-
-        // --------------------------------------------------------
-        // All flights
-        // --------------------------------------------------------
-
-        if (
-          value === "all"
-        ) {
-
-          map.setFilter(
-            "frozen-observations",
-            null
-          );
+      }
 
 
-          map.setFilter(
-            "frozen-flight-lines",
-            null
-          );
+      flightSelect.addEventListener(
+        "change",
+        () => {
+
+          const value =
+            flightSelect.value;
 
 
-          clearSelectedFlight();
+          if (
+            value === "all"
+          ) {
+
+            showAllFlights();
+
+          }
+
+          else {
+
+            selectFlight(
+              value
+            );
+
+          }
+
+        }
+      );
 
 
-          fitToFlights(
-            flights,
-            {
-              padding: 80,
-              maxZoom: 5,
-              duration: 700
+      // ==========================================================
+      // Observation click
+      // ==========================================================
+
+      map.on(
+        "singleclick",
+        event => {
+
+          let selected =
+            null;
+
+
+          map.forEachFeatureAtPixel(
+            event.pixel,
+
+            (
+              feature,
+              layer
+            ) => {
+
+              if (
+                layer ===
+                observationLayer
+              ) {
+
+                selected =
+                  feature;
+
+
+                return true;
+              }
+
             }
           );
 
 
-          return;
+          if (
+            !selected
+          ) {
+            return;
+          }
+
+
+          const p =
+            selected.getProperties();
+
+
+          /*
+           * Feature geometry is EPSG:3031 now.
+           * Convert back to longitude/latitude for display.
+           */
+
+          const coordinate =
+            ol.proj.transform(
+              selected
+                .getGeometry()
+                .getCoordinates(),
+
+              "EPSG:3031",
+
+              "EPSG:4326"
+            );
+
+
+          document.getElementById(
+            "selected-record"
+          ).innerHTML = `
+
+            <strong
+              style="
+                font-size:15px;
+                color:#17384d;
+              "
+            >
+              ${
+                p.file_id ||
+                "Radar observation"
+              }
+            </strong>
+
+            <br><br>
+
+            <strong>Flight:</strong>
+            ${p.flight ?? "—"}
+
+            <br>
+
+            <strong>CBD:</strong>
+            ${p.cbd ?? "—"}
+
+            <br>
+
+            <strong>Echo:</strong>
+            ${p.echo_status ?? "—"}
+
+            <br><br>
+
+            <strong>Latitude:</strong>
+            ${
+              Number(
+                coordinate[1]
+              ).toFixed(5)
+            }
+
+            <br>
+
+            <strong>Longitude:</strong>
+            ${
+              Number(
+                coordinate[0]
+              ).toFixed(5)
+            }
+
+            <br><br>
+
+            <strong>
+              Ice thickness:
+            </strong>
+            ${
+              p.h_ice_m ??
+              "—"
+            } m
+
+            <br>
+
+            <strong>
+              Bed SNR:
+            </strong>
+            ${
+              p.bed_snr_dB ??
+              "—"
+            } dB
+
+            <br>
+
+            <strong>
+              Surface temperature:
+            </strong>
+            ${
+              p.T_surface_C ??
+              "—"
+            } °C
+
+            <br>
+
+            <strong>
+              Reflectivity:
+            </strong>
+            ${
+              p.R0_dB ??
+              "—"
+            } dB
+          `;
+
+
+          const flight =
+            String(
+              p.flight ??
+              ""
+            );
+
+
+          if (
+            flight
+          ) {
+
+            flightSelect.value =
+              flight;
+
+
+            selectFlight(
+              flight
+            );
+
+          }
+
         }
+      );
 
 
-        // --------------------------------------------------------
-        // Selected flight
-        // --------------------------------------------------------
+      // ==========================================================
+      // Cursor
+      // ==========================================================
 
-        const filter =
-          flightFilter(value);
+      map.on(
+        "pointermove",
+        event => {
 
-
-        // Keep only observations from selected flight.
-        map.setFilter(
-          "frozen-observations",
-          filter
-        );
-
-
-        // Keep all flight lines visible,
-        // but fade them into the background.
-        map.setFilter(
-          "frozen-flight-lines",
-          null
-        );
-
-
-        map.setPaintProperty(
-          "frozen-flight-lines",
-          "line-opacity",
-          0.12
-        );
+          const hit =
+            map.hasFeatureAtPixel(
+              event.pixel,
+              {
+                layerFilter:
+                  layer =>
+                    layer ===
+                    observationLayer ||
+                    layer ===
+                    flightLayer
+              }
+            );
 
 
-        // Highlight the selected flight.
-        map.setFilter(
-          "frozen-flight-selected",
-          filter
-        );
+          map
+            .getTargetElement()
+            .style.cursor =
+              hit
+                ? "pointer"
+                : "";
+
+        }
+      );
 
 
-        // Zoom to selected flight.
-        fitToFlight(
-          flights,
-          value
-        );
+    }
 
-      }
-    );
-
-
-  } catch (error) {
-
-    console.error(
-      "FrozenLegacies data load failed:",
+    catch (
       error
-    );
+    ) {
+
+      console.error(
+        "FrozenLegacies data load failed:",
+        error
+      );
 
 
-    document.getElementById(
-      "selected-record"
-    ).innerHTML =
-      `
-      <strong>
-        Data loading failed:
-      </strong>
-      <br>
-      ${error.message}
-      `;
+      document.getElementById(
+        "selected-record"
+      ).innerHTML =
+        `
+        <strong>
+          Data loading failed:
+        </strong>
+        <br>
+        ${error.message}
+        `;
+
+    }
 
   }
-
-});
+);
