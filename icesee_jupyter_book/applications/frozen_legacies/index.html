@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+
   <meta
     name="viewport"
     content="width=device-width, initial-scale=1.0"
@@ -9,14 +10,16 @@
 
   <title>Frozen Legacies | CryoStack</title>
 
+  <!-- OpenLayers -->
   <link
-    href="https://unpkg.com/maplibre-gl@5.7.1/dist/maplibre-gl.css"
     rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/ol@10.6.1/ol.css"
   >
 
+  <!-- FrozenLegacies styles -->
   <link
-    href="/frozen-legacies/assets/frozen_legacies.css"
     rel="stylesheet"
+    href="/frozen-legacies/assets/frozen_legacies.css"
   >
 </head>
 
@@ -26,52 +29,138 @@
 
     <header class="fl-header">
       <div>
+
         <div class="fl-eyebrow">
           CRYOSTACK · HISTORICAL RADAR
         </div>
 
-        <h1>Frozen Legacies</h1>
+        <h1>
+          Frozen Legacies
+        </h1>
 
         <p>
           Explore restored Antarctic airborne radar observations
           and LYRA-derived geophysical products.
         </p>
+
       </div>
     </header>
 
+
     <main class="fl-main">
 
+      <!-- ==========================================
+           Antarctic map
+           ========================================== -->
+
       <section class="fl-map-card">
-        <div id="frozen-legacies-map"></div>
+
+        <div
+          id="frozen-legacies-map"
+          class="fl-map"
+        ></div>
+
       </section>
 
+
+      <!-- ==========================================
+           Dataset explorer
+           ========================================== -->
+
       <aside class="fl-panel">
-        <h2>Dataset Explorer</h2>
 
-        <label for="flight-select">
-          Flight
-        </label>
+        <div class="fl-panel-heading">
 
-        <select id="flight-select">
-          <option value="all">
-            All flights
-          </option>
-        </select>
+          <div>
+            <div class="fl-panel-eyebrow">
+              DATASET EXPLORER
+            </div>
 
-        <hr>
+            <h2>
+              Explore observations
+            </h2>
+          </div>
+
+        </div>
+
+
+        <div class="fl-control">
+
+          <label for="flight-select">
+            Flight
+          </label>
+
+          <select id="flight-select">
+
+            <option value="all">
+              All flights
+            </option>
+
+          </select>
+
+        </div>
+
+
+        <div class="fl-panel-divider"></div>
+
 
         <div id="selected-record">
-          Click a radar observation on the map.
+
+          <div class="fl-empty-selection">
+
+            <div class="fl-empty-icon">
+              ⌖
+            </div>
+
+            <div>
+
+              <strong>
+                Select a radar observation
+              </strong>
+
+              <span>
+                Click a point on the Antarctic map to inspect
+                the LYRA-derived radar record.
+              </span>
+
+            </div>
+
+          </div>
+
         </div>
+
       </aside>
 
     </main>
 
   </div>
 
-  <script src="https://unpkg.com/maplibre-gl@5.7.1/dist/maplibre-gl.js"></script>
 
-  <script src="/frozen-legacies/assets/frozen_legacies.js"></script>
+  <!-- =======================================================
+       Projection support
+       ======================================================= -->
+
+  <script
+    src="https://cdn.jsdelivr.net/npm/proj4@2.15.0/dist/proj4.js">
+  </script>
+
+
+  <!-- =======================================================
+       OpenLayers
+       ======================================================= -->
+
+  <script
+    src="https://cdn.jsdelivr.net/npm/ol@10.6.1/dist/ol.js">
+  </script>
+
+
+  <!-- =======================================================
+       FrozenLegacies application
+       ======================================================= -->
+
+  <script
+    src="/frozen-legacies/assets/frozen_legacies.js">
+  </script>
 
 </body>
 </html>
