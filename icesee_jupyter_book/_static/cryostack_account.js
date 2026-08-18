@@ -59,6 +59,13 @@
       return "livist";
     }
 
+    if (
+      path === "/frozen-legacies" ||
+      path.startsWith("/frozen-legacies/")
+    ) {
+      return "frozen-legacies";
+    }
+
     return "";
   }
 

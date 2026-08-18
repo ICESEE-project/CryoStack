@@ -19,33 +19,66 @@
   <!-- FrozenLegacies styles -->
   <link
     rel="stylesheet"
+    href="/_static/icesee.css"
+  >
+  <link
+    rel="stylesheet"
     href="/frozen-legacies/assets/frozen_legacies.css"
   >
 </head>
 
 <body>
 
-  <div class="fl-page">
+  <header class="fl-topbar">
 
-    <header class="fl-header">
-      <div>
+    <nav class="fl-topnav">
 
-        <div class="fl-eyebrow">
-          CRYOSTACK · HISTORICAL RADAR
-        </div>
+      <div class="fl-topnav-left">
 
-        <h1>
+        <a
+          href="/frozen-legacies/"
+          class="fl-topnav-brand active"
+        >
           Frozen Legacies
-        </h1>
+        </a>
 
-        <p>
-          Explore restored Antarctic airborne radar observations
-          and LYRA-derived geophysical products.
-        </p>
+        <a
+          href="/applications/frozen_legacies/getting_started.html"
+          class="fl-topnav-link"
+        >
+          Getting Started
+        </a>
+
+        <a
+          href="/applications/frozen_legacies/user_manual.html"
+          class="fl-topnav-link"
+        >
+          User Manual
+        </a>
+
+        <a
+          href="/applications/frozen_legacies/developer.html"
+          class="fl-topnav-link"
+        >
+          Developer Guide
+        </a>
 
       </div>
-    </header>
 
+
+      <div class="fl-topnav-right">
+
+        <div
+          id="cryostack-account-slot"
+          class="fl-account-slot"
+        >
+        </div>
+
+      </div>
+
+    </nav>
+
+  </header>
 
     <main class="fl-main">
 
@@ -193,6 +226,10 @@
   src="/frozen-legacies/assets/ui.js">
 </script>
 
+<!-- CryoStack Account -->
+<script
+  src="/_static/cryostack_account.js">
+</script>
 
 <!-- FrozenLegacies application entry point -->
 <script

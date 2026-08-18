@@ -1,0 +1,10 @@
+format: jb-book
+
+root: index
+
+parts:
+  - caption: Frozen Legacies
+    chapters:
+      - file: applications/frozen_legacies/getting_started
+      - file: applications/frozen_legacies/user_manual
+      - file: applications/frozen_legacies/developer

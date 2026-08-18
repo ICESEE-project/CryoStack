@@ -173,6 +173,15 @@ document.addEventListener(
 
       };
 
+      if (
+        window.CryoStackAccount
+      ) {
+
+        window.CryoStackAccount.mount(
+          "#cryostack-account-slot"
+        );
+
+      }
 
       console.log(
         `${logPrefix} ready.`

@@ -14,24 +14,39 @@
         "141"
       ],
       "products": {
-        "observations": true,
-        "flights": true,
-        "radar_images": {
-          "enabled": false,
-          "type": "local",
-          "path": null
+        "radargram": {
+          "title": "Radargram",
+          "type": "image",
+          "path": {
+            "field": "radar_image"
+          },
+          "downloadable": true
+        },
+        "echogram": {
+          "title": "Processed Echogram",
+          "type": "image",
+          "path": {
+            "template": "media/{flight}/{file_id}.png"
+          },
+          "downloadable": true
+        },
+        "source_csv": {
+          "title": "Source CSV",
+          "type": "data",
+          "path": {
+            "template": "downloads/{_source_file}"
+          },
+          "downloadable": true
         }
       },
-      "downloads": {
-        "observations_csv": true,
-        "observations_geojson": true,
-        "flights_geojson": true,
-        "radar_images": false
-      },
+      "downloads": {},
       "metadata": {
         "project": "Frozen Legacies",
         "product_family": "LYRA",
-        "coordinate_system": "EPSG:4326"
+        "coordinate_system": "EPSG:4326",
+        "version": 1.0,
+        "citation": null,
+        "doi": null
       }
     }
   ],

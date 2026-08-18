@@ -78,6 +78,11 @@ build_application \
     "${TOC_DIR}/icesee.yml" \
     "applications/icesee"
 
+build_application \
+    "Frozen Legacies" \
+    "${TOC_DIR}/frozen_legacies.yml" \
+    "applications/frozen_legacies"
+    
 echo
 echo "=================================================="
 echo "Application documentation build complete."

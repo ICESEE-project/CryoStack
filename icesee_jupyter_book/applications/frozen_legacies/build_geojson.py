@@ -88,6 +88,8 @@ def haversine_km(
 
 def observation_to_feature(
     observation,
+    *,
+    dataset=None,
 ) -> dict:
     """
     Convert normalized FrozenObservation into GeoJSON.
@@ -97,11 +99,28 @@ def observation_to_feature(
         observation.longitude is None
         or observation.latitude is None
     ):
+
         raise ValueError(
             f"Observation "
             f"{observation.observation_id} "
             f"is missing coordinates."
         )
+
+
+    properties = (
+        observation.to_properties()
+    )
+
+
+    if dataset is not None:
+
+        properties[
+            "products"
+        ] = build_products(
+            observation,
+            dataset,
+        )
+
 
     return {
         "type":
@@ -126,16 +145,29 @@ def observation_to_feature(
         },
 
         "properties":
-            observation.to_properties(),
+            properties,
     }
 
+def build_dataset_index(
+    registered,
+) -> dict:
 
+    return {
+        dataset.dataset_id:
+            dataset
+
+        for (
+            dataset,
+            _adapter,
+        ) in registered
+    }
 # ============================================================
 # Observations
 # ============================================================
 
 def build_observations(
     observations,
+    dataset_index,
 ) -> dict:
     """
     Build combined observations.geojson.
@@ -143,19 +175,32 @@ def build_observations(
 
     features = []
 
+
     for observation in observations:
 
         if (
             observation.longitude is None
             or observation.latitude is None
         ):
+
             continue
+
+
+        dataset = (
+            dataset_index.get(
+                observation.dataset_id
+            )
+        )
+
 
         features.append(
             observation_to_feature(
-                observation
+                observation,
+                dataset=
+                    dataset,
             )
         )
+
 
     return {
         "type":
@@ -164,7 +209,6 @@ def build_observations(
         "features":
             features,
     }
-
 
 # ============================================================
 # Flight geometry
@@ -514,6 +558,273 @@ def build_catalog(
         },
     }
 
+def observation_template_values(
+    observation,
+) -> dict:
+    """
+    Build a template context from a normalized observation.
+
+    This keeps product-path generation independent of the
+    original CSV adapter implementation.
+    """
+
+    values = observation.to_properties()
+
+    values.update(
+        {
+            "observation_id":
+                observation.observation_id,
+
+            "dataset_id":
+                observation.dataset_id,
+
+            "flight":
+                observation.flight,
+
+            "frame_idx":
+                observation.frame_idx,
+
+            "_source_file":
+                observation.source_file,
+        }
+    )
+
+    return {
+        key: (
+            ""
+            if value is None
+            else value
+        )
+        for key, value in values.items()
+    }
+
+
+def render_template(
+    template: str,
+    values: dict,
+) -> str | None:
+
+    try:
+
+        value = template.format_map(
+            values
+        )
+
+    except (
+        KeyError,
+        ValueError,
+    ):
+
+        return None
+
+
+    value = str(
+        value
+    ).strip()
+
+
+    return (
+        value
+        if value
+        else None
+    )
+
+
+def resolve_product_path(
+    product_config: dict,
+    observation,
+) -> str | None:
+
+    path_config = (
+        product_config.get("path")
+        or {}
+    )
+
+
+    if not isinstance(
+        path_config,
+        dict,
+    ):
+
+        return None
+
+
+    values = (
+        observation_template_values(
+            observation
+        )
+    )
+
+
+    # --------------------------------------------------------
+    # Product path from an observation field
+    # --------------------------------------------------------
+
+    field = (
+        path_config.get(
+            "field"
+        )
+    )
+
+
+    if field:
+
+        value = values.get(
+            field
+        )
+
+
+        if (
+            value is not None
+            and str(value).strip()
+        ):
+
+            return str(
+                value
+            ).strip()
+
+
+    # --------------------------------------------------------
+    # Product path from template
+    # --------------------------------------------------------
+
+    template = (
+        path_config.get(
+            "template"
+        )
+    )
+
+
+    if template:
+
+        return render_template(
+            str(
+                template
+            ),
+            values,
+        )
+
+
+    return None
+
+
+def build_products(
+    observation,
+    dataset,
+) -> list[dict]:
+    """
+    Build normalized product metadata for one observation.
+    """
+
+    metadata = (
+        dataset.metadata
+        or {}
+    )
+
+
+    build_config = (
+        metadata.get("build")
+        or {}
+    )
+
+
+    if not build_config.get(
+        "include_products",
+        True,
+    ):
+
+        return []
+
+
+    definitions = (
+        metadata.get("products")
+        or {}
+    )
+
+
+    products: list[dict] = []
+
+
+    for (
+        product_id,
+        product_config,
+    ) in definitions.items():
+
+        if not isinstance(
+            product_config,
+            dict,
+        ):
+
+            continue
+
+
+        path = resolve_product_path(
+            product_config,
+            observation,
+        )
+
+
+        if not path:
+            continue
+
+
+        product = {
+            "id":
+                str(
+                    product_id
+                ),
+
+            "title":
+                str(
+                    product_config.get(
+                        "title",
+                        product_id,
+                    )
+                ),
+
+            "type":
+                str(
+                    product_config.get(
+                        "type",
+                        "data",
+                    )
+                ),
+
+            "url":
+                path,
+
+            "downloadable":
+                bool(
+                    product_config.get(
+                        "downloadable",
+                        True,
+                    )
+                ),
+        }
+
+
+        mime_type = (
+            product_config.get(
+                "mime_type"
+            )
+        )
+
+
+        if mime_type:
+
+            product[
+                "mime_type"
+            ] = str(
+                mime_type
+            )
+
+
+        products.append(
+            product
+        )
+
+
+    return products
 
 # ============================================================
 # Main build
@@ -542,6 +853,12 @@ def main() -> None:
             "No Frozen Legacies dataset "
             "manifests were found."
         )
+
+    dataset_index = (
+        build_dataset_index(
+            registered
+        )
+    )
 
     all_observations = []
 
@@ -573,7 +890,8 @@ def main() -> None:
 
     observations_geojson = (
         build_observations(
-            all_observations
+            all_observations,
+            dataset_index,
         )
     )
 
