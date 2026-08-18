@@ -40,10 +40,26 @@ echo "=================================================="
 echo "Building CryoStack..."
 echo "=================================================="
 
+
 # Remove the existing Jupyter Book build directory to ensure a clean build.
 if [ -d "${BOOK_DIR}/_build" ]; then
     rm -rf "${BOOK_DIR}/_build"
 fi
+
+echo "=================================================="
+echo "[CryoStack] Building Frozen Legacies radar data..."
+echo "=================================================="
+
+python \
+  icesee_jupyter_book/applications/frozen_legacies/build_antarctica.py
+
+
+echo "=================================================="
+echo "Updating Frozen Legacies datasets..."
+echo "=================================================="
+
+python \
+    icesee_jupyter_book/applications/frozen_legacies/build_geojson.py
 
 if ! command -v jupyter-book >/dev/null 2>&1; then
     echo "[CryoStack][ERROR] jupyter-book was not found in PATH."

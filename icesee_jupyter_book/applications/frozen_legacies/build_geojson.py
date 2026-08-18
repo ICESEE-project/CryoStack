@@ -1,139 +1,66 @@
-from __future__ import annotations
+def build_flight_lines(
+    rows,
+    max_segment_jump_km: float = 120.0,
+):
+    import math
 
-import csv
-import json
-from pathlib import Path
-from typing import Any
+    def haversine_km(
+        lon1,
+        lat1,
+        lon2,
+        lat2,
+    ):
+        radius_km = 6371.0088
 
+        phi1 = math.radians(lat1)
+        phi2 = math.radians(lat2)
 
-ROOT = Path(__file__).resolve().parents[3]
-
-FROZEN_LEGACIES_ROOT = (
-    ROOT
-    / "external"
-    / "FrozenLegacies"
-)
-
-LYRA_ROOT = (
-    FROZEN_LEGACIES_ROOT
-    / "Frozen Legacy Tools"
-    / "LYRA Output"
-)
-
-OUTPUT_ROOT = (
-    Path(__file__).resolve().parent
-    / "data"
-)
-
-OBSERVATIONS_FILE = OUTPUT_ROOT / "observations.geojson"
-FLIGHTS_FILE = OUTPUT_ROOT / "flights.geojson"
-
-
-def parse_value(value: str) -> Any:
-    value = (value or "").strip()
-
-    if not value:
-        return None
-
-    lower = value.lower()
-
-    if lower == "true":
-        return True
-
-    if lower == "false":
-        return False
-
-    try:
-        if "." not in value and "e" not in lower:
-            return int(value)
-        return float(value)
-    except ValueError:
-        return value
-
-
-def load_lyra_rows():
-    rows = []
-
-    for csv_path in sorted(LYRA_ROOT.glob("*_echoes.csv")):
-        print(f"[FrozenLegacies] Reading {csv_path.name}")
-
-        with csv_path.open(
-            "r",
-            encoding="utf-8",
-            newline="",
-        ) as handle:
-
-            reader = csv.DictReader(handle)
-
-            for raw in reader:
-                row = {
-                    key: parse_value(value)
-                    for key, value in raw.items()
-                }
-
-                lat = row.get("lat")
-                lon = row.get("lon")
-
-                if lat is None or lon is None:
-                    continue
-
-                row["_source_file"] = csv_path.name
-
-                rows.append(row)
-
-    return rows
-
-
-def build_observations(rows):
-    features = []
-
-    for row in rows:
-
-        properties = dict(row)
-
-        lat = properties.pop("lat")
-        lon = properties.pop("lon")
-
-        feature_id = (
-            properties.get("file_id")
-            or f"{properties.get('flight')}-{properties.get('frame_idx')}"
+        dphi = math.radians(
+            lat2 - lat1
         )
 
-        features.append(
-            {
-                "type": "Feature",
-                "id": str(feature_id),
-                "geometry": {
-                    "type": "Point",
-                    "coordinates": [
-                        float(lon),
-                        float(lat),
-                    ],
-                },
-                "properties": properties,
-            }
+        dlambda = math.radians(
+            lon2 - lon1
         )
 
-    return {
-        "type": "FeatureCollection",
-        "features": features,
-    }
+        a = (
+            math.sin(dphi / 2.0) ** 2
+            +
+            math.cos(phi1)
+            * math.cos(phi2)
+            * math.sin(dlambda / 2.0) ** 2
+        )
+
+        c = 2.0 * math.atan2(
+            math.sqrt(a),
+            math.sqrt(1.0 - a),
+        )
+
+        return radius_km * c
 
 
-def build_flight_lines(rows):
     flights = {}
 
     for row in rows:
-        flight = str(row.get("flight"))
+        flight = str(
+            row.get("flight")
+        )
 
         flights.setdefault(
             flight,
             [],
         ).append(row)
 
+
     features = []
 
-    for flight, records in sorted(flights.items()):
+
+    for (
+        flight,
+        records
+    ) in sorted(
+        flights.items()
+    ):
 
         records = sorted(
             records,
@@ -144,11 +71,9 @@ def build_flight_lines(rows):
             ),
         )
 
-        coordinates = [
-            [
-                float(record["lon"]),
-                float(record["lat"]),
-            ]
+
+        valid_records = [
+            record
             for record in records
             if (
                 record.get("lat") is not None
@@ -156,80 +81,131 @@ def build_flight_lines(rows):
             )
         ]
 
-        if len(coordinates) < 2:
+
+        if len(valid_records) < 2:
             continue
+
+
+        segments = []
+        current_segment = []
+
+
+        previous = None
+
+
+        for record in valid_records:
+
+            lon = float(
+                record["lon"]
+            )
+
+            lat = float(
+                record["lat"]
+            )
+
+
+            if previous is None:
+
+                current_segment = [
+                    [lon, lat]
+                ]
+
+                previous = (
+                    lon,
+                    lat,
+                )
+
+                continue
+
+
+            distance_km = haversine_km(
+                previous[0],
+                previous[1],
+                lon,
+                lat,
+            )
+
+
+            if (
+                distance_km >
+                max_segment_jump_km
+            ):
+
+                if (
+                    len(current_segment) >= 2
+                ):
+                    segments.append(
+                        current_segment
+                    )
+
+
+                current_segment = [
+                    [lon, lat]
+                ]
+
+            else:
+
+                current_segment.append(
+                    [lon, lat]
+                )
+
+
+            previous = (
+                lon,
+                lat,
+            )
+
+
+        if (
+            len(current_segment) >= 2
+        ):
+            segments.append(
+                current_segment
+            )
+
+
+        if not segments:
+            continue
+
 
         features.append(
             {
                 "type": "Feature",
+
                 "id": flight,
+
                 "geometry": {
-                    "type": "LineString",
-                    "coordinates": coordinates,
+                    "type": "MultiLineString",
+                    "coordinates": segments,
                 },
+
                 "properties": {
                     "flight": flight,
-                    "observations": len(records),
-                    "source": records[0].get(
-                        "_source_file"
-                    ),
+
+                    "observations":
+                        len(valid_records),
+
+                    "segments":
+                        len(segments),
+
+                    "source":
+                        valid_records[0].get(
+                            "_source_file"
+                        ),
                 },
             }
         )
+
+
+        print(
+            f"[FrozenLegacies] "
+            f"Flight {flight}: "
+            f"{len(valid_records)} points, "
+            f"{len(segments)} segments"
+        )
+
 
     return {
         "type": "FeatureCollection",
         "features": features,
     }
-
-
-def main():
-    OUTPUT_ROOT.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    rows = load_lyra_rows()
-
-    print(
-        f"[FrozenLegacies] Loaded "
-        f"{len(rows)} observations."
-    )
-
-    observations = build_observations(rows)
-    flights = build_flight_lines(rows)
-
-    OBSERVATIONS_FILE.write_text(
-        json.dumps(
-            observations,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
-
-    FLIGHTS_FILE.write_text(
-        json.dumps(
-            flights,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
-
-    print(
-        "[FrozenLegacies] Wrote:",
-        OBSERVATIONS_FILE,
-    )
-
-    print(
-        "[FrozenLegacies] Wrote:",
-        FLIGHTS_FILE,
-    )
-
-    print(
-        "[FrozenLegacies] Flights:",
-        len(flights["features"]),
-    )
-
-
-if __name__ == "__main__":
-    main()

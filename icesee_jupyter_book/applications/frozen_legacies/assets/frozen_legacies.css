@@ -179,8 +179,25 @@ body {
 
 
 /* ============================================================
-   Map
+/* ============================================================
+   Antarctic map
    ============================================================ */
+
+.fl-map-card {
+  position: relative;
+
+  display: grid;
+  place-items: center;
+
+  width: 100%;
+  height: 100%;
+
+  overflow: hidden;
+
+  background:
+    #f5f8fa;
+}
+
 
 .fl-map-card {
   position: relative;
@@ -189,6 +206,9 @@ body {
   height: 100%;
 
   overflow: hidden;
+
+  background:
+    #f5f8fa;
 }
 
 
@@ -201,12 +221,16 @@ body {
   height: 100%;
 
   background:
-    radial-gradient(
-      circle at center,
-      #f3f6f7 0%,
-      #dcecf2 58%,
-      #bddbe6 100%
-    );
+    #f5f8fa;
+}
+
+@media (max-width: 1050px) {
+
+  #frozen-legacies-map {
+    width:
+      min(85vw, 680px);
+  }
+
 }
 
 
@@ -636,4 +660,378 @@ body {
       520px;
   }
 
+  #frozen-legacies-map {
+  position: absolute;
+  inset: 0;
+
+  width: 100%;
+  height: 100%;
+
+  background:
+    #cfe8f1;
+}
+
+/* ============================================================
+   Application error
+   ============================================================ */
+
+.fl-app-error {
+  padding: 14px;
+
+  border:
+    1px solid
+    rgba(185, 28, 28, 0.18);
+
+  border-radius: 10px;
+
+  background:
+    rgba(254, 242, 242, 0.80);
+
+  color:
+    #991b1b;
+
+  line-height:
+    1.55;
+}
+
+
+.fl-app-error strong {
+  display: block;
+
+  margin-bottom: 6px;
+
+  color:
+    #991b1b;
+
+  font-size:
+    13px;
+}
+
+
+.fl-app-error span {
+  display: block;
+
+  font-size:
+    12px;
+}
+
+
+.fl-app-error small {
+  display: block;
+
+  margin-top: 8px;
+
+  color:
+    #9f6464;
+
+  font-size:
+    10px;
+}
+
+}
+
+/* ============================================================
+   Observation inspector
+   ============================================================ */
+
+.fl-record {
+  width: 100%;
+}
+
+
+.fl-record-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+
+  gap: 12px;
+}
+
+
+.fl-record-eyebrow {
+  color: #77909f;
+
+  font-size: 9px;
+  font-weight: 800;
+
+  letter-spacing: 0.11em;
+}
+
+
+.fl-record-title {
+  margin-top: 3px;
+
+  color: #16384f;
+
+  font-size: 15px;
+  font-weight: 800;
+
+  word-break: break-word;
+}
+
+
+.fl-record-subtitle {
+  margin-top: 3px;
+
+  color: #758b98;
+
+  font-size: 10px;
+}
+
+
+.fl-record-status {
+  flex: 0 0 auto;
+
+  padding: 5px 8px;
+
+  border-radius: 999px;
+
+  background:
+    color-mix(
+      in srgb,
+      var(--fl-record-status-color) 13%,
+      white
+    );
+
+  color:
+    var(--fl-record-status-color);
+
+  font-size: 9px;
+  font-weight: 800;
+
+  text-transform: uppercase;
+}
+
+
+/* ============================================================
+   Radar preview
+   ============================================================ */
+
+.fl-radar-preview {
+  position: relative;
+
+  width: 100%;
+
+  margin-top: 16px;
+
+  overflow: hidden;
+
+  border:
+    1px solid
+    #dde7ed;
+
+  border-radius:
+    11px;
+
+  background:
+    #f6f9fb;
+}
+
+
+.fl-radar-preview-empty {
+  display: flex;
+
+  align-items: center;
+
+  gap: 11px;
+
+  min-height: 110px;
+
+  padding: 16px;
+
+  color:
+    #718895;
+}
+
+
+.fl-radar-preview-empty strong {
+  display: block;
+
+  color:
+    #385469;
+
+  font-size:
+    11px;
+}
+
+
+.fl-radar-preview-empty span {
+  display: block;
+
+  margin-top: 3px;
+
+  color:
+    #80939f;
+
+  font-size:
+    10px;
+
+  line-height:
+    1.45;
+}
+
+
+.fl-radar-preview-icon {
+  display: grid;
+  place-items: center;
+
+  flex: 0 0 auto;
+
+  width: 42px;
+  height: 42px;
+
+  border-radius: 10px;
+
+  background:
+    #e8f3f8;
+
+  color:
+    #337b9d;
+
+  font-size:
+    22px;
+}
+
+
+.fl-radar-image {
+  display: block;
+
+  width: 100%;
+  height: auto;
+
+  max-height: 280px;
+
+  object-fit: contain;
+
+  background:
+    #08131d;
+}
+
+
+.fl-radar-image-caption {
+  padding: 7px 9px;
+
+  border-top:
+    1px solid
+    #e4ebef;
+
+  color:
+    #758a98;
+
+  font-size:
+    9px;
+}
+
+
+/* ============================================================
+   Observation sections
+   ============================================================ */
+
+.fl-record-section {
+  margin-top: 16px;
+
+  padding-top: 14px;
+
+  border-top:
+    1px solid
+    #e7eef2;
+}
+
+
+.fl-record-section-title {
+  margin-bottom: 8px;
+
+  color:
+    #6f8695;
+
+  font-size: 9px;
+  font-weight: 800;
+
+  letter-spacing:
+    0.08em;
+
+  text-transform:
+    uppercase;
+}
+
+
+.fl-record-grid {
+  display: grid;
+
+  grid-template-columns:
+    1fr 1fr;
+
+  gap: 7px;
+}
+
+
+.fl-record-item,
+.fl-record-metric,
+.fl-record-provenance > div {
+  padding: 9px 10px;
+
+  border-radius: 8px;
+
+  background:
+    #f6f9fb;
+}
+
+
+.fl-record-item span,
+.fl-record-metric span,
+.fl-record-provenance span {
+  display: block;
+
+  color:
+    #8295a0;
+
+  font-size:
+    8px;
+
+  font-weight:
+    750;
+
+  text-transform:
+    uppercase;
+
+  letter-spacing:
+    0.04em;
+}
+
+
+.fl-record-item strong,
+.fl-record-metric strong,
+.fl-record-provenance strong {
+  display: block;
+
+  margin-top: 3px;
+
+  color:
+    #294b60;
+
+  font-size:
+    10px;
+
+  font-weight:
+    700;
+}
+
+
+.fl-record-metrics {
+  display: grid;
+
+  grid-template-columns:
+    1fr 1fr;
+
+  gap: 7px;
+}
+
+
+.fl-record-provenance {
+  display: grid;
+
+  grid-template-columns:
+    1fr 1fr;
+
+  gap: 7px;
 }
