@@ -1,4 +1,4 @@
-/* ============================================================
+ /* ============================================================
  * Frozen Legacies
  * frozen_legacies.js
  *
@@ -37,19 +37,6 @@ document.addEventListener(
       // 1. Create sources and layers
       // ========================================================
 
-      /*
-       * layers.js creates:
-       *
-       *   - Antarctic reference sources/layers
-       *   - flight source/layer
-       *   - selected-flight source/layer
-       *   - observation source/layer
-       *   - South Pole layer
-       *   - graticule
-       *
-       * It does NOT create the map.
-       */
-
       const layerBundle =
         FrozenLegaciesLayers.create();
 
@@ -62,22 +49,6 @@ document.addEventListener(
       // ========================================================
       // 2. Create EPSG:3031 map
       // ========================================================
-
-      /*
-       * map.js owns:
-       *
-       *   - EPSG:3031 registration
-       *   - ol.View
-       *   - map camera
-       *
-       * create() returns:
-       *
-       *   {
-       *       map,
-       *       view,
-       *       projection
-       *   }
-       */
 
       const mapState =
         FrozenLegaciesMap.create({
@@ -109,11 +80,6 @@ document.addEventListener(
       // 3. Attach map overlays
       // ========================================================
 
-      /*
-       * The graticule uses setMap() rather than being
-       * included directly in map.layers[].
-       */
-
       FrozenLegaciesLayers
         .attachOverlays(
           map,
@@ -122,16 +88,8 @@ document.addEventListener(
 
 
       // ========================================================
-      // 4. Load FrozenLegacies data
+      // 4. Load Frozen Legacies data
       // ========================================================
-
-      /*
-       * data.js loads the WGS84 GeoJSON files and converts
-       * them into our registered EPSG:3031 projection.
-       *
-       * It populates the vector sources that were created
-       * in layers.js.
-       */
 
       const data =
         await FrozenLegaciesData.load({
@@ -148,6 +106,12 @@ document.addEventListener(
 
       console.log(
         `${logPrefix} data loaded`
+      );
+
+
+      console.log(
+        `${logPrefix} datasets:`,
+        data.catalog?.datasets?.length ?? 0
       );
 
 
@@ -184,29 +148,12 @@ document.addEventListener(
       // 6. Establish initial state
       // ========================================================
 
-      /*
-       * UI delegates the camera reset to map.js.
-       *
-       * This is intentionally the ONLY initial-camera call
-       * in the application entry point.
-       */
-
       ui.showAllFlights();
 
 
       // ========================================================
       // 7. Expose useful state for development/debugging
       // ========================================================
-
-      /*
-       * This is useful while developing from the browser console:
-       *
-       * FrozenLegaciesApp.map
-       * FrozenLegaciesApp.data
-       * FrozenLegaciesApp.layers
-       *
-       * We can remove this later if desired.
-       */
 
       window.FrozenLegaciesApp = {
 
@@ -319,11 +266,3 @@ function escapeHtml(
     );
 
 }
-
-window.map = map;
-map.getView().getCenter()
-
-map.getView().getProjection().getCode()
-
-map.getView().getZoom()
-

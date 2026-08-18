@@ -19,13 +19,229 @@
  * Data URLs
  * ------------------------------------------------------------ */
 
+const FROZEN_DATA_ROOT =
+  "/frozen-legacies/data";
+
+
+const CATALOG_DATA_URL =
+  `${FROZEN_DATA_ROOT}/catalog.json`;
+
+
 const FLIGHTS_DATA_URL =
-  "/frozen-legacies/data/flights.geojson";
+  `${FROZEN_DATA_ROOT}/flights.geojson`;
 
 
 const OBSERVATIONS_DATA_URL =
-  "/frozen-legacies/data/observations.geojson";
+  `${FROZEN_DATA_ROOT}/observations.geojson`;
 
+
+function buildDatasetIndex(
+  catalog
+) {
+
+  const index =
+    new Map();
+
+
+  for (
+    const dataset
+    of catalog.datasets || []
+  ) {
+
+    if (!dataset?.id) {
+      continue;
+    }
+
+
+    index.set(
+      String(
+        dataset.id
+      ),
+      dataset
+    );
+
+  }
+
+
+  return index;
+}
+
+function datasetIdsFromObservations(
+  observations
+) {
+
+  return [
+    ...new Set(
+
+      (
+        observations.features
+        || []
+      )
+
+        .map(
+          feature =>
+            feature
+              .properties
+              ?.dataset_id
+        )
+
+        .filter(
+          Boolean
+        )
+
+        .map(
+          String
+        )
+
+    )
+  ];
+}
+
+
+function observationsForDataset(
+  observations,
+  datasetId
+) {
+
+  if (!datasetId) {
+
+    return observations;
+
+  }
+
+
+  return {
+    type:
+      "FeatureCollection",
+
+    features:
+      (
+        observations.features
+        || []
+      ).filter(
+        feature =>
+
+          String(
+            feature
+              .properties
+              ?.dataset_id
+              ?? ""
+          )
+          ===
+          String(
+            datasetId
+          )
+      )
+  };
+}
+
+
+function flightsForDataset(
+  flights,
+  datasetId
+) {
+
+  if (!datasetId) {
+
+    return flights;
+
+  }
+
+
+  return {
+    type:
+      "FeatureCollection",
+
+    features:
+      (
+        flights.features
+        || []
+      ).filter(
+        feature =>
+
+          String(
+            feature
+              .properties
+              ?.dataset_id
+              ?? ""
+          )
+          ===
+          String(
+            datasetId
+          )
+      )
+  };
+}
+
+function flightNumbersForDataset(
+  observations,
+  datasetId = null
+) {
+
+  const source =
+    observationsForDataset(
+      observations,
+      datasetId
+    );
+
+
+  return [
+    ...new Set(
+
+      (
+        source.features
+        || []
+      )
+
+        .map(
+          feature =>
+            feature
+              .properties
+              ?.flight
+        )
+
+        .filter(
+          value =>
+            value !== null
+            &&
+            value !== undefined
+            &&
+            value !== ""
+        )
+
+        .map(
+          String
+        )
+
+    )
+  ].sort(
+    (a, b) => {
+
+      const na =
+        Number(a);
+
+      const nb =
+        Number(b);
+
+
+      if (
+        Number.isFinite(na)
+        &&
+        Number.isFinite(nb)
+      ) {
+
+        return na - nb;
+
+      }
+
+
+      return a.localeCompare(
+        b
+      );
+
+    }
+  );
+}
 
 /* ------------------------------------------------------------
  * Generic JSON loader
@@ -79,22 +295,45 @@ async function loadJson(
 async function loadFrozenLegaciesGeoJSON() {
 
   const [
+
+    catalog,
+
     flights,
+
     observations
-  ] =
-    await Promise.all([
 
-      loadJson(
-        FLIGHTS_DATA_URL,
-        "Flights"
-      ),
+  ] = await Promise.all([
 
-      loadJson(
-        OBSERVATIONS_DATA_URL,
-        "Observations"
-      )
+    loadJson(
+      CATALOG_DATA_URL,
+      "Catalog"
+    ),
 
-    ]);
+    loadJson(
+      FLIGHTS_DATA_URL,
+      "Flights"
+    ),
+
+    loadJson(
+      OBSERVATIONS_DATA_URL,
+      "Observations"
+    )
+
+  ]);
+
+
+  if (
+    !catalog ||
+    !Array.isArray(
+      catalog.datasets
+    )
+  ) {
+
+    throw new Error(
+      "Frozen Legacies catalog is invalid."
+    );
+
+  }
 
 
   if (
@@ -122,8 +361,13 @@ async function loadFrozenLegaciesGeoJSON() {
 
 
   return {
+
+    catalog,
+
     flights,
+
     observations
+
   };
 
 }
@@ -178,6 +422,35 @@ function normalizeFlightValue(
 
 }
 
+function normalizeDatasetValue(
+  value
+) {
+
+  if (
+    value === null ||
+    value === undefined
+  ) {
+    return "";
+  }
+
+
+  return String(
+    value
+  ).trim();
+
+}
+
+function datasetFlightKey(
+  datasetId,
+  flightNumber
+) {
+
+  return (
+    `${normalizeDatasetValue(datasetId)}::` +
+    `${normalizeFlightValue(flightNumber)}`
+  );
+
+}
 
 /* ------------------------------------------------------------
  * Extract available flights
@@ -290,6 +563,14 @@ function buildFlightIndex(
     of flightFeatures
   ) {
 
+    const datasetId =
+      normalizeDatasetValue(
+        feature.get(
+          "dataset_id"
+        )
+      );
+
+
     const flight =
       normalizeFlightValue(
         feature.get(
@@ -303,20 +584,21 @@ function buildFlightIndex(
     }
 
 
-    /*
-     * Current generated flights.geojson should have one feature
-     * per flight. If that changes later, keep the first feature
-     * rather than silently replacing it.
-     */
+    const key =
+      datasetFlightKey(
+        datasetId,
+        flight
+      );
+
 
     if (
       !index.has(
-        flight
+        key
       )
     ) {
 
       index.set(
-        flight,
+        key,
         feature
       );
 
@@ -328,7 +610,6 @@ function buildFlightIndex(
   return index;
 
 }
-
 
 /* ------------------------------------------------------------
  * Index observations by flight
@@ -347,6 +628,14 @@ function buildObservationIndex(
     of observationFeatures
   ) {
 
+    const datasetId =
+      normalizeDatasetValue(
+        feature.get(
+          "dataset_id"
+        )
+      );
+
+
     const flight =
       normalizeFlightValue(
         feature.get(
@@ -360,14 +649,21 @@ function buildObservationIndex(
     }
 
 
+    const key =
+      datasetFlightKey(
+        datasetId,
+        flight
+      );
+
+
     if (
       !index.has(
-        flight
+        key
       )
     ) {
 
       index.set(
-        flight,
+        key,
         []
       );
 
@@ -376,7 +672,7 @@ function buildObservationIndex(
 
     index
       .get(
-        flight
+        key
       )
       .push(
         feature
@@ -388,7 +684,6 @@ function buildObservationIndex(
   return index;
 
 }
-
 
 /* ------------------------------------------------------------
  * Populate vector sources
@@ -475,6 +770,10 @@ async function loadFrozenLegaciesData({
   const raw =
     await loadFrozenLegaciesGeoJSON();
 
+  const datasetIndex =
+    buildDatasetIndex(
+      raw.catalog
+    );
 
   const flightFeatures =
     readProjectedFeatures(
@@ -515,6 +814,11 @@ async function loadFrozenLegaciesData({
       observationFeatures
     );
 
+  const datasetIds =
+    datasetIdsFromObservations(
+      raw.observations
+    );
+
 
   console.log(
     "[FrozenLegacies] flights:",
@@ -536,17 +840,24 @@ async function loadFrozenLegaciesData({
 
   return {
 
-    raw,
+      catalog:
+        raw.catalog,
 
-    flightFeatures,
+      datasetIndex,
 
-    observationFeatures,
+      datasetIds,
 
-    flightNumbers,
+      raw,
 
-    flightIndex,
+      flightFeatures,
 
-    observationIndex
+      observationFeatures,
+
+      flightNumbers,
+
+      flightIndex,
+
+      observationIndex
 
   };
 
@@ -559,7 +870,8 @@ async function loadFrozenLegaciesData({
 
 function getFlightFeature(
   data,
-  flightNumber
+  flightNumber,
+  datasetId = ""
 ) {
 
   if (!data?.flightIndex) {
@@ -567,12 +879,37 @@ function getFlightFeature(
   }
 
 
-  return (
-    data.flightIndex.get(
-      normalizeFlightValue(
-        flightNumber
+  if (datasetId) {
+
+    return (
+      data.flightIndex.get(
+        datasetFlightKey(
+          datasetId,
+          flightNumber
+        )
       )
-    ) || null
+      || null
+    );
+
+  }
+
+
+  const flight =
+    normalizeFlightValue(
+      flightNumber
+    );
+
+
+  return (
+    data.flightFeatures.find(
+      feature =>
+        normalizeFlightValue(
+          feature.get(
+            "flight"
+          )
+        ) === flight
+    )
+    || null
   );
 
 }
@@ -584,22 +921,46 @@ function getFlightFeature(
 
 function getFlightObservations(
   data,
-  flightNumber
+  flightNumber,
+  datasetId = ""
 ) {
 
-  if (
-    !data?.observationIndex
-  ) {
+  if (!data) {
     return [];
   }
 
 
-  return (
-    data.observationIndex.get(
-      normalizeFlightValue(
-        flightNumber
+  if (datasetId) {
+
+    return (
+      data.observationIndex.get(
+        datasetFlightKey(
+          datasetId,
+          flightNumber
+        )
       )
-    ) || []
+      || []
+    );
+
+  }
+
+
+  const flight =
+    normalizeFlightValue(
+      flightNumber
+    );
+
+
+  return (
+    data.observationFeatures
+    || []
+  ).filter(
+    feature =>
+      normalizeFlightValue(
+        feature.get(
+          "flight"
+        )
+      ) === flight
   );
 
 }
@@ -612,11 +973,16 @@ function getFlightObservations(
 window.FrozenLegaciesData = {
 
   URLS: {
+
+    catalog:
+      CATALOG_DATA_URL,
+
     flights:
       FLIGHTS_DATA_URL,
 
     observations:
       OBSERVATIONS_DATA_URL
+
   },
 
   load:
@@ -627,6 +993,20 @@ window.FrozenLegaciesData = {
 
   getFlightObservations,
 
-  normalizeFlightValue
+  normalizeFlightValue,
+
+  normalizeDatasetValue,
+
+  datasetFlightKey,
+
+  buildDatasetIndex,
+
+  datasetIdsFromObservations,
+
+  observationsForDataset,
+
+  flightsForDataset,
+
+  flightNumbersForDataset
 
 };
