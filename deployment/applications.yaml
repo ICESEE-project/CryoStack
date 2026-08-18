@@ -1,0 +1,241 @@
+version: 1
+
+platform:
+
+  name: CryoStack
+
+  health:
+
+    cryostack:
+      path: /
+      expected_statuses:
+        - 200
+
+    cryolauncher:
+      path: /icesheets/
+      expected_statuses:
+        - 200
+        - 302
+
+    icesee:
+      path: /icesee-gui/
+      expected_statuses:
+        - 200
+        - 302
+
+  runtime:
+    gui:
+      command:
+        - bash
+        - bin/start_icesee_services.sh
+
+      log: icesee.log
+
+      process_patterns:
+        - icesee_app.py
+        - python.*-m voila
+
+    connector:
+      command:
+        - python
+        - -m
+        - uvicorn
+        - icesee_jupyter_book.core.connector_relay_server:app
+        - --host
+        - 127.0.0.1
+        - --port
+        - "8899"
+
+      log: relay.log
+
+      process_patterns:
+        - connector_relay_server
+        - python.*-m uvicorn
+
+
+applications:
+
+  frozen-legacies:
+
+    title: Frozen Legacies
+
+    description: >
+      Historical Antarctic radar observations and LYRA products.
+
+    type: static
+
+    dependencies: []
+
+    build:
+
+      - name: Antarctic reference data
+        command:
+          - python
+          - -m
+          - icesee_jupyter_book.applications.frozen_legacies.build_antarctica
+
+      - name: Frozen Legacies dataset catalog
+        command:
+          - python
+          - -m
+          - icesee_jupyter_book.applications.frozen_legacies.build_geojson
+
+    artifacts:
+      - icesee_jupyter_book/applications/frozen_legacies/data/catalog.json
+      - icesee_jupyter_book/applications/frozen_legacies/data/observations.geojson
+      - icesee_jupyter_book/applications/frozen_legacies/data/flights.geojson
+      - icesee_jupyter_book/applications/frozen_legacies/index.html
+
+    routes:
+      - /frozen-legacies/
+
+    health:
+      target: frozen-legacies
+
+    restart:
+      scope: none
+
+
+  cryostack-book:
+
+    title: CryoStack Site
+
+    description: Main CryoStack Jupyter Book site.
+
+    type: static
+
+    dependencies:
+      - frozen-legacies
+
+    clean:
+      - path: icesee_jupyter_book/_build
+
+    build:
+
+      - name: Jupyter Book
+        command:
+          - jupyter-book
+          - build
+          - icesee_jupyter_book
+
+    artifacts:
+      - icesee_jupyter_book/_build/html/index.html
+
+    routes:
+      - /
+
+    health:
+      target: cryostack
+
+    restart:
+      scope: none
+
+
+  application-docs:
+
+    title: Application Documentation
+
+    description: Shared CryoStack application documentation.
+
+    type: generated
+
+    dependencies:
+      - cryostack-book
+
+    build:
+
+      - name: Application documentation
+        command:
+          - bash
+          - bin/build_application_docs.sh
+
+    artifacts: []
+
+    health:
+      target: cryostack
+
+    restart:
+      scope: none
+
+
+  livist:
+
+    title: LIVIST
+
+    description: Living Ice Sheet Temperature application.
+
+    type: static
+
+    dependencies: []
+
+    working_directory:
+      external/living-ice-sheet-temperature/frontend
+
+    requirements:
+      commands:
+        - yarn
+
+    build:
+
+      - name: Install frontend dependencies
+        command:
+          - yarn
+          - install
+          - --immutable
+
+      - name: Build LIVIST frontend
+        command:
+          - yarn
+          - build
+
+    artifacts:
+      - external/living-ice-sheet-temperature/frontend/dist/index.html
+
+    routes:
+      - /livist/
+
+    health:
+      target: livist
+
+    restart:
+      scope: none
+
+
+  livist-docs:
+
+    title: LIVIST Documentation
+
+    description: LIVIST user and API documentation.
+
+    type: static
+
+    dependencies:
+      - livist
+
+    working_directory:
+      external/living-ice-sheet-temperature
+
+    requirements:
+      commands:
+        - uv
+
+    build:
+
+      - name: Build LIVIST documentation
+        command:
+          - uv
+          - run
+          - zensical
+          - build
+
+    artifacts:
+      - external/living-ice-sheet-temperature/site/index.html
+
+    routes:
+      - /livist/docs/
+
+    health:
+      target: livist-docs
+
+    restart:
+      scope: none
