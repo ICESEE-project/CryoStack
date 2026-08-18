@@ -313,6 +313,30 @@ class AuthStorage:
 
                 CREATE INDEX IF NOT EXISTS idx_experiment_events_user
                     ON experiment_events(user_id, created_at);
+
+                CREATE TABLE IF NOT EXISTS user_roles (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    created_by TEXT,
+
+                    FOREIGN KEY (user_id)
+                        REFERENCES users(id)
+                        ON DELETE CASCADE,
+
+                    FOREIGN KEY (created_by)
+                        REFERENCES users(id)
+                        ON DELETE SET NULL,
+
+                    UNIQUE(user_id, role)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_user_roles_user
+                    ON user_roles(user_id);
+
+                CREATE INDEX IF NOT EXISTS idx_user_roles_role
+                    ON user_roles(role);
                 """
             )
 

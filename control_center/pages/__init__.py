@@ -18,6 +18,10 @@ from .platform import (
 
 from .experiments import experiments_page_handler
 
+from .authentication import (
+    authentication_page_handler,
+)
+
 __all__ = [
     "dashboard_page_handler",
     "users_page_handler",
@@ -29,4 +33,5 @@ __all__ = [
     "analytics_page_handler",
     "diagnostics_page_handler",
     "settings_page_handler",
+    "authentication_page_handler",
 ]

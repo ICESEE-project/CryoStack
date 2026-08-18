@@ -34,6 +34,17 @@ from .pages import (
     settings_page_handler,
 )
 
+from .services import (
+    DashboardService,
+    UserService,
+    AuthenticationService,
+)
+
+from .api import (
+    authentication_api,
+)
+
+
 def install_control_center(
     app: web.Application,
     *,
@@ -74,6 +85,16 @@ def install_control_center(
             storage
         )
     )
+
+    authentication_service = (
+        AuthenticationService(
+            storage
+        )
+    )
+
+    app[
+        "control_authentication_service"
+    ] = authentication_service
 
     app["control_storage"] = storage
 
@@ -161,4 +182,9 @@ def install_control_center(
     app.router.add_get(
         "/control/settings",
         settings_page_handler,
+    )
+
+    app.router.add_get(
+        "/api/control/authentication",
+        authentication_api,
     )

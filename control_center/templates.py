@@ -618,6 +618,51 @@ def control_layout(
     }}
     }}
 
+    .health-ok {{
+      color: #15803d;
+      font-size: 0.72rem;
+      font-weight: 750;
+    }}
+
+    .health-muted {{
+      color: #94a3b8;
+      font-size: 0.72rem;
+      font-weight: 700;
+    }}
+
+    .provider-mode {{
+      display: inline-flex;
+      margin-left: 0.4rem;
+      padding: 0.18rem 0.38rem;
+      border-radius: 999px;
+      background: #fef3c7;
+      color: #92400e;
+      font-size: 0.58rem;
+      font-weight: 800;
+    }}
+
+    .diagnostic-status {{
+      font-size: 0.72rem;
+      font-weight: 750;
+    }}
+
+    .diagnostic-status.healthy,
+    .diagnostic-status.configured {{
+      color: #15803d;
+    }}
+
+    .diagnostic-status.failed {{
+      color: #dc2626;
+    }}
+
+    .diagnostic-status.unknown {{
+      color: #d97706;
+    }}
+
+    .diagnostic-status.disabled {{
+      color: #94a3b8;
+    }}
+
     @media (max-width: 760px) {{
       .control-shell {{
         grid-template-columns: 1fr;
@@ -1729,5 +1774,287 @@ def placeholder_page(
     return control_layout(
         title=title,
         active=active,
+        content=content,
+    )
+
+def authentication_page(
+    *,
+    data: dict,
+) -> str:
+
+    providers = data["providers"]
+    identities = data["identities"]
+
+    provider_rows = []
+
+    labels = {
+        "password": "Email / Password",
+        "github": "GitHub",
+        "orcid": "ORCID",
+        "google": "Google",
+        "university_sso": "University SSO",
+    }
+
+    for key, provider in providers.items():
+
+        configured = provider[
+            "configured"
+        ]
+
+        extra = ""
+
+        if (
+            key == "orcid"
+            and provider.get("sandbox")
+        ):
+            extra = (
+                '<span class="provider-mode">'
+                'Sandbox'
+                '</span>'
+            )
+
+        provider_rows.append(
+            f"""
+            <tr>
+              <td>
+                <strong>
+                  {escape(labels.get(key, key.title()))}
+                </strong>
+                {extra}
+              </td>
+
+              <td>
+                {
+                    '<span class="health-ok">● Configured</span>'
+                    if configured
+                    else '<span class="health-muted">● Not configured</span>'
+                }
+              </td>
+
+              <td>
+                {provider["linked"]}
+              </td>
+            </tr>
+            """
+        )
+
+    identity_rows = []
+
+    for identity in identities:
+
+        identity_rows.append(
+            f"""
+            <tr>
+
+              <td>
+                {escape(
+                    identity["provider"].title()
+                )}
+              </td>
+
+              <td>
+                <a
+                  class="table-link"
+                  href="/control/users/{escape(identity["user_id"])}"
+                >
+                  {escape(identity["user_name"])}
+                </a>
+              </td>
+
+              <td>
+                {
+                    escape(
+                        identity["provider_username"]
+                        or identity["provider_subject"]
+                        or "—"
+                    )
+                }
+              </td>
+
+              <td>
+                {
+                    escape(
+                        identity["provider_email"]
+                        or "—"
+                    )
+                }
+              </td>
+
+              <td>
+                {_date(identity["created_at"])}
+              </td>
+
+            </tr>
+            """
+        )
+
+    content = f"""
+    <div class="page-heading-row">
+
+      <div>
+        <h1>Authentication</h1>
+
+        <p class="page-subtitle">
+          Identity providers, account links and
+          authentication configuration.
+        </p>
+      </div>
+
+      <div class="page-count">
+        {len(identities)} linked identities
+      </div>
+
+    </div>
+
+    <div class="panel">
+
+      <div class="panel-header">
+        Identity Providers
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Provider</th>
+            <th>Status</th>
+            <th>Linked Accounts</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {''.join(provider_rows)}
+        </tbody>
+      </table>
+
+    </div>
+
+    <div class="panel">
+
+      <div class="panel-header">
+        Linked External Identities
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Provider</th>
+            <th>CryoStack User</th>
+            <th>Username / Identifier</th>
+            <th>Provider Email</th>
+            <th>Linked</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {''.join(identity_rows)}
+        </tbody>
+      </table>
+
+    </div>
+
+    <div class="metric-grid">
+
+      <div class="metric-card">
+        <div class="metric-label">
+          OAuth Transactions
+        </div>
+
+        <div class="metric-value">
+          {data["oauth_flows"]}
+        </div>
+
+        <div class="metric-detail">
+          currently stored OAuth flows
+        </div>
+      </div>
+
+    </div>
+    """
+
+    return control_layout(
+        title="Authentication",
+        active="authentication",
+        content=content,
+    )
+
+def diagnostics_page(
+    *,
+    data: dict,
+) -> str:
+
+    rows = []
+
+    labels = {
+        "healthy": "Healthy",
+        "configured": "Configured",
+        "disabled": "Disabled",
+        "unknown": "Unknown",
+        "failed": "Failed",
+    }
+
+    for check in data["checks"]:
+
+        status = check["status"]
+
+        rows.append(
+            f"""
+            <tr>
+
+              <td>
+                <strong>
+                  {escape(check["name"])}
+                </strong>
+              </td>
+
+              <td>
+                <span class="diagnostic-status {escape(status)}">
+                  ●
+                  {escape(labels.get(status, status.title()))}
+                </span>
+              </td>
+
+              <td>
+                {escape(check["detail"])}
+              </td>
+
+            </tr>
+            """
+        )
+
+    content = f"""
+    <h1>Diagnostics</h1>
+
+    <p class="page-subtitle">
+      Operational health of CryoStack platform services.
+    </p>
+
+    <div class="panel">
+
+      <div class="panel-header">
+        Service Health
+      </div>
+
+      <table>
+
+        <thead>
+          <tr>
+            <th>Service</th>
+            <th>Status</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {''.join(rows)}
+        </tbody>
+
+      </table>
+
+    </div>
+    """
+
+    return control_layout(
+        title="Diagnostics",
+        active="diagnostics",
         content=content,
     )

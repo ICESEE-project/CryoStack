@@ -625,3 +625,106 @@ class ControlStorage:
             dict(row)
             for row in rows
         ]
+
+    def authentication_provider_counts(
+        self,
+    ) -> dict[str, int]:
+
+        providers = {
+            "github": 0,
+            "orcid": 0,
+        }
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    provider,
+                    COUNT(*) AS count
+                FROM user_identities
+                GROUP BY provider
+                """
+            ).fetchall()
+
+        for row in rows:
+            provider = str(
+                row["provider"]
+            ).strip().lower()
+
+            providers[provider] = int(
+                row["count"]
+            )
+
+        return providers
+
+
+    def password_account_count(
+        self,
+    ) -> int:
+
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM users
+                WHERE password_hash IS NOT NULL
+                AND password_hash != ''
+                """
+            ).fetchone()
+
+        return int(row["count"])
+
+
+    def oauth_flow_count(
+        self,
+    ) -> int:
+
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM oauth_flows
+                """
+            ).fetchone()
+
+        return int(row["count"])
+
+
+    def list_linked_identities(
+        self,
+        *,
+        limit: int = 100,
+    ) -> list[dict]:
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    ui.id,
+                    ui.provider,
+                    ui.provider_subject,
+                    ui.provider_username,
+                    ui.provider_email,
+                    ui.provider_profile_url,
+                    ui.created_at,
+
+                    u.id AS user_id,
+                    u.display_name AS user_name,
+                    u.email AS user_email
+
+                FROM user_identities ui
+
+                JOIN users u
+                    ON u.id = ui.user_id
+
+                ORDER BY ui.created_at DESC
+
+                LIMIT ?
+                """,
+                (int(limit),),
+            ).fetchall()
+
+        return [
+            dict(row)
+            for row in rows
+        ]
