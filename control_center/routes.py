@@ -61,21 +61,12 @@ async def user_role_update_handler(
         "user_id"
     ]
 
-    # form = await request.post()
-
-    # new_role = str(
-    #     form.get(
-    #         "control_role",
-    #         "",
-    #     )
-    # ).strip().lower()
-
     form = await request.post()
 
-    print(
-        "[control][role] form:",
-        dict(form),
-    )
+    # print(
+    #     "[control][role] form:",
+    #     dict(form),
+    # )
 
     new_role = str(
         form.get(
@@ -84,10 +75,10 @@ async def user_role_update_handler(
         )
     ).strip().lower()
 
-    print(
-        "[control][role] parsed:",
-        repr(new_role),
-    )
+    # print(
+    #     "[control][role] parsed:",
+    #     repr(new_role),
+    # )
 
     service = request.app[
         "control_access_service"
