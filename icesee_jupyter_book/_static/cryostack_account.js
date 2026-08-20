@@ -35,12 +35,63 @@
     );
   }
 
-  function loginUrl(returnTo = currentReturnPath()) {
+    function currentApplication() {
+    const path = window.location.pathname;
+
+    if (
+      path === "/icesheets" ||
+      path.startsWith("/icesheets/")
+    ) {
+      return "cryolauncher";
+    }
+
+    if (
+      path === "/icesee-gui" ||
+      path.startsWith("/icesee-gui/")
+    ) {
+      return "icesee";
+    }
+
+    if (
+      path === "/livist" ||
+      path.startsWith("/livist/")
+    ) {
+      return "livist";
+    }
+
+    if (
+      path === "/frozen-legacies" ||
+      path.startsWith("/frozen-legacies/")
+    ) {
+      return "frozen-legacies";
+    }
+
+    return "";
+  }
+
+
+  function accountPageUrl(path) {
+    const app = currentApplication();
+
+    if (!app) {
+      return path;
+    }
+
+    return (
+      `${path}?from=` +
+      encodeURIComponent(app)
+    );
+  }
+
+  function loginUrl(
+    returnTo = currentReturnPath()
+  ) {
     return (
       `${LOGIN_ENDPOINT}?return_to=` +
       encodeURIComponent(returnTo)
     );
   }
+
 
   function getDisplayName(user) {
     return (
@@ -52,26 +103,45 @@
     );
   }
 
-  function createAccountControl() {
-    const existing = document.getElementById(
-      "cryostack-global-account"
-    );
-
-    if (existing) {
-      return existing;
-    }
-
-    const target = findHeaderTarget();
+  function createAccountControl(targetOverride = null) {
+    const target =
+      targetOverride ||
+      findHeaderTarget();
 
     if (!target) {
       return null;
     }
 
-    const root = document.createElement("div");
+    /*
+    * For explicitly mounted application widgets, search only
+    * inside that target. For the global documentation header,
+    * keep the existing global id behavior.
+    */
+    let root = target.querySelector(
+      ".cryostack-global-account"
+    );
 
-    root.id = "cryostack-global-account";
-    root.className = "cryostack-global-account loading";
-    root.setAttribute("aria-live", "polite");
+    if (root) {
+      return root;
+    }
+
+    root = document.createElement("div");
+
+    root.className =
+      "cryostack-global-account loading";
+
+    root.setAttribute(
+      "aria-live",
+      "polite"
+    );
+
+    /*
+    * Only use the global id for the automatically discovered
+    * documentation/header account control.
+    */
+    if (!targetOverride) {
+      root.id = "cryostack-global-account";
+    }
 
     root.innerHTML = `
       <button
@@ -88,7 +158,9 @@
           👤
         </span>
 
-        <span class="cryostack-global-account-label">
+        <span
+          class="cryostack-global-account-label"
+        >
           Account
         </span>
 
@@ -208,6 +280,15 @@
     label.textContent = displayName;
     button.title = `Signed in as ${displayName}`;
 
+    const controlCenterLink =
+      user?.control_center_access
+        ? `
+          <a href="/control/">
+            Control Center
+          </a>
+        `
+        : "";
+
     menu.innerHTML = `
       <div class="cryostack-account-menu-identity">
         <strong>${escapeHtml(displayName)}</strong>
@@ -218,17 +299,19 @@
         }
       </div>
 
-      <a href="/account/">
+      <a href="${accountPageUrl("/account/")}">
         My Account
       </a>
 
-      <a href="/configurations/">
+      <a href="${accountPageUrl("/configurations/")}">
         Saved Configurations
       </a>
 
-      <a href="/experiments/">
+      <a href="${accountPageUrl("/experiments/")}">
         My Experiments
       </a>
+
+      ${controlCenterLink}
 
       <button
         type="button"
@@ -237,7 +320,6 @@
         Sign Out
       </button>
     `;
-
     button.onclick = () => {
       menu.hidden = !menu.hidden;
     };
@@ -274,23 +356,23 @@
     return element.innerHTML;
   }
 
-  async function loadAccountState() {
-    const root = createAccountControl();
-
+  async function loadAccountStateInto(root) {
     if (!root) {
-      window.setTimeout(loadAccountState, 150);
       return;
     }
 
     try {
-      const response = await fetch(ACCOUNT_ENDPOINT, {
-        method: "GET",
-        credentials: "same-origin",
-        cache: "no-store",
-        headers: {
-          Accept: "application/json",
-        },
-      });
+      const response = await fetch(
+        ACCOUNT_ENDPOINT,
+        {
+          method: "GET",
+          credentials: "same-origin",
+          cache: "no-store",
+          headers: {
+            Accept: "application/json",
+          },
+        }
+      );
 
       if (!response.ok) {
         throw new Error(
@@ -304,10 +386,14 @@
         accountState.authenticated === true &&
         accountState.user
       ) {
-        renderAuthenticated(root, accountState.user);
+        renderAuthenticated(
+          root,
+          accountState.user
+        );
       } else {
         renderGuest(root);
       }
+
     } catch (error) {
       console.error(
         "CryoStack account status could not be loaded:",
@@ -316,6 +402,22 @@
 
       renderUnavailable(root);
     }
+  }
+
+
+  async function loadAccountState() {
+    const root = createAccountControl();
+
+    if (!root) {
+      window.setTimeout(
+        loadAccountState,
+        150
+      );
+
+      return;
+    }
+
+    await loadAccountStateInto(root);
   }
 
   /*
@@ -355,24 +457,71 @@
   }
 
   function closeMenuWhenClickingOutside() {
-    document.addEventListener("click", (event) => {
-      const root = document.getElementById(
-        "cryostack-global-account"
-      );
+    document.addEventListener(
+      "click",
+      (event) => {
+        document
+          .querySelectorAll(
+            ".cryostack-global-account"
+          )
+          .forEach((root) => {
+            if (root.contains(event.target)) {
+              return;
+            }
 
-      if (!root || root.contains(event.target)) {
-        return;
+            const menu = root.querySelector(
+              ".cryostack-global-account-menu"
+            );
+
+            if (menu) {
+              menu.hidden = true;
+
+              root
+                .querySelector(
+                  ".cryostack-global-account-button"
+                )
+                ?.setAttribute(
+                  "aria-expanded",
+                  "false"
+                );
+            }
+          });
       }
-
-      const menu = root.querySelector(
-        ".cryostack-global-account-menu"
-      );
-
-      if (menu) {
-        menu.hidden = true;
-      }
-    });
+    );
   }
+
+  window.CryoStackAccount = {
+    mount(selector) {
+      const target =
+        typeof selector === "string"
+          ? document.querySelector(selector)
+          : selector;
+
+      if (!target) {
+        console.warn(
+          "[CryoStack account] mount target not found:",
+          selector
+        );
+
+        return null;
+      }
+
+      const root = createAccountControl(
+        target
+      );
+
+      if (!root) {
+        return null;
+      }
+
+      loadAccountStateInto(root);
+
+      return root;
+    },
+
+    currentApplication,
+    accountPageUrl,
+  };
 
   function initialize() {
     installApplicationGate();
@@ -389,4 +538,7 @@
   } else {
     initialize();
   }
+
 })();
+
+

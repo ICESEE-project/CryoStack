@@ -73,6 +73,29 @@ from icesee_jupyter_book.ui.shared_app_styles import (
     shared_application_styles,
 )
 
+from icesee_jupyter_book.ui.application_menus import (
+    build_icesee_app_menu,
+    load_cryostack_account_assets,
+)
+
+from icesee_jupyter_book.ui.shared_app_styles import (
+    shared_application_styles,
+)
+
+from icesee_jupyter_book.ui.experiment_bridge import (
+    ExperimentBridge,
+    load_experiment_bridge,
+)
+
+from icesee_jupyter_book.ui.workspace_bridge import (
+    WorkspaceBridge,
+    load_workspace_bridge,
+)
+
+from icesee_jupyter_book.core.experiment_status import (
+    experiment_update_from_job_status,
+)
+
 # ============================================================
 # Params widgets factory
 # ============================================================
@@ -137,46 +160,6 @@ def refresh_results_preview(rd: Path, results_out: W.Output):
                 display(Image(filename=str(p)))
         else:
             print("\nNo figures found yet.")
-
-# def relay_result_payload(result: dict) -> dict:
-#     return result.get("result", result)
-
-
-# def connector_ssh(session_id: str, host: str, user: str, port: int, command: str, timeout: int = 60):
-#     res = send_command(
-#         session_id,
-#         "ssh-run",
-#         {
-#             "host": host,
-#             "user": user,
-#             "port": port,
-#             "command": command,
-#             "timeout": timeout,
-#         },
-#     )
-#     return relay_result_payload(res)
-
-
-# def connector_fetch_archive(
-#     session_id: str,
-#     host: str,
-#     user: str,
-#     port: int,
-#     remote_path: str,
-#     timeout: int = 600,
-# ):
-#     res = send_command(
-#         session_id,
-#         "fetch-archive",
-#         {
-#             "host": host,
-#             "user": user,
-#             "port": port,
-#             "remote_path": remote_path,
-#             "timeout": timeout,
-#         },
-#     )
-#     return relay_result_payload(res)
 
 
 def make_zip_from_dir(src_dir: Path, zip_path: Path):
@@ -310,11 +293,16 @@ shared_styles = shared_application_styles()
 # UI builder (single entry point)
 # ============================================================
 def build_icesee_ui():
-    # print("STEP 1: start UI")
-    import traceback
     try:
         load_cryostack_account_assets()
+        load_experiment_bridge()
+        load_workspace_bridge()
+
         shared_styles = shared_application_styles()
+
+        experiment_bridge = ExperimentBridge()
+        workspace_bridge = WorkspaceBridge()
+
         # -----------------------------
         # UI state containers
         # -----------------------------
@@ -1381,8 +1369,75 @@ def build_icesee_ui():
                 STATUS["remote_dir"] = result.remote_dir
                 STATUS["jobid"] = result.jobid
 
+                experiment_bridge.create(
+                    application="icesee",
+
+                    name=(
+                        f"ICESEE "
+                        f"{filter_alg_dd.value} run"
+                    ),
+
+                    backend=remote_backend.value,
+
+                    status="running",
+
+                    job_id=(
+                        str(result.jobid)
+                        if result.jobid is not None
+                        else None
+                    ),
+
+                    cluster=(
+                        cluster_name_for_keys.value
+                        or cluster_host.value.strip()
+                    ),
+
+                    working_directory=result.remote_dir,
+
+                    log_path=getattr(
+                        result,
+                        "log_file",
+                        None,
+                    ),
+
+                    configuration=(
+                        current_experiment_configuration()
+                    ),
+
+                    metadata={
+                        "execution_mode": "remote",
+                        "access_mode": (
+                            access_mode_dd.value
+                        ),
+                        "backend": (
+                            remote_backend.value
+                        ),
+                        "filter": (
+                            filter_alg_dd.value
+                        ),
+                        "preset": (
+                            preset_dd.value
+                        ),
+                        "example": (
+                            example_dd.value
+                        ),
+                    },
+                )
+
+                workspace_bridge.save(
+                    application="icesee",
+                    state=current_workspace_state(),
+                )
+
                 set_status("done")
+
                 with log_out:
+                    print(
+                        "[experiment] Tracking ICESEE "
+                        f"{filter_alg_dd.value} run "
+                        f"for job {result.jobid}"
+                    )
+
                     for msg in result.messages:
                         print(msg)
 
@@ -1529,21 +1584,62 @@ def build_icesee_ui():
                 return
 
             try:
-                result = remote_job_status(host, user, port, jobid)
+                result = remote_job_status(
+                    host,
+                    user,
+                    port,
+                    jobid,
+                )
+
+                experiment_update = (
+                    experiment_update_from_job_status(
+                        result
+                    )
+                )
+
+                if experiment_update:
+                    experiment_bridge.update_by_job(
+                        job_id=str(jobid),
+                        **experiment_update,
+                    )
 
                 with log_out:
                     if result["source"] == "squeue":
                         print("--- squeue ---")
-                        print((result["stdout"] or "").strip())
+                        print(
+                            (result["stdout"] or "").strip()
+                        )
                     else:
-                        print("(squeue empty; job likely finished or left the queue)")
+                        print(
+                            "(squeue empty; job likely "
+                            "finished or left the queue)"
+                        )
                         print("--- sacct ---")
-                        print((result["stdout"] or "").strip() or "(no sacct output)")
-                        if (result["stderr"] or "").strip():
-                            print("--- stderr ---")
-                            print(result["stderr"].strip())
+                        print(
+                            (result["stdout"] or "").strip()
+                            or "(no sacct output)"
+                        )
 
-                set_status("done" if result["returncode"] == 0 else "fail")
+                        if (
+                            result["stderr"] or ""
+                        ).strip():
+                            print("--- stderr ---")
+                            print(
+                                result["stderr"].strip()
+                            )
+
+                    if experiment_update:
+                        print()
+                        print(
+                            "[experiment] CryoStack status:",
+                            experiment_update["status"],
+                        )
+
+                set_status(
+                    "done"
+                    if result["returncode"] == 0
+                    else "fail"
+                )
 
             except subprocess.TimeoutExpired:
                 set_status("fail")
@@ -1719,6 +1815,296 @@ def build_icesee_ui():
                 print("JobID:", STATUS["batch_job_id"])
                 if STATUS.get("s3_run"):
                     print("S3 run prefix:", STATUS["s3_run"])
+
+        def current_execution_mode() -> str:
+            """
+            Return the active ICESEE execution mode.
+
+            mode_tabs:
+                0 -> Local
+                1 -> Remote
+                2 -> Cloud
+            """
+            index = mode_tabs.selected_index
+
+            return {
+                0: "local",
+                1: "remote",
+                2: "cloud",
+            }.get(index, "local")
+
+
+        def current_experiment_configuration() -> dict:
+            """
+            Snapshot the scientific and execution configuration used
+            for an ICESEE experiment.
+
+            Do not store passwords, SSH keys, connector secrets,
+            AWS credentials, or other authentication material.
+            """
+
+            execution_mode = current_execution_mode()
+
+            config = {
+                "execution_mode": execution_mode,
+
+                "example": example_dd.value or "",
+
+                "preset": preset_dd.value or "",
+
+                "filter": filter_alg_dd.value or "",
+
+                "ensemble_size": int(ens_sl.value),
+
+                "output": output_label_dd.value or "",
+
+                "report_generation": bool(
+                    gen_report.value
+                ),
+            }
+
+            # -------------------------------------------------
+            # Remote / HPC configuration
+            # -------------------------------------------------
+            if execution_mode == "remote":
+
+                config["remote"] = {
+                    "access_mode": (
+                        access_mode_dd.value
+                    ),
+
+                    "backend": (
+                        remote_backend.value
+                    ),
+
+                    "cluster": (
+                        cluster_name_for_keys.value
+                        if "cluster_name_for_keys" in locals()
+                        else ""
+                    ),
+
+                    "host": (
+                        cluster_host.value.strip()
+                    ),
+
+                    "port": int(
+                        cluster_port.value
+                    ),
+
+                    "remote_base_dir": (
+                        remote_base_dir.value.strip()
+                    ),
+
+                    "remote_tag": (
+                        remote_tag.value.strip()
+                    ),
+                }
+
+                config["slurm"] = {
+                    "job_name": (
+                        slurm_job_name.value
+                    ),
+
+                    "time": (
+                        slurm_time.value
+                    ),
+
+                    "nodes": int(
+                        slurm_nodes.value
+                    ),
+
+                    "tasks": int(
+                        slurm_ntasks.value
+                    ),
+
+                    "tasks_per_node": int(
+                        slurm_tpn.value
+                    ),
+
+                    "partition": (
+                        slurm_part.value
+                    ),
+
+                    "memory": (
+                        slurm_mem.value
+                    ),
+
+                    "account": (
+                        slurm_account.value
+                    ),
+                }
+
+            # -------------------------------------------------
+            # Cloud configuration
+            # -------------------------------------------------
+            elif execution_mode == "cloud":
+
+                config["cloud"] = {
+                    "region": (
+                        aws_region.value.strip()
+                    ),
+
+                    "job_queue": (
+                        batch_job_queue.value.strip()
+                    ),
+
+                    "job_definition": (
+                        batch_job_def.value.strip()
+                    ),
+
+                    "job_name": (
+                        batch_job_name.value.strip()
+                    ),
+
+                    "s3_prefix": (
+                        cloud_bucket.value.strip()
+                    ),
+                }
+
+            return config
+
+
+        def current_workspace_state() -> dict:
+            """
+            Save enough ICESEE UI state to support future workspace
+            restoration.
+
+            This intentionally excludes credentials and secrets.
+            """
+
+            execution_mode = current_execution_mode()
+
+            state = {
+                "execution_mode": execution_mode,
+
+                "example": example_dd.value or "",
+
+                "preset": preset_dd.value or "",
+
+                "filter": filter_alg_dd.value or "",
+
+                "ensemble_size": int(ens_sl.value),
+
+                "output": output_label_dd.value or "",
+
+                "report_generation": bool(
+                    gen_report.value
+                ),
+
+                "job": {
+                    "job_id": (
+                        STATUS.get("jobid")
+                    ),
+
+                    "remote_directory": (
+                        STATUS.get("remote_dir")
+                    ),
+
+                    "batch_job_id": (
+                        STATUS.get("batch_job_id")
+                    ),
+
+                    "s3_run": (
+                        STATUS.get("s3_run")
+                    ),
+                },
+            }
+
+            # -------------------------------------------------
+            # Remote workspace
+            # -------------------------------------------------
+            if execution_mode == "remote":
+
+                state["remote"] = {
+                    "access_mode": (
+                        access_mode_dd.value
+                    ),
+
+                    "backend": (
+                        remote_backend.value
+                    ),
+
+                    "cluster": (
+                        cluster_name_for_keys.value
+                        if "cluster_name_for_keys" in locals()
+                        else ""
+                    ),
+
+                    "host": (
+                        cluster_host.value.strip()
+                    ),
+
+                    "port": int(
+                        cluster_port.value
+                    ),
+
+                    "remote_base_dir": (
+                        remote_base_dir.value.strip()
+                    ),
+
+                    "remote_tag": (
+                        remote_tag.value.strip()
+                    ),
+                }
+
+                state["slurm"] = {
+                    "job_name": (
+                        slurm_job_name.value
+                    ),
+
+                    "time": (
+                        slurm_time.value
+                    ),
+
+                    "nodes": int(
+                        slurm_nodes.value
+                    ),
+
+                    "tasks": int(
+                        slurm_ntasks.value
+                    ),
+
+                    "tasks_per_node": int(
+                        slurm_tpn.value
+                    ),
+
+                    "partition": (
+                        slurm_part.value
+                    ),
+
+                    "memory": (
+                        slurm_mem.value
+                    ),
+                }
+
+            # -------------------------------------------------
+            # Cloud workspace
+            # -------------------------------------------------
+            elif execution_mode == "cloud":
+
+                state["cloud"] = {
+                    "region": (
+                        aws_region.value.strip()
+                    ),
+
+                    "job_queue": (
+                        batch_job_queue.value.strip()
+                    ),
+
+                    "job_definition": (
+                        batch_job_def.value.strip()
+                    ),
+
+                    "job_name": (
+                        batch_job_name.value.strip()
+                    ),
+
+                    "s3_prefix": (
+                        cloud_bucket.value.strip()
+                    ),
+                }
+
+            return state
 
         # master run
         def run_example():
@@ -2133,7 +2519,22 @@ def build_icesee_ui():
         row = W.HBox([left_card, right_card], layout=W.Layout(width="100%", display="flex", gap="26px"))
         row.add_class("icesee-row")
 
-        page = W.VBox([app_menu, header, row, actions_card, back_link], layout=W.Layout(width="100%"))
+        page = W.VBox(
+            [
+                shared_styles,
+                W.HTML(css),
+
+                experiment_bridge.widget(),
+                workspace_bridge.widget(),
+
+                app_menu,
+                header,
+                row,
+                actions_card,
+                back_link,
+            ],
+            layout=W.Layout(width="100%"),
+        )
         page.add_class("icesee-page")
 
         # cloud_submit_btn.layout.display = "none"

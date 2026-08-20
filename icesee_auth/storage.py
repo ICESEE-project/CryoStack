@@ -5,9 +5,16 @@ from __future__ import annotations
 import sqlite3
 import time
 import uuid
+import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
+CONTROL_ROLE_RANK = {
+    "developer": 10,
+    "maintainer": 20,
+    "admin": 30,
+    "owner": 40,
+}
 
 @dataclass(frozen=True, slots=True)
 class User:
@@ -67,6 +74,47 @@ class Experiment:
     started_at: float | None
     finished_at: float | None
     updated_at: float
+
+@dataclass(frozen=True, slots=True)
+class Workspace:
+    id: str
+    user_id: str
+    application: str
+    state_json: str
+    created_at: float
+    updated_at: float
+
+@dataclass(frozen=True, slots=True)
+class UserIdentity:
+    id: str
+    user_id: str
+    provider: str
+    provider_subject: str
+    provider_username: str | None
+    provider_email: str | None
+    provider_profile_url: str | None
+    created_at: float
+    updated_at: float
+
+@dataclass(frozen=True, slots=True)
+class OAuthFlow:
+    state: str
+    session_id: str
+    provider: str
+    code_verifier: str
+    return_to: str
+    created_at: float
+    expires_at: float
+
+@dataclass(frozen=True, slots=True)
+class ExperimentEvent:
+    id: str
+    experiment_id: str
+    user_id: str
+    event_type: str
+    message: str | None
+    metadata_json: str
+    created_at: float
 
 class AuthStorage:
     """Store users and sessions in a small SQLite database."""
@@ -182,6 +230,146 @@ class AuthStorage:
 
                 CREATE INDEX IF NOT EXISTS idx_experiments_created
                     ON experiments(user_id, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS workspaces (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    application TEXT NOT NULL,
+                    state_json TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+
+                    FOREIGN KEY (user_id)
+                        REFERENCES users(id)
+                        ON DELETE CASCADE,
+
+                    UNIQUE(user_id, application)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_workspaces_user
+                    ON workspaces(user_id);
+
+                CREATE TABLE IF NOT EXISTS user_identities (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+
+                    provider TEXT NOT NULL,
+                    provider_subject TEXT NOT NULL,
+
+                    provider_username TEXT,
+                    provider_email TEXT,
+                    provider_profile_url TEXT,
+
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+
+                    FOREIGN KEY (user_id)
+                        REFERENCES users(id)
+                        ON DELETE CASCADE,
+
+                    UNIQUE(provider, provider_subject)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_user_identities_user
+                    ON user_identities(user_id);
+
+                CREATE INDEX IF NOT EXISTS idx_user_identities_provider
+                    ON user_identities(provider, provider_subject);
+
+                CREATE TABLE IF NOT EXISTS oauth_flows (
+                    state TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    provider TEXT NOT NULL,
+                    code_verifier TEXT NOT NULL,
+                    return_to TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    expires_at REAL NOT NULL,
+
+                    FOREIGN KEY (session_id)
+                        REFERENCES sessions(id)
+                        ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_oauth_flows_expires
+                    ON oauth_flows(expires_at);
+
+                CREATE INDEX IF NOT EXISTS idx_oauth_flows_session
+                    ON oauth_flows(session_id);
+
+                CREATE TABLE IF NOT EXISTS experiment_events (
+                    id TEXT PRIMARY KEY,
+                    experiment_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+
+                    event_type TEXT NOT NULL,
+                    message TEXT,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at REAL NOT NULL,
+
+                    FOREIGN KEY (experiment_id)
+                        REFERENCES experiments(id)
+                        ON DELETE CASCADE,
+
+                    FOREIGN KEY (user_id)
+                        REFERENCES users(id)
+                        ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_experiment_events_experiment
+                    ON experiment_events(experiment_id, created_at);
+
+                CREATE INDEX IF NOT EXISTS idx_experiment_events_user
+                    ON experiment_events(user_id, created_at);
+
+                CREATE TABLE IF NOT EXISTS user_roles (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    created_by TEXT,
+
+                    FOREIGN KEY (user_id)
+                        REFERENCES users(id)
+                        ON DELETE CASCADE,
+
+                    FOREIGN KEY (created_by)
+                        REFERENCES users(id)
+                        ON DELETE SET NULL,
+
+                    UNIQUE(user_id, role)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_user_roles_user
+                    ON user_roles(user_id);
+
+                CREATE INDEX IF NOT EXISTS idx_user_roles_role
+                    ON user_roles(role);
+
+                CREATE TABLE IF NOT EXISTS control_audit_log (
+                    id TEXT PRIMARY KEY,
+                    actor_user_id TEXT NOT NULL,
+                    target_user_id TEXT,
+                    action TEXT NOT NULL,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at REAL NOT NULL,
+
+                    FOREIGN KEY (actor_user_id)
+                        REFERENCES users(id)
+                        ON DELETE CASCADE,
+
+                    FOREIGN KEY (target_user_id)
+                        REFERENCES users(id)
+                        ON DELETE SET NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_control_audit_actor
+                    ON control_audit_log(actor_user_id);
+
+                CREATE INDEX IF NOT EXISTS idx_control_audit_target
+                    ON control_audit_log(target_user_id);
+
+                CREATE INDEX IF NOT EXISTS idx_control_audit_created
+                    ON control_audit_log(created_at);
                 """
             )
 
@@ -252,6 +440,70 @@ class AuthStorage:
             ).fetchone()
 
         return self._user_from_row(row)
+
+    def create_control_audit_event(
+        self,
+        *,
+        actor_user_id: str,
+        action: str,
+        target_user_id: str | None = None,
+        metadata_json: str = "{}",
+        now: float | None = None,
+    ) -> None:
+
+        timestamp = (
+            time.time()
+            if now is None
+            else now
+        )
+
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO control_audit_log (
+                    id,
+                    actor_user_id,
+                    target_user_id,
+                    action,
+                    metadata_json,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    uuid.uuid4().hex,
+                    actor_user_id,
+                    target_user_id,
+                    action,
+                    metadata_json,
+                    timestamp,
+                ),
+            )
+
+    def get_effective_control_role(
+        self,
+        *,
+        user_id: str,
+    ) -> str | None:
+
+        roles = self.get_user_roles(
+            user_id=user_id
+        )
+
+        valid = [
+            role
+            for role in roles
+            if role in CONTROL_ROLE_RANK
+        ]
+
+        if not valid:
+            return None
+
+        return max(
+            valid,
+            key=lambda role:
+                CONTROL_ROLE_RANK[role]
+        )
 
     def create_session(
         self,
@@ -365,6 +617,96 @@ class AuthStorage:
 
         return self.get_session(session_id, now=timestamp)
 
+    def save_workspace(
+        self,
+        *,
+        user_id: str,
+        application: str,
+        state_json: str,
+        now: float | None = None,
+    ) -> Workspace:
+        timestamp = time.time() if now is None else now
+        application = application.strip().lower()
+
+        with self._connect() as connection:
+            existing = connection.execute(
+                """
+                SELECT *
+                FROM workspaces
+                WHERE user_id = ? AND application = ?
+                """,
+                (user_id, application),
+            ).fetchone()
+
+            if existing is None:
+                workspace_id = uuid.uuid4().hex
+
+                connection.execute(
+                    """
+                    INSERT INTO workspaces (
+                        id,
+                        user_id,
+                        application,
+                        state_json,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        workspace_id,
+                        user_id,
+                        application,
+                        state_json,
+                        timestamp,
+                        timestamp,
+                    ),
+                )
+            else:
+                workspace_id = existing["id"]
+
+                connection.execute(
+                    """
+                    UPDATE workspaces
+                    SET
+                        state_json = ?,
+                        updated_at = ?
+                    WHERE id = ? AND user_id = ?
+                    """,
+                    (
+                        state_json,
+                        timestamp,
+                        workspace_id,
+                        user_id,
+                    ),
+                )
+
+        return self.get_workspace(
+            user_id=user_id,
+            application=application,
+        )
+
+    def get_workspace(
+        self,
+        *,
+        user_id: str,
+        application: str,
+    ) -> Workspace | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM workspaces
+                WHERE user_id = ? AND application = ?
+                """,
+                (
+                    user_id,
+                    application.strip().lower(),
+                ),
+            ).fetchone()
+
+        return self._workspace_from_row(row)
+
     def delete_session(self, session_id: str) -> None:
         with self._connect() as connection:
             connection.execute(
@@ -380,6 +722,111 @@ class AuthStorage:
                 "DELETE FROM sessions WHERE expires_at <= ?",
                 (timestamp,),
             )
+
+    def create_oauth_flow(
+        self,
+        *,
+        state: str,
+        session_id: str,
+        provider: str,
+        code_verifier: str,
+        return_to: str,
+        ttl_seconds: int = 600,
+        now: float | None = None,
+    ) -> OAuthFlow:
+        timestamp = time.time() if now is None else now
+
+        flow = OAuthFlow(
+            state=state,
+            session_id=session_id,
+            provider=provider.strip().lower(),
+            code_verifier=code_verifier,
+            return_to=return_to,
+            created_at=timestamp,
+            expires_at=timestamp + ttl_seconds,
+        )
+
+        with self._connect() as connection:
+            connection.execute(
+                """
+                DELETE FROM oauth_flows
+                WHERE expires_at <= ?
+                """,
+                (timestamp,),
+            )
+
+            connection.execute(
+                """
+                INSERT INTO oauth_flows (
+                    state,
+                    session_id,
+                    provider,
+                    code_verifier,
+                    return_to,
+                    created_at,
+                    expires_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    flow.state,
+                    flow.session_id,
+                    flow.provider,
+                    flow.code_verifier,
+                    flow.return_to,
+                    flow.created_at,
+                    flow.expires_at,
+                ),
+            )
+
+        return flow
+
+
+    def consume_oauth_flow(
+        self,
+        *,
+        state: str,
+        provider: str,
+        now: float | None = None,
+    ) -> OAuthFlow | None:
+        timestamp = time.time() if now is None else now
+
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM oauth_flows
+                WHERE state = ?
+                AND provider = ?
+                AND expires_at > ?
+                """,
+                (
+                    state,
+                    provider.strip().lower(),
+                    timestamp,
+                ),
+            ).fetchone()
+
+            if row is None:
+                return None
+
+            connection.execute(
+                """
+                DELETE FROM oauth_flows
+                WHERE state = ?
+                """,
+                (state,),
+            )
+
+        return OAuthFlow(
+            state=row["state"],
+            session_id=row["session_id"],
+            provider=row["provider"],
+            code_verifier=row["code_verifier"],
+            return_to=row["return_to"],
+            created_at=row["created_at"],
+            expires_at=row["expires_at"],
+        )
 
     def update_user_profile(
         self,
@@ -423,6 +870,136 @@ class AuthStorage:
 
         return self.get_user_by_id(user_id)
 
+    def create_user_identity(
+        self,
+        *,
+        user_id: str,
+        provider: str,
+        provider_subject: str,
+        provider_username: str | None = None,
+        provider_email: str | None = None,
+        provider_profile_url: str | None = None,
+        now: float | None = None,
+    ) -> UserIdentity:
+        timestamp = time.time() if now is None else now
+
+        identity = UserIdentity(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            provider=provider.strip().lower(),
+            provider_subject=str(provider_subject).strip(),
+            provider_username=(
+                provider_username.strip()
+                if provider_username
+                else None
+            ),
+            provider_email=(
+                provider_email.strip().lower()
+                if provider_email
+                else None
+            ),
+            provider_profile_url=(
+                provider_profile_url.strip()
+                if provider_profile_url
+                else None
+            ),
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO user_identities (
+                    id,
+                    user_id,
+                    provider,
+                    provider_subject,
+                    provider_username,
+                    provider_email,
+                    provider_profile_url,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    identity.id,
+                    identity.user_id,
+                    identity.provider,
+                    identity.provider_subject,
+                    identity.provider_username,
+                    identity.provider_email,
+                    identity.provider_profile_url,
+                    identity.created_at,
+                    identity.updated_at,
+                ),
+            )
+
+        return identity
+
+    def get_user_identity(
+        self,
+        *,
+        provider: str,
+        provider_subject: str,
+    ) -> UserIdentity | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM user_identities
+                WHERE provider = ?
+                AND provider_subject = ?
+                LIMIT 1
+                """,
+                (
+                    provider.strip().lower(),
+                    str(provider_subject).strip(),
+                ),
+            ).fetchone()
+
+        return self._user_identity_from_row(row)
+
+    def list_user_identities(
+        self,
+        *,
+        user_id: str,
+    ) -> list[UserIdentity]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM user_identities
+                WHERE user_id = ?
+                ORDER BY created_at ASC
+                """,
+                (user_id,),
+            ).fetchall()
+
+        return [
+            self._user_identity_from_row(row)
+            for row in rows
+        ]
+
+    @staticmethod
+    def _user_identity_from_row(
+        row: sqlite3.Row | None,
+    ) -> UserIdentity | None:
+        if row is None:
+            return None
+
+        return UserIdentity(
+            id=row["id"],
+            user_id=row["user_id"],
+            provider=row["provider"],
+            provider_subject=row["provider_subject"],
+            provider_username=row["provider_username"],
+            provider_email=row["provider_email"],
+            provider_profile_url=row["provider_profile_url"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
 
     def create_configuration(
         self,
@@ -699,7 +1276,29 @@ class AuthStorage:
 
         return experiment
 
+    def get_experiment_by_job_id(
+        self,
+        *,
+        user_id: str,
+        job_id: str,
+    ) -> Experiment | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM experiments
+                WHERE user_id = ?
+                AND job_id = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (
+                    user_id,
+                    str(job_id),
+                ),
+            ).fetchone()
 
+        return self._experiment_from_row(row)
 
     def list_experiments(
         self,
@@ -1038,3 +1637,378 @@ class AuthStorage:
                     ADD COLUMN {column_name} {column_type}
                     """
                 )
+
+    @staticmethod
+    def _workspace_from_row(
+        row: sqlite3.Row | None,
+    ) -> Workspace | None:
+        if row is None:
+            return None
+
+        return Workspace(
+            id=row["id"],
+            user_id=row["user_id"],
+            application=row["application"],
+            state_json=row["state_json"],
+            created_at=float(row["created_at"]),
+            updated_at=float(row["updated_at"]),
+        )
+
+    def create_experiment_event(
+        self,
+        *,
+        experiment_id: str,
+        user_id: str,
+        event_type: str,
+        message: str | None = None,
+        metadata_json: str = "{}",
+        now: float | None = None,
+    ) -> ExperimentEvent:
+        timestamp = time.time() if now is None else now
+
+        event = ExperimentEvent(
+            id=str(uuid.uuid4()),
+            experiment_id=experiment_id,
+            user_id=user_id,
+            event_type=event_type.strip().lower(),
+            message=message,
+            metadata_json=metadata_json,
+            created_at=timestamp,
+        )
+
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO experiment_events (
+                    id,
+                    experiment_id,
+                    user_id,
+                    event_type,
+                    message,
+                    metadata_json,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event.id,
+                    event.experiment_id,
+                    event.user_id,
+                    event.event_type,
+                    event.message,
+                    event.metadata_json,
+                    event.created_at,
+                ),
+            )
+
+        return event
+
+
+    def list_experiment_events(
+        self,
+        *,
+        experiment_id: str,
+        user_id: str,
+    ) -> list[ExperimentEvent]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM experiment_events
+                WHERE experiment_id = ?
+                AND user_id = ?
+                ORDER BY created_at ASC
+                """,
+                (
+                    experiment_id,
+                    user_id,
+                ),
+            ).fetchall()
+
+        return [
+            self._experiment_event_from_row(row)
+            for row in rows
+        ]
+
+
+    @staticmethod
+    def _experiment_event_from_row(
+        row: sqlite3.Row | None,
+    ) -> ExperimentEvent | None:
+        if row is None:
+            return None
+
+        return ExperimentEvent(
+            id=row["id"],
+            experiment_id=row["experiment_id"],
+            user_id=row["user_id"],
+            event_type=row["event_type"],
+            message=row["message"],
+            metadata_json=row["metadata_json"],
+            created_at=row["created_at"],
+        )
+
+    def add_user_role(
+        self,
+        *,
+        user_id: str,
+        role: str,
+        created_by: str | None = None,
+        now: float | None = None,
+    ) -> None:
+
+        allowed_roles = {
+            "developer",
+            "nmaintainer",
+            "admin",
+            "owner",
+        }
+
+        role = role.strip().lower()
+
+        if role not in allowed_roles:
+            raise ValueError(
+                f"Invalid CryoStack role: {role}"
+            )
+
+        timestamp = (
+            time.time()
+            if now is None
+            else now
+        )
+
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO user_roles (
+                    id,
+                    user_id,
+                    role,
+                    created_at,
+                    created_by
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    uuid.uuid4().hex,
+                    user_id,
+                    role,
+                    timestamp,
+                    created_by,
+                ),
+            )
+
+
+    def remove_user_role(
+        self,
+        *,
+        user_id: str,
+        role: str,
+    ) -> bool:
+
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                DELETE FROM user_roles
+                WHERE user_id = ?
+                AND role = ?
+                """,
+                (
+                    user_id,
+                    role.strip().lower(),
+                ),
+            )
+
+        return cursor.rowcount > 0
+
+
+    def get_user_roles(
+        self,
+        *,
+        user_id: str,
+    ) -> list[str]:
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT role
+                FROM user_roles
+                WHERE user_id = ?
+                ORDER BY role
+                """,
+                (user_id,),
+            ).fetchall()
+
+        return [
+            str(row["role"])
+            for row in rows
+        ]
+
+
+    def user_has_role(
+        self,
+        *,
+        user_id: str,
+        roles: set[str],
+    ) -> bool:
+
+        current_roles = set(
+            self.get_user_roles(
+                user_id=user_id
+            )
+        )
+
+        return bool(
+            current_roles.intersection(
+                roles
+            )
+        )
+
+    def list_user_roles(
+        self,
+        *,
+        user_id: str,
+    ) -> list[str]:
+
+        with self._connect() as connection:
+
+            rows = connection.execute(
+                """
+                SELECT role
+
+                FROM user_roles
+
+                WHERE user_id = ?
+
+                ORDER BY role
+                """,
+                (user_id,),
+            ).fetchall()
+
+        return [
+            row["role"]
+            for row in rows
+        ]
+
+    def has_role(
+        self,
+        *,
+        user_id: str,
+        role: str,
+    ) -> bool:
+
+        with self._connect() as connection:
+
+            row = connection.execute(
+                """
+                SELECT 1
+
+                FROM user_roles
+
+                WHERE
+                    user_id = ?
+                AND role = ?
+                """,
+                (
+                    user_id,
+                    role,
+                ),
+            ).fetchone()
+
+        return row is not None
+
+    def grant_role(
+        self,
+        *,
+        user_id: str,
+        role: str,
+        created_by: str | None = None,
+    ) -> None:
+
+        import secrets
+        with self._connect() as connection:
+
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO user_roles (
+
+                    id,
+                    user_id,
+                    role,
+                    created_at,
+                    created_by
+
+                )
+
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    secrets.token_hex(16),
+                    user_id,
+                    role,
+                    time.time(),
+                    created_by,
+                ),
+            )
+
+    def revoke_role(
+        self,
+        *,
+        user_id: str,
+        role: str,
+    ) -> None:
+
+        with self._connect() as connection:
+
+            connection.execute(
+                """
+                DELETE
+
+                FROM user_roles
+
+                WHERE
+
+                    user_id = ?
+                AND role = ?
+                """,
+                (
+                    user_id,
+                    role,
+                ),
+            )
+
+    def add_control_audit_event(
+        self,
+        *,
+        actor_user_id: str,
+        action: str,
+        target_user_id: str | None = None,
+        metadata_json: str = "{}",
+    ) -> None:
+
+        with self._connect() as connection:
+
+            connection.execute(
+                """
+                INSERT INTO control_audit_log (
+
+                    id,
+                    actor_user_id,
+                    target_user_id,
+                    action,
+                    metadata_json,
+                    created_at
+
+                )
+
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    secrets.token_hex(16),
+                    actor_user_id,
+                    target_user_id,
+                    action,
+                    metadata_json,
+                    time.time(),
+                ),
+            )

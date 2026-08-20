@@ -10,12 +10,36 @@ import sys
 import time
 from pathlib import Path
 
+
+REPO_ROOT = (
+    Path(__file__)
+    .resolve()
+    .parent
+    .parent
+)
+
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(
+        0,
+        str(REPO_ROOT),
+    )
+
+
+from control_center import (
+    install_control_center,
+)
+
 from aiohttp import ClientSession, WSMsgType, web
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 from icesee_auth import AuthManager
+
+from control_center.services.access import (
+    AccessService,
+)
+
 
 HOP_BY_HOP = {
     "connection",
@@ -52,6 +76,22 @@ def livist_docs_root() -> Path:
         / "living-ice-sheet-temperature"
         / "site"
     )
+
+def frozen_legacies_root() -> Path:
+    return (
+        repo_root()
+        / "icesee_jupyter_book"
+        / "applications"
+        / "frozen_legacies"
+    )
+
+
+def frozen_legacies_data_root() -> Path:
+    return frozen_legacies_root() / "data"
+
+
+def frozen_legacies_assets_root() -> Path:
+    return frozen_legacies_root() / "assets"
 
 def run_center_nb() -> Path:
     return repo_root() / "icesee_jupyter_book" / "icesee_jupyter_notebooks" / "run_center_voila.ipynb"
@@ -132,6 +172,32 @@ async def livist_docs_page(request: web.Request) -> web.StreamResponse:
         raise web.HTTPNotFound(text="LIVIST documentation page not found.")
 
     return web.FileResponse(requested_path)
+
+async def frozen_legacies_redirect(
+    request: web.Request,
+) -> web.StreamResponse:
+    raise web.HTTPFound("/frozen-legacies/")
+
+
+async def frozen_legacies_index(
+    request: web.Request,
+) -> web.StreamResponse:
+
+    index_file = (
+        frozen_legacies_root()
+        / "index.html"
+    )
+
+    if not index_file.exists():
+        raise web.HTTPNotFound(
+            text=(
+                "FrozenLegacies frontend has not "
+                "been created yet. Expected:\n"
+                f"{index_file}"
+            )
+        )
+
+    return web.FileResponse(index_file)
 
 class ManagedProcess:
     def __init__(self, command: list[str], cwd: Path):
@@ -357,16 +423,22 @@ def make_app() -> web.Application:
     app.on_startup.append(state.startup)
     app.on_cleanup.append(state.cleanup)
 
-    # AuthManager().install(app)
-
-    # app.router.add_route("*", "/icesee-gui", proxy_run_center)
-    # app.router.add_route("*", "/icesee-gui/{tail:.*}", proxy_run_center)
-
-    # app.router.add_route("*", "/icesheets", proxy_icesheets)
-    # app.router.add_route("*", "/icesheets/{tail:.*}", proxy_icesheets)
-
     auth = AuthManager()
     auth.install(app)
+
+    #
+    # Control Center access/roles
+    #
+    access_service = AccessService(
+        auth.storage,
+    )
+
+    app["access_service"] = access_service
+
+    install_control_center(
+        app,
+        auth=auth,
+    )
 
     protected_run_center = auth.require_login(
         proxy_run_center
@@ -416,6 +488,36 @@ def make_app() -> web.Application:
         show_index=False,
     )
 
+    # ---------------------------------------------------------
+    # FrozenLegacies application
+    # ---------------------------------------------------------
+
+    app.router.add_get(
+        "/frozen-legacies",
+        frozen_legacies_redirect,
+    )
+
+    app.router.add_get(
+        "/frozen-legacies/",
+        frozen_legacies_index,
+    )
+
+    app.router.add_static(
+        "/frozen-legacies/assets/",
+        path=str(
+            frozen_legacies_assets_root()
+        ),
+        show_index=False,
+    )
+
+    app.router.add_static(
+        "/frozen-legacies/data/",
+        path=str(
+            frozen_legacies_data_root()
+        ),
+        show_index=False,
+    )
+    
     app.router.add_get("/", root_redirect)
     app.router.add_static("/", path=str(book_root()), show_index=True)
 

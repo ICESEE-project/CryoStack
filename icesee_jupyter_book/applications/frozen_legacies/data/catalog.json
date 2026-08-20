@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "datasets": [
+    {
+      "id": "frozen-legacies-lyra",
+      "title": "Frozen Legacies LYRA Radar Observations",
+      "adapter": "lyra",
+      "campaign": "Frozen Legacies",
+      "institution": "Georgia Tech",
+      "description": "Restored Antarctic airborne radar observations and LYRA-derived geophysical products.\n",
+      "observations": 885,
+      "flights": [
+        "125",
+        "141"
+      ],
+      "products": {
+        "radargram": {
+          "title": "Radargram",
+          "type": "image",
+          "path": {
+            "field": "radar_image"
+          },
+          "downloadable": true
+        },
+        "echogram": {
+          "title": "Processed Echogram",
+          "type": "image",
+          "path": {
+            "template": "media/{flight}/{file_id}.png"
+          },
+          "downloadable": true
+        },
+        "source_csv": {
+          "title": "Source CSV",
+          "type": "data",
+          "path": {
+            "template": "downloads/{_source_file}"
+          },
+          "downloadable": true
+        }
+      },
+      "downloads": {},
+      "metadata": {
+        "project": "Frozen Legacies",
+        "product_family": "LYRA",
+        "coordinate_system": "EPSG:4326",
+        "version": 1.0,
+        "citation": null,
+        "doi": null
+      }
+    }
+  ],
+  "summary": {
+    "datasets": 1,
+    "observations": 885,
+    "flights": 2
+  }
+}

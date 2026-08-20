@@ -11,6 +11,10 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import quote
 
+import base64
+import hashlib
+import secrets
+
 from aiohttp import web
 
 from .security import hash_password, safe_return_to, verify_password
@@ -24,6 +28,12 @@ from .templates import (
     login_fields,
     register_fields,
     experiments_page,
+    experiment_detail_page,
+)
+
+from .providers import (
+    GitHubProvider,
+    ORCIDProvider,
 )
 
 class AuthManager:
@@ -60,6 +70,48 @@ class AuthManager:
         self._session_ttl_seconds = session_ttl_seconds
         self._secure_cookies = secure_cookies
         self._clock = clock
+        self._github_provider = GitHubProvider(
+            client_id=os.environ.get(
+                "CRYOSTACK_GITHUB_CLIENT_ID",
+                "",
+            ),
+
+            client_secret=os.environ.get(
+                "CRYOSTACK_GITHUB_CLIENT_SECRET",
+                "",
+            ),
+
+            redirect_uri=os.environ.get(
+                "CRYOSTACK_GITHUB_REDIRECT_URI",
+                "",
+            ),
+        )
+
+        self._orcid_provider = ORCIDProvider(
+            client_id=os.environ.get(
+                "CRYOSTACK_ORCID_CLIENT_ID",
+                "",
+            ),
+
+            client_secret=os.environ.get(
+                "CRYOSTACK_ORCID_CLIENT_SECRET",
+                "",
+            ),
+
+            redirect_uri=os.environ.get(
+                "CRYOSTACK_ORCID_REDIRECT_URI",
+                "",
+            ),
+
+            base_url=os.environ.get(
+                "CRYOSTACK_ORCID_BASE_URL",
+                "https://orcid.org",
+            ),
+        )
+
+    @property
+    def storage(self) -> AuthStorage:
+        return self._storage
 
     def install(self, app: web.Application) -> None:
         app.router.add_get("/api/v1/me", self._handle_me)
@@ -156,38 +208,731 @@ class AuthManager:
             self._experiment_delete,
         )
 
-    def authenticated_user(self, request: web.Request):
-        session_id = request.cookies.get(self._cookie_name)
+        app.router.add_get(
+            "/api/v1/workspaces/{application}",
+            self._api_get_workspace,
+        )
 
-        if not session_id:
-            return None
+        app.router.add_put(
+            "/api/v1/workspaces/{application}",
+            self._api_save_workspace,
+        )
 
-        session = self._sessions.get(session_id)
+        app.router.add_patch(
+            "/api/v1/experiments/job/{job_id}",
+            self._api_update_experiment_by_job,
+        )
 
-        if session is None:
-            return None
+        app.router.add_get(
+            "/auth/github",
+            self._github_begin,
+        )
 
-        if session.user is None:
-            return None
+        app.router.add_get(
+            "/auth/github/callback",
+            self._github_callback,
+        )
 
-        return session.user
+        app.router.add_get(
+            "/auth/orcid",
+            self._orcid_begin,
+        )
 
-    def require_login(self, handler):
+        app.router.add_get(
+            "/auth/orcid/callback",
+            self._orcid_callback,
+        )
 
-        async def wrapped(request):
 
-            user = self.authenticated_user(request)
+    @staticmethod
+    def _pkce_verifier() -> str:
+        return secrets.token_urlsafe(64)
+
+
+    @staticmethod
+    def _pkce_challenge(verifier: str) -> str:
+        digest = hashlib.sha256(
+            verifier.encode("ascii")
+        ).digest()
+
+        return (
+            base64.urlsafe_b64encode(digest)
+            .rstrip(b"=")
+            .decode("ascii")
+        )
+
+    async def _orcid_begin(
+        self,
+        request: web.Request,
+    ) -> web.StreamResponse:
+
+        provider = self._orcid_provider
+
+        if not provider.configured:
+            raise web.HTTPServiceUnavailable(
+                text=(
+                    "ORCID authentication is not "
+                    "configured on this server."
+                )
+            )
+
+        return_to = safe_return_to(
+            request.query.get("return_to")
+        )
+
+        session = self._get_or_create_session(
+            request
+        )
+
+        state = secrets.token_urlsafe(32)
+
+        # OAuthFlow currently requires code_verifier.
+        # ORCID itself does not need it, so use a harmless
+        # random transaction value rather than weakening the
+        # database schema yet.
+        verifier = self._pkce_verifier()
+
+        self._storage.create_oauth_flow(
+            state=state,
+            session_id=session.id,
+            provider=provider.name,
+            code_verifier=verifier,
+            return_to=return_to,
+            ttl_seconds=600,
+            now=self._clock(),
+        )
+
+        authorization_url = (
+            provider.authorization_url(
+                state=state,
+                code_challenge=None,
+            )
+        )
+
+        response = web.HTTPFound(
+            authorization_url
+        )
+
+        self._set_session_cookie(
+            request,
+            response,
+            session.id,
+        )
+
+        raise response
+
+    async def _orcid_callback(
+        self,
+        request: web.Request,
+    ) -> web.StreamResponse:
+
+        provider = self._orcid_provider
+
+        if not provider.configured:
+            raise web.HTTPServiceUnavailable(
+                text=(
+                    "ORCID authentication is not "
+                    "configured on this server."
+                )
+            )
+
+        error = request.query.get("error")
+
+        if error:
+            raise web.HTTPBadRequest(
+                text=(
+                    "ORCID authorization was "
+                    "not completed."
+                )
+            )
+
+        code = str(
+            request.query.get("code", "")
+        ).strip()
+
+        state = str(
+            request.query.get("state", "")
+        ).strip()
+
+        if not code or not state:
+            raise web.HTTPBadRequest(
+                text="Missing ORCID OAuth response."
+            )
+
+        flow = self._storage.consume_oauth_flow(
+            state=state,
+            provider=provider.name,
+            now=self._clock(),
+        )
+
+        if flow is None:
+            raise web.HTTPBadRequest(
+                text=(
+                    "The ORCID authentication "
+                    "request is invalid or expired."
+                )
+            )
+
+        browser_session_id = request.cookies.get(
+            self._cookie_name
+        )
+
+        if browser_session_id != flow.session_id:
+            raise web.HTTPBadRequest(
+                text=(
+                    "ORCID authentication session "
+                    "does not match."
+                )
+            )
+
+        try:
+            authentication = (
+                await provider.exchange_code(
+                    code=code,
+                    code_verifier=None,
+                )
+            )
+
+            identity = (
+                await provider.fetch_identity(
+                    authentication
+                )
+            )
+
+        except RuntimeError as error:
+            raise web.HTTPBadGateway(
+                text=str(error)
+            )
+
+        stored_identity = (
+            self._storage.get_user_identity(
+                provider=identity.provider,
+                provider_subject=identity.subject,
+            )
+        )
+
+        current_user = self.current_user(
+            request
+        )
+
+        # --------------------------------------------------------
+        # Existing ORCID identity:
+        # allow it to authenticate the linked CryoStack account.
+        # --------------------------------------------------------
+
+        if stored_identity is not None:
+            user = self._storage.get_user_by_id(
+                stored_identity.user_id
+            )
 
             if user is None:
-                raise web.HTTPFound(
-                    "/login?next=" + request.path_qs
+                raise web.HTTPInternalServerError(
+                    text=(
+                        "ORCID identity references "
+                        "a missing CryoStack account."
+                    )
                 )
 
-            request["user"] = user
+        else:
+            # ----------------------------------------------------
+            # New ORCID identity must be linked from an already
+            # authenticated CryoStack account.
+            # ----------------------------------------------------
 
-            return await handler(request)
+            if current_user is None:
+                raise web.HTTPConflict(
+                    text=(
+                        "This ORCID iD is not yet linked "
+                        "to a CryoStack account. Sign in "
+                        "to CryoStack first, then connect "
+                        "ORCID from Account Settings."
+                    )
+                )
 
-        return wrapped
+            try:
+                self._storage.create_user_identity(
+                    user_id=current_user.id,
+                    provider=identity.provider,
+                    provider_subject=identity.subject,
+                    provider_username=identity.username,
+                    provider_email=None,
+                    provider_profile_url=(
+                        identity.profile_url
+                    ),
+                    now=self._clock(),
+                )
+
+            except sqlite3.IntegrityError:
+                raise web.HTTPConflict(
+                    text=(
+                        "This ORCID iD is already "
+                        "linked to another CryoStack "
+                        "account."
+                    )
+                )
+
+            user = current_user
+
+        authenticated = (
+            self._storage.authenticate_session(
+                flow.session_id,
+                user_id=user.id,
+                ttl_seconds=(
+                    self._session_ttl_seconds
+                ),
+                now=self._clock(),
+            )
+        )
+
+        if authenticated is None:
+            raise web.HTTPInternalServerError(
+                text="Unable to update the session."
+            )
+
+        response = web.HTTPFound(
+            safe_return_to(
+                flow.return_to
+            )
+        )
+
+        self._set_session_cookie(
+            request,
+            response,
+            authenticated.id,
+        )
+
+        raise response
+
+    async def _github_begin(
+        self,
+        request: web.Request,
+    ) -> web.StreamResponse:
+
+        provider = self._github_provider
+
+        if not provider.configured:
+            raise web.HTTPServiceUnavailable(
+                text=(
+                    "GitHub authentication is not "
+                    "configured on this server."
+                )
+            )
+
+        return_to = safe_return_to(
+            request.query.get("return_to")
+        )
+
+        session = self._get_or_create_session(
+            request
+        )
+
+        state = secrets.token_urlsafe(32)
+
+        verifier = self._pkce_verifier()
+
+        challenge = self._pkce_challenge(
+            verifier
+        )
+
+        self._storage.create_oauth_flow(
+            state=state,
+            session_id=session.id,
+            provider=provider.name,
+            code_verifier=verifier,
+            return_to=return_to,
+            ttl_seconds=600,
+            now=self._clock(),
+        )
+
+        authorization_url = (
+            provider.authorization_url(
+                state=state,
+                code_challenge=challenge,
+            )
+        )
+
+        response = web.HTTPFound(
+            authorization_url
+        )
+
+        self._set_session_cookie(
+            request,
+            response,
+            session.id,
+        )
+
+        raise response
+
+    async def _github_callback(
+        self,
+        request: web.Request,
+        ) -> web.StreamResponse:
+
+        provider = self._github_provider
+
+        # ========================================================
+        # Provider configuration
+        # ========================================================
+
+        if not provider.configured:
+            raise web.HTTPServiceUnavailable(
+                text=(
+                    "GitHub authentication is not "
+                    "configured on this server."
+                )
+            )
+
+        # ========================================================
+        # GitHub callback error
+        # ========================================================
+
+        error = request.query.get("error")
+
+        if error:
+            raise web.HTTPBadRequest(
+                text=(
+                    "GitHub authorization was "
+                    "not completed."
+                )
+            )
+
+        # ========================================================
+        # Authorization response
+        # ========================================================
+
+        code = str(
+            request.query.get(
+                "code",
+                "",
+            )
+        ).strip()
+
+        state = str(
+            request.query.get(
+                "state",
+                "",
+            )
+        ).strip()
+
+        if not code or not state:
+            raise web.HTTPBadRequest(
+                text=(
+                    "Missing GitHub OAuth response."
+                )
+            )
+
+        # ========================================================
+        # Consume one-time OAuth transaction
+        # ========================================================
+
+        flow = self._storage.consume_oauth_flow(
+            state=state,
+            provider=provider.name,
+            now=self._clock(),
+        )
+
+        if flow is None:
+            raise web.HTTPBadRequest(
+                text=(
+                    "The GitHub authentication "
+                    "request is invalid or expired."
+                )
+            )
+
+        # ========================================================
+        # Browser/session binding
+        # ========================================================
+
+        browser_session_id = request.cookies.get(
+            self._cookie_name
+        )
+
+        if browser_session_id != flow.session_id:
+
+            raise web.HTTPBadRequest(
+                text=(
+                    "GitHub authentication session "
+                    "does not match."
+                )
+            )
+
+        # ========================================================
+        # Exchange code
+        # ========================================================
+
+        try:
+            authentication = await provider.exchange_code(
+                code=code,
+                code_verifier=flow.code_verifier,
+            )
+
+            identity = await provider.fetch_identity(
+                authentication
+            )
+
+        except RuntimeError as error:
+
+            raise web.HTTPBadGateway(
+                text=str(error)
+            )
+
+        # ========================================================
+        # Existing provider identity?
+        # ========================================================
+
+        stored_identity = (
+            self._storage.get_user_identity(
+                provider=identity.provider,
+                provider_subject=(
+                    identity.subject
+                ),
+            )
+        )
+
+        user = None
+
+        if stored_identity is not None:
+
+            user = self._storage.get_user_by_id(
+                stored_identity.user_id
+            )
+
+            if user is None:
+
+                raise web.HTTPInternalServerError(
+                    text=(
+                        "GitHub identity references "
+                        "a missing CryoStack account."
+                    )
+                )
+
+        else:
+
+            # ====================================================
+            # User already signed into CryoStack?
+            #
+            # If yes, this operation links GitHub.
+            # ====================================================
+
+            user = self.current_user(
+                request
+            )
+
+            if user is not None:
+
+                try:
+                    self._storage.create_user_identity(
+                        user_id=user.id,
+
+                        provider=(
+                            identity.provider
+                        ),
+
+                        provider_subject=(
+                            identity.subject
+                        ),
+
+                        provider_username=(
+                            identity.username
+                        ),
+
+                        provider_email=(
+                            identity.email
+                        ),
+
+                        provider_profile_url=(
+                            identity.profile_url
+                        ),
+
+                        now=self._clock(),
+                    )
+
+                except sqlite3.IntegrityError:
+
+                    raise web.HTTPConflict(
+                        text=(
+                            "This GitHub account is "
+                            "already linked to another "
+                            "CryoStack account."
+                        )
+                    )
+
+            else:
+
+                # =================================================
+                # New GitHub-based CryoStack account
+                # =================================================
+
+                if not identity.email:
+
+                    raise web.HTTPBadRequest(
+                        text=(
+                            "CryoStack could not obtain "
+                            "a verified email address "
+                            "from GitHub."
+                        )
+                    )
+
+                existing_user = (
+                    self._storage.get_user_by_email(
+                        identity.email
+                    )
+                )
+
+                # =================================================
+                # SECURITY:
+                #
+                # Never automatically link external identities
+                # only because email strings match.
+                # =================================================
+
+                if existing_user is not None:
+
+                    raise web.HTTPConflict(
+                        text=(
+                            "A CryoStack account already "
+                            "uses this email address. "
+                            "Sign in with your existing "
+                            "CryoStack account first, "
+                            "then connect GitHub from "
+                            "your account."
+                        )
+                    )
+
+                display_name = (
+                    identity.display_name
+                    or identity.username
+                    or identity.email.split(
+                        "@",
+                        1,
+                    )[0]
+                )
+
+                # =================================================
+                # Existing users table currently requires a
+                # password_hash.
+                #
+                # Generate an unknown high-entropy password for
+                # OAuth-only accounts.
+                #
+                # We can migrate password_hash to nullable later.
+                # =================================================
+
+                unusable_password = (
+                    secrets.token_urlsafe(64)
+                )
+
+                try:
+
+                    user = self._storage.create_user(
+                        email=identity.email,
+
+                        display_name=(
+                            display_name
+                        ),
+
+                        institution=None,
+
+                        password_hash=hash_password(
+                            unusable_password
+                        ),
+
+                        now=self._clock(),
+                    )
+
+                    self._storage.create_user_identity(
+                        user_id=user.id,
+
+                        provider=(
+                            identity.provider
+                        ),
+
+                        provider_subject=(
+                            identity.subject
+                        ),
+
+                        provider_username=(
+                            identity.username
+                        ),
+
+                        provider_email=(
+                            identity.email
+                        ),
+
+                        provider_profile_url=(
+                            identity.profile_url
+                        ),
+
+                        now=self._clock(),
+                    )
+
+                except sqlite3.IntegrityError:
+
+                    raise web.HTTPConflict(
+                        text=(
+                            "Unable to create the "
+                            "CryoStack account because "
+                            "the identity is already "
+                            "registered."
+                        )
+                    )
+
+        # ========================================================
+        # Sanity check
+        # ========================================================
+
+        if user is None:
+
+            raise web.HTTPInternalServerError(
+                text=(
+                    "Unable to resolve CryoStack user "
+                    "after GitHub authentication."
+                )
+            )
+
+        # ========================================================
+        # Authenticate existing browser session
+        # ========================================================
+
+        authenticated = (
+            self._storage.authenticate_session(
+                flow.session_id,
+
+                user_id=user.id,
+
+                ttl_seconds=(
+                    self._session_ttl_seconds
+                ),
+
+                now=self._clock(),
+            )
+        )
+
+        if authenticated is None:
+
+            raise web.HTTPInternalServerError(
+                text=(
+                    "Unable to update the session."
+                )
+            )
+
+        # ========================================================
+        # Return user to original application
+        # ========================================================
+
+        response = web.HTTPFound(
+            safe_return_to(
+                flow.return_to
+            )
+        )
+
+        self._set_session_cookie(
+            request,
+            response,
+            authenticated.id,
+        )
+
+        raise response
 
     def _require_api_user(
         self,
@@ -224,6 +969,102 @@ class AuthManager:
         self._set_session_cookie(request, response, session.id)
         return response
 
+    async def _api_update_experiment_by_job(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        user = self._require_api_user(request)
+
+        job_id = request.match_info[
+            "job_id"
+        ]
+
+        experiment = (
+            self._storage.get_experiment_by_job_id(
+                user_id=user.id,
+                job_id=job_id,
+            )
+        )
+
+        if experiment is None:
+            raise web.HTTPNotFound(
+                text="Experiment not found."
+            )
+
+        try:
+            payload = await request.json()
+        except Exception:
+            raise web.HTTPBadRequest(
+                text="A valid JSON body is required."
+            )
+
+        status = str(
+            payload.get(
+                "status",
+                experiment.status,
+            )
+        ).strip().lower()
+
+        allowed_statuses = {
+            "queued",
+            "preparing",
+            "running",
+            "completed",
+            "failed",
+            "cancelled",
+        }
+
+        if status not in allowed_statuses:
+            raise web.HTTPBadRequest(
+                text="Invalid experiment status."
+            )
+
+        previous_status = experiment.status
+
+        updated = self._storage.update_experiment(
+            experiment_id=experiment.id,
+            user_id=user.id,
+            status=status,
+            exit_code=payload.get("exit_code"),
+            error_message=payload.get(
+                "error_message"
+            ),
+            now=self._clock(),
+        )
+
+        if (
+            updated is not None
+            and updated.status != previous_status
+        ):
+            self._storage.create_experiment_event(
+                experiment_id=updated.id,
+                user_id=user.id,
+                event_type=updated.status,
+                message=(
+                    f"Experiment status changed from "
+                    f"{previous_status} to {updated.status}."
+                ),
+                metadata_json=json.dumps(
+                    {
+                        "previous_status": previous_status,
+                        "status": updated.status,
+                        "job_id": updated.job_id,
+                        "exit_code": updated.exit_code,
+                    },
+                    sort_keys=True,
+                ),
+                now=self._clock(),
+            )
+
+        response = web.json_response(
+            self._experiment_to_dict(updated)
+        )
+
+        self._prepare_no_cache(response)
+
+        return response
+
+
     async def _account_redirect(
         self,
         request: web.Request,
@@ -242,14 +1083,28 @@ class AuthManager:
                 "/auth/login?return_to=%2Faccount%2F"
             )
 
+        source_application = (
+            request.query.get("from", "")
+            .strip()
+            .lower()
+        )
+
+        identities = self._storage.list_user_identities(
+            user_id=user.id,
+        )
+
         response = web.Response(
-            text=account_settings_page(user=user),
+            text=account_settings_page(
+                user=user,
+                identities=identities,
+                source_application=source_application,
+            ),
             content_type="text/html",
         )
+
         self._prepare_no_cache(response)
 
         return response
-
 
     async def _account_update(
         self,
@@ -261,6 +1116,12 @@ class AuthManager:
             raise web.HTTPFound(
                 "/auth/login?return_to=%2Faccount%2F"
             )
+
+        source_application = (
+            request.query.get("from", "")
+            .strip()
+            .lower()
+        )
 
         form = await request.post()
 
@@ -289,10 +1150,15 @@ class AuthManager:
         ).strip()
 
         if len(display_name) < 2:
+            identities = self._storage.list_user_identities(
+                user_id=user.id,
+            )
             response = web.Response(
                 text=account_settings_page(
                     user=user,
+                    identities=identities,
                     error="Please enter a valid display name.",
+                    source_application=source_application,
                 ),
                 content_type="text/html",
                 status=400,
@@ -318,10 +1184,16 @@ class AuthManager:
                 text="CryoStack account not found."
             )
 
+        identities = self._storage.list_user_identities(
+                user_id=user.id,
+            )
+
         response = web.Response(
             text=account_settings_page(
                 user=updated_user,
+                identities=identities,
                 message="Your account settings were updated.",
+                source_application=source_application,
             ),
             content_type="text/html",
         )
@@ -545,8 +1417,16 @@ class AuthManager:
                 "/auth/login?return_to=%2Fconfigurations%2F"
             )
 
-        configurations = self._storage.list_configurations(
-            user_id=user.id,
+        source_application = (
+            request.query.get("from", "")
+            .strip()
+            .lower()
+        )
+
+        configurations = (
+            self._storage.list_configurations(
+                user_id=user.id,
+            )
         )
 
         response = web.Response(
@@ -554,11 +1434,13 @@ class AuthManager:
                 user=user,
                 configurations=configurations,
                 message=request.query.get("message"),
+                source_application=source_application,
             ),
             content_type="text/html",
         )
 
         self._prepare_no_cache(response)
+
         return response
 
 
@@ -864,49 +1746,6 @@ class AuthManager:
 
         return None
 
-    def current_user(self, request: web.Request) -> User | None:
-        """Return the authenticated user for the current request."""
-
-        session_id = request.cookies.get(self._cookie_name)
-
-        if not session_id:
-            return None
-
-        session = self._storage.get_session(
-            session_id,
-            now=self._clock(),
-        )
-
-        if session is None or not session.user_id:
-            return None
-
-        return self._storage.get_user_by_id(session.user_id)
-
-
-    def require_login(self, handler):
-        """Protect an aiohttp route while preserving its destination."""
-
-        async def protected(request: web.Request) -> web.StreamResponse:
-            user = self.current_user(request)
-
-            if user is None:
-                return_to = safe_return_to(
-                    request.path_qs,
-                    default="/index.html",
-                )
-
-                login_url = (
-                    "/auth/login?return_to="
-                    + quote(return_to, safe="")
-                )
-
-                raise web.HTTPFound(login_url)
-
-            request["cryostack_user"] = user
-            return await handler(request)
-
-        return protected
-
     def _get_or_create_session(
         self,
         request: web.Request,
@@ -935,10 +1774,13 @@ class AuthManager:
             now=now,
         )
 
-    def current_user(self, request: web.Request) -> User | None:
-        """Return the authenticated user associated with this request."""
-
-        session_id = request.cookies.get(self._cookie_name)
+    def current_user(
+        self,
+        request: web.Request,
+    ) -> User | None:
+        session_id = request.cookies.get(
+            self._cookie_name
+        )
 
         if not session_id:
             return None
@@ -948,25 +1790,32 @@ class AuthManager:
             now=self._clock(),
         )
 
-        if session is None or not session.user_id:
+        if session is None:
             return None
 
-        return self._storage.get_user_by_id(session.user_id)
+        if not session.user_id:
+            return None
+
+        return self._storage.get_user_by_id(
+            session.user_id
+        )
+
+
+    def authenticated_user(
+        self,
+        request: web.Request,
+    ) -> User | None:
+        return self.current_user(request)
 
 
     def require_login(self, handler):
-        """Wrap an aiohttp route so only authenticated users can access it."""
-
         async def protected(
             request: web.Request,
-        ) -> web.StreamResponse:
+        ):
             user = self.current_user(request)
 
             if user is None:
-                return_to = safe_return_to(
-                    request.path_qs,
-                    default="/index.html",
-                )
+                return_to = request.path_qs
 
                 login_url = (
                     "/auth/login?return_to="
@@ -990,10 +1839,17 @@ class AuthManager:
 
         return self._storage.get_user_by_id(session.user_id)
 
-    @staticmethod
-    def _public_user(user: User | None) -> dict | None:
+    def _public_user(
+        self,
+        user: User | None,
+    ) -> dict | None:
+
         if user is None:
             return None
+
+        roles = self._storage.get_user_roles(
+            user_id=user.id
+        )
 
         return {
             "id": user.id,
@@ -1002,6 +1858,18 @@ class AuthManager:
             "institution": user.institution,
             "research_role": user.research_role,
             "country": user.country,
+
+            "roles": roles,
+
+            "control_center_access": bool(
+                set(roles).intersection({
+                    "developer",
+                    "maintainer",
+                    "admin",
+                    "owner",
+                })
+            ),
+
             "preferences": {
                 "default_application": (
                     user.default_application
@@ -1064,6 +1932,11 @@ class AuthManager:
             + quote(return_to, safe="")
         )
 
+        github_href = (
+            "/auth/github?return_to="
+            + quote(return_to, safe="")
+        )
+
         return auth_page(
             title="Sign in",
             subtitle=(
@@ -1078,6 +1951,7 @@ class AuthManager:
             alternate_href=register_href,
             alternate_label="Create an account",
             error=error,
+            github_href=github_href,
         )
 
     def _render_register(
@@ -1091,6 +1965,11 @@ class AuthManager:
     ) -> str:
         login_href = (
             "/auth/login?return_to="
+            + quote(return_to, safe="")
+        )
+
+        github_href = (
+            "/auth/github?return_to="
             + quote(return_to, safe="")
         )
 
@@ -1112,6 +1991,7 @@ class AuthManager:
             alternate_href=login_href,
             alternate_label="Sign in",
             error=error,
+            github_href=github_href,
         )
 
     def _registration_error_response(
@@ -1373,6 +2253,31 @@ class AuthManager:
             now=self._clock(),
         )
 
+        self._storage.create_experiment_event(
+            experiment_id=experiment.id,
+            user_id=user.id,
+            event_type="created",
+            message="Experiment created.",
+            metadata_json=json.dumps(
+                {
+                    "application": experiment.application,
+                    "backend": experiment.backend,
+                },
+                sort_keys=True,
+            ),
+            now=self._clock(),
+        )
+
+        if experiment.status == "running":
+            self._storage.create_experiment_event(
+                experiment_id=experiment.id,
+                user_id=user.id,
+                event_type="running",
+                message="Experiment entered running state.",
+                metadata_json="{}",
+                now=self._clock(),
+            )
+
         response = web.json_response(
             self._experiment_to_dict(experiment),
             status=201,
@@ -1450,6 +2355,7 @@ class AuthManager:
                 text="metadata must be a JSON object."
             )
 
+        previous_status = experiment.status
         experiment = self._storage.update_experiment(
             experiment_id=request.match_info[
                 "experiment_id"
@@ -1476,6 +2382,30 @@ class AuthManager:
             ),
             now=self._clock(),
         )
+
+        if (
+            updated is not None
+            and updated.status != previous_status
+        ):
+            self._storage.create_experiment_event(
+                experiment_id=updated.id,
+                user_id=user.id,
+                event_type=updated.status,
+                message=(
+                    f"Experiment status changed from "
+                    f"{previous_status} to {updated.status}."
+                ),
+                metadata_json=json.dumps(
+                    {
+                        "previous_status": previous_status,
+                        "status": updated.status,
+                        "job_id": updated.job_id,
+                        "exit_code": updated.exit_code,
+                    },
+                    sort_keys=True,
+                ),
+                now=self._clock(),
+            )
 
         if experiment is None:
             raise web.HTTPNotFound(
@@ -1535,21 +2465,35 @@ class AuthManager:
                 "/auth/login?return_to=%2Fexperiments%2F"
             )
 
-        experiments = self._storage.list_experiments(
-            user_id=user.id,
-            application=request.query.get("application"),
-            status=request.query.get("status"),
+        source_application = (
+            request.query.get("from", "")
+            .strip()
+            .lower()
+        )
+
+        experiments = (
+            self._storage.list_experiments(
+                user_id=user.id,
+                application=request.query.get(
+                    "application"
+                ),
+                status=request.query.get(
+                    "status"
+                ),
+            )
         )
 
         response = web.Response(
             text=experiments_page(
                 user=user,
                 experiments=experiments,
+                source_application=source_application,
             ),
             content_type="text/html",
         )
 
         self._prepare_no_cache(response)
+
         return response
 
     async def _experiment_detail_page(
@@ -1576,9 +2520,30 @@ class AuthManager:
                 text="Experiment not found."
             )
 
-        return web.json_response(
-            self._experiment_to_dict(experiment)
+        events = self._storage.list_experiment_events(
+            experiment_id=experiment.id,
+            user_id=user.id,
         )
+
+        source_application = (
+            request.query.get("from", "")
+            .strip()
+            .lower()
+        )
+
+        response = web.Response(
+            text=experiment_detail_page(
+                user=user,
+                experiment=experiment,
+                events=events,
+                source_application=source_application,
+            ),
+            content_type="text/html",
+        )
+
+        self._prepare_no_cache(response)
+
+        return response
 
     async def _experiment_delete(
         self,
@@ -1609,3 +2574,176 @@ class AuthManager:
             "/experiments/"
         )
     
+    async def _api_get_workspace(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        user = self._require_api_user(request)
+
+        application = request.match_info[
+            "application"
+        ].strip().lower()
+
+        workspace = self._storage.get_workspace(
+            user_id=user.id,
+            application=application,
+        )
+
+        if workspace is None:
+            return web.json_response({
+                "application": application,
+                "state": None,
+            })
+
+        try:
+            state = json.loads(workspace.state_json)
+        except Exception:
+            state = {}
+
+        response = web.json_response({
+            "id": workspace.id,
+            "application": workspace.application,
+            "state": state,
+            "updated_at": self._format_timestamp(
+                workspace.updated_at
+            ),
+        })
+
+        self._prepare_no_cache(response)
+        return response
+
+    async def _api_save_workspace(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        user = self._require_api_user(request)
+
+        application = request.match_info[
+            "application"
+        ].strip().lower()
+
+        if application not in {
+            "cryolauncher",
+            "icesee",
+            "livist",
+        }:
+            raise web.HTTPBadRequest(
+                text="Invalid application."
+            )
+
+        try:
+            payload = await request.json()
+        except Exception:
+            raise web.HTTPBadRequest(
+                text="A valid JSON body is required."
+            )
+
+        state = payload.get("state")
+
+        if not isinstance(state, dict):
+            raise web.HTTPBadRequest(
+                text="state must be a JSON object."
+            )
+
+        workspace = self._storage.save_workspace(
+            user_id=user.id,
+            application=application,
+            state_json=json.dumps(
+                state,
+                sort_keys=True,
+            ),
+            now=self._clock(),
+        )
+
+        response = web.json_response({
+            "ok": True,
+            "workspace_id": workspace.id,
+            "application": workspace.application,
+            "updated_at": self._format_timestamp(
+                workspace.updated_at
+            ),
+        })
+
+        self._prepare_no_cache(response)
+        return response
+
+    def require_roles(
+        self,
+        *allowed_roles: str,
+    ):
+        allowed = {
+            role.strip().lower()
+            for role in allowed_roles
+        }
+
+        async def unauthorized(
+            request: web.Request,
+        ):
+            raise web.HTTPForbidden(
+                text=(
+                    "You do not have access to "
+                    "the CryoStack Control Center."
+                )
+            )
+
+        def decorator(handler):
+
+            async def protected(
+                request: web.Request,
+            ):
+                user = self.current_user(
+                    request
+                )
+
+                if user is None:
+
+                    return_to = (
+                        request.path_qs
+                    )
+
+                    login_url = (
+                        "/auth/login?return_to="
+                        + quote(
+                            return_to,
+                            safe="",
+                        )
+                    )
+
+                    raise web.HTTPFound(
+                        login_url
+                    )
+
+                roles = set(
+                    self._storage
+                    .get_user_roles(
+                        user_id=user.id
+                    )
+                )
+
+                if not roles.intersection(
+                    allowed
+                ):
+                    return await unauthorized(
+                        request
+                    )
+
+                #
+                # IMPORTANT:
+                # Make authenticated identity available
+                # to all protected handlers.
+                #
+                request[
+                    "cryostack_user"
+                ] = user
+
+                request[
+                    "cryostack_roles"
+                ] = roles
+
+                return await handler(
+                    request
+                )
+
+            return protected
+
+        return decorator

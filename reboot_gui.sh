@@ -1,187 +1,286 @@
 #!/usr/bin/env bash
 
 # ============================================================
-# CryoStack GUI + Connector Launcher
+# CryoStack Full Rebuild + Restart
+#
+# Lifecycle:
+#
+#   1. Preflight
+#   2. Stop runtime services
+#   3. Build dependency graph
+#   4. Validate build artifacts
+#   5. Start runtime services
+#   6. Health check
+#
+# Usage:
+#
+#   ./reboot_gui.sh
+#
 # ============================================================
 
 set -Eeuo pipefail
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+SCRIPT_DIR="$(
+    cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
+    pwd
+)"
+
 REPO_ROOT="${SCRIPT_DIR}"
 
-BOOK_DIR="${REPO_ROOT}/icesee_jupyter_book"
-LIVIST_ROOT="${REPO_ROOT}/external/living-ice-sheet-temperature"
-LIVIST_FRONTEND="${LIVIST_ROOT}/frontend"
+DEPLOYMENT_DIR="${REPO_ROOT}/deployment"
 
-GUI_LOG="${REPO_ROOT}/icesee.log"
-RELAY_LOG="${REPO_ROOT}/relay.log"
+PREFLIGHT="${DEPLOYMENT_DIR}/preflight.py"
+BUILDER="${DEPLOYMENT_DIR}/cryostack_build.py"
+SERVICES="${DEPLOYMENT_DIR}/services.sh"
+HEALTH_CHECK="${DEPLOYMENT_DIR}/health_check.py"
 
-cd "${REPO_ROOT}"
-
-echo "=================================================="
-echo "CryoStack service restart"
-echo "Repository: ${REPO_ROOT}"
-echo "=================================================="
-
-echo
-echo "=================================================="
-echo "Stopping existing CryoStack services..."
-echo "=================================================="
-
-pkill -f "connector_relay_server" || true
-pkill -f "icesee_app.py" || true
-pkill -f "python.*-m voila" || true
-pkill -f "python.*-m uvicorn" || true
-
-sleep 2
-
-echo
-echo "=================================================="
-echo "Building CryoStack..."
-echo "=================================================="
-
-# Remove the existing Jupyter Book build directory to ensure a clean build.
-if [ -d "${BOOK_DIR}/_build" ]; then
-    rm -rf "${BOOK_DIR}/_build"
-fi
-
-if ! command -v jupyter-book >/dev/null 2>&1; then
-    echo "[CryoStack][ERROR] jupyter-book was not found in PATH."
-    exit 1
-fi
-
-jupyter-book build "${BOOK_DIR}"
-
-if [ ! -f "${BOOK_DIR}/_build/html/index.html" ]; then
-    echo "[CryoStack][ERROR] Jupyter Book build did not produce index.html."
-    exit 1
-fi
-
-echo
-echo "=================================================="
-echo "Building application documentation..."
-echo "=================================================="
-
-"${REPO_ROOT}/bin/build_application_docs.sh"
-
-echo
-echo "=================================================="
-echo "Building LIVIST frontend..."
-echo "=================================================="
-
-if [ ! -d "${LIVIST_FRONTEND}" ]; then
-    echo "[CryoStack][ERROR] LIVIST frontend directory was not found:"
-    echo "  ${LIVIST_FRONTEND}"
-    exit 1
-fi
-
-if ! command -v yarn >/dev/null 2>&1; then
-    echo "[CryoStack][ERROR] yarn was not found in PATH."
-    echo "Activate the Conda environment containing Node.js and Yarn."
-    exit 1
-fi
-
-cd "${LIVIST_FRONTEND}"
-
-# Keep dependencies synchronized with yarn.lock.
-yarn install --immutable
-yarn build
-
-if [ ! -f "${LIVIST_FRONTEND}/dist/index.html" ]; then
-    echo "[CryoStack][ERROR] LIVIST frontend build failed."
-    exit 1
-fi
-
-echo
-echo "=================================================="
-echo "Building LIVIST documentation..."
-echo "=================================================="
-
-if ! command -v uv >/dev/null 2>&1; then
-    echo "[CryoStack][ERROR] uv was not found in PATH."
-    exit 1
-fi
-
-cd "${LIVIST_ROOT}"
-uv run zensical build
-
-if [ ! -f "${LIVIST_ROOT}/site/index.html" ]; then
-    echo "[CryoStack][ERROR] LIVIST documentation build failed."
-    exit 1
-fi
 
 cd "${REPO_ROOT}"
 
-echo
-echo "=================================================="
-echo "Starting CryoStack GUI services..."
-echo "=================================================="
 
-nohup bash "${REPO_ROOT}/bin/start_icesee_services.sh" \
-    > "${GUI_LOG}" 2>&1 &
+# ============================================================
+# Helpers
+# ============================================================
 
-GUI_PID=$!
+section() {
 
-sleep 5
+    echo
+    echo "=================================================="
+    echo "$1"
+    echo "=================================================="
 
-if ! kill -0 "${GUI_PID}" 2>/dev/null; then
-    echo "[CryoStack][ERROR] GUI service failed to start."
-    echo "Inspect: ${GUI_LOG}"
-    tail -n 50 "${GUI_LOG}" || true
+}
+
+
+deployment_failed() {
+
+    local stage="$1"
+
+    echo
+    echo "=================================================="
+    echo "[CryoStack][ERROR] Deployment failed"
+    echo "Stage: ${stage}"
+    echo "=================================================="
+    echo
+
+}
+
+
+# ============================================================
+# Validate deployment tooling itself
+# ============================================================
+
+section \
+    "CryoStack full rebuild and restart"
+
+echo "Repository:"
+echo "  ${REPO_ROOT}"
+
+
+for path in \
+    "${PREFLIGHT}" \
+    "${BUILDER}" \
+    "${SERVICES}" \
+    "${HEALTH_CHECK}"
+do
+
+    if [ ! -e "${path}" ]; then
+
+        echo
+        echo "[CryoStack][ERROR] Missing deployment component:"
+        echo "  ${path}"
+
+        exit 1
+
+    fi
+
+done
+
+
+# ============================================================
+# 1. PREFLIGHT
+#
+# Important:
+# Services are still running here.
+#
+# A failed preflight must NOT interrupt the live platform.
+# ============================================================
+
+section \
+    "1/5 CryoStack deployment preflight"
+
+
+if ! python \
+    "${PREFLIGHT}"
+then
+
+    deployment_failed \
+        "preflight"
+
+    echo \
+        "Existing CryoStack services were left untouched."
+
     exit 1
+
 fi
 
-echo
-echo "=================================================="
-echo "Starting connector relay server..."
-echo "=================================================="
 
-nohup python -m uvicorn \
-    icesee_jupyter_book.core.connector_relay_server:app \
-    --host 127.0.0.1 \
-    --port 8899 \
-    > "${RELAY_LOG}" 2>&1 &
+# ============================================================
+# 2. STOP RUNTIME
+# ============================================================
 
-RELAY_PID=$!
+section \
+    "2/5 Stopping CryoStack runtime"
 
-sleep 3
 
-if ! kill -0 "${RELAY_PID}" 2>/dev/null; then
-    echo "[CryoStack][ERROR] Connector relay failed to start."
-    echo "Inspect: ${RELAY_LOG}"
-    tail -n 50 "${RELAY_LOG}" || true
+if ! "${SERVICES}" stop
+then
+
+    deployment_failed \
+        "service shutdown"
+
     exit 1
+
 fi
 
-echo
-echo "=================================================="
-echo "CryoStack services started"
-echo "=================================================="
 
-printf "%-18s %s\n" "GUI PID:" "${GUI_PID}"
-printf "%-18s %s\n" "Relay PID:" "${RELAY_PID}"
+# ============================================================
+# 3. BUILD
+#
+# cryostack_build.py handles:
+#
+#   - dependency ordering
+#   - build commands
+#   - clean rules
+#   - requirement checks
+#   - artifact validation
+#
+# ============================================================
 
-echo
+section \
+    "3/5 Building CryoStack applications"
+
+
+if ! python \
+    "${BUILDER}" \
+    build \
+    all
+then
+
+    deployment_failed \
+        "application build"
+
+    echo
+    echo "[CryoStack] Build failed after services were stopped."
+    echo "[CryoStack] Attempting to restore the runtime..."
+
+    if "${SERVICES}" start; then
+
+        echo
+        echo "[CryoStack] Runtime restart attempted successfully."
+
+        python \
+            "${HEALTH_CHECK}" \
+            --wait 60 \
+            || true
+
+    else
+
+        echo
+        echo "[CryoStack][ERROR] Runtime recovery failed."
+        echo
+        echo "Inspect:"
+        echo "  ${REPO_ROOT}/icesee.log"
+        echo "  ${REPO_ROOT}/relay.log"
+
+    fi
+
+    exit 1
+
+fi
+
+
+# ============================================================
+# 4. START RUNTIME
+# ============================================================
+
+section \
+    "4/5 Starting CryoStack runtime"
+
+
+if ! "${SERVICES}" start
+then
+
+    deployment_failed \
+        "service startup"
+
+    echo
+    echo "Inspect:"
+    echo "  ${REPO_ROOT}/icesee.log"
+    echo "  ${REPO_ROOT}/relay.log"
+
+    exit 1
+
+fi
+
+
+# ============================================================
+# 5. HEALTH CHECK
+# ============================================================
+
+section \
+    "5/5 CryoStack health check"
+
+
+if ! python \
+    "${HEALTH_CHECK}" \
+    --wait 90
+then
+
+    deployment_failed \
+        "health check"
+
+    echo
+    echo "[CryoStack] Runtime processes started,"
+    echo "but one or more application routes are unhealthy."
+    echo
+    echo "Inspect:"
+    echo "  ${REPO_ROOT}/icesee.log"
+    echo "  ${REPO_ROOT}/relay.log"
+
+    echo
+
+    "${SERVICES}" status \
+        || true
+
+    exit 1
+
+fi
+
+
+# ============================================================
+# Success
+# ============================================================
+
+section \
+    "CryoStack deployment complete"
+
+
 echo "Applications:"
-echo "  CryoStack:      http://127.0.0.1:8080/"
-echo "  CryoLauncher:   http://127.0.0.1:8080/icesheets/"
-echo "  ICESEE:         http://127.0.0.1:8080/icesee-gui/"
-echo "  LIVIST:         http://127.0.0.1:8080/livist/"
-echo "  LIVIST docs:    http://127.0.0.1:8080/livist/docs/"
+echo "  CryoStack:        http://127.0.0.1:8080/"
+echo "  CryoLauncher:     http://127.0.0.1:8080/icesheets/"
+echo "  ICESEE:           http://127.0.0.1:8080/icesee-gui/"
+echo "  LIVIST:           http://127.0.0.1:8080/livist/"
+echo "  LIVIST docs:      http://127.0.0.1:8080/livist/docs/"
+echo "  Frozen Legacies:  http://127.0.0.1:8080/frozen-legacies/"
 
 echo
+
 echo "Logs:"
-echo "  tail -f ${GUI_LOG}"
-echo "  tail -f ${RELAY_LOG}"
+echo "  tail -f ${REPO_ROOT}/icesee.log"
+echo "  tail -f ${REPO_ROOT}/relay.log"
 
 echo
-echo "Ports:"
-echo "  GUI:            8080"
-echo "  Connector:      8899"
 
-echo
-echo "Running processes:"
-ps -ef \
-    | grep -E "icesee_app.py|voila|connector_relay_server|uvicorn" \
-    | grep -v grep \
-    || true
+"${SERVICES}" status

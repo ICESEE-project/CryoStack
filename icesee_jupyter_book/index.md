@@ -148,28 +148,37 @@
         <a
           class="cryostack-card-btn green-btn"
           href="/livist/"
-          data-requires-auth="true"
+          data-requires-auth="false"
         >
           Open LIVIST
         </a>
       </div>
 
-      <div class="cryostack-card muted">
-        <div class="cryostack-card-eyebrow">Platform Expansion</div>
-        <div class="cryostack-card-tag gray">
-          Coming Soon
+      <div class="cryostack-card">
+        <div class="cryostack-card-eyebrow">Scientific Data Products</div>
+        <div class="cryostack-card-tag">
+          Historical Radar Archive
         </div>
 
-        <h3>Application 4</h3>
+        <h3>Frozen Legacies</h3>
 
         <p>
-          Additional cryosphere tools will be integrated into the platform.
+          Explore historical Antarctic airborne radar surveys,  flight tracks, radar-derived products, and processed SPRI-NSF-TUD campaign observations.
         </p>
 
+        <div class="cryostack-mini-list green-list">
+          <span>Historical Radar</span>
+          <span>Ross Ice Shelf</span>
+          <span>LYRA</span>
+          <span>Ice Thickness</span>
+        </div>
+
         <a
-          class="cryostack-card-link"
-          href="resources.html">
-          View roadmap →
+          class="cryostack-card-btn green-btn"
+          href="/frozen-legacies/"
+          data-requires-auth="false"
+          > 
+          Explore Frozen Legacies (comming soon)
         </a>
       </div>
 

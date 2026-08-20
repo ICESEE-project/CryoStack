@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from html import escape
+from urllib.parse import quote
 
+from .application_registry import get_application
 
 def auth_page(
     *,
@@ -17,12 +19,31 @@ def auth_page(
     alternate_href: str,
     alternate_label: str,
     error: str | None = None,
+    github_href: str | None = None,
 ) -> str:
     safe_error = escape(error) if error else ""
 
     error_block = (
         f'<div class="auth-error" role="alert">{safe_error}</div>'
         if error
+        else ""
+    )
+
+    github_block = (
+        f"""
+        <a
+          class="oauth-button github"
+          href="{escape(github_href)}"
+        >
+            Continue with GitHub
+          
+        </a>
+
+        <div class="auth-divider">
+          <span>or continue with email</span>
+        </div>
+        """
+        if github_href
         else ""
     )
 
@@ -131,6 +152,64 @@ def auth_page(
       border-color: #2563eb;
     }}
 
+    .oauth-button {{
+      width: 100%;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 1.15rem;
+      padding: 0.7rem 1rem;
+      border: 1px solid #24292f;
+      border-radius: 10px;
+      # background: #ffffff;
+      background: #24292f;
+      color: white;
+      font-size: 0.9rem;
+      font-weight: 750;
+      text-decoration: none;
+      transition:
+        background 0.15s ease,
+        border-color 0.15s ease,
+        transform 0.15s ease;
+    }}
+
+    .oauth-button:hover {{
+      # background: #f8fafc;
+      # border-color: #94a3b8;
+      # transform: translateY(-1px);
+      background: #1b1f23;
+    }}
+
+    .oauth-icon {{
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }}
+
+    .auth-divider {{
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin: 0 0 1.15rem;
+      color: #94a3b8;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }}
+
+    .auth-divider::before,
+    .auth-divider::after {{
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: #e2e8f0;
+    }}
+
+    .auth-divider span {{
+      white-space: nowrap;
+    }}
     .submit {{
       width: 100%;
       min-height: 44px;
@@ -195,7 +274,7 @@ def auth_page(
       <p class="subtitle">{escape(subtitle)}</p>
 
       {error_block}
-
+      {github_block}
       <form method="post" action="{escape(form_action)}">
         <input
           type="hidden"
@@ -218,8 +297,8 @@ def auth_page(
       </p>
     </section>
 
-    <a class="back" href="/index.html">
-      ← Return to CryoStack
+    <a class="back" href="{escape(return_to)}">
+      Back to CryoStack
     </a>
   </main>
 </body>
@@ -316,13 +395,65 @@ def register_fields(
   >
 </label>
 """
+def account_navigation(
+    source_application: str = "",
+) -> tuple[str, str, str]:
+    """
+    Build navigation shared by CryoStack account pages.
+
+    The source application determines where the user returns when
+    leaving Account, Saved Configurations, or My Experiments.
+    """
+
+    source_application = (
+        source_application or ""
+    ).strip().lower()
+
+    app = get_application(
+        source_application
+    )
+
+    continue_url = app["url"]
+
+    continue_label = (
+        f"← Back to {app['title']}"
+    )
+
+    source_query = (
+        f"?from={source_application}"
+        if source_application
+        else ""
+    )
+
+    return (
+        continue_url,
+        continue_label,
+        source_query,
+    )
 
 def account_settings_page(
     *,
     user,
+    identities,
     message: str | None = None,
     error: str | None = None,
+    source_application: str = "",
 ) -> str:
+
+    continue_url, continue_label, source_query = (
+        account_navigation(
+            source_application
+        )
+    )
+
+    identity_map = {
+    identity.provider: identity
+    for identity in identities
+    }
+
+    github_identity = identity_map.get("github")
+    orcid_identity = identity_map.get("orcid")
+
     safe_message = escape(message) if message else ""
     safe_error = escape(error) if error else ""
 
@@ -346,6 +477,106 @@ def account_settings_page(
         else ""
     )
 
+    github_block = (
+        f"""
+        <div class="identity-row">
+          <div class="identity-main">
+            <div class="identity-name">
+              GitHub
+            </div>
+
+            <div class="identity-detail">
+              Connected
+              {
+                  " · @" + escape(github_identity.provider_username)
+                  if github_identity.provider_username
+                  else ""
+              }
+            </div>
+          </div>
+
+          <div class="identity-actions">
+            {
+                f'<a href="{escape(github_identity.provider_profile_url)}" '
+                f'target="_blank" rel="noopener noreferrer">View profile</a>'
+                if github_identity.provider_profile_url
+                else ""
+            }
+          </div>
+        </div>
+        """
+        if github_identity
+        else f"""
+        <div class="identity-row">
+          <div class="identity-main">
+            <div class="identity-name">
+              GitHub
+            </div>
+
+            <div class="identity-detail">
+              Not connected
+            </div>
+          </div>
+
+          <div class="identity-actions">
+            <a
+              class="identity-connect"
+              href="/auth/github?return_to={quote('/account/' + source_query, safe='')}"
+            >
+              Connect GitHub
+            </a>
+          </div>
+        </div>
+        """
+    )
+
+    orcid_block = (
+      f"""
+      <div class="identity-row">
+        <div class="identity-main">
+          <div class="identity-name">
+            ORCID
+          </div>
+
+          <div class="identity-detail">
+            Connected · {escape(orcid_identity.provider_subject)}
+          </div>
+        </div>
+
+        <div class="identity-actions">
+          {
+              f'<a href="{escape(orcid_identity.provider_profile_url)}" '
+              f'target="_blank" rel="noopener noreferrer">View ORCID</a>'
+              if orcid_identity.provider_profile_url
+              else ""
+          }
+        </div>
+      </div>
+      """
+      if orcid_identity
+      else f"""
+      <div class="identity-row">
+        <div class="identity-main">
+          <div class="identity-name">
+            ORCID
+          </div>
+
+          <div class="identity-detail">
+            Not connected
+          </div>
+        </div>
+
+        <div class="identity-actions">
+          <a
+            class="identity-connect"
+            href="/auth/orcid?return_to={quote('/account/' + source_query, safe='')}"
+          >
+            Connect ORCID
+          </a>
+        </div>
+      </div>
+      """
+  )
     def selected(value: str | None, expected: str) -> str:
         return "selected" if value == expected else ""
 
@@ -575,6 +806,86 @@ def account_settings_page(
       color: #b91c1c;
     }}
 
+    .return-app-btn {{
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 13px;
+      border: 1px solid #bfdbfe;
+      border-radius: 9px;
+      background: #eff6ff;
+      color: #1d4ed8 !important;
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-decoration: none !important;
+      transition:
+        background 0.15s ease,
+        border-color 0.15s ease,
+        transform 0.15s ease;
+    }}
+
+    .return-app-btn:hover {{
+      background: #dbeafe;
+      border-color: #93c5fd;
+      transform: translateX(-1px);
+    }}
+
+    .identity-list {{
+      display: grid;
+      gap: 0.75rem;
+    }}
+
+    .identity-row {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.9rem 1rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 11px;
+      background: #f8fafc;
+    }}
+
+    .identity-main {{
+      min-width: 0;
+    }}
+
+    .identity-name {{
+      color: #0f172a;
+      font-size: 0.9rem;
+      font-weight: 750;
+    }}
+
+    .identity-detail {{
+      margin-top: 0.2rem;
+      color: #64748b;
+      font-size: 0.78rem;
+    }}
+
+    .identity-actions {{
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }}
+
+    .identity-actions a {{
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 0 0.75rem;
+      border-radius: 8px;
+      border: 1px solid #bfdbfe;
+      background: #eff6ff;
+      color: #1d4ed8;
+      font-size: 0.76rem;
+      font-weight: 700;
+      text-decoration: none;
+    }}
+
+    .identity-actions a:hover {{
+      background: #dbeafe;
+    }}
+
     @media (max-width: 760px) {{
       .account-layout {{
         grid-template-columns: 1fr;
@@ -597,8 +908,11 @@ def account_settings_page(
       Cryo<span>Stack</span>
     </a>
 
-    <a class="account-back" href="/index.html">
-      Return to CryoStack
+    <a
+      class="return-app-btn"
+      href="{escape(continue_url)}"
+    >
+      {escape(continue_label)}
     </a>
   </header>
 
@@ -613,24 +927,26 @@ def account_settings_page(
 
     <div class="account-layout">
       <nav class="account-sidebar">
-        <a class="active" href="/account/">
+        <a
+          class="active"
+          href="/account/{source_query}"
+        >
           Profile and Preferences
         </a>
 
-        <a href="/configurations/">
+        <a href="/configurations/{source_query}">
           Saved Configurations
         </a>
 
-        <a href="/experiments/">
+        <a href="/experiments/{source_query}">
           My Experiments
         </a>
       </nav>
-
       <section class="account-card">
         {message_block}
         {error_block}
 
-        <form method="post" action="/account/">
+        <form method="post" action="/account/{source_query}">
           <div class="account-section">
             <h2>Profile</h2>
 
@@ -821,6 +1137,20 @@ def account_settings_page(
             </div>
           </div>
 
+          <div class="account-section">
+            <h2>Connected Accounts</h2>
+
+            <p class="account-section-intro">
+              Link external research and developer identities to your
+              CryoStack account.
+            </p>
+
+            <div class="identity-list">
+              {github_block}
+              {orcid_block}
+            </div>
+          </div>
+
           <div class="account-actions">
             <button class="account-save" type="submit">
               Save Changes
@@ -840,9 +1170,16 @@ def configurations_page(
     configurations,
     message: str | None = None,
     error: str | None = None,
+    source_application: str = "",
 ) -> str:
     import json
     from datetime import datetime, timezone
+
+    continue_url, continue_label, source_query = (
+        account_navigation(
+            source_application
+        )
+    )
 
     safe_message = escape(message) if message else ""
     safe_error = escape(error) if error else ""
@@ -1248,6 +1585,35 @@ def configurations_page(
       color: #b91c1c;
     }}
 
+    .return-app-btn {{
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 14px;
+      border: 1px solid #bfdbfe;
+      border-radius: 10px;
+      background: #eff6ff;
+      color: #1d4ed8 !important;
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration: none !important;
+      transition:
+        background 0.15s ease,
+        border-color 0.15s ease,
+        transform 0.15s ease;
+    }}
+
+    .return-app-btn:hover {{
+      background: #dbeafe;
+      border-color: #93c5fd;
+      transform: translateX(-1px);
+    }}
+
+    .return-app-btn:focus-visible {{
+      outline: 3px solid rgba(37, 99, 235, 0.22);
+      outline-offset: 2px;
+    }}
+
     @media (max-width: 760px) {{
       .page-layout {{
         grid-template-columns: 1fr;
@@ -1263,13 +1629,18 @@ def configurations_page(
 
 <body>
   <header class="page-header">
+
     <a class="page-brand" href="/index.html">
-      Cryo<span>Stack</span>
+        Cryo<span>Stack</span>
     </a>
 
-    <a class="page-back" href="/index.html">
-      Return to CryoStack
+    <a
+      class="return-app-btn"
+      href="{escape(continue_url)}"
+    >
+      {escape(continue_label)}
     </a>
+
   </header>
 
   <main class="page-shell">
@@ -1292,15 +1663,18 @@ def configurations_page(
 
     <div class="page-layout">
       <nav class="page-sidebar">
-        <a href="/account/">
+        <a href="/account/{source_query}">
           Profile and Preferences
         </a>
 
-        <a class="active" href="/configurations/">
+        <a
+          class="active"
+          href="/configurations/{source_query}"
+        >
           Saved Configurations
         </a>
 
-        <a href="/experiments/">
+        <a href="/experiments/{source_query}">
           My Experiments
         </a>
       </nav>
@@ -1644,7 +2018,7 @@ def configuration_form_page(
         </label>
 
         <div class="form-actions">
-          <a href="/configurations/">
+          <a href="/configurations/{source_query}">
             Cancel
           </a>
 
@@ -1663,8 +2037,27 @@ def experiments_page(
     *,
     user,
     experiments,
+    source_application: str = "",
 ) -> str:
     from datetime import datetime, timezone
+
+    continue_url, continue_label, source_query = (
+        account_navigation(
+            source_application
+        )
+    )
+
+    # return_app = get_application(
+    #     source_application
+    # )
+
+    # source_query = ""
+
+    # if source_application:
+    #     source_query = (
+    #         "?from="
+    #         + escape(source_application)
+    #     )
 
     def format_date(value: float) -> str:
         return (
@@ -1695,7 +2088,7 @@ def experiments_page(
                   </span>
 
                   <h3>
-                    <a href="/experiments/{escape(experiment.id)}">
+                    <a href="/experiments/{escape(experiment.id)}{source_query}">
                       {escape(experiment.name)}
                     </a>
                   </h3>
@@ -1924,6 +2317,30 @@ def experiments_page(
       text-align: center;
     }}
 
+    .return-app-btn {{
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 13px;
+      border: 1px solid #bfdbfe;
+      border-radius: 9px;
+      background: #eff6ff;
+      color: #1d4ed8 !important;
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-decoration: none !important;
+      transition:
+        background 0.15s ease,
+        border-color 0.15s ease,
+        transform 0.15s ease;
+    }}
+
+    .return-app-btn:hover {{
+      background: #dbeafe;
+      border-color: #93c5fd;
+      transform: translateX(-1px);
+    }}
+
     @media (max-width: 760px) {{
       .page-layout {{
         grid-template-columns: 1fr;
@@ -1938,8 +2355,11 @@ def experiments_page(
       Cryo<span>Stack</span>
     </a>
 
-    <a href="/index.html">
-      Return to CryoStack
+    <a
+      class="return-app-btn"
+      href="{escape(continue_url)}"
+    >
+      {escape(continue_label)}
     </a>
   </header>
 
@@ -1955,15 +2375,20 @@ def experiments_page(
 
     <div class="page-layout">
       <nav class="page-sidebar">
-        <a href="/account/">
+        <a href="/account/{source_query}">
           Profile and Preferences
         </a>
 
-        <a href="/configurations/">
+        <a 
+          href="/configurations/{source_query}"
+        >
           Saved Configurations
         </a>
 
-        <a class="active" href="/experiments/">
+        <a 
+          class="active"
+          href="/experiments/{source_query}"
+        >
           My Experiments
         </a>
       </nav>
@@ -1971,6 +2396,649 @@ def experiments_page(
       <section class="experiment-list">
         {experiment_list}
       </section>
+    </div>
+  </main>
+</body>
+</html>
+"""
+
+def experiment_detail_page(
+    *,
+    user,
+    experiment,
+    events,
+    source_application: str = "",
+) -> str:
+    import json
+    from datetime import datetime, timezone
+
+    continue_url, continue_label, source_query = (
+        account_navigation(
+            source_application
+        )
+    )
+
+    def format_date(
+        value: float | None,
+    ) -> str:
+        if value is None:
+            return "—"
+
+        return (
+            datetime
+            .fromtimestamp(
+                value,
+                tz=timezone.utc,
+            )
+            .strftime(
+                "%b %d, %Y %H:%M UTC"
+            )
+        )
+
+    def runtime_text() -> str:
+        start = (
+            experiment.started_at
+            or experiment.created_at
+        )
+
+        end = (
+            experiment.finished_at
+            or datetime.now(
+                timezone.utc
+            ).timestamp()
+        )
+
+        seconds = max(
+            0,
+            int(end - start),
+        )
+
+        hours, remainder = divmod(
+            seconds,
+            3600,
+        )
+
+        minutes, seconds = divmod(
+            remainder,
+            60,
+        )
+
+        if hours:
+            return (
+                f"{hours}h {minutes}m"
+            )
+
+        if minutes:
+            return (
+                f"{minutes}m {seconds}s"
+            )
+
+        return f"{seconds}s"
+
+    try:
+        configuration = json.loads(
+            experiment.configuration_snapshot_json
+        )
+    except Exception:
+        configuration = {}
+
+    try:
+        metadata = json.loads(
+            experiment.metadata_json
+        )
+    except Exception:
+        metadata = {}
+
+    configuration_text = json.dumps(
+        configuration,
+        indent=2,
+        sort_keys=True,
+    )
+
+    metadata_text = json.dumps(
+        metadata,
+        indent=2,
+        sort_keys=True,
+    )
+
+    event_rows = []
+
+    for event in events:
+        label = (
+            event.event_type
+            .replace("_", " ")
+            .title()
+        )
+
+        event_rows.append(
+            f"""
+            <div class="timeline-item">
+              <div class="timeline-dot"></div>
+
+              <div class="timeline-content">
+                <div class="timeline-title">
+                  {escape(label)}
+                </div>
+
+                <div class="timeline-time">
+                  {escape(format_date(event.created_at))}
+                </div>
+
+                {
+                    f'<div class="timeline-message">'
+                    f'{escape(event.message)}</div>'
+                    if event.message
+                    else ""
+                }
+              </div>
+            </div>
+            """
+        )
+
+    timeline_html = (
+        "\n".join(event_rows)
+        if event_rows
+        else """
+        <div class="empty-timeline">
+          No experiment activity has been recorded yet.
+        </div>
+        """
+    )
+
+    status_label = (
+        experiment.status
+        .replace("_", " ")
+        .title()
+    )
+
+    application_label = {
+        "cryolauncher": "CryoLauncher",
+        "icesee": "ICESEE",
+        "livist": "LIVIST",
+    }.get(
+        experiment.application,
+        experiment.application.title(),
+    )
+
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+
+  <title>
+    {escape(experiment.name)} | CryoStack
+  </title>
+
+  <style>
+    * {{
+      box-sizing: border-box;
+    }}
+
+    body {{
+      margin: 0;
+      background: #f8fafc;
+      color: #0f172a;
+      font-family:
+        Inter,
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+    }}
+
+    .page-header {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.9rem 1.5rem;
+      border-bottom: 1px solid #e2e8f0;
+      background: #ffffff;
+    }}
+
+    .page-brand {{
+      color: #0f172a;
+      font-size: 1.2rem;
+      font-weight: 800;
+      text-decoration: none;
+    }}
+
+    .page-brand span {{
+      color: #2563eb;
+    }}
+
+    .return-app-btn {{
+      display: inline-flex;
+      align-items: center;
+      min-height: 36px;
+      padding: 0 0.8rem;
+      border: 1px solid #bfdbfe;
+      border-radius: 9px;
+      background: #eff6ff;
+      color: #1d4ed8;
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-decoration: none;
+    }}
+
+    .shell {{
+      width: min(
+        100% - 2rem,
+        1180px
+      );
+      margin: 2rem auto;
+    }}
+
+    .breadcrumb {{
+      margin-bottom: 1.2rem;
+      font-size: 0.8rem;
+    }}
+
+    .breadcrumb a {{
+      color: #2563eb;
+      text-decoration: none;
+    }}
+
+    .hero {{
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }}
+
+    .hero h1 {{
+      margin: 0;
+      font-size: 1.8rem;
+      letter-spacing: -0.03em;
+    }}
+
+    .hero-meta {{
+      margin-top: 0.45rem;
+      color: #64748b;
+      font-size: 0.84rem;
+    }}
+
+    .status {{
+      padding: 0.45rem 0.8rem;
+      border-radius: 999px;
+      background: #eff6ff;
+      color: #1d4ed8;
+      font-size: 0.78rem;
+      font-weight: 750;
+    }}
+
+    .grid {{
+      display: grid;
+      grid-template-columns:
+        minmax(0, 2fr)
+        minmax(280px, 1fr);
+      gap: 1.3rem;
+    }}
+
+    .card {{
+      padding: 1.25rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 15px;
+      background: #ffffff;
+      box-shadow:
+        0 7px 22px
+        rgba(15, 23, 42, 0.04);
+    }}
+
+    .card + .card {{
+      margin-top: 1rem;
+    }}
+
+    .card h2 {{
+      margin: 0 0 1rem;
+      font-size: 1rem;
+    }}
+
+    .summary-grid {{
+      display: grid;
+      grid-template-columns:
+        repeat(2, minmax(0, 1fr));
+      gap: 0.9rem;
+    }}
+
+    .summary-item {{
+      padding: 0.85rem;
+      border-radius: 10px;
+      background: #f8fafc;
+    }}
+
+    .summary-label {{
+      color: #94a3b8;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }}
+
+    .summary-value {{
+      margin-top: 0.25rem;
+      color: #0f172a;
+      font-size: 0.86rem;
+      font-weight: 650;
+      word-break: break-word;
+    }}
+
+    pre {{
+      max-height: 360px;
+      overflow: auto;
+      padding: 1rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      background: #f8fafc;
+      color: #334155;
+      font-size: 0.74rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }}
+
+    details summary {{
+      cursor: pointer;
+      color: #475569;
+      font-size: 0.82rem;
+      font-weight: 700;
+    }}
+
+    .timeline {{
+      position: relative;
+      display: grid;
+      gap: 1rem;
+    }}
+
+    .timeline-item {{
+      position: relative;
+      display: grid;
+      grid-template-columns:
+        16px minmax(0, 1fr);
+      gap: 0.7rem;
+    }}
+
+    .timeline-dot {{
+      width: 10px;
+      height: 10px;
+      margin-top: 0.25rem;
+      border-radius: 50%;
+      background: #2563eb;
+    }}
+
+    .timeline-title {{
+      font-size: 0.83rem;
+      font-weight: 750;
+    }}
+
+    .timeline-time {{
+      margin-top: 0.12rem;
+      color: #94a3b8;
+      font-size: 0.7rem;
+    }}
+
+    .timeline-message {{
+      margin-top: 0.25rem;
+      color: #64748b;
+      font-size: 0.78rem;
+      line-height: 1.45;
+    }}
+
+    .empty-timeline {{
+      color: #64748b;
+      font-size: 0.8rem;
+    }}
+
+    .actions {{
+      display: grid;
+      gap: 0.6rem;
+    }}
+
+    .action {{
+      display: flex;
+      align-items: center;
+      min-height: 38px;
+      padding: 0 0.85rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 9px;
+      background: #ffffff;
+      color: #334155;
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-decoration: none;
+    }}
+
+    @media (max-width: 820px) {{
+      .grid {{
+        grid-template-columns: 1fr;
+      }}
+
+      .summary-grid {{
+        grid-template-columns: 1fr;
+      }}
+    }}
+  </style>
+</head>
+
+<body>
+  <header class="page-header">
+    <a
+      class="page-brand"
+      href="/index.html"
+    >
+      Cryo<span>Stack</span>
+    </a>
+
+    <a
+      class="return-app-btn"
+      href="{escape(continue_url)}"
+    >
+      {escape(continue_label)}
+    </a>
+  </header>
+
+  <main class="shell">
+    <div class="breadcrumb">
+      <a href="/experiments/{source_query}">
+        ← My Experiments
+      </a>
+    </div>
+
+    <div class="hero">
+      <div>
+        <h1>
+          {escape(experiment.name)}
+        </h1>
+
+        <div class="hero-meta">
+          {escape(application_label)}
+          ·
+          {escape(experiment.backend)}
+        </div>
+      </div>
+
+      <div class="status">
+        {escape(status_label)}
+      </div>
+    </div>
+
+    <div class="grid">
+      <section>
+        <div class="card">
+          <h2>Overview</h2>
+
+          <div class="summary-grid">
+            <div class="summary-item">
+              <div class="summary-label">
+                Application
+              </div>
+
+              <div class="summary-value">
+                {escape(application_label)}
+              </div>
+            </div>
+
+            <div class="summary-item">
+              <div class="summary-label">
+                Backend
+              </div>
+
+              <div class="summary-value">
+                {escape(experiment.backend)}
+              </div>
+            </div>
+
+            <div class="summary-item">
+              <div class="summary-label">
+                Job ID
+              </div>
+
+              <div class="summary-value">
+                {escape(experiment.job_id or "—")}
+              </div>
+            </div>
+
+            <div class="summary-item">
+              <div class="summary-label">
+                Cluster
+              </div>
+
+              <div class="summary-value">
+                {escape(experiment.cluster or "—")}
+              </div>
+            </div>
+
+            <div class="summary-item">
+              <div class="summary-label">
+                Created
+              </div>
+
+              <div class="summary-value">
+                {escape(format_date(experiment.created_at))}
+              </div>
+            </div>
+
+            <div class="summary-item">
+              <div class="summary-label">
+                Runtime
+              </div>
+
+              <div class="summary-value">
+                {escape(runtime_text())}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Execution Paths</h2>
+
+          <div class="summary-grid">
+            <div class="summary-item">
+              <div class="summary-label">
+                Working directory
+              </div>
+
+              <div class="summary-value">
+                {escape(experiment.working_directory or "—")}
+              </div>
+            </div>
+
+            <div class="summary-item">
+              <div class="summary-label">
+                Output directory
+              </div>
+
+              <div class="summary-value">
+                {escape(experiment.output_directory or "—")}
+              </div>
+            </div>
+
+            <div class="summary-item">
+              <div class="summary-label">
+                Log
+              </div>
+
+              <div class="summary-value">
+                {escape(experiment.log_path or "—")}
+              </div>
+            </div>
+
+            <div class="summary-item">
+              <div class="summary-label">
+                Exit code
+              </div>
+
+              <div class="summary-value">
+                {
+                    escape(str(experiment.exit_code))
+                    if experiment.exit_code is not None
+                    else "—"
+                }
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Configuration</h2>
+
+          <details>
+            <summary>
+              View configuration snapshot
+            </summary>
+
+            <pre>{escape(configuration_text)}</pre>
+          </details>
+        </div>
+
+        <div class="card">
+          <h2>Metadata</h2>
+
+          <details>
+            <summary>
+              View experiment metadata
+            </summary>
+
+            <pre>{escape(metadata_text)}</pre>
+          </details>
+        </div>
+      </section>
+
+      <aside>
+        <div class="card">
+          <h2>Activity</h2>
+
+          <div class="timeline">
+            {timeline_html}
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Actions</h2>
+
+          <div class="actions">
+            <a
+              class="action"
+              href="/experiments/{escape(experiment.id)}{source_query}"
+            >
+              Refresh
+            </a>
+
+            <a
+              class="action"
+              href="/experiments/{source_query}"
+            >
+              Back to experiments
+            </a>
+          </div>
+        </div>
+      </aside>
     </div>
   </main>
 </body>
