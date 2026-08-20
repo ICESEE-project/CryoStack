@@ -36,6 +36,11 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 from icesee_auth import AuthManager
 
+from control_center.services.access import (
+    AccessService,
+)
+
+
 HOP_BY_HOP = {
     "connection",
     "keep-alive",
@@ -418,16 +423,17 @@ def make_app() -> web.Application:
     app.on_startup.append(state.startup)
     app.on_cleanup.append(state.cleanup)
 
-    # AuthManager().install(app)
-
-    # app.router.add_route("*", "/icesee-gui", proxy_run_center)
-    # app.router.add_route("*", "/icesee-gui/{tail:.*}", proxy_run_center)
-
-    # app.router.add_route("*", "/icesheets", proxy_icesheets)
-    # app.router.add_route("*", "/icesheets/{tail:.*}", proxy_icesheets)
-
     auth = AuthManager()
     auth.install(app)
+
+    #
+    # Control Center access/roles
+    #
+    access_service = AccessService(
+        auth.storage,
+    )
+
+    app["access_service"] = access_service
 
     install_control_center(
         app,
@@ -511,6 +517,7 @@ def make_app() -> web.Application:
         ),
         show_index=False,
     )
+    
     app.router.add_get("/", root_redirect)
     app.router.add_static("/", path=str(book_root()), show_index=True)
 

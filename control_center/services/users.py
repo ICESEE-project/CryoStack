@@ -4,50 +4,34 @@ import time
 
 from ..storage import ControlStorage
 
+from .access import AccessService
 
 class UserService:
 
     def __init__(
         self,
         storage: ControlStorage,
+        access: AccessService,
     ) -> None:
         self.storage = storage
+        self.access = access
 
     def list_users(
         self,
+        *,
+        now: float,
     ) -> list[dict]:
-
-        now = time.time()
 
         users = self.storage.list_users(
             now=now,
         )
 
-        identities = (
-            self.storage.user_identities()
-        )
-
-        identity_map: dict[
-            str,
-            dict[str, dict],
-        ] = {}
-
-        for identity in identities:
-
-            user_id = identity["user_id"]
-            provider = identity["provider"]
-
-            identity_map.setdefault(
-                user_id,
-                {},
-            )[provider] = identity
-
         for user in users:
-            user["identities"] = (
-                identity_map.get(
-                    user["id"],
-                    {},
+            user["control_role"] = (
+                self.access.effective_role(
+                    user_id=user["id"],
                 )
+                or "user"
             )
 
         return users
@@ -94,6 +78,13 @@ class UserService:
             .list_user_configurations(
                 user_id=user_id,
             )
+        )
+
+        user["control_role"] = (
+            self.access.effective_role(
+                user_id=user["id"],
+            )
+            or "user"
         )
 
         return user

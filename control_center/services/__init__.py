@@ -8,10 +8,12 @@ from .authentication import (
 )
 
 from .experiments import ExperimentService
+from .access import AccessService
 
 __all__ = [
     "DashboardService",
     "UserService",
     "AuthenticationService",
     "ExperimentService",
+    "AccessService",
 ]

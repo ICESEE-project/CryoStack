@@ -5,9 +5,16 @@ from __future__ import annotations
 import sqlite3
 import time
 import uuid
+import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
+CONTROL_ROLE_RANK = {
+    "developer": 10,
+    "maintainer": 20,
+    "admin": 30,
+    "owner": 40,
+}
 
 @dataclass(frozen=True, slots=True)
 class User:
@@ -337,6 +344,32 @@ class AuthStorage:
 
                 CREATE INDEX IF NOT EXISTS idx_user_roles_role
                     ON user_roles(role);
+
+                CREATE TABLE IF NOT EXISTS control_audit_log (
+                    id TEXT PRIMARY KEY,
+                    actor_user_id TEXT NOT NULL,
+                    target_user_id TEXT,
+                    action TEXT NOT NULL,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at REAL NOT NULL,
+
+                    FOREIGN KEY (actor_user_id)
+                        REFERENCES users(id)
+                        ON DELETE CASCADE,
+
+                    FOREIGN KEY (target_user_id)
+                        REFERENCES users(id)
+                        ON DELETE SET NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_control_audit_actor
+                    ON control_audit_log(actor_user_id);
+
+                CREATE INDEX IF NOT EXISTS idx_control_audit_target
+                    ON control_audit_log(target_user_id);
+
+                CREATE INDEX IF NOT EXISTS idx_control_audit_created
+                    ON control_audit_log(created_at);
                 """
             )
 
@@ -407,6 +440,70 @@ class AuthStorage:
             ).fetchone()
 
         return self._user_from_row(row)
+
+    def create_control_audit_event(
+        self,
+        *,
+        actor_user_id: str,
+        action: str,
+        target_user_id: str | None = None,
+        metadata_json: str = "{}",
+        now: float | None = None,
+    ) -> None:
+
+        timestamp = (
+            time.time()
+            if now is None
+            else now
+        )
+
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO control_audit_log (
+                    id,
+                    actor_user_id,
+                    target_user_id,
+                    action,
+                    metadata_json,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    uuid.uuid4().hex,
+                    actor_user_id,
+                    target_user_id,
+                    action,
+                    metadata_json,
+                    timestamp,
+                ),
+            )
+
+    def get_effective_control_role(
+        self,
+        *,
+        user_id: str,
+    ) -> str | None:
+
+        roles = self.get_user_roles(
+            user_id=user_id
+        )
+
+        valid = [
+            role
+            for role in roles
+            if role in CONTROL_ROLE_RANK
+        ]
+
+        if not valid:
+            return None
+
+        return max(
+            valid,
+            key=lambda role:
+                CONTROL_ROLE_RANK[role]
+        )
 
     def create_session(
         self,
@@ -1662,7 +1759,8 @@ class AuthStorage:
 
         allowed_roles = {
             "developer",
-            "administrator",
+            "nmaintainer",
+            "admin",
             "owner",
         }
 
@@ -1765,3 +1863,152 @@ class AuthStorage:
                 roles
             )
         )
+
+    def list_user_roles(
+        self,
+        *,
+        user_id: str,
+    ) -> list[str]:
+
+        with self._connect() as connection:
+
+            rows = connection.execute(
+                """
+                SELECT role
+
+                FROM user_roles
+
+                WHERE user_id = ?
+
+                ORDER BY role
+                """,
+                (user_id,),
+            ).fetchall()
+
+        return [
+            row["role"]
+            for row in rows
+        ]
+
+    def has_role(
+        self,
+        *,
+        user_id: str,
+        role: str,
+    ) -> bool:
+
+        with self._connect() as connection:
+
+            row = connection.execute(
+                """
+                SELECT 1
+
+                FROM user_roles
+
+                WHERE
+                    user_id = ?
+                AND role = ?
+                """,
+                (
+                    user_id,
+                    role,
+                ),
+            ).fetchone()
+
+        return row is not None
+
+    def grant_role(
+        self,
+        *,
+        user_id: str,
+        role: str,
+        created_by: str | None = None,
+    ) -> None:
+
+        import secrets
+        with self._connect() as connection:
+
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO user_roles (
+
+                    id,
+                    user_id,
+                    role,
+                    created_at,
+                    created_by
+
+                )
+
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    secrets.token_hex(16),
+                    user_id,
+                    role,
+                    time.time(),
+                    created_by,
+                ),
+            )
+
+    def revoke_role(
+        self,
+        *,
+        user_id: str,
+        role: str,
+    ) -> None:
+
+        with self._connect() as connection:
+
+            connection.execute(
+                """
+                DELETE
+
+                FROM user_roles
+
+                WHERE
+
+                    user_id = ?
+                AND role = ?
+                """,
+                (
+                    user_id,
+                    role,
+                ),
+            )
+
+    def add_control_audit_event(
+        self,
+        *,
+        actor_user_id: str,
+        action: str,
+        target_user_id: str | None = None,
+        metadata_json: str = "{}",
+    ) -> None:
+
+        with self._connect() as connection:
+
+            connection.execute(
+                """
+                INSERT INTO control_audit_log (
+
+                    id,
+                    actor_user_id,
+                    target_user_id,
+                    action,
+                    metadata_json,
+                    created_at
+
+                )
+
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    secrets.token_hex(16),
+                    actor_user_id,
+                    target_user_id,
+                    action,
+                    metadata_json,
+                    time.time(),
+                ),
+            )

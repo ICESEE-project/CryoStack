@@ -602,6 +602,41 @@ def control_layout(
     line-height: 1.55;
     }}
 
+    .role-badge {{
+      display: inline-flex;
+      align-items: center;
+      padding: 0.25rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.68rem;
+      font-weight: 750;
+      white-space: nowrap;
+    }}
+
+    .role-owner {{
+      background: #fef3c7;
+      color: #92400e;
+    }}
+
+    .role-admin {{
+      background: #f3e8ff;
+      color: #7e22ce;
+    }}
+
+    .role-maintainer {{
+      background: #dcfce7;
+      color: #15803d;
+    }}
+
+    .role-developer {{
+      background: #dbeafe;
+      color: #1d4ed8;
+    }}
+
+    .role-user {{
+      background: #f1f5f9;
+      color: #64748b;
+    }}
+
     @media (max-width: 900px) {{
     .detail-grid {{
         grid-template-columns: 1fr;
@@ -790,6 +825,33 @@ def control_layout(
     .experiment-row td:first-child strong {{
       color: #1d4ed8;
     }}
+
+    .role-form {{
+      display: grid;
+      gap: 0.75rem;
+      padding: 1rem;
+    }}
+
+    .role-form label {{
+      display: grid;
+      gap: 0.4rem;
+      color: #475569;
+      font-size: 0.74rem;
+      font-weight: 700;
+    }}
+
+    .role-form select {{
+      width: 100%;
+      min-height: 38px;
+      padding: 0.55rem 0.65rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      background: #ffffff;
+      color: #0f172a;
+      font: inherit;
+    }}
+
+    
     @media (max-width: 760px) {{
       .control-shell {{
         grid-template-columns: 1fr;
@@ -1194,11 +1256,17 @@ def users_page(
               </td>
 
               <td>
-                <div class="provider-list">
-                  {''.join(identity_parts)}
-                </div>
+                  {role_badge(
+                      user.get("control_role")
+                  )}
               </td>
 
+              <td>
+                  <div class="provider-list">
+                      {''.join(identity_parts)}
+                  </div>
+              </td>
+              
               <td>
                 {user["experiments"]}
               </td>
@@ -1279,6 +1347,7 @@ def users_page(
           <tr>
             <th>User</th>
             <th>Email</th>
+            <th>Role</th>
             <th>Identity</th>
             <th>Experiments</th>
             <th>Configs</th>
@@ -1467,7 +1536,12 @@ def experiments_page(
 def user_detail_page(
     *,
     user: dict,
+    allowed_roles: list[str] | None = None,
 ) -> str:
+
+    allowed_roles = (
+        allowed_roles or []
+    )
 
     identities = user.get(
         "identities",
@@ -1488,6 +1562,42 @@ def user_detail_page(
         "recent_configurations",
         [],
     )
+
+    current_role = (
+        user.get("control_role")
+        or "user"
+    )
+
+    role_options = []
+
+    labels = {
+        "": "No Control Center access",
+        "developer": "Developer",
+        "maintainer": "Maintainer",
+        "admin": "Admin",
+        "owner": "Owner",
+    }
+
+    for role in allowed_roles:
+
+        selected = (
+            (
+                role == ""
+                and current_role == "user"
+            )
+            or role == current_role
+        )
+
+        role_options.append(
+            f"""
+            <option
+              value="{escape(role)}"
+              {"selected" if selected else ""}
+            >
+              {escape(labels[role])}
+            </option>
+            """
+        )
 
     identity_rows = []
 
@@ -1557,6 +1667,12 @@ def user_detail_page(
                 <code>
                   {escape(session["id"][:12])}…
                 </code>
+              </td>
+
+              <td>
+                {role_badge(
+                    user.get("control_role")
+                )}
               </td>
 
               <td>
@@ -1837,8 +1953,57 @@ def user_detail_page(
         </div>
 
         <div class="panel">
-          <div class="panel-header">
-            User ID
+
+            <div class="panel-header">
+              Platform Access
+            </div>
+
+            <div class="detail-list">
+
+              <div class="detail-row">
+                <span>Current role</span>
+
+                <strong>
+                  {role_badge(current_role)}
+                </strong>
+              </div>
+
+              {
+                  f'''
+                  <form
+                    method="post"
+                    action="/control/users/{escape(user["id"])}/role"
+                    class="role-form"
+                  >
+
+                    <label>
+                      Control Center role
+
+                      <select name="control_role">
+                        {''.join(role_options)}
+                      </select>
+                    </label>
+
+                    <button
+                      type="submit"
+                      class="small-button"
+                    >
+                      Update Access
+                    </button>
+
+                  </form>
+                  '''
+                  if allowed_roles
+                  else '''
+                  <div class="panel-empty">
+                    You do not have permission
+                    to modify platform access.
+                  </div>
+                  '''
+              }
+
+            </div>
+
           </div>
 
           <div class="mono-box">
@@ -2649,3 +2814,33 @@ def experiment_detail_page(
         active="experiments",
         content=content,
     )
+
+def role_badge(
+    role: str | None,
+) -> str:
+
+    role = (
+        role or "user"
+    ).strip().lower()
+
+    css_class = {
+        "owner": "role-owner",
+        "admin": "role-admin",
+        "maintainer": "role-maintainer",
+        "developer": "role-developer",
+    }.get(
+        role,
+        "role-user",
+    )
+
+    label = (
+        "User"
+        if role == "user"
+        else role.title()
+    )
+
+    return f"""
+    <span class="role-badge {css_class}">
+      {escape(label)}
+    </span>
+    """

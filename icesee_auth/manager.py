@@ -105,9 +105,13 @@ class AuthManager:
 
             base_url=os.environ.get(
                 "CRYOSTACK_ORCID_BASE_URL",
-                "https://sandbox.orcid.org",
+                "https://orcid.org",
             ),
         )
+
+    @property
+    def storage(self) -> AuthStorage:
+        return self._storage
 
     def install(self, app: web.Application) -> None:
         app.router.add_get("/api/v1/me", self._handle_me)
@@ -1860,7 +1864,8 @@ class AuthManager:
             "control_center_access": bool(
                 set(roles).intersection({
                     "developer",
-                    "administrator",
+                    "maintainer",
+                    "admin",
                     "owner",
                 })
             ),
@@ -2671,6 +2676,16 @@ class AuthManager:
             for role in allowed_roles
         }
 
+        async def unauthorized(
+            request: web.Request,
+        ):
+            raise web.HTTPForbidden(
+                text=(
+                    "You do not have access to "
+                    "the CryoStack Control Center."
+                )
+            )
+
         def decorator(handler):
 
             async def protected(
@@ -2681,14 +2696,21 @@ class AuthManager:
                 )
 
                 if user is None:
-                    return_to = request.path_qs
 
-                    raise web.HTTPFound(
+                    return_to = (
+                        request.path_qs
+                    )
+
+                    login_url = (
                         "/auth/login?return_to="
                         + quote(
                             return_to,
                             safe="",
                         )
+                    )
+
+                    raise web.HTTPFound(
+                        login_url
                     )
 
                 roles = set(
@@ -2701,14 +2723,15 @@ class AuthManager:
                 if not roles.intersection(
                     allowed
                 ):
-                    raise web.HTTPForbidden(
-                        text=(
-                            "You do not have access "
-                            "to the CryoStack "
-                            "Control Center."
-                        )
+                    return await unauthorized(
+                        request
                     )
 
+                #
+                # IMPORTANT:
+                # Make authenticated identity available
+                # to all protected handlers.
+                #
                 request[
                     "cryostack_user"
                 ] = user
