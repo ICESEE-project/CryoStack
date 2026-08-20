@@ -7,9 +7,11 @@ from .authentication import (
     AuthenticationService,
 )
 
+from .experiments import ExperimentService
 
 __all__ = [
     "DashboardService",
     "UserService",
     "AuthenticationService",
+    "ExperimentService",
 ]

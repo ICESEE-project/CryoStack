@@ -25,6 +25,7 @@ from .pages import (
     dashboard_page_handler,
     users_page_handler,
     user_detail_page_handler,
+    experiment_detail_page_handler,
     experiments_page_handler,
     hpc_page_handler,
     cloud_page_handler,
@@ -38,16 +39,24 @@ from .services import (
     DashboardService,
     UserService,
     AuthenticationService,
+    ExperimentService,
 )
 
 from .api import (
     authentication_api,
+    experiments_api,
+    experiment_detail_api,
+
 )
+
+
+
 
 
 def install_control_center(
     app: web.Application,
     *,
+    auth,
     database_path: Path | None = None,
 ) -> None:
 
@@ -92,6 +101,22 @@ def install_control_center(
         )
     )
 
+    control_access = auth.require_roles(
+        "developer",
+        "administrator",
+        "owner",
+    )
+
+    experiment_service = (
+        ExperimentService(
+            storage
+        )
+    )
+
+    app[
+        "control_experiment_service"
+    ] = experiment_service
+        
     app[
         "control_authentication_service"
     ] = authentication_service
@@ -188,3 +213,75 @@ def install_control_center(
         "/api/control/authentication",
         authentication_api,
     )
+
+    app.router.add_get(
+        "/control/",
+        control_access(
+            dashboard_page_handler
+        ),
+    )
+
+    app.router.add_get(
+        "/control/users",
+        control_access(
+            users_page_handler
+        ),
+    )
+
+    app.router.add_get(
+        "/control/users/{user_id}",
+        control_access(
+            user_detail_page_handler
+        ),
+    )
+
+    app.router.add_get(
+        "/control/experiments",
+        control_access(
+            experiments_page_handler
+        ),
+    )
+
+    app.router.add_get(
+        "/control/",
+        control_access(
+            dashboard_page_handler
+        ),
+    )
+
+    app.router.add_get(
+        "/control/users",
+        control_access(
+            users_page_handler
+        ),
+    )
+
+    app.router.add_get(
+        "/control/users/{user_id}",
+        control_access(
+            user_detail_page_handler
+        ),
+    )
+
+    app.router.add_get(
+        "/control/experiments",
+        control_access(
+            experiments_page_handler
+        ),
+    )
+
+    app.router.add_get(
+        "/control/experiments/{experiment_id}",
+        control_access(
+            experiment_detail_page_handler
+        ),
+    )
+
+    app.router.add_get(
+        "/api/control/experiments/{experiment_id}",
+        control_access(
+            experiment_detail_api
+        ),
+    )
+
+    

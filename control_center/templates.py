@@ -663,6 +663,133 @@ def control_layout(
       color: #94a3b8;
     }}
 
+    .experiment-row {{
+      cursor: pointer;
+    }}
+
+    .experiment-row:hover {{
+      background: #f8fafc;
+    }}
+
+    .experiment-timeline {{
+      padding: 1.2rem;
+    }}
+
+    .timeline-event {{
+      position: relative;
+      display: grid;
+      grid-template-columns:
+        18px minmax(0, 1fr);
+      gap: 0.7rem;
+      padding-bottom: 1.3rem;
+    }}
+
+    .timeline-event:not(:last-child)::before {{
+      content: "";
+      position: absolute;
+      left: 5px;
+      top: 13px;
+      bottom: -2px;
+      width: 2px;
+      background: #e2e8f0;
+    }}
+
+    .timeline-marker {{
+      width: 12px;
+      height: 12px;
+      margin-top: 3px;
+      border: 3px solid #bfdbfe;
+      border-radius: 50%;
+      background: #2563eb;
+      z-index: 1;
+    }}
+
+    .timeline-body {{
+      min-width: 0;
+    }}
+
+    .timeline-heading {{
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+    }}
+
+    .timeline-heading strong {{
+      color: #0f172a;
+      font-size: 0.8rem;
+    }}
+
+    .timeline-heading span {{
+      color: #94a3b8;
+      font-size: 0.68rem;
+    }}
+
+    .timeline-body p {{
+      margin: 0.3rem 0 0;
+      color: #64748b;
+      font-size: 0.76rem;
+      line-height: 1.5;
+    }}
+
+    .metric-value.small {{
+      font-size: 1rem;
+    }}
+
+    .timeline-metadata {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      margin-top: 0.55rem;
+    }}
+
+    .timeline-meta-item {{
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.3rem 0.45rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 7px;
+      background: #f8fafc;
+      font-size: 0.66rem;
+    }}
+
+    .timeline-meta-item span {{
+      color: #94a3b8;
+    }}
+
+    .timeline-meta-item strong {{
+      color: #475569;
+      font-weight: 750;
+    }}
+
+    .timeline-completed .timeline-marker {{
+      border-color: #bbf7d0;
+      background: #16a34a;
+    }}
+
+    .timeline-failed .timeline-marker {{
+      border-color: #fecaca;
+      background: #dc2626;
+    }}
+
+    .timeline-cancelled .timeline-marker {{
+      border-color: #cbd5e1;
+      background: #64748b;
+    }}
+
+    .timeline-running .timeline-marker {{
+      border-color: #bfdbfe;
+      background: #2563eb;
+    }}
+
+    .timeline-queued .timeline-marker {{
+      border-color: #fde68a;
+      background: #d97706;
+    }}
+
+    .experiment-row td:first-child strong {{
+      color: #1d4ed8;
+    }}
     @media (max-width: 760px) {{
       .control-shell {{
         grid-template-columns: 1fr;
@@ -1249,7 +1376,13 @@ def experiments_page(
 
         rows.append(
             f"""
-            <tr>
+            <tr
+              class="experiment-row"
+              onclick="
+                window.location.href=
+                '/control/experiments/{escape(experiment["id"])}'
+              "
+            >
 
               <td>
                 <strong>
@@ -2056,5 +2189,463 @@ def diagnostics_page(
     return control_layout(
         title="Diagnostics",
         active="diagnostics",
+        content=content,
+    )
+
+def experiment_detail_page(
+    *,
+    experiment: dict,
+) -> str:
+
+    import json
+
+    def runtime_text(
+        seconds: int | None,
+    ) -> str:
+
+        if seconds is None:
+            return "—"
+
+        hours, remainder = divmod(
+            seconds,
+            3600,
+        )
+
+        minutes, seconds = divmod(
+            remainder,
+            60,
+        )
+
+        if hours:
+            return (
+                f"{hours}h {minutes}m"
+            )
+
+        if minutes:
+            return (
+                f"{minutes}m {seconds}s"
+            )
+
+        return f"{seconds}s"
+
+
+    configuration_text = (
+        json.dumps(
+            experiment.get(
+                "configuration",
+                {},
+            ),
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+    metadata_text = (
+        json.dumps(
+            experiment.get(
+                "metadata",
+                {},
+            ),
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+    event_rows = []
+
+    for event in experiment.get(
+        "events",
+        [],
+    ):
+
+        event_label = (
+            event["event_type"]
+            .replace("_", " ")
+            .title()
+        )
+
+        metadata = event.get(
+            "metadata",
+            {},
+        )
+
+        metadata_html = ""
+
+        if metadata:
+
+            metadata_items = []
+
+            for key, value in metadata.items():
+
+                if value is None:
+                    continue
+
+                metadata_items.append(
+                    f"""
+                    <div class="timeline-meta-item">
+                      <span>
+                        {escape(
+                            str(key)
+                            .replace("_", " ")
+                            .title()
+                        )}
+                      </span>
+
+                      <strong>
+                        {escape(str(value))}
+                      </strong>
+                    </div>
+                    """
+                )
+
+            if metadata_items:
+
+                metadata_html = (
+                    '<div class="timeline-metadata">'
+                    + "".join(metadata_items)
+                    + "</div>"
+                )
+
+        event_rows.append(
+            f"""
+            <div class="
+              timeline-event
+              timeline-{escape(event["event_type"])}
+            ">
+
+              <div class="timeline-marker"></div>
+
+              <div class="timeline-body">
+
+                <div class="timeline-heading">
+
+                  <strong>
+                    {escape(event_label)}
+                  </strong>
+
+                  <span>
+                    {_date(event["created_at"])}
+                  </span>
+
+                </div>
+
+                {
+                    f'''
+                    <p>
+                      {escape(event["message"])}
+                    </p>
+                    '''
+                    if event.get("message")
+                    else ""
+                }
+
+                {metadata_html}
+
+              </div>
+
+            </div>
+            """
+        )
+
+    timeline = (
+        "".join(event_rows)
+        if event_rows
+        else """
+        <div class="panel-empty">
+          No experiment events have been recorded.
+        </div>
+        """
+    )
+
+
+    content = f"""
+    <div class="detail-breadcrumb">
+      <a href="/control/experiments">
+        ← Experiments
+      </a>
+    </div>
+
+
+    <div class="page-heading-row">
+
+      <div>
+        <h1>
+          {escape(experiment["name"])}
+        </h1>
+
+        <p class="page-subtitle">
+          {escape(experiment["application"])}
+          ·
+          {escape(experiment["backend"])}
+        </p>
+      </div>
+
+      <span class="status-pill">
+        {escape(experiment["status"])}
+      </span>
+
+    </div>
+
+
+    <div class="metric-grid">
+
+      <div class="metric-card">
+        <div class="metric-label">
+          User
+        </div>
+
+        <div class="metric-detail">
+          {escape(experiment["user_name"])}
+        </div>
+      </div>
+
+
+      <div class="metric-card">
+        <div class="metric-label">
+          Job ID
+        </div>
+
+        <div class="metric-value small">
+          {escape(experiment.get("job_id") or "—")}
+        </div>
+      </div>
+
+
+      <div class="metric-card">
+        <div class="metric-label">
+          Cluster
+        </div>
+
+        <div class="metric-detail">
+          {escape(experiment.get("cluster") or "—")}
+        </div>
+      </div>
+
+
+      <div class="metric-card">
+        <div class="metric-label">
+          Runtime
+        </div>
+
+        <div class="metric-detail">
+          {
+              escape(
+                  runtime_text(
+                      experiment.get(
+                          "runtime_seconds"
+                      )
+                  )
+              )
+          }
+        </div>
+      </div>
+
+    </div>
+
+
+    <div class="detail-grid">
+
+      <section>
+
+        <div class="panel">
+
+          <div class="panel-header">
+            Activity Timeline
+          </div>
+
+          <div class="experiment-timeline">
+            {timeline}
+          </div>
+
+        </div>
+
+
+        <div class="panel">
+
+          <div class="panel-header">
+            Execution
+          </div>
+
+          <div class="detail-list">
+
+            <div class="detail-row">
+              <span>Created</span>
+              <strong>
+                {_date(experiment["created_at"])}
+              </strong>
+            </div>
+
+            <div class="detail-row">
+              <span>Started</span>
+              <strong>
+                {_date(experiment.get("started_at"))}
+              </strong>
+            </div>
+
+            <div class="detail-row">
+              <span>Finished</span>
+              <strong>
+                {_date(experiment.get("finished_at"))}
+              </strong>
+            </div>
+
+            <div class="detail-row">
+              <span>Working directory</span>
+              <strong>
+                {
+                    escape(
+                        experiment.get(
+                            "working_directory"
+                        )
+                        or "—"
+                    )
+                }
+              </strong>
+            </div>
+
+            <div class="detail-row">
+              <span>Output directory</span>
+              <strong>
+                {
+                    escape(
+                        experiment.get(
+                            "output_directory"
+                        )
+                        or "—"
+                    )
+                }
+              </strong>
+            </div>
+
+            <div class="detail-row">
+              <span>Log path</span>
+              <strong>
+                {
+                    escape(
+                        experiment.get(
+                            "log_path"
+                        )
+                        or "—"
+                    )
+                }
+              </strong>
+            </div>
+
+            <div class="detail-row">
+              <span>Exit code</span>
+              <strong>
+                {
+                    escape(
+                        str(
+                            experiment[
+                                "exit_code"
+                            ]
+                        )
+                    )
+                    if experiment.get(
+                        "exit_code"
+                    ) is not None
+                    else "—"
+                }
+              </strong>
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <div class="panel">
+
+          <div class="panel-header">
+            Configuration Snapshot
+          </div>
+
+          <pre>
+{escape(configuration_text)}
+          </pre>
+
+        </div>
+
+      </section>
+
+
+      <aside>
+
+        <div class="panel">
+
+          <div class="panel-header">
+            Experiment
+          </div>
+
+          <div class="detail-list">
+
+            <div class="detail-row">
+              <span>Application</span>
+              <strong>
+                {escape(experiment["application"])}
+              </strong>
+            </div>
+
+            <div class="detail-row">
+              <span>Backend</span>
+              <strong>
+                {escape(experiment["backend"])}
+              </strong>
+            </div>
+
+            <div class="detail-row">
+              <span>Status</span>
+              <strong>
+                {escape(experiment["status"])}
+              </strong>
+            </div>
+
+            <div class="detail-row">
+              <span>Email</span>
+              <strong>
+                {escape(experiment["user_email"])}
+              </strong>
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <div class="panel">
+
+          <div class="panel-header">
+            Metadata
+          </div>
+
+          <pre>
+{escape(metadata_text)}
+          </pre>
+
+        </div>
+
+
+        <div class="panel">
+
+          <div class="panel-header">
+            Experiment ID
+          </div>
+
+          <div class="mono-box">
+            {escape(experiment["id"])}
+          </div>
+
+        </div>
+
+      </aside>
+
+    </div>
+    """
+
+    return control_layout(
+        title=experiment["name"],
+        active="experiments",
         content=content,
     )

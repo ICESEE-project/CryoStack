@@ -429,7 +429,10 @@ def make_app() -> web.Application:
     auth = AuthManager()
     auth.install(app)
 
-    install_control_center(app)
+    install_control_center(
+        app,
+        auth=auth,
+    )
 
     protected_run_center = auth.require_login(
         proxy_run_center

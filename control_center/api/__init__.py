@@ -7,7 +7,10 @@ from .users import (
     user_detail_api,
 )
 
-from .experiments import experiments_api
+from .experiments import (
+    experiments_api,
+    experiment_detail_api,
+)
 
 from .authentication import (
     authentication_api,
@@ -18,5 +21,6 @@ __all__ = [
     "users_api",
     "user_detail_api",
     "experiments_api",
+    "experiment_detail_api",
     "authentication_api",
 ]

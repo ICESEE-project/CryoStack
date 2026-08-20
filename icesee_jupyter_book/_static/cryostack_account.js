@@ -280,6 +280,15 @@
     label.textContent = displayName;
     button.title = `Signed in as ${displayName}`;
 
+    const controlCenterLink =
+      user?.control_center_access
+        ? `
+          <a href="/control/">
+            Control Center
+          </a>
+        `
+        : "";
+
     menu.innerHTML = `
       <div class="cryostack-account-menu-identity">
         <strong>${escapeHtml(displayName)}</strong>
@@ -301,6 +310,8 @@
       <a href="${accountPageUrl("/experiments/")}">
         My Experiments
       </a>
+
+      ${controlCenterLink}
 
       <button
         type="button"

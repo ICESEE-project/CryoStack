@@ -728,3 +728,67 @@ class ControlStorage:
             dict(row)
             for row in rows
         ]
+
+
+    def get_experiment(
+        self,
+        *,
+        experiment_id: str,
+    ) -> dict | None:
+
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT
+                    e.*,
+
+                    u.display_name AS user_name,
+                    u.email AS user_email
+
+                FROM experiments e
+
+                JOIN users u
+                    ON u.id = e.user_id
+
+                WHERE e.id = ?
+                """,
+                (experiment_id,),
+            ).fetchone()
+
+        if row is None:
+            return None
+
+        return dict(row)
+
+
+    def list_experiment_events(
+        self,
+        *,
+        experiment_id: str,
+    ) -> list[dict]:
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    id,
+                    experiment_id,
+                    user_id,
+                    event_type,
+                    message,
+                    metadata_json,
+                    created_at
+
+                FROM experiment_events
+
+                WHERE experiment_id = ?
+
+                ORDER BY created_at ASC
+                """,
+                (experiment_id,),
+            ).fetchall()
+
+        return [
+            dict(row)
+            for row in rows
+        ]

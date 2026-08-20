@@ -1835,10 +1835,17 @@ class AuthManager:
 
         return self._storage.get_user_by_id(session.user_id)
 
-    @staticmethod
-    def _public_user(user: User | None) -> dict | None:
+    def _public_user(
+        self,
+        user: User | None,
+    ) -> dict | None:
+
         if user is None:
             return None
+
+        roles = self._storage.get_user_roles(
+            user_id=user.id
+        )
 
         return {
             "id": user.id,
@@ -1847,6 +1854,17 @@ class AuthManager:
             "institution": user.institution,
             "research_role": user.research_role,
             "country": user.country,
+
+            "roles": roles,
+
+            "control_center_access": bool(
+                set(roles).intersection({
+                    "developer",
+                    "administrator",
+                    "owner",
+                })
+            ),
+
             "preferences": {
                 "default_application": (
                     user.default_application
@@ -2643,3 +2661,66 @@ class AuthManager:
 
         self._prepare_no_cache(response)
         return response
+
+    def require_roles(
+        self,
+        *allowed_roles: str,
+    ):
+        allowed = {
+            role.strip().lower()
+            for role in allowed_roles
+        }
+
+        def decorator(handler):
+
+            async def protected(
+                request: web.Request,
+            ):
+                user = self.current_user(
+                    request
+                )
+
+                if user is None:
+                    return_to = request.path_qs
+
+                    raise web.HTTPFound(
+                        "/auth/login?return_to="
+                        + quote(
+                            return_to,
+                            safe="",
+                        )
+                    )
+
+                roles = set(
+                    self._storage
+                    .get_user_roles(
+                        user_id=user.id
+                    )
+                )
+
+                if not roles.intersection(
+                    allowed
+                ):
+                    raise web.HTTPForbidden(
+                        text=(
+                            "You do not have access "
+                            "to the CryoStack "
+                            "Control Center."
+                        )
+                    )
+
+                request[
+                    "cryostack_user"
+                ] = user
+
+                request[
+                    "cryostack_roles"
+                ] = roles
+
+                return await handler(
+                    request
+                )
+
+            return protected
+
+        return decorator

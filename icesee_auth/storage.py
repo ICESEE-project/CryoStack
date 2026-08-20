@@ -1650,3 +1650,118 @@ class AuthStorage:
             metadata_json=row["metadata_json"],
             created_at=row["created_at"],
         )
+
+    def add_user_role(
+        self,
+        *,
+        user_id: str,
+        role: str,
+        created_by: str | None = None,
+        now: float | None = None,
+    ) -> None:
+
+        allowed_roles = {
+            "developer",
+            "administrator",
+            "owner",
+        }
+
+        role = role.strip().lower()
+
+        if role not in allowed_roles:
+            raise ValueError(
+                f"Invalid CryoStack role: {role}"
+            )
+
+        timestamp = (
+            time.time()
+            if now is None
+            else now
+        )
+
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO user_roles (
+                    id,
+                    user_id,
+                    role,
+                    created_at,
+                    created_by
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    uuid.uuid4().hex,
+                    user_id,
+                    role,
+                    timestamp,
+                    created_by,
+                ),
+            )
+
+
+    def remove_user_role(
+        self,
+        *,
+        user_id: str,
+        role: str,
+    ) -> bool:
+
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                DELETE FROM user_roles
+                WHERE user_id = ?
+                AND role = ?
+                """,
+                (
+                    user_id,
+                    role.strip().lower(),
+                ),
+            )
+
+        return cursor.rowcount > 0
+
+
+    def get_user_roles(
+        self,
+        *,
+        user_id: str,
+    ) -> list[str]:
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT role
+                FROM user_roles
+                WHERE user_id = ?
+                ORDER BY role
+                """,
+                (user_id,),
+            ).fetchall()
+
+        return [
+            str(row["role"])
+            for row in rows
+        ]
+
+
+    def user_has_role(
+        self,
+        *,
+        user_id: str,
+        roles: set[str],
+    ) -> bool:
+
+        current_roles = set(
+            self.get_user_roles(
+                user_id=user_id
+            )
+        )
+
+        return bool(
+            current_roles.intersection(
+                roles
+            )
+        )
