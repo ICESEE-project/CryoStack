@@ -4,11 +4,11 @@
 # Unified Platform for Scientific Computing
 #
 # Module      : Cloud
-# Component   : Public Cloud API
+# Component   : AWS Driver
 # File        : __init__.py
 #
 # Description :
-#     Exposes provider-independent cloud services used across CryoStack.
+#     Public AWS cloud driver API.
 #
 # Author(s)   :
 #     Brian Kyanjo
@@ -21,35 +21,14 @@
 # =============================================================================
 
 """
-Public CryoStack cloud API.
+AWS cloud provider implementation.
 """
 
-from .manager import (
-    CloudManager,
-)
-
-from .models import (
-    CloudAccount,
-    CloudCapabilities,
-)
-
-from .drivers import (
-    AWSDriver,
-    CloudDriver,
-)
-
-from .drivers.aws import (
-    AWSConfig,
-    AWSCapabilities,
-)
-
+from .driver import AWSDriver
+from .models import AWSConfig, AWSCapabilities
 
 __all__ = [
-    "CloudManager",
-    "CloudDriver",
     "AWSDriver",
     "AWSConfig",
     "AWSCapabilities",
-    "CloudAccount",
-    "CloudCapabilities",
 ]
