@@ -74,6 +74,10 @@ from .storage import (
     prepare_storage,
 )
 
+from .registry_provision import (
+    ensure_registry_resources,
+)
+
 
 class AWSDriver(
     CloudDriver
@@ -303,21 +307,31 @@ class AWSDriver(
 
         #
         # ---------------------------------------------------------
-        # Registry discovery
+        # Registry
         # ---------------------------------------------------------
         #
-        registry = self.registry()
+        registry_result = self.prepare_registry(
+            include_icepack=False,
+        )
 
-        if registry.issm_repository_uri:
+        registry = registry_result.resources
+
+        if registry_result.created:
 
             messages.append(
-                "ISSM container registry discovered."
+                "Created ECR repositories: "
+                + ", ".join(
+                    registry_result.created
+                )
             )
 
-        else:
+        if registry_result.reused:
 
             messages.append(
-                "ISSM container registry is not configured."
+                "Reused ECR repositories: "
+                + ", ".join(
+                    registry_result.reused
+                )
             )
 
         #
@@ -368,3 +382,14 @@ class AWSDriver(
             "capabilities": capabilities,
             "messages": messages,
         }
+
+    def prepare_registry(
+        self,
+        *,
+        include_icepack: bool = False,
+    ):
+
+        return ensure_registry_resources(
+            self.config,
+            include_icepack=include_icepack,
+        )
