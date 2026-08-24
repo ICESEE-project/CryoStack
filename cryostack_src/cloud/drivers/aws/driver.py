@@ -26,6 +26,11 @@ AWS cloud driver for CryoStack.
 
 The driver combines AWS authentication, storage, networking, IAM,
 registry, Batch, and capability discovery behind one interface.
+
+Resource provisioning is introduced incrementally. Storage and IAM
+can currently be prepared automatically, while registry and AWS Batch
+resources remain discovery-only until their provisioning layers are
+completed.
 """
 
 from __future__ import annotations
@@ -33,6 +38,7 @@ from __future__ import annotations
 from ..base import CloudDriver
 
 from .auth import (
+    AWSCredentialsError,
     discover_account,
 )
 
@@ -46,6 +52,10 @@ from .capabilities import (
 
 from .iam import (
     discover_iam_resources,
+)
+
+from .iam_provision import (
+    ensure_iam_resources,
 )
 
 from .models import (
@@ -149,22 +159,212 @@ class AWSDriver(
         self,
         *,
         bucket: str | None = None,
-    ):
+    ) -> dict:
         """
-        Prepare the AWS environment required by CryoStack.
+        Prepare the AWS environment currently supported by CryoStack.
 
-        Returns
-        -------
-        dict
-            Summary of all discovered and provisioned resources.
+        The bootstrap sequence currently:
+
+        1. verifies the AWS connection,
+        2. prepares S3 run storage,
+        3. discovers usable networking,
+        4. prepares required IAM roles,
+        5. discovers ECR repositories,
+        6. discovers AWS Batch resources,
+        7. recalculates the final capability state.
+
+        Registry and Batch provisioning will be added separately.
         """
+
+        messages: list[str] = []
+
+        #
+        # ---------------------------------------------------------
+        # Account
+        # ---------------------------------------------------------
+        #
+        account = self.account()
+
+        if not account.authenticated:
+
+            return {
+                "success": False,
+                "provider": self.name,
+                "region": self.config.region,
+                "account": account,
+                "storage": None,
+                "network": None,
+                "iam": None,
+                "registry": None,
+                "batch": None,
+                "capabilities": self.capabilities(),
+                "messages": [
+                    "AWS account is not connected.",
+                ],
+            }
+
+        messages.append(
+            "AWS account connected."
+        )
+
+        #
+        # ---------------------------------------------------------
+        # Storage
+        # ---------------------------------------------------------
+        #
+        try:
+
+            storage = self.prepare_storage(
+                bucket=bucket,
+            )
+
+        except AWSCredentialsError:
+
+            return {
+                "success": False,
+                "provider": self.name,
+                "region": self.config.region,
+                "account": account,
+                "storage": None,
+                "network": None,
+                "iam": None,
+                "registry": None,
+                "batch": None,
+                "capabilities": None,
+                "messages": [
+                    "AWS credentials are not available.",
+                ],
+            }
+
+        if storage.created:
+
+            messages.append(
+                "CryoStack S3 storage created."
+            )
+
+        else:
+
+            messages.append(
+                "CryoStack S3 storage already exists."
+            )
+
+        #
+        # ---------------------------------------------------------
+        # Network
+        # ---------------------------------------------------------
+        #
+        network = self.network()
+
+        if (
+            network.vpc_id
+            and network.subnet_ids
+            and network.security_group_ids
+        ):
+
+            messages.append(
+                "AWS networking discovered."
+            )
+
+        else:
+
+            messages.append(
+                "AWS networking is incomplete."
+            )
+
+        #
+        # ---------------------------------------------------------
+        # IAM
+        # ---------------------------------------------------------
+        #
+        iam_result = ensure_iam_resources(
+            self.config,
+            bucket=storage.bucket,
+        )
+
+        iam = iam_result.resources
+
+        if iam_result.created:
+
+            messages.append(
+                "Created IAM resources: "
+                + ", ".join(
+                    iam_result.created
+                )
+            )
+
+        if iam_result.reused:
+
+            messages.append(
+                "Reused IAM resources: "
+                + ", ".join(
+                    iam_result.reused
+                )
+            )
+
+        #
+        # ---------------------------------------------------------
+        # Registry discovery
+        # ---------------------------------------------------------
+        #
+        registry = self.registry()
+
+        if registry.issm_repository_uri:
+
+            messages.append(
+                "ISSM container registry discovered."
+            )
+
+        else:
+
+            messages.append(
+                "ISSM container registry is not configured."
+            )
+
+        #
+        # ---------------------------------------------------------
+        # Batch discovery
+        # ---------------------------------------------------------
+        #
+        batch = self.batch()
+
+        if (
+            batch.compute_environment
+            and batch.job_queue
+            and batch.issm_job_definition
+        ):
+
+            messages.append(
+                "AWS Batch environment discovered."
+            )
+
+        else:
+
+            messages.append(
+                "AWS Batch environment is incomplete."
+            )
+
+        #
+        # Recalculate after provisioning.
+        #
+        capabilities = self.capabilities()
+
+        success = bool(
+            capabilities.authenticated
+            and capabilities.storage_ready
+            and capabilities.network_ready
+            and capabilities.iam_ready
+        )
 
         return {
-            "account": self.account(),
-            "capabilities": self.capabilities(),
-            "storage": self.prepare_storage(bucket=bucket),
-            "network": self.network(),
-            "iam": self.iam(),
-            "registry": self.registry(),
-            "batch": self.batch(),
+            "success": success,
+            "provider": self.name,
+            "region": self.config.region,
+            "account": account,
+            "storage": storage,
+            "network": network,
+            "iam": iam,
+            "registry": registry,
+            "batch": batch,
+            "capabilities": capabilities,
+            "messages": messages,
         }

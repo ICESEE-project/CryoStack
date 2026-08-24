@@ -167,3 +167,20 @@ class CloudManager:
             region=region,
             profile=profile,
         ).batch()
+
+    def bootstrap(
+        self,
+        *,
+        provider: str,
+        region: str,
+        profile: str | None = None,
+        bucket: str | None = None,
+    ):
+
+        return self.driver(
+            provider=provider,
+            region=region,
+            profile=profile,
+        ).bootstrap(
+            bucket=bucket,
+        )

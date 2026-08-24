@@ -70,3 +70,15 @@ class CloudDriver(ABC):
     @abstractmethod
     def batch(self):
         raise NotImplementedError
+
+    @abstractmethod
+    def bootstrap(
+        self,
+        *,
+        bucket: str | None = None,
+    ):
+        """
+        Prepare and inspect the cloud environment required by CryoStack.
+        """
+
+        raise NotImplementedError
