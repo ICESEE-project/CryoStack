@@ -43,6 +43,11 @@ from icesee_jupyter_book.core.cloud_runner import (
     AWSBatchConfig,
     aws_batch_status,
 )
+
+from cryostack_src.execution.cloud import (
+    CloudBackend,
+)
+
 from icesee_jupyter_book.core.local_connector import build_connector_panel
 from icesee_jupyter_book.ui.shared_ssh_widgets import build_ssh_key_manager
 from icesee_jupyter_book.core.connector_relay_client import (
@@ -72,6 +77,15 @@ from icesee_jupyter_book.ui.workspace_bridge import (
 
 from icesee_jupyter_book.core.experiment_status import (
     experiment_update_from_job_status,
+)
+
+
+from cryostack_src.frontend.shared import (
+    CRYOSTACK_FRONTEND_CSS,
+)
+
+from cryostack_src.frontend.cryolauncher import (
+    build_cloud_environment_card,
 )
 
 # ============================================================
@@ -252,7 +266,7 @@ back_link = W.HTML("""
 
 <div class="icesee-back-wrap">
   <a href="https://cryostack.eas.gatech.edu/index.html#" class="icesee-back">
-    ← Back to ICESEE Run Center
+    ← Back to CryoStack Home
   </a>
 </div>
 """)
@@ -1674,6 +1688,12 @@ def build_icesheets_ui():
         tail_btn = W.Button(description="Tail log", icon="file-text")
         terminate_btn = W.Button(description="Terminate job", icon="stop", button_style="danger")
 
+        cloud_terminate_btn = W.Button(
+            description="Terminate",
+            icon="stop",
+            button_style="danger",
+        )
+
         ISSM_MD_SECTIONS = [
             "mesh", "mask", "geometry", "constants", "smb", "basalforcings",
             "materials", "damage", "friction", "flowequation", "timestepping",
@@ -1735,6 +1755,20 @@ def build_icesheets_ui():
             disabled=True,
             layout=W.Layout(width="100%", height="120px"),
         )
+
+        def current_cloud_backend():
+
+            return CloudBackend(
+                provider="aws",
+                region=(
+                    aws_region.value.strip()
+                    or "us-east-2"
+                ),
+                profile=(
+                    aws_profile.value.strip()
+                    or None
+                ),
+            )
 
         def current_experiment_configuration() -> dict:
             return {
@@ -2215,13 +2249,21 @@ def build_icesheets_ui():
         # -----------------------------
         # Cloud controls
         # -----------------------------
-        aws_region = W.Text(value="us-east-1", layout=W.Layout(width="220px"))
-        aws_profile = W.Text(value="", placeholder="(optional) AWS profile", layout=W.Layout(width="220px"))
-        cloud_bucket = W.Text(value="", placeholder="s3://bucket/prefix", layout=W.Layout(width="320px"))
+        cloud_environment = build_cloud_environment_card(
+            region="us-east-1",
+            profile="",
+            s3_prefix="",
+            job_queue="",
+            job_definition="",
+            job_name="icesheets",
+        )
 
-        batch_job_queue = W.Text(value="", placeholder="AWS Batch job queue", layout=W.Layout(width="320px"))
-        batch_job_def = W.Text(value="", placeholder="job definition (name[:rev])", layout=W.Layout(width="320px"))
-        batch_job_name = W.Text(value="icesheets", layout=W.Layout(width="220px"))
+        aws_region = cloud_environment.region
+        aws_profile = cloud_environment.profile
+        cloud_bucket = cloud_environment.s3_prefix
+        batch_job_queue = cloud_environment.job_queue
+        batch_job_def = cloud_environment.job_definition
+        batch_job_name = cloud_environment.job_name
 
         cloud_status_btn = W.Button(description="Check status", icon="search")
         cloud_logs_btn = W.Button(description="Logs hint", icon="file-text")
@@ -3932,38 +3974,201 @@ fi
                     print("[remote][ERROR]", type(e).__name__, e)
 
         def on_cloud_status(_=None):
+
             log_out.clear_output()
-            jobid = STATUS.get("batch_job_id")
+
+            jobid = STATUS.get(
+                "batch_job_id"
+            )
+
             if not jobid:
+
                 with log_out:
-                    print("[cloud] No Batch job id yet. Submit first.")
+                    print(
+                        "[cloud] No Batch job id yet. "
+                        "Submit first."
+                    )
+
                 return
 
             try:
-                cfg = AWSBatchConfig(
-                    region=aws_region.value.strip() or "us-east-1",
-                    profile=(aws_profile.value.strip() or None),
+
+                backend = current_cloud_backend()
+
+                result = backend.status(
+                    job_id=str(jobid),
                 )
-                st = aws_batch_status(cfg, jobid)
+
                 with log_out:
-                    print("[cloud] status:", st["status"])
-                    if st["reason"]:
-                        print("[cloud] reason:", st["reason"])
-                status_chip.value = status_html("done")
+
+                    print(
+                        "[cloud] Job status"
+                    )
+
+                    print(
+                        "state:",
+                        result.state,
+                    )
+
+                    if result.raw_state:
+
+                        print(
+                            "AWS state:",
+                            result.raw_state,
+                        )
+
+                    if result.reason:
+
+                        print(
+                            "reason:",
+                            result.reason,
+                        )
+
+                status_chip.value = status_html(
+                    "done"
+                )
+
             except Exception as e:
-                status_chip.value = status_html("fail")
+
+                status_chip.value = status_html(
+                    "fail"
+                )
+
                 with log_out:
-                    print("[cloud][ERROR]", type(e).__name__, e)
+
+                    print(
+                        "[cloud][ERROR]",
+                        type(e).__name__,
+                        e,
+                    )
 
         def on_cloud_logs(_=None):
+
             log_out.clear_output()
-            with log_out:
-                print("[cloud] Logs depend on the AWS Batch job definition (awslogs driver).")
-                print("Open AWS Console -> Batch -> Job -> Logs")
-                if STATUS.get("batch_job_id"):
-                    print("JobID:", STATUS["batch_job_id"])
-                if STATUS.get("cloud_run"):
-                    print("Cloud run:", STATUS["cloud_run"])
+
+            jobid = STATUS.get(
+                "batch_job_id"
+            )
+
+            if not jobid:
+
+                with log_out:
+                    print(
+                        "[cloud] No Batch job id yet. "
+                        "Submit first."
+                    )
+
+                return
+
+            try:
+
+                backend = current_cloud_backend()
+
+                result = backend.logs(
+                    job_id=str(jobid),
+                )
+
+                with log_out:
+
+                    print(
+                        "[cloud] Logs"
+                    )
+
+                    if isinstance(
+                        result,
+                        dict,
+                    ):
+
+                        log_text = (
+                            result.get("logs")
+                            or result.get("log")
+                            or result.get("message")
+                            or ""
+                        )
+
+                        print(
+                            log_text
+                            or "(no log output)"
+                        )
+
+                    else:
+
+                        print(
+                            result
+                            or "(no log output)"
+                        )
+
+                status_chip.value = status_html(
+                    "done"
+                )
+
+            except Exception as e:
+
+                status_chip.value = status_html(
+                    "fail"
+                )
+
+                with log_out:
+
+                    print(
+                        "[cloud][ERROR]",
+                        type(e).__name__,
+                        e,
+                    )
+
+        def on_cloud_terminate(_=None):
+
+            log_out.clear_output()
+
+            jobid = STATUS.get(
+                "batch_job_id"
+            )
+
+            if not jobid:
+
+                with log_out:
+                    print(
+                        "[cloud] No Batch job id yet. "
+                        "Submit first."
+                    )
+
+                return
+
+            try:
+
+                backend = current_cloud_backend()
+
+                result = backend.terminate(
+                    job_id=str(jobid),
+                )
+
+                with log_out:
+
+                    print(
+                        "[cloud] Termination requested."
+                    )
+
+                    if result:
+
+                        print(result)
+
+                status_chip.value = status_html(
+                    "done"
+                )
+
+            except Exception as e:
+
+                status_chip.value = status_html(
+                    "fail"
+                )
+
+                with log_out:
+
+                    print(
+                        "[cloud][ERROR]",
+                        type(e).__name__,
+                        e,
+                    )
 
         def refresh_md_overrides_view():
             if not md_overrides:
@@ -4067,6 +4272,7 @@ fi
         terminate_btn.on_click(on_terminate)
         cloud_status_btn.on_click(on_cloud_status)
         cloud_logs_btn.on_click(on_cloud_logs)
+        cloud_terminate_btn.on_click(on_cloud_terminate)
         save_file_btn.on_click(save_selected_file)
         deploy_example_btn.on_click(deploy_current_example)
         upload_dataset_btn.on_click(save_uploaded_datasets)
@@ -4320,6 +4526,15 @@ fi
             # spack_pmix_row,
         ], layout=W.Layout(gap="8px"))
 
+        cloud_backend = CloudBackend(
+            provider="aws",
+            region=aws_region.value.strip() or "us-east-2",
+            profile=(
+                aws_profile.value.strip()
+                or None
+            ),
+        )
+
         def _toggle_exec_backend_ui(_=None):
             is_container = backend_dd.value == "container"
 
@@ -4438,9 +4653,15 @@ fi
         )
 
         cloud_actions = W.HBox(
-            [cloud_status_btn, cloud_logs_btn],
-            layout=W.Layout(gap="10px", flex_wrap="wrap")
-        )
+                            [
+                                cloud_status_btn,
+                                cloud_logs_btn,
+                                cloud_terminate_btn,
+                            ],
+                            layout=W.Layout(
+                                gap="10px"
+                            ),
+                        )
 
         actions = W.HBox(
             [run_btn, clear_btn, status_chip],
@@ -4473,6 +4694,7 @@ fi
             [
                 shared_styles,
                 W.HTML(css),
+                W.HTML(CRYOSTACK_FRONTEND_CSS),
 
                 experiment_bridge.widget(),
                 workspace_bridge.widget(),
