@@ -103,6 +103,22 @@ class ExecutionManager:
             self._backends
         )
 
+    def status(self, job_id):
+
+        return self.driver.status(job_id)
+
+    def logs(self, job_id):
+
+        return self.driver.logs(job_id)
+
+    def terminate(self, job_id):
+
+        return self.driver.terminate(job_id)
+
+    def submit(self, **kwargs):
+
+        return self.driver.submit(**kwargs)
+
 
 def create_execution_manager(
     *,

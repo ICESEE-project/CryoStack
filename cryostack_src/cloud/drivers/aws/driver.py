@@ -78,6 +78,10 @@ from .registry_provision import (
     ensure_registry_resources,
 )
 
+from cryostack_src.cloud.legacy.aws_batch import submit_batch
+from cryostack_src.cloud.legacy.aws_batch import batch_status
+from cryostack_src.cloud.legacy.aws_batch import batch_logs
+from cryostack_src.cloud.legacy.aws_batch import terminate_batch_job
 
 class AWSDriver(
     CloudDriver
@@ -393,3 +397,43 @@ class AWSDriver(
             self.config,
             include_icepack=include_icepack,
         )
+
+    def submit(
+        self,
+        **kwargs,
+    ):
+
+        return submit_batch(
+            self.config,
+            **kwargs,
+        )
+
+    def status(
+        self,
+        job_id,
+    ):
+
+        return batch_status(
+            self.config,
+            job_id,
+        )
+
+    def logs(
+        self,
+        job_id,
+    ):
+
+        return batch_logs(
+            self.config,
+            job_id,
+        )
+
+    def terminate(
+        self,
+        job_id,
+    ):
+
+        return terminate_batch_job(
+            self.config,
+            job_id,
+    )

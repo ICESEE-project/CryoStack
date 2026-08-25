@@ -82,3 +82,11 @@ class CloudDriver(ABC):
         """
 
         raise NotImplementedError
+
+    @abstractmethod
+    def prepare_registry(
+        self,
+        *,
+        include_icepack: bool = False,
+    ):
+        raise NotImplementedError

@@ -4,11 +4,12 @@
 # Unified Platform for Scientific Computing
 #
 # Module      : Cloud
-# Component   : Public Cloud API
+# Component   : Legacy Compatibility
 # File        : __init__.py
 #
 # Description :
-#     Exposes provider-independent cloud services used across CryoStack.
+#     Contains transitional cloud modules retained during the CryoStack
+#     strangler migration. New cloud development should use cloud drivers.
 #
 # Author(s)   :
 #     Brian Kyanjo
@@ -21,18 +22,9 @@
 # =============================================================================
 
 """
-Public CryoStack cloud API.
+Legacy CryoStack cloud compatibility modules.
+
+These modules remain available during the strangler migration so that
+existing code paths continue to function while cloud behavior moves to
+the driver architecture.
 """
-
-from .manager import CloudManager
-
-from .drivers.aws import (
-    AWSDriver,
-    AWSConfig,
-)
-
-__all__ = [
-    "CloudManager",
-    "AWSDriver",
-    "AWSConfig",
-]

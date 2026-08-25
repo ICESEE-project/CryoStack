@@ -44,13 +44,7 @@ from .backend import (
     ExecutionStatus,
 )
 
-from cryostack_src.cloud import (
-    AWSConfig,
-    batch_logs,
-    batch_status,
-    terminate_batch_job,
-)
-
+from cryostack_src.cloud import CloudManager
 
 class CloudBackend(
     ExecutionBackend
@@ -70,8 +64,17 @@ class CloudBackend(
     def __init__(
         self,
         *,
+        provider="aws",
+        region="us-east-2",
+        profile=None,
         submitter=None,
-    ) -> None:
+    ):
+
+        self.manager = CloudManager(
+            provider=provider,
+            region=region,
+            profile=profile,
+        )
 
         self._submitter = submitter
 
@@ -200,20 +203,8 @@ class CloudBackend(
         **kwargs,
     ) -> ExecutionStatus:
 
-        config = AWSConfig(
-            region=(
-                region
-                or "us-east-2"
-            ),
-            profile=(
-                profile
-                or None
-            ),
-        )
-
-        result = batch_status(
-            config,
-            job_id,
+        result = self.manager.status(
+            job_id=job_id,
         )
 
         raw_state = (
@@ -282,21 +273,8 @@ class CloudBackend(
         **kwargs,
     ) -> str:
 
-        config = AWSConfig(
-            region=(
-                region
-                or "us-east-2"
-            ),
-            profile=(
-                profile
-                or None
-            ),
-        )
-
-        return batch_logs(
-            config,
-            job_id,
-            limit=limit,
+        return self.manager.logs(
+            job_id=job_id,
         )
 
     def terminate(
@@ -311,21 +289,8 @@ class CloudBackend(
         **kwargs,
     ) -> dict:
 
-        config = AWSConfig(
-            region=(
-                region
-                or "us-east-2"
-            ),
-            profile=(
-                profile
-                or None
-            ),
-        )
-
-        return terminate_batch_job(
-            config,
-            job_id,
-            reason=reason,
+        return self.manager.terminate(
+            job_id=job_id,
         )
 
     @staticmethod

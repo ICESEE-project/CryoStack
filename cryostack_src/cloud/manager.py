@@ -8,179 +8,67 @@
 # File        : manager.py
 #
 # Description :
-#     Resolves cloud-provider drivers and exposes a provider-independent
-#     interface to CryoStack cloud services.
+# Central cloud orchestration layer. Selects a cloud provider driver
+# (currently AWS) and exposes a provider-independent API to the
+# execution layer.
 #
 # Author(s)   :
-#     Brian Kyanjo
+# Brian Kyanjo
 #
-# Created     : 2026-08-24
+# Created     : 2026-08-25
 #
 # Copyright (c) 2026 ICESEE Project
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # =============================================================================
 
-"""
-High-level cloud manager for CryoStack.
-
-CloudManager is the public entry point for cloud resource discovery
-and preparation. Provider-specific behavior is delegated to cloud
-drivers.
-"""
-
 from __future__ import annotations
 
-from .drivers import (
-    AWSDriver,
-    CloudDriver,
-)
+from .drivers.aws import AWSDriver
 
 
 class CloudManager:
     """
-    Resolve and interact with CryoStack cloud drivers.
+    Provider-independent cloud manager.
+
+    The execution layer talks only to this class.
     """
 
-    def driver(
+    def __init__(
         self,
         *,
-        provider: str,
-        region: str,
+        provider: str = "aws",
+        region: str = "us-east-2",
         profile: str | None = None,
-    ) -> CloudDriver:
+    ):
 
-        provider_name = (
-            provider
-            .strip()
-            .lower()
-        )
+        provider = provider.lower()
 
-        if provider_name == "aws":
+        if provider == "aws":
 
-            return AWSDriver(
+            self.driver = AWSDriver(
                 region=region,
                 profile=profile,
             )
 
-        raise ValueError(
-            f"Unsupported cloud provider: {provider}"
-        )
+        else:
 
-    def account(
-        self,
-        *,
-        provider: str,
-        region: str,
-        profile: str | None = None,
-    ):
+            raise RuntimeError(
+                f"Unsupported cloud provider: {provider}"
+            )
 
-        return self.driver(
-            provider=provider,
-            region=region,
-            profile=profile,
-        ).account()
+    def submit(self, **kwargs):
 
-    def capabilities(
-        self,
-        *,
-        provider: str,
-        region: str,
-        profile: str | None = None,
-    ):
+        return self.driver.submit(**kwargs)
 
-        return self.driver(
-            provider=provider,
-            region=region,
-            profile=profile,
-        ).capabilities()
+    def status(self, job_id):
 
-    def prepare_storage(
-        self,
-        *,
-        provider: str,
-        region: str,
-        profile: str | None = None,
-        bucket: str | None = None,
-    ):
+        return self.driver.status(job_id)
 
-        return self.driver(
-            provider=provider,
-            region=region,
-            profile=profile,
-        ).prepare_storage(
-            bucket=bucket,
-        )
+    def logs(self, job_id):
 
-    def network(
-        self,
-        *,
-        provider: str,
-        region: str,
-        profile: str | None = None,
-    ):
+        return self.driver.logs(job_id)
 
-        return self.driver(
-            provider=provider,
-            region=region,
-            profile=profile,
-        ).network()
+    def terminate(self, job_id):
 
-    def iam(
-        self,
-        *,
-        provider: str,
-        region: str,
-        profile: str | None = None,
-    ):
-
-        return self.driver(
-            provider=provider,
-            region=region,
-            profile=profile,
-        ).iam()
-
-    def registry(
-        self,
-        *,
-        provider: str,
-        region: str,
-        profile: str | None = None,
-    ):
-
-        return self.driver(
-            provider=provider,
-            region=region,
-            profile=profile,
-        ).registry()
-
-    def batch(
-        self,
-        *,
-        provider: str,
-        region: str,
-        profile: str | None = None,
-    ):
-
-        return self.driver(
-            provider=provider,
-            region=region,
-            profile=profile,
-        ).batch()
-
-    def bootstrap(
-        self,
-        *,
-        provider: str,
-        region: str,
-        profile: str | None = None,
-        bucket: str | None = None,
-    ):
-
-        return self.driver(
-            provider=provider,
-            region=region,
-            profile=profile,
-        ).bootstrap(
-            bucket=bucket,
-        )
+        return self.driver.terminate(job_id)

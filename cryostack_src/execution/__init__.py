@@ -4,12 +4,12 @@
 # Unified Platform for Scientific Computing
 #
 # Module      : Execution
-# Component   : Public Execution API
+# Component   : Execution Package
 # File        : __init__.py
 #
 # Description :
-#     Exposes the public CryoStack execution interfaces, backend registry,
-#     and currently supported execution backends.
+#     Defines the CryoStack execution namespace while keeping individual
+#     execution backends and runtimes independently importable.
 #
 # Author(s)   :
 #     Brian Kyanjo
@@ -22,38 +22,17 @@
 # =============================================================================
 
 """
-Public API for CryoStack execution services.
+CryoStack execution services.
 
-Application frontends should prefer imports from this module rather
-than depending directly on individual backend implementation files.
+Execution backends and runtimes are intentionally imported explicitly
+from their respective modules. This avoids loading remote, cloud, or
+container dependencies when they are not required.
 """
 
-from .backend import (
-    ExecutionBackend,
-    ExecutionResult,
-    ExecutionStatus,
-)
-
-from .manager import (
-    ExecutionManager,
-    create_execution_manager,
-)
-
-from .remote import (
-    RemoteBackend,
-)
-
-from .cloud import (
-    CloudBackend,
-)
-
-
 __all__ = [
-    "ExecutionBackend",
-    "ExecutionResult",
-    "ExecutionStatus",
-    "ExecutionManager",
-    "create_execution_manager",
-    "RemoteBackend",
-    "CloudBackend",
+    "backend",
+    "manager",
+    "remote",
+    "cloud",
+    "containers",
 ]
