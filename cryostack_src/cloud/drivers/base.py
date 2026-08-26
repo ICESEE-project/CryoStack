@@ -90,3 +90,31 @@ class CloudDriver(ABC):
         include_icepack: bool = False,
     ):
         raise NotImplementedError
+
+    @abstractmethod
+    def submit(
+        self,
+        **kwargs,
+    ):
+        raise NotImplementedError
+
+    @abstractmethod
+    def status(
+        self,
+        job_id: str,
+    ):
+        raise NotImplementedError
+
+    @abstractmethod
+    def logs(
+        self,
+        job_id: str,
+    ):
+        raise NotImplementedError
+
+    @abstractmethod
+    def terminate(
+        self,
+        job_id: str,
+    ):
+        raise NotImplementedError

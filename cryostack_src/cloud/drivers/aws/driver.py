@@ -78,10 +78,11 @@ from .registry_provision import (
     ensure_registry_resources,
 )
 
-from cryostack_src.cloud.legacy.aws_batch import submit_batch
-from cryostack_src.cloud.legacy.aws_batch import batch_status
-from cryostack_src.cloud.legacy.aws_batch import batch_logs
-from cryostack_src.cloud.legacy.aws_batch import terminate_batch_job
+from cryostack_src.cloud.legacy.aws_batch import (
+    batch_logs,
+    batch_status,
+    terminate_batch_job,
+)
 
 class AWSDriver(
     CloudDriver
@@ -97,12 +98,21 @@ class AWSDriver(
         *,
         region: str = "us-east-2",
         profile: str | None = None,
+        submitter=None,
     ) -> None:
 
         self.config = AWSConfig(
             region=region,
             profile=profile,
         )
+
+        #
+        # Transitional submission hook.
+        #
+        # ISSM cloud submission will move fully into the AWS
+        # driver after Batch provisioning is completed.
+        #
+        self._submitter = submitter
 
     def account(
         self,
@@ -402,15 +412,25 @@ class AWSDriver(
         self,
         **kwargs,
     ):
+        """
+        Submit a cloud workload.
 
-        return submit_batch(
-            self.config,
-            **kwargs,
+        During the strangler migration, existing cloud submission
+        implementations may be injected through ``submitter``.
+        """
+
+        if self._submitter is None:
+            raise RuntimeError(
+                "AWS cloud submission is not configured yet."
+            )
+
+        return self._submitter(
+            **kwargs
         )
 
     def status(
         self,
-        job_id,
+        job_id: str,
     ):
 
         return batch_status(
@@ -420,7 +440,7 @@ class AWSDriver(
 
     def logs(
         self,
-        job_id,
+        job_id: str,
     ):
 
         return batch_logs(
@@ -430,10 +450,10 @@ class AWSDriver(
 
     def terminate(
         self,
-        job_id,
+        job_id: str,
     ):
 
         return terminate_batch_job(
             self.config,
             job_id,
-    )
+        )

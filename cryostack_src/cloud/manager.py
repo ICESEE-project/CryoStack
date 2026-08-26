@@ -8,67 +8,259 @@
 # File        : manager.py
 #
 # Description :
-# Central cloud orchestration layer. Selects a cloud provider driver
-# (currently AWS) and exposes a provider-independent API to the
-# execution layer.
+#     Resolves cloud-provider drivers and exposes a provider-independent
+#     interface for cloud discovery, provisioning, and job lifecycle
+#     operations.
 #
 # Author(s)   :
-# Brian Kyanjo
+#     Brian Kyanjo
 #
-# Created     : 2026-08-25
+# Created     : 2026-08-24
 #
 # Copyright (c) 2026 ICESEE Project
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # =============================================================================
 
+"""
+High-level CryoStack cloud manager.
+
+CloudManager is the public cloud API used by execution backends and
+frontends. Provider-specific behavior remains inside cloud drivers.
+"""
+
 from __future__ import annotations
 
-from .drivers.aws import AWSDriver
+from .drivers import (
+    AWSDriver,
+    CloudDriver,
+)
 
 
 class CloudManager:
     """
-    Provider-independent cloud manager.
-
-    The execution layer talks only to this class.
+    Provider-independent CryoStack cloud manager.
     """
 
-    def __init__(
+    def driver(
         self,
         *,
-        provider: str = "aws",
-        region: str = "us-east-2",
+        provider: str,
+        region: str,
+        profile: str | None = None,
+        submitter=None,
+    ) -> CloudDriver:
+
+        provider_name = (
+            provider
+            .strip()
+            .lower()
+        )
+
+        if provider_name == "aws":
+
+            return AWSDriver(
+                region=region,
+                profile=profile,
+                submitter=submitter,
+            )
+
+        raise ValueError(
+            f"Unsupported cloud provider: {provider}"
+        )
+
+    # ---------------------------------------------------------
+    # Discovery / provisioning
+    # ---------------------------------------------------------
+
+    def account(
+        self,
+        *,
+        provider: str,
+        region: str,
         profile: str | None = None,
     ):
 
-        provider = provider.lower()
+        return self.driver(
+            provider=provider,
+            region=region,
+            profile=profile,
+        ).account()
 
-        if provider == "aws":
+    def capabilities(
+        self,
+        *,
+        provider: str,
+        region: str,
+        profile: str | None = None,
+    ):
 
-            self.driver = AWSDriver(
-                region=region,
-                profile=profile,
-            )
+        return self.driver(
+            provider=provider,
+            region=region,
+            profile=profile,
+        ).capabilities()
 
-        else:
+    def prepare_storage(
+        self,
+        *,
+        provider: str,
+        region: str,
+        profile: str | None = None,
+        bucket: str | None = None,
+    ):
 
-            raise RuntimeError(
-                f"Unsupported cloud provider: {provider}"
-            )
+        return self.driver(
+            provider=provider,
+            region=region,
+            profile=profile,
+        ).prepare_storage(
+            bucket=bucket,
+        )
 
-    def submit(self, **kwargs):
+    def network(
+        self,
+        *,
+        provider: str,
+        region: str,
+        profile: str | None = None,
+    ):
 
-        return self.driver.submit(**kwargs)
+        return self.driver(
+            provider=provider,
+            region=region,
+            profile=profile,
+        ).network()
 
-    def status(self, job_id):
+    def iam(
+        self,
+        *,
+        provider: str,
+        region: str,
+        profile: str | None = None,
+    ):
 
-        return self.driver.status(job_id)
+        return self.driver(
+            provider=provider,
+            region=region,
+            profile=profile,
+        ).iam()
 
-    def logs(self, job_id):
+    def registry(
+        self,
+        *,
+        provider: str,
+        region: str,
+        profile: str | None = None,
+    ):
 
-        return self.driver.logs(job_id)
+        return self.driver(
+            provider=provider,
+            region=region,
+            profile=profile,
+        ).registry()
 
-    def terminate(self, job_id):
+    def batch(
+        self,
+        *,
+        provider: str,
+        region: str,
+        profile: str | None = None,
+    ):
 
-        return self.driver.terminate(job_id)
+        return self.driver(
+            provider=provider,
+            region=region,
+            profile=profile,
+        ).batch()
+
+    def bootstrap(
+        self,
+        *,
+        provider: str,
+        region: str,
+        profile: str | None = None,
+        bucket: str | None = None,
+    ):
+
+        return self.driver(
+            provider=provider,
+            region=region,
+            profile=profile,
+        ).bootstrap(
+            bucket=bucket,
+        )
+
+    # ---------------------------------------------------------
+    # Runtime lifecycle
+    # ---------------------------------------------------------
+
+    def submit(
+        self,
+        *,
+        provider: str,
+        region: str,
+        profile: str | None = None,
+        submitter=None,
+        **kwargs,
+    ):
+
+        return self.driver(
+            provider=provider,
+            region=region,
+            profile=profile,
+            submitter=submitter,
+        ).submit(
+            **kwargs
+        )
+
+    def status(
+        self,
+        *,
+        provider: str,
+        region: str,
+        job_id: str,
+        profile: str | None = None,
+    ):
+
+        return self.driver(
+            provider=provider,
+            region=region,
+            profile=profile,
+        ).status(
+            job_id
+        )
+
+    def logs(
+        self,
+        *,
+        provider: str,
+        region: str,
+        job_id: str,
+        profile: str | None = None,
+    ):
+
+        return self.driver(
+            provider=provider,
+            region=region,
+            profile=profile,
+        ).logs(
+            job_id
+        )
+
+    def terminate(
+        self,
+        *,
+        provider: str,
+        region: str,
+        job_id: str,
+        profile: str | None = None,
+    ):
+
+        return self.driver(
+            provider=provider,
+            region=region,
+            profile=profile,
+        ).terminate(
+            job_id
+        )

@@ -64,19 +64,19 @@ class CloudBackend(
     def __init__(
         self,
         *,
-        provider="aws",
-        region="us-east-2",
-        profile=None,
+        provider: str = "aws",
+        region: str = "us-east-2",
+        profile: str | None = None,
         submitter=None,
-    ):
+    ) -> None:
 
-        self.manager = CloudManager(
-            provider=provider,
-            region=region,
-            profile=profile,
-        )
+        self.provider = provider
+        self.region = region
+        self.profile = profile
 
         self._submitter = submitter
+
+        self.manager = CloudManager()
 
     def submit(
         self,
@@ -89,8 +89,12 @@ class CloudBackend(
                 "configured."
             )
 
-        result = self._submitter(
-            **kwargs
+        result = self.manager.submit(
+            provider=self.provider,
+            region=self.region,
+            profile=self.profile,
+            submitter=self._submitter,
+            **kwargs,
         )
 
         #
@@ -202,8 +206,17 @@ class CloudBackend(
         profile: str | None = None,
         **kwargs,
     ) -> ExecutionStatus:
-
         result = self.manager.status(
+            provider=self.provider,
+            region=(
+                region
+                or self.region
+            ),
+            profile=(
+                profile
+                if profile is not None
+                else self.profile
+            ),
             job_id=job_id,
         )
 
@@ -267,13 +280,22 @@ class CloudBackend(
         self,
         *,
         job_id: str,
-        region: str = "us-east-2",
+        region: str | None = None,
         profile: str | None = None,
-        limit: int = 200,
         **kwargs,
     ) -> str:
 
         return self.manager.logs(
+            provider=self.provider,
+            region=(
+                region
+                or self.region
+            ),
+            profile=(
+                profile
+                if profile is not None
+                else self.profile
+            ),
             job_id=job_id,
         )
 
@@ -281,15 +303,22 @@ class CloudBackend(
         self,
         *,
         job_id: str,
-        region: str = "us-east-2",
+        region: str | None = None,
         profile: str | None = None,
-        reason: str = (
-            "Terminated from CryoStack"
-        ),
         **kwargs,
-    ) -> dict:
+    ):
 
         return self.manager.terminate(
+            provider=self.provider,
+            region=(
+                region
+                or self.region
+            ),
+            profile=(
+                profile
+                if profile is not None
+                else self.profile
+            ),
             job_id=job_id,
         )
 

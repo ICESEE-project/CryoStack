@@ -84,8 +84,28 @@ from cryostack_src.frontend.shared import (
     CRYOSTACK_FRONTEND_CSS,
 )
 
-from cryostack_src.frontend.cryolauncher import (
+from cryostack_src.frontend.cryolauncher.cloud_environment import (
     build_cloud_environment_card,
+)
+
+from cryostack_src.frontend.cryolauncher.panels import (
+    build_logs_panel,
+    build_results_panel,
+    build_run_settings_panel,
+    build_status_panel,
+    build_runtime_panel,
+    build_output_workspace,
+    build_run_plan_panel,
+
+)
+
+from cryostack_src.frontend.cryolauncher.run_settings_state import (
+    build_run_settings_state,
+)
+
+from cryostack_src.frontend.cryolauncher.runtime_state import (
+    build_runtime_state,
+    status_html,
 )
 
 # ============================================================
@@ -1455,102 +1475,41 @@ def build_icesheets_ui():
         # =========================================================
         # State
         # =========================================================
-        STATUS = {
-            "mode": "idle",
-            "remote_dir": None,
-            "jobid": None,
-            "batch_job_id": None,
-            "cloud_run": None,
-            "selected_example_path": None,
-        }
-        SESSION = {
-            "id": None,
-            "ws_url": None,
-        }
 
-        AUTO_TAIL = {
-            "task": None,
-            "running": False,
-        }
+        runtime_state = build_runtime_state()
 
-        def status_html(state: str) -> str:
-            cls = {
-                "idle": "icesee-idle",
-                "running": "icesee-running",
-                "done": "icesee-done",
-                "fail": "icesee-fail",
-            }[state]
-            label = {
-                "idle": "Idle",
-                "running": "Running…",
-                "done": "Done",
-                "fail": "Failed",
-            }[state]
-            return f"<span class='icesee-status {cls}'>{label}</span>"
+        # Compatibility aliases while the gateway is migrated.
+        STATUS = runtime_state.status
+        SESSION = runtime_state.session
+        AUTO_TAIL = runtime_state.auto_tail
 
         # =========================================================
         # Controls
         # =========================================================
-        cryostack_session_cookie = W.Text(
-            value="",
-            layout=W.Layout(display="none"),
-        )
-        ui_mode_dd = W.ToggleButtons(
-            options=[("Basic", "basic"), ("Advanced", "advanced")],
-            value="basic",
-            layout=W.Layout(width="auto"),
-        )
-        mode_dd = W.Dropdown(
-            options=[("Remote", "remote"), ("Cloud", "cloud")],
-            value="remote",
-            layout=W.Layout(width="100%"),
-        )
-        backend_dd = W.Dropdown(
-            options=[("ICESEE-Spack", "spack"), ("ICESEE-Container", "container")],
-            value="spack",
-            layout=W.Layout(width="100%"),
-        )
-        model_dd = W.Dropdown(
-            options=[("ISSM", "issm"), ("Icepack", "icepack")],
-            value="issm",
-            layout=W.Layout(width="100%"),
-        )
-        example_picker = W.Dropdown(
-            options=[],
-            layout=W.Layout(width="100%"),
-        )
 
-        example_info = W.Textarea(
-            value="",
-            layout=W.Layout(width="100%", height="130px"),
-            disabled=True,
-        )
-        example_dir = W.Text(value="", layout=W.Layout(width="100%"))
-        exec_dir = W.Text(value="~/runs", layout=W.Layout(width="100%"))
+        run_settings = build_run_settings_state()
 
-        container_source = W.Dropdown(
-            options=[("Docker Hub", "docker"), ("AWS Registry", "aws")],
-            value="docker",
-            layout=W.Layout(width="100%"),
-        )
-        image_uri = W.Text(
-            value="icesee/combined-container:latest",
-            layout=W.Layout(width="100%"),
-        )
-        advanced_action_dd = W.Dropdown(
-            options=[
-                ("Test environment", "test"),
-                ("Run example", "run"),
-                ("Deploy new example", "deploy"),
-            ],
-            value="run",
-            layout=W.Layout(width="100%"),
-        )
+        ui_mode_dd = run_settings.ui_mode
+        mode_dd = run_settings.execution_mode
+        backend_dd = run_settings.backend
+        model_dd = run_settings.model
 
-        file_picker = W.Dropdown(
-            options=[],
-            layout=W.Layout(width="100%"),
-        )
+        example_picker = run_settings.example_picker
+        example_info = run_settings.example_info
+        example_dir = run_settings.example_dir
+        exec_dir = run_settings.exec_dir
+
+        advanced_action_dd = run_settings.advanced_action
+
+        file_picker = run_settings.file_picker
+        file_editor = run_settings.file_editor
+        run_target = run_settings.run_target
+
+        new_example_name = run_settings.new_example_name
+        dataset_upload = run_settings.dataset_upload
+
+        container_source = run_settings.container_source
+        image_uri = run_settings.image_uri
 
         access_mode_dd = W.Dropdown(
             options=[
@@ -1562,40 +1521,16 @@ def build_icesheets_ui():
             layout=W.Layout(width="100%"),
         )
 
-        file_editor = W.Textarea(
-            value="",
-            layout=W.Layout(width="100%", height="280px"),
-        )
-
-        run_target = W.Combobox(
-            placeholder="Select or type run target",
-            options=[],
-            ensure_option=False,
-            layout=W.Layout(width="100%"),
-        )
-
         save_file_btn = W.Button(
             description="Save file",
             icon="save",
             button_style="info",
         )
 
-        new_example_name = W.Text(
-            value="",
-            placeholder="new example name",
-            layout=W.Layout(width="100%"),
-        )
-
         deploy_example_btn = W.Button(
             description="Implement new example",
             icon="copy",
             button_style="warning",
-        )
-
-        dataset_upload = W.FileUpload(
-            accept="",
-            multiple=True,
-            layout=W.Layout(width="100%"),
         )
 
         upload_dataset_btn = W.Button(
@@ -2258,6 +2193,8 @@ def build_icesheets_ui():
             job_name="icesheets",
         )
 
+        cloud_box = cloud_environment.container
+
         aws_region = cloud_environment.region
         aws_profile = cloud_environment.profile
         cloud_bucket = cloud_environment.s3_prefix
@@ -2271,25 +2208,41 @@ def build_icesheets_ui():
         # =========================================================
         # Outputs
         # =========================================================
+
         summary_html = W.HTML()
-        command_preview = W.Textarea(layout=W.Layout(width="100%", height="130px"))
+
+        command_preview = W.Textarea(
+            layout=W.Layout(
+                width="100%",
+                height="130px",
+            )
+        )
+
         connector_setup_link = W.HTML("")
 
-        log_out = W.Output(layout=W.Layout(
-            border="1px solid rgba(0,0,0,.10)",
-            padding="10px",
-            height="340px",
-            overflow="auto",
-            width="100%"
-        ))
+        log_out = W.Output(
+            layout=W.Layout(
+                width="100%",
+                height="100%",
+                min_height="0",
+                flex="1 1 auto",
+                border="1px solid rgba(0,0,0,.10)",
+                padding="10px",
+                overflow_y="auto",
+            )
+        )
 
-        results_out = W.Output(layout=W.Layout(
-            border="1px solid rgba(0,0,0,.10)",
-            padding="10px",
-            height="620px",
-            overflow="auto",
-            width="100%"
-        ))
+        results_out = W.Output(
+            layout=W.Layout(
+                width="100%",
+                height="100%",
+                min_height="0",
+                flex="1 1 auto",
+                border="1px solid rgba(0,0,0,.10)",
+                padding="10px",
+                overflow_y="auto",
+            )
+        )
 
         # =========================================================
         # Helpers
@@ -3094,6 +3047,10 @@ def build_icesheets_ui():
 
             remote_actions.layout.display = "" if is_remote else "none"
             cloud_actions.layout.display = "" if is_cloud else "none"
+            # remote_actions = remote_log_controls
+            # cloud_actions = cloud_log_controls
+            terminate_btn.layout.display = "" if is_remote else "none"
+            cloud_terminate_btn.layout.display = "" if is_cloud else "none"
 
             example_picker_row.layout.display = ""
             example_info_row.layout.display = ""
@@ -3889,7 +3846,9 @@ fi
             while AUTO_TAIL["running"]:
                 try:
                     # run blocking on_tail in a thread (non-blocking for asyncio)
-                    await loop.run_in_executor(None, on_tail, None)
+                    # await loop.run_in_executor(None, on_tail, None)
+                    on_tail()
+                    await asyncio.sleep(5)
 
                 except Exception as e:
                     with log_out:
@@ -3903,17 +3862,25 @@ fi
 
             if change["new"]:
                 AUTO_TAIL["running"] = True
+
                 auto_tail_btn.description = "Stop auto tail"
                 auto_tail_btn.button_style = "warning"
 
-                AUTO_TAIL["task"] = asyncio.create_task(auto_tail_worker())
+                # Immediate first refresh.
+                on_tail(None)
+
+                AUTO_TAIL["task"] = asyncio.create_task(
+                    auto_tail_worker()
+                )
 
             else:
                 AUTO_TAIL["running"] = False
+
                 auto_tail_btn.description = "Auto tail"
                 auto_tail_btn.button_style = "info"
 
                 task = AUTO_TAIL.get("task")
+
                 if task is not None:
                     task.cancel()
                     AUTO_TAIL["task"] = None
@@ -4348,11 +4315,6 @@ fi
         container_source_row = form_row("Source:", container_source)
         image_uri_row = form_row("Image:", image_uri)
 
-        # def form_pair(label: str, widget, label_width: str = "80px"):
-        #     lbl = W.HTML(f"<div class='icesee-lbl'>{label}</div>")
-        #     lbl.layout = W.Layout(width=label_width, min_width=label_width)
-        #     return W.HBox([lbl, widget], layout=W.Layout(gap="10px", width="100%"))
-
         cluster_host_row = form_pair("Host:", cluster_host, "90px")
         cluster_user_row = form_pair("User:", cluster_user, "90px")
         cluster_port_row = form_pair("Port:", cluster_port, "90px")
@@ -4554,18 +4516,6 @@ fi
         
         backend_dd.observe(_toggle_exec_backend_ui, names="value")
         _toggle_exec_backend_ui()
-        # exec_backend_inner = W.VBox([
-        #     form_row("Backend:", backend_dd),
-        #     form_row("Source:", container_source),
-        #     form_row("Image:", image_uri),
-        #     spack_enable,
-        #     form_row("Repo:", spack_repo_url),
-        #     form_row("Dir name:", spack_dirname),
-        #     spack_install_if_needed,
-        #     form_row("Install:", spack_install_mode),
-        #     # form_row("SLURM_DIR:", spack_slurm_dir),
-        #     # form_row("PMIX_DIR:", spack_pmix_dir),
-        # ], layout=W.Layout(gap="8px"))
 
         exec_backend_box = W.Accordion(children=[exec_backend_inner])
         exec_backend_box.set_title(0, "⚙️ Execution backend")
@@ -4584,100 +4534,162 @@ fi
             # connector_panel,
         ], layout=W.Layout(gap="10px"))
 
-        cloud_box = W.VBox([
-            W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>Cloud configuration</div>"),
-            W.HBox([
-                form_pair("Region:", aws_region, "90px"),
-                form_pair("Profile:", aws_profile, "90px"),
-            ], layout=W.Layout(gap="12px", width="100%")),
-            form_pair("S3 prefix:", cloud_bucket, "90px"),
-            W.HBox([
-                form_pair("Queue:", batch_job_queue, "90px"),
-                form_pair("Job def:", batch_job_def, "90px"),
-            ], layout=W.Layout(gap="12px", width="100%")),
-            form_pair("Job name:", batch_job_name, "90px"),
-        ], layout=W.Layout(gap="10px"))
+        run_plan = build_run_plan_panel(
+            summary_widget=summary_html,
+            command_widget=command_preview,
+        )
 
-        left = W.VBox([
-            W.HTML("<div class='icesee-h'>Run settings</div>"),
-            ui_mode_row,
-            mode_row,
-            # backend_row,
-            model_row,
-            example_picker_row,
-            example_info_row,
-            example_row,
-            exec_row,
-            advanced_action_row,
-            file_picker_row,
-            file_editor_row,
-            run_target_row,
-            md_config_panel,
-            new_example_row,
-            advanced_buttons_row,
-            dataset_upload_row,
-            # container_source_row,
-            # image_uri_row,
-            remote_box,
-            cloud_box,
-            W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>Execution summary</div>"),
-            summary_html,
-            W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>Command preview</div>"),
-            command_preview,
-        ], layout=W.Layout(gap="10px"))
+        remote_log_controls = W.HBox(
+            [
+                connect_btn,
+                status_btn,
+                auto_tail_btn,
+            ],
+            layout=W.Layout(
+                width="100%",
+                gap="8px",
+                flex_wrap="wrap",
+                align_items="center",
+            ),
+        )
 
-        left_card = W.VBox([left])
-        left_card.add_class("icesee-card")
-        left_card.add_class("icesee-left")
+        cloud_log_controls = W.HBox(
+            [
+                cloud_status_btn,
+                cloud_logs_btn,
+            ],
+            layout=W.Layout(
+                width="100%",
+                gap="8px",
+                flex_wrap="wrap",
+                align_items="center",
+            ),
+        )
 
-        right = W.VBox([
-            W.HTML("<div class='icesee-h'>Run log</div>"),
-            log_out,
-            W.HTML("<div class='icesee-h' style='margin-top:16px;'>Results preview</div>"),
-            results_out,
-            download_buttons_row,
-        ])
+        log_runtime_controls = W.VBox(
+            [
+                remote_log_controls,
+                cloud_log_controls,
+            ],
+            layout=W.Layout(
+                width="100%",
+                gap="6px",
+                padding="6px 0 0 0",
+            ),
+        )
 
-        right_card = W.VBox([right])
-        right_card.add_class("icesee-card")
-        right_card.add_class("icesee-right")
+        output_workspace = build_output_workspace(
+            log_output=log_out,
+            results_output=results_out,
+            download_controls=download_buttons_row,
+            log_controls=log_runtime_controls,
+        )
 
-        row = W.HBox([left_card, right_card], layout=W.Layout(width="100%", gap="24px"))
-        row.add_class("icesee-grid")
+        run_settings_panel = build_run_settings_panel(
+            configuration_rows=[
+                ui_mode_row,
+                mode_row,
+                model_row,
+                example_picker_row,
+                example_info_row,
+                example_row,
+                exec_row,
+                advanced_action_row,
+                file_picker_row,
+                file_editor_row,
+                run_target_row,
+                md_config_panel,
+                new_example_row,
+                advanced_buttons_row,
+                dataset_upload_row,
+            ],
+            remote_panel=remote_box,
+            cloud_panel=cloud_box,
+            run_plan=run_plan.container,
+        )
+
+        runtime_panel = build_runtime_panel(
+            status_widget=status_chip,
+
+            run_button=run_btn,
+            clear_button=clear_btn,
+
+            remote_connect_button=connect_btn,
+            remote_status_button=status_btn,
+            remote_logs_button=tail_btn,
+            remote_terminate_button=terminate_btn,
+
+            cloud_status_button=cloud_status_btn,
+            cloud_logs_button=cloud_logs_btn,
+            cloud_terminate_button=cloud_terminate_btn,
+        )
+
+        actions_card = runtime_panel.container
+
+        # Compatibility aliases
+        # remote_actions = runtime_panel.remote_actions
+        # cloud_actions = runtime_panel.cloud_actions
+        remote_actions = remote_log_controls
+        cloud_actions = cloud_log_controls
+
+        left_card = W.VBox(
+            [
+                run_settings_panel,
+                actions_card,
+            ],
+            layout=W.Layout(
+                width="46%",
+                min_width="0",
+                gap="12px",
+            ),
+        )
+
+        left_card.add_class(
+            "icesee-card"
+        )
+
+        left_card.add_class(
+            "icesee-left"
+        )
+
+        right_card = W.VBox(
+            [
+                output_workspace.container,
+            ],
+            layout=W.Layout(
+                width="54%",
+                min_width="0",
+                height="100%",
+                min_height="0",
+                flex="1 1 auto",
+            ),
+        )
+
+        right_card.add_class(
+            "icesee-card"
+        )
+
+        right_card.add_class(
+            "icesee-right"
+        )
+
+        row = W.HBox(
+            [
+                left_card,
+                right_card,
+            ],
+            layout=W.Layout(
+                width="100%",
+                gap="16px",
+                align_items="stretch",
+            ),
+        )
+
+        row.add_class(
+            "icesee-grid"
+        )
 
         auto_tail_btn.observe(on_auto_tail_change, names="value")
-
-        remote_actions = W.HBox(
-            [connect_btn, status_btn, tail_btn, terminate_btn],
-            layout=W.Layout(gap="10px", flex_wrap="wrap")
-        )
-
-        cloud_actions = W.HBox(
-                            [
-                                cloud_status_btn,
-                                cloud_logs_btn,
-                                cloud_terminate_btn,
-                            ],
-                            layout=W.Layout(
-                                gap="10px"
-                            ),
-                        )
-
-        actions = W.HBox(
-            [run_btn, clear_btn, status_chip],
-            layout=W.Layout(gap="12px", align_items="center")
-        )
-        actions.add_class("icesee-actions")
-
-        actions_card = W.VBox([
-            W.HTML("<div class='icesee-h'>Status</div>"),
-            actions,
-            W.HTML("<div class='icesee-subtle' style='margin-top:10px;'>Remote job controls</div>"),
-            remote_actions,
-            W.HTML("<div class='icesee-subtle' style='margin-top:10px;'>Cloud job controls</div>"),
-            cloud_actions,
-        ])
-        actions_card.add_class("icesee-card")
 
         def _toggle_auth_widgets(_=None):
             show = (auth_mode.value == "bootstrap")
@@ -4693,7 +4705,7 @@ fi
         page = W.VBox(
             [
                 shared_styles,
-                W.HTML(css),
+                # W.HTML(css),
                 W.HTML(CRYOSTACK_FRONTEND_CSS),
 
                 experiment_bridge.widget(),
@@ -4702,7 +4714,7 @@ fi
                 app_menu,
                 header,
                 row,
-                actions_card,
+                # actions_card,
                 back_link,
             ],
             layout=W.Layout(width="100%"),
