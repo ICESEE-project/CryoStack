@@ -2543,23 +2543,6 @@ def build_icesheets_ui():
 
             run_target.value = Path(selected_file).name
 
-        def display_download_button(path: Path, label: str):
-            href = path.as_posix()
-            display(W.HTML(f"""
-            <a href="files/{href}" download
-            style="
-                display:inline-block;
-                background:#28a745;
-                color:white;
-                padding:8px 14px;
-                border-radius:6px;
-                text-decoration:none;
-                font-weight:700;
-                margin-top:8px;">
-            ⬇ {label}
-            </a>
-            """))
-
         def on_check_backend(_=None):
             log_out.clear_output()
             status_chip.value = status_html("running")
