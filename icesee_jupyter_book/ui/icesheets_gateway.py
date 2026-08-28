@@ -17,6 +17,7 @@ import base64
 
 import ipywidgets as W
 from IPython.display import display, Image
+from uuid import uuid4
 
 from icesee_jupyter_book.core.icesheet_examples import (
     examples_as_dropdown_options,
@@ -73,9 +74,11 @@ from icesee_jupyter_book.ui.experiment_bridge import (
 )
 
 from icesee_jupyter_book.ui.workspace_bridge import (
-    WorkspaceBridge,
+    WorkspaceBridge as WorkspacePersistenceBridge,
     load_workspace_bridge,
 )
+
+from cryostack_src.workspace import WorkspaceBridge, RunInfo
 
 from icesee_jupyter_book.core.experiment_status import (
     experiment_update_from_job_status,
@@ -1481,7 +1484,9 @@ def build_icesheets_ui():
 
         load_workspace_bridge()
 
-        workspace_bridge = WorkspaceBridge()
+        workspace_bridge = WorkspaceBridge(
+            persistence=WorkspacePersistenceBridge(),
+        )
 
         # =========================================================
         # State
@@ -3353,6 +3358,24 @@ def build_icesheets_ui():
                 STATUS["remote_dir"] = result["remote_dir"]
                 STATUS["jobid"] = result["jobid"]
                 STATUS["log_file"] = result.get("log_file")
+
+                workspace_bridge.register_run(
+                    RunInfo(
+                        id=str(uuid4()),
+                        name=Path(STATUS["remote_dir"]).name,
+                        model=model_dd.value,
+                        backend=backend_dd.value,
+                        execution_mode=mode_dd.value,
+                        status="running",
+                        jobid=STATUS["jobid"],
+                        remote_directory=Path(STATUS["remote_dir"]),
+                        log_file=(
+                            Path(STATUS["log_file"])
+                            if STATUS.get("log_file")
+                            else None
+                        ),
+                    )
+                )
 
                 experiment_bridge.create(
                     application="cryolauncher",
