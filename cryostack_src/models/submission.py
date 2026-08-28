@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from icesee_jupyter_book.core.remote_runner import (
