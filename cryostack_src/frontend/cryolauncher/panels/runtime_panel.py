@@ -38,17 +38,9 @@ class RuntimePanel:
 def build_runtime_panel(
     *,
     status_widget: W.Widget,
-
     run_button: W.Button,
-    clear_button: W.Button,
 
-    remote_connect_button: W.Button,
-    remote_status_button: W.Button,
-    remote_logs_button: W.Widget,
     remote_terminate_button: W.Button,
-
-    cloud_status_button: W.Button,
-    cloud_logs_button: W.Button,
     cloud_terminate_button: W.Button,
 ) -> RuntimePanel:
 
@@ -103,7 +95,7 @@ def build_runtime_panel(
 
     terminate_controls = W.HBox(
         [
-           remote_terminate_button,
+            remote_terminate_button,
             cloud_terminate_button,
         ],
         layout=W.Layout(
@@ -114,7 +106,6 @@ def build_runtime_panel(
     primary_actions = W.HBox(
         [
             run_button,
-            clear_button,
             terminate_controls,
         ],
         layout=W.Layout(

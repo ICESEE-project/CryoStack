@@ -291,5 +291,161 @@ CRYOSTACK_FRONTEND_CSS = r"""
 
 }
 
+.icesee-grid {
+    display: grid !important;
+    grid-template-columns:
+        minmax(0, 46fr)
+        minmax(0, 54fr);
+
+    gap: 16px;
+    align-items: stretch;
+}
+
+/*
+ * Left side determines the height of the grid row.
+ */
+.icesee-left {
+    min-width: 0;
+    min-height: 0;
+}
+
+/*
+ * Right side occupies exactly the grid-row height,
+ * but its contents do not contribute to that height.
+ */
+.icesee-right {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/*
+ * Fill the right-hand grid cell without increasing
+ * the height of the parent grid.
+ */
+.icesee-right > .widget-vbox {
+    position: absolute;
+    inset: 0;
+
+    width: 100%;
+    height: 100%;
+
+    min-width: 0;
+    min-height: 0;
+
+    overflow: hidden;
+}
+
+@media (max-width: 1000px) {
+    .icesee-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /*
+     * Return to normal document flow on small screens.
+     */
+    .icesee-right {
+        position: static;
+        min-height: 600px;
+    }
+
+    .icesee-right > .widget-vbox {
+        position: static;
+
+        width: 100%;
+        height: auto;
+
+        min-height: 600px;
+    }
+}
+
+.cryostack-output-workspace {
+    display: flex !important;
+    flex-direction: column;
+
+    width: 100%;
+    height: 100%;
+
+    min-height: 0;
+
+    overflow: hidden;
+}
+
+.cryostack-output-tabs {
+    flex: 1 1 auto;
+
+    width: 100%;
+    min-height: 0;
+
+    overflow: hidden;
+}
+
+/*
+ * Each selected tab fills the available workspace.
+ */
+.cryostack-output-tab {
+    display: flex !important;
+    flex-direction: column;
+
+    width: 100%;
+    height: 100%;
+
+    min-height: 0;
+
+    overflow: hidden;
+}
+
+/*
+ * Log/output widget is the scrollable terminal area.
+ */
+.cryostack-output-tab .jupyter-widgets-output-area {
+    flex: 1 1 auto;
+
+    min-height: 0;
+
+    overflow-y: auto !important;
+    overflow-x: auto !important;
+}
+
+.cryostack-right-workspace {
+    overflow: hidden !important;
+    min-height: 0 !important;
+}
+
+.cryostack-output-workspace {
+    height: 100% !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+.cryostack-output-tabs {
+    flex: 1 1 0 !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+}
+
+.cryostack-output-tab {
+    height: 100% !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+}
+
+.cryostack-live-log {
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: auto !important;
+}
+
+.cryostack-live-log .jupyter-widgets-output-area {
+    height: 100%;
+    min-height: 0;
+    overflow-y: auto !important;
+    overflow-x: auto !important;
+}
+
 </style>
 """

@@ -10,6 +10,8 @@ import subprocess
 from pathlib import Path
 from IPython.display import FileLink
 
+from tornado.ioloop import PeriodicCallback
+
 from IPython.display import HTML
 import base64
 
@@ -2223,25 +2225,96 @@ def build_icesheets_ui():
         log_out = W.Output(
             layout=W.Layout(
                 width="100%",
-                height="100%",
                 min_height="0",
-                flex="1 1 auto",
+                flex="1 1 0",
+                overflow_y="auto",
+                overflow_x="auto",
                 border="1px solid rgba(0,0,0,.10)",
                 padding="10px",
-                overflow_y="auto",
             )
         )
 
         results_out = W.Output(
             layout=W.Layout(
                 width="100%",
-                height="100%",
                 min_height="0",
-                flex="1 1 auto",
+                flex="1 1 0",
+                overflow_y="auto",
+                overflow_x="auto",
                 border="1px solid rgba(0,0,0,.10)",
                 padding="10px",
-                overflow_y="auto",
             )
+        )
+
+        log_out.add_class("cryostack-live-log")
+        results_out.add_class("cryostack-live-log")
+
+        auto_scroll_script = W.HTML(
+            """
+            <script>
+            (() => {
+
+                function installCryoStackLogScroll() {
+
+                    const root = document.querySelector(
+                        ".cryostack-live-log"
+                    );
+
+                    if (!root) {
+                        setTimeout(
+                            installCryoStackLogScroll,
+                            250
+                        );
+                        return;
+                    }
+
+                    if (
+                        root.dataset.cryoAutoScroll === "1"
+                    ) {
+                        return;
+                    }
+
+                    root.dataset.cryoAutoScroll = "1";
+
+                    const findScroller = () => {
+                        return (
+                            root.querySelector(
+                                ".jupyter-widgets-output-area"
+                            )
+                            || root
+                        );
+                    };
+
+                    const scrollToBottom = () => {
+                        const scroller = findScroller();
+
+                        requestAnimationFrame(() => {
+                            scroller.scrollTop =
+                                scroller.scrollHeight;
+                        });
+                    };
+
+                    const observer = new MutationObserver(
+                        scrollToBottom
+                    );
+
+                    observer.observe(
+                        root,
+                        {
+                            childList: true,
+                            subtree: true,
+                            characterData: true
+                        }
+                    );
+
+                    scrollToBottom();
+                }
+
+                installCryoStackLogScroll();
+
+            })();
+            </script>
+            """
         )
 
         # =========================================================
@@ -3072,6 +3145,27 @@ def build_icesheets_ui():
             if is_remote and access_mode_dd.value == "connector" and SESSION.get("id") is None:
                 create_or_refresh_connector_session()
 
+            if is_remote:
+                log_runtime_controls.children = (
+                    connect_btn,
+                    status_btn,
+                    tail_btn,
+                    # auto_tail_btn,
+                    clear_btn,
+                )
+
+            elif is_cloud:
+                log_runtime_controls.children = (
+                    cloud_status_btn,
+                    cloud_logs_btn,
+                    clear_btn,
+                )
+
+            else:
+                log_runtime_controls.children = (
+                    clear_btn,
+                )
+
             update_summary()
 
         def update_summary(_=None):
@@ -3752,6 +3846,10 @@ def build_icesheets_ui():
                     )
 
         def on_tail(_=None):
+
+            with log_out:
+                print("[debug] on_tail invoked")
+
             log_out.clear_output()
 
             rdir = normalize_remote_path(STATUS.get("remote_dir") or "")
@@ -3841,50 +3939,111 @@ fi
 
 
         async def auto_tail_worker():
-            loop = asyncio.get_running_loop()
+            """
+            Automatically invoke the existing manual tail logic
+            without blocking the Voilà event loop.
+            """
 
-            while AUTO_TAIL["running"]:
-                try:
-                    # run blocking on_tail in a thread (non-blocking for asyncio)
-                    # await loop.run_in_executor(None, on_tail, None)
-                    on_tail()
-                    await asyncio.sleep(5)
+            try:
+                while AUTO_TAIL["running"]:
 
-                except Exception as e:
-                    with log_out:
-                        print("[auto-tail][ERROR]", type(e).__name__, e)
+                    #
+                    # Run the existing synchronous on_tail()
+                    # in a worker thread.
+                    #
+                    await asyncio.to_thread(
+                        on_tail,
+                        None,
+                    )
 
-                await asyncio.sleep(5)
+                    #
+                    # Responsive wait: 5 seconds total,
+                    # but check every 0.25 seconds so Stop
+                    # reacts quickly.
+                    #
+                    for _ in range(20):
+
+                        if not AUTO_TAIL["running"]:
+                            return
+
+                        await asyncio.sleep(0.25)
+
+            except asyncio.CancelledError:
+                pass
+
+            except Exception as e:
+                with log_out:
+                    print(
+                        "[auto-tail][ERROR]",
+                        type(e).__name__,
+                        e,
+                    )
+
+            finally:
+                AUTO_TAIL["running"] = False
+                AUTO_TAIL["task"] = None
 
         def on_auto_tail_change(change):
-            if change["name"] != "value":
+            """
+            Start or stop automatic log refresh.
+            """
+
+            if change.get("name") != "value":
                 return
 
             if change["new"]:
+
+                current_task = AUTO_TAIL.get(
+                    "task"
+                )
+
+                if (
+                    current_task is not None
+                    and not current_task.done()
+                ):
+                    return
+
                 AUTO_TAIL["running"] = True
 
-                auto_tail_btn.description = "Stop auto tail"
-                auto_tail_btn.button_style = "warning"
+                auto_tail_btn.description = (
+                    "Stop auto tail"
+                )
 
-                # Immediate first refresh.
-                on_tail(None)
+                auto_tail_btn.icon = "stop"
 
-                AUTO_TAIL["task"] = asyncio.create_task(
+                auto_tail_btn.button_style = (
+                    "warning"
+                )
+
+                loop = asyncio.get_running_loop()
+
+                AUTO_TAIL["task"] = loop.create_task(
                     auto_tail_worker()
                 )
 
             else:
+
                 AUTO_TAIL["running"] = False
 
-                auto_tail_btn.description = "Auto tail"
-                auto_tail_btn.button_style = "info"
-
-                task = AUTO_TAIL.get("task")
+                task = AUTO_TAIL.get(
+                    "task"
+                )
 
                 if task is not None:
                     task.cancel()
-                    AUTO_TAIL["task"] = None
 
+                AUTO_TAIL["task"] = None
+
+                auto_tail_btn.description = (
+                    "Auto tail"
+                )
+
+                auto_tail_btn.icon = "refresh"
+
+                auto_tail_btn.button_style = (
+                    "info"
+                )
+        
         def on_terminate(_=None):
             log_out.clear_output()
             jobid = STATUS.get("jobid")
@@ -4543,7 +4702,9 @@ fi
             [
                 connect_btn,
                 status_btn,
-                auto_tail_btn,
+                # auto_tail_btn,
+                tail_btn,
+                clear_btn,
             ],
             layout=W.Layout(
                 width="100%",
@@ -4557,6 +4718,7 @@ fi
             [
                 cloud_status_btn,
                 cloud_logs_btn,
+                clear_btn,
             ],
             layout=W.Layout(
                 width="100%",
@@ -4566,15 +4728,12 @@ fi
             ),
         )
 
-        log_runtime_controls = W.VBox(
-            [
-                remote_log_controls,
-                cloud_log_controls,
-            ],
+        log_runtime_controls = W.HBox(
             layout=W.Layout(
                 width="100%",
-                gap="6px",
-                padding="6px 0 0 0",
+                gap="8px",
+                flex_wrap="wrap",
+                align_items="center",
             ),
         )
 
@@ -4612,15 +4771,15 @@ fi
             status_widget=status_chip,
 
             run_button=run_btn,
-            clear_button=clear_btn,
+            # clear_button=clear_btn,
 
-            remote_connect_button=connect_btn,
-            remote_status_button=status_btn,
-            remote_logs_button=tail_btn,
+            # remote_connect_button=connect_btn,
+            # remote_status_button=status_btn,
+            # remote_logs_button=tail_btn,
             remote_terminate_button=terminate_btn,
 
-            cloud_status_button=cloud_status_btn,
-            cloud_logs_button=cloud_logs_btn,
+            # cloud_status_button=cloud_status_btn,
+            # cloud_logs_button=cloud_logs_btn,
             cloud_terminate_button=cloud_terminate_btn,
         )
 
@@ -4638,7 +4797,7 @@ fi
                 actions_card,
             ],
             layout=W.Layout(
-                width="46%",
+                width="100%",
                 min_width="0",
                 gap="12px",
             ),
@@ -4657,11 +4816,10 @@ fi
                 output_workspace.container,
             ],
             layout=W.Layout(
-                width="54%",
+                width="100%",
                 min_width="0",
-                height="100%",
                 min_height="0",
-                flex="1 1 auto",
+                overflow="hidden",
             ),
         )
 
@@ -4673,6 +4831,9 @@ fi
             "icesee-right"
         )
 
+        left_card.add_class("cryostack-left-workspace")
+        right_card.add_class("cryostack-right-workspace")
+
         row = W.HBox(
             [
                 left_card,
@@ -4680,13 +4841,70 @@ fi
             ],
             layout=W.Layout(
                 width="100%",
-                gap="16px",
-                align_items="stretch",
+                # gap="16px",
+                # align_items="stretch",
             ),
         )
 
         row.add_class(
             "icesee-grid"
+        )
+
+        workspace_height_sync = W.HTML(
+            """
+            <script>
+            (() => {
+                function setupCryoStackWorkspaceSync() {
+                    const left = document.querySelector(
+                        ".cryostack-left-workspace"
+                    );
+
+                    const right = document.querySelector(
+                        ".cryostack-right-workspace"
+                    );
+
+                    if (!left || !right) {
+                        setTimeout(
+                            setupCryoStackWorkspaceSync,
+                            250
+                        );
+                        return;
+                    }
+
+                    if (right.dataset.heightSyncAttached === "1") {
+                        return;
+                    }
+
+                    right.dataset.heightSyncAttached = "1";
+
+                    const syncHeight = () => {
+                        const height = left.getBoundingClientRect().height;
+
+                        if (height > 0) {
+                            right.style.height = `${height}px`;
+                            right.style.maxHeight = `${height}px`;
+                            right.style.minHeight = `${height}px`;
+                        }
+                    };
+
+                    syncHeight();
+
+                    const observer = new ResizeObserver(
+                        syncHeight
+                    );
+
+                    observer.observe(left);
+
+                    window.addEventListener(
+                        "resize",
+                        syncHeight
+                    );
+                }
+
+                setupCryoStackWorkspaceSync();
+            })();
+            </script>
+            """
         )
 
         auto_tail_btn.observe(on_auto_tail_change, names="value")
@@ -4706,6 +4924,7 @@ fi
             [
                 shared_styles,
                 # W.HTML(css),
+                auto_scroll_script,
                 W.HTML(CRYOSTACK_FRONTEND_CSS),
 
                 experiment_bridge.widget(),
@@ -4714,6 +4933,7 @@ fi
                 app_menu,
                 header,
                 row,
+                workspace_height_sync,
                 # actions_card,
                 back_link,
             ],

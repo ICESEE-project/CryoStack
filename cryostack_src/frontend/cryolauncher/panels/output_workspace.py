@@ -56,48 +56,6 @@ def build_output_workspace(
             log_controls
         )
 
-    logs_panel = W.VBox(
-        log_children,
-        layout=W.Layout(
-            width="100%",
-            height="100%",
-            min_height="0",
-            flex="1 1 auto",
-            gap="8px",
-        ),
-    )
-
-    results_panel = W.VBox(
-        [
-            results_output,
-            download_controls,
-        ],
-        layout=W.Layout(
-            width="100%",
-            height="100%",
-            min_height="0",
-            flex="1 1 auto",
-            gap="8px",
-            overflow="hidden",
-        ),
-    )
-
-    tabs = W.Tab(
-        children=[
-            logs_panel,
-            results_panel,
-        ],
-        layout=W.Layout(
-            width="100%",
-            height="100%",
-            min_height="0",
-            flex="1 1 auto",
-        ),
-    )
-
-    tabs.set_title(0, "Run log")
-    tabs.set_title(1, "Results")
-
     heading = W.HTML(
         """
         <div style="margin-bottom:4px;">
@@ -124,6 +82,43 @@ def build_output_workspace(
         """
     )
 
+    logs_panel = W.VBox(
+        log_children,
+        layout=W.Layout(
+            width="100%",
+            min_height="0",
+            gap="8px",
+            overflow="hidden",
+        ),
+    )
+
+    results_panel = W.VBox(
+        [
+            results_output,
+            download_controls,
+        ],
+        layout=W.Layout(
+            width="100%",
+            min_height="0",
+            gap="8px",
+            overflow="hidden",
+        ),
+    )
+
+    tabs = W.Tab(
+        children=[
+            logs_panel,
+            results_panel,
+        ],
+        layout=W.Layout(
+            width="100%",
+            min_height="0",
+        ),
+    )
+
+    tabs.set_title(0, "Run log")
+    tabs.set_title(1, "Results")
+
     container = W.VBox(
         [
             heading,
@@ -131,11 +126,26 @@ def build_output_workspace(
         ],
         layout=W.Layout(
             width="100%",
-            height="100%",
             min_height="0",
-            flex="1 1 auto",
             gap="8px",
+            overflow="hidden",
         ),
+    )
+
+    logs_panel.add_class(
+    "cryostack-output-tab"
+    )
+
+    results_panel.add_class(
+        "cryostack-output-tab"
+    )
+
+    tabs.add_class(
+        "cryostack-output-tabs"
+    )
+
+    container.add_class(
+        "cryostack-output-workspace"
     )
 
     return OutputWorkspace(
