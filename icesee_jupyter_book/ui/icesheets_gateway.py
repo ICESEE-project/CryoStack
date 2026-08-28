@@ -297,45 +297,7 @@ app_menu = build_icesheets_app_menu()
 shared_styles = shared_application_styles()
 
 def build_issm_md_config_script(md_config: dict) -> str:
-    lines = [
-        "disp('[ICESEE-GUI] Applying editable md configuration...');",
-        "if ~exist('md','var')",
-        "    disp('[ICESEE-GUI][WARN] md does not exist yet. Skipping md configuration.');",
-        "    return;",
-        "end",
-    ]
-
-    for key, item in (md_config or {}).items():
-        key = str(key).strip()
-        if not key:
-            continue
-
-        target = key if key.startswith("md.") else f"md.{key}"
-
-        if isinstance(item, dict):
-            raw_value = str(item.get("value", "")).strip()
-            vtype = item.get("type", "string")
-        else:
-            raw_value = str(item).strip()
-            vtype = "string"
-
-        if vtype == "number":
-            matlab_val = raw_value
-        elif vtype == "bool":
-            matlab_val = "true" if raw_value.lower() in {"true", "1", "yes", "on"} else "false"
-        elif vtype == "expr":
-            matlab_val = raw_value
-        else:
-            matlab_val = "'" + raw_value.replace("'", "''") + "'"
-
-        lines.append("try")
-        lines.append(f"    {target} = {matlab_val};")
-        lines.append(f"    disp('[ICESEE-GUI] set {target} = {raw_value}');")
-        lines.append("catch ME")
-        lines.append(f"    disp(['[ICESEE-GUI][WARN] could not set {target}: ' ME.message]);")
-        lines.append("end")
-
-    return "\n".join(lines) + "\n"
+    return get_model_adapter("issm").build_configuration_script(md_config)
 
 def build_issm_postprocess_script() -> str:
     return r"""
@@ -2353,36 +2315,15 @@ def build_icesheets_ui():
         def refresh_run_target_options(_=None):
             files = list_editable_files(example_dir.value.strip())
             opts = [Path(v).name for _, v in files if v]
-
-            preferred = []
-            others = []
-
-            for name in opts:
-                lower = name.lower()
-                if lower == "runme.m":
-                    preferred.append(name)
-                elif lower.endswith(".m"):
-                    preferred.append(name)
-                elif lower.endswith(".py"):
-                    preferred.append(name)
-                elif lower.endswith(".ipynb"):
-                    preferred.append(name)
-                else:
-                    others.append(name)
-
-            final_opts = preferred + others
+            adapter = get_model_adapter(model_dd.value)
+            final_opts = adapter.order_run_targets(opts)
             run_target.options = final_opts
 
             current = (run_target.value or "").strip()
             if current and current in final_opts:
                 return
 
-            if "runme.m" in final_opts:
-                run_target.value = "runme.m"
-            elif final_opts:
-                run_target.value = final_opts[0]
-            else:
-                run_target.value = ""
+            run_target.value = adapter.choose_run_target(final_opts)
                 
         def auto_set_run_target(_=None):
             current = (run_target.value or "").strip()
@@ -2394,28 +2335,7 @@ def build_icesheets_ui():
                 run_target.value = ""
                 return
 
-            # best default preference
-            for preferred in ("runme.m",):
-                if preferred in opts:
-                    run_target.value = preferred
-                    return
-
-            for name in opts:
-                if name.endswith(".m"):
-                    run_target.value = name
-                    return
-
-            for name in opts:
-                if name.endswith(".py"):
-                    run_target.value = name
-                    return
-
-            for name in opts:
-                if name.endswith(".ipynb"):
-                    run_target.value = name
-                    return
-
-            run_target.value = opts[0]
+            run_target.value = get_model_adapter(model_dd.value).choose_run_target(opts)
 
         def load_selected_file(_=None):
             workspace_manager.load_file()

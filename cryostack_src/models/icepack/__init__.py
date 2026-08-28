@@ -1,6 +1,6 @@
 from .configuration import build_environment_check, validate_configuration
-from .execution import build_activation_check, build_run_command
+from .execution import build_activation_check, build_run_command, choose_run_target, order_run_targets
 from .postprocess import build_postprocess
 from .slurm import build_container_fragment, build_slurm_script
 
-__all__ = ["build_run_command", "build_slurm_script", "build_postprocess", "validate_configuration", "build_environment_check", "build_activation_check", "build_container_fragment"]
+__all__ = ["build_run_command", "build_slurm_script", "build_postprocess", "validate_configuration", "build_environment_check", "build_activation_check", "build_container_fragment", "choose_run_target", "order_run_targets"]

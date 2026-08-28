@@ -21,3 +21,20 @@ def build_run_command(*, backend, target, example_dir, exec_dir, image_uri, ntas
 
 def build_activation_check() -> str:
     return 'python -c "import icepack; print(\'Icepack import successful\')"'
+
+
+def order_run_targets(names):
+    preferred = [name for name in names if name.lower().endswith((".m", ".py", ".ipynb"))]
+    others = [name for name in names if not name.lower().endswith((".m", ".py", ".ipynb"))]
+    return preferred + others
+
+
+def choose_run_target(names):
+    ordered = order_run_targets(names)
+    if "runme.m" in ordered:
+        return "runme.m"
+    for suffix in (".m", ".py", ".ipynb"):
+        for name in ordered:
+            if name.endswith(suffix):
+                return name
+    return ordered[0] if ordered else ""
