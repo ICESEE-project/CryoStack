@@ -42,6 +42,10 @@ class WorkspaceManager:
         access_mode,
         normalize_remote_path,
         connector_fetch_archive,
+        should_use_connector,
+        connector_ssh,
+        ssh_run,
+        cluster_name,
     ) -> None:
         self.status = status
         self.session = session
@@ -58,6 +62,10 @@ class WorkspaceManager:
         self.access_mode = access_mode
         self.normalize_remote_path = normalize_remote_path
         self.connector_fetch_archive = connector_fetch_archive
+        self.should_use_connector = should_use_connector
+        self.connector_ssh = connector_ssh
+        self.ssh_run = ssh_run
+        self.cluster_name = cluster_name
 
     def list_editable_files(self, example_path: str) -> list[tuple[str, str]]:
         return list_editable_files(example_path)
@@ -84,6 +92,17 @@ class WorkspaceManager:
         if path.exists():
             return path if path.is_dir() else path.parent
         return None
+
+    def delete(self, path: Path) -> None:
+        """Delete one explicitly resolved workspace path."""
+        path = Path(path)
+        if path.is_dir():
+            shutil.rmtree(path)
+        elif path.exists():
+            path.unlink()
+
+    def refresh(self) -> Path | None:
+        return self.refresh_results()
 
     def clone_example(self, new_name: str) -> Path | None:
         self.log_output.clear_output()
@@ -169,7 +188,7 @@ class WorkspaceManager:
         port = int(self.cluster_port.value)
         outputs_dir = self.local_run_cache_dir() / "outputs"
         if outputs_dir.exists():
-            shutil.rmtree(outputs_dir)
+            self.delete(outputs_dir)
         outputs_dir.mkdir(parents=True, exist_ok=True)
         remote_outputs = self.remote_outputs_dir()
         if self.access_mode.value == "connector":
@@ -196,7 +215,7 @@ class WorkspaceManager:
                     archive_path = Path(temp_dir) / "outputs.tar.gz"
                     archive_path.write_bytes(base64.b64decode(archive_b64))
                     if outputs_dir.exists():
-                        shutil.rmtree(outputs_dir)
+                        self.delete(outputs_dir)
                     outputs_dir.mkdir(parents=True, exist_ok=True)
                     with tarfile.open(archive_path, "r:gz") as archive:
                         archive.extractall(outputs_dir)
@@ -254,7 +273,7 @@ class WorkspaceManager:
         zip_path = self.local_run_cache_dir() / "results_bundle.zip"
         try:
             if zip_path.exists():
-                zip_path.unlink()
+                self.delete(zip_path)
             self._make_zip(outputs_dir, zip_path)
             if not zipfile.is_zipfile(zip_path):
                 raise RuntimeError(f"Created file is not a valid zip: {zip_path}")
@@ -279,14 +298,14 @@ class WorkspaceManager:
             return
         figures_dir = self.local_run_cache_dir() / "_figures_only"
         if figures_dir.exists():
-            shutil.rmtree(figures_dir)
+            self.delete(figures_dir)
         figures_dir.mkdir(parents=True, exist_ok=True)
         for path in pngs:
             shutil.copy2(path, figures_dir / path.name)
         zip_path = self.local_run_cache_dir() / "figures_bundle.zip"
         try:
             if zip_path.exists():
-                zip_path.unlink()
+                self.delete(zip_path)
             self._make_zip(figures_dir, zip_path)
             if not zipfile.is_zipfile(zip_path):
                 raise RuntimeError(f"Created file is not a valid zip: {zip_path}")
@@ -300,6 +319,7 @@ class WorkspaceManager:
 
     def preview_results(self, _=None) -> None:
         self.results_output.clear_output()
+        remote_check = self.inspect_remote_results()
         outputs_dir = self.refresh_results()
         if outputs_dir is None:
             return
@@ -308,22 +328,62 @@ class WorkspaceManager:
         h5s = sorted(outputs_dir.rglob("*.h5"))
         all_files = sorted(path for path in outputs_dir.rglob("*") if path.is_file())
         with self.results_output:
-            print("Fetched remote outputs to:")
-            print(outputs_dir)
-            print()
-            print(f"Files found: {len(all_files)}")
-            for path in all_files[:200]:
-                print(" -", path.relative_to(outputs_dir))
-            print()
-            print(f"MAT files: {len(mats)}")
-            for path in mats[:50]:
-                print(" -", path.relative_to(outputs_dir))
-            print()
-            print(f"HDF5 files: {len(h5s)}")
-            for path in h5s[:50]:
-                print(" -", path.relative_to(outputs_dir))
-            print()
-            print(f"PNG figures: {len(pngs)}")
-            for path in pngs[:20]:
-                print(" -", path.relative_to(outputs_dir))
-                display(Image(filename=str(path)))
+            print("Fetched outputs:", outputs_dir)
+            print(f"Figures: {len(pngs)}")
+            print(f"Model files: {len(mats)}")
+            print(f"H5 files: {len(h5s)}\n")
+            if all_files:
+                print("Output tree:")
+                for path in all_files[:40]:
+                    print(" -", path.relative_to(outputs_dir))
+                print()
+            if pngs:
+                print("Found figures at:")
+                for path in pngs[:10]:
+                    print(" -", path)
+            if pngs:
+                print("Preview figures:")
+                for path in pngs:
+                    print("\n", path.name)
+                    display(Image(filename=str(path)))
+            else:
+                print("No PNG figures found locally after fetch.\n")
+                print("--- Remote inspection ---")
+                print((remote_check.stdout or "").strip())
+                if (remote_check.stderr or "").strip():
+                    print("--- stderr ---")
+                    print(remote_check.stderr.strip())
+
+    def inspect_remote_results(self):
+        remote_dir = self.normalize_remote_path(self.status.get("remote_dir") or "")
+        outputs = f"{remote_dir}/outputs"
+        host = self.cluster_host.value.strip()
+        user = self.cluster_user.value.strip()
+        port = int(self.cluster_port.value)
+        command = f'''
+        set -e
+        echo "[remote] run dir : {remote_dir}"
+        echo "[remote] outputs : {outputs}"
+        echo
+
+        echo "[remote] output tree:"
+        find "{outputs}" -maxdepth 5 -print || true
+
+        echo
+        echo "[remote] png/mat/h5 files:"
+        find "{outputs}" -maxdepth 6 -type f \\( -name "*.png" -o -name "*.mat" -o -name "*.h5" \\) -print || true
+        '''
+        if self.should_use_connector():
+            payload = self.connector_ssh(
+                self.session["id"], host, user, port, command,
+                timeout=300,
+                cluster_name=self.cluster_name.value or "pace",
+            )
+
+            class Result:
+                returncode = 0 if payload.get("ok") else 1
+                stdout = payload.get("stdout", "")
+                stderr = payload.get("stderr", "")
+
+            return Result()
+        return self.ssh_run(host, user, port, command, timeout=30)

@@ -2446,6 +2446,10 @@ def build_icesheets_ui():
             access_mode=access_mode_dd,
             normalize_remote_path=normalize_remote_path,
             connector_fetch_archive=connector_fetch_archive,
+            should_use_connector=lambda: should_use_connector(),
+            connector_ssh=connector_ssh,
+            ssh_run=ssh_run,
+            cluster_name=cluster_name_for_keys,
         )
 
         def list_editable_files(example_path: str) -> list[tuple[str, str]]:
