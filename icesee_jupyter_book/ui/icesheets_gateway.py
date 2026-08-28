@@ -21,9 +21,6 @@ from icesee_jupyter_book.core.icesheet_examples import (
 )
 from icesee_jupyter_book.core.remote_runner import (
     ssh_run,
-    remote_test_connection,
-    remote_job_status,
-    remote_cancel_job,
     slurm_optional_lines,
     remote_ensure_spack,
     remote_maybe_install_spack,
@@ -86,7 +83,7 @@ from cryostack_src.frontend.cryolauncher.cloud_runtime import (
 from cryostack_src.frontend.cryolauncher.remote_runtime import (
     build_remote_runtime_callbacks,
 )
-from cryostack_src.remote.bridge import RemoteBridge
+from cryostack_src.remote import RemoteBridge, expand_remote_home, normalize_remote_path
 
 from cryostack_src.frontend.cryolauncher.panels import (
     build_logs_panel,
@@ -297,28 +294,6 @@ session_bridge = W.HTML("""
 
 app_menu = build_icesheets_app_menu()
 shared_styles = shared_application_styles()
-
-def expand_remote_home(path: str) -> str:
-    if path is None:
-        return ""
-    path = str(path).strip()
-    if not path:
-        return ""
-    return path
-
-def make_remote_run_dir(base_dir="~/r-arobel3-0", tag="icesee") -> str:
-    import time
-    ts = time.strftime("%Y%m%d-%H%M%S")
-    base = str(base_dir).rstrip("/")
-    return f"{base}/{tag}-{ts}"
-
-def normalize_remote_path(path: str) -> str:
-    path = expand_remote_home(path)
-    if not path:
-        return ""
-    while "//" in path:
-        path = path.replace("//", "/")
-    return path
 
 def build_issm_md_config_script(md_config: dict) -> str:
     lines = [
@@ -2559,10 +2534,6 @@ def build_icesheets_ui():
             log_out.clear_output()
             status_chip.value = status_html("running")
 
-            host = cluster_host.value.strip()
-            user = cluster_user.value.strip()
-            port = int(cluster_port.value)
-
             cmd = build_backend_check_cmd(
                 backend_dd.value,
                 model_dd.value,
@@ -2575,26 +2546,15 @@ def build_icesheets_ui():
                     if not SESSION.get("id"):
                         create_or_refresh_connector_session()
 
-                    res = connector_ssh(
-                        SESSION["id"],
-                        host,
-                        user,
-                        port,
-                        cmd,
-                        timeout=120,
-                        cluster_name=cluster_name_for_keys.value or "pace",
-                    )
-
-                    rc = res.get("returncode", 1)
-                    out = res.get("stdout", "")
-                    err = res.get("stderr", "")
-                    ok = res.get("ok", False)
+                    bridge = current_remote_bridge(mode="connector")
                 else:
-                    res = ssh_run(host, user, port, cmd, timeout=120)
-                    rc = res.returncode
-                    out = res.stdout
-                    err = res.stderr
-                    ok = rc == 0
+                    bridge = current_remote_bridge(mode="direct")
+
+                res = bridge.check_backend(command=cmd, timeout=120)
+                rc = res.get("returncode", 1)
+                out = res.get("stdout", "")
+                err = res.get("stderr", "")
+                ok = res.get("ok", False)
 
                 with log_out:
                     print("[backend] Check", backend_dd.value, "for", model_dd.value)
@@ -2782,24 +2742,7 @@ def build_icesheets_ui():
         status_chip = W.HTML(status_html("idle"))
 
         def should_use_connector() -> bool:
-            mode = access_mode_dd.value
-
-            if mode == "connector":
-                return True
-
-            if mode == "direct":
-                return False
-
-            # auto mode: use connector only if direct SSH fails
-            try:
-                result = remote_test_connection(
-                    cluster_host.value.strip(),
-                    cluster_user.value.strip(),
-                    int(cluster_port.value),
-                )
-                return not result.get("ok", False)
-            except Exception:
-                return True
+            return current_remote_bridge().uses_connector()
 
         def on_run(_=None):
             log_out.clear_output()

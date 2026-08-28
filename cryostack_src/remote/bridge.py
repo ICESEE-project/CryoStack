@@ -117,6 +117,35 @@ class RemoteBridge:
             return {**direct, "transport": "direct", "connector_missing": True}
         return {**self._connector_check(), "transport": "connector", "direct": direct}
 
+    def uses_connector(self) -> bool:
+        if self.mode == "connector":
+            return True
+        if self.mode == "direct":
+            return False
+        try:
+            return not remote_test_connection(self.host, self.user, self.port).get("ok", False)
+        except Exception:
+            return True
+
+    def check_backend(self, *, command: str, timeout: int = 120) -> dict:
+        if self.mode == "connector":
+            return connector_ssh(
+                self._require_session(),
+                self.host,
+                self.user,
+                self.port,
+                command,
+                timeout=timeout,
+                cluster_name=self.cluster_name,
+            )
+        result = ssh_run(self.host, self.user, self.port, command, timeout=timeout)
+        return {
+            "ok": result.returncode == 0,
+            "returncode": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
+
     def prepare_environment(self, **kwargs):
         preparer = kwargs.pop("preparer", None)
         if preparer is None:
