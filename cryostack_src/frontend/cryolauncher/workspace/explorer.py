@@ -13,7 +13,7 @@ class WorkspaceExplorer:
     right: W.VBox
 
 
-def build_workspace_explorer(*, run_settings, runtime, run_details, history_panel=None) -> WorkspaceExplorer:
+def build_workspace_explorer(*, run_settings, runtime, run_details) -> WorkspaceExplorer:
     left = W.VBox(
         [run_settings, runtime],
         layout=W.Layout(width="100%", min_width="0", gap="12px"),
@@ -21,9 +21,8 @@ def build_workspace_explorer(*, run_settings, runtime, run_details, history_pane
     for css_class in ("icesee-card", "icesee-left", "cryostack-left-workspace"):
         left.add_class(css_class)
 
-    right_children = ([history_panel] if history_panel is not None else []) + [run_details]
     right = W.VBox(
-        right_children,
+        [run_details],
         layout=W.Layout(width="100%", min_width="0", min_height="0", overflow="hidden"),
     )
     for css_class in ("icesee-card", "icesee-right", "cryostack-right-workspace"):

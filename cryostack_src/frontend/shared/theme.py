@@ -440,6 +440,27 @@ CRYOSTACK_FRONTEND_CSS = r"""
     overflow-x: auto !important;
 }
 
+.cryostack-workspace-heading {
+    font-size: 13px;
+    font-weight: 700;
+    color: #172033;
+}
+
+.cryostack-workspace-tree {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 100%;
+    margin: 0;
+    padding: 10px;
+    overflow: auto;
+    border: 1px solid rgba(0, 0, 0, .10);
+    border-radius: 4px;
+    background: #fafbfd;
+    color: #172033;
+    font: 12px/1.55 monospace;
+    white-space: pre;
+}
+
 .cryostack-live-log .jupyter-widgets-output-area {
     height: 100%;
     min-height: 0;

@@ -2162,13 +2162,6 @@ def build_icesheets_ui():
 
         log_runtime_controls = build_workspace_toolbar([])
 
-        output_workspace = build_run_details(
-            log_output=log_out,
-            results_output=results_out,
-            download_controls=download_buttons_row,
-            log_controls=log_runtime_controls,
-        )
-
         run_settings_panel = build_run_settings_panel(
             configuration_rows=[
                 ui_mode_row,
@@ -2220,11 +2213,19 @@ def build_icesheets_ui():
             manager=workspace_manager,
         )
 
+        output_workspace = build_run_details(
+            log_output=log_out,
+            results_output=results_out,
+            download_controls=download_buttons_row,
+            log_controls=log_runtime_controls,
+            runs_panel=workspace_history_panel.runs_panel,
+            files_panel=workspace_history_panel.files_panel,
+        )
+
         workspace_ui = build_workspace_explorer(
             run_settings=run_settings_panel,
             runtime=actions_card,
             run_details=output_workspace.container,
-            history_panel=workspace_history_panel.container,
         )
 
         row = workspace_ui.container
