@@ -1756,20 +1756,24 @@ def build_icesheets_ui():
 
         workspace_manager.set_status_resolver(resolve_workspace_run_status)
 
+        def active_execution_mode():
+            selected = workspace_manager.selected_run()
+            return selected.execution_mode if selected else mode_dd.value
+
         def on_results_preview(_=None):
-            if mode_dd.value == "cloud":
+            if active_execution_mode() == "cloud":
                 on_cloud_results()
             else:
                 workspace_manager.preview_results()
 
         def on_results_download(_=None):
-            if mode_dd.value == "cloud":
+            if active_execution_mode() == "cloud":
                 on_cloud_results()
             else:
                 workspace_manager.download_results()
 
         def on_figures_download(_=None):
-            if mode_dd.value == "cloud":
+            if active_execution_mode() == "cloud":
                 on_cloud_results()
             else:
                 workspace_manager.download_figures()
