@@ -84,6 +84,7 @@ from cryostack_src.frontend.cryolauncher.remote_runtime import (
     build_remote_runtime_callbacks,
 )
 from cryostack_src.remote import RemoteBridge, expand_remote_home, normalize_remote_path
+from cryostack_src.models import get_model_adapter
 
 from cryostack_src.frontend.cryolauncher.panels import (
     build_logs_panel,
@@ -1373,44 +1374,11 @@ def build_backend_check_cmd(backend: str, model: str, remote_base: str, remote_t
     container_dir = f"{root}/ICESEE-Containers/spack-managed/combined-container"
     sif_path = f"{container_dir}/combined-env.sif"
 
-    if backend == "spack":
-        if model == "issm":
-            return f'''
-set -e
-test -d "{spack_path}" || {{ echo "[missing] ICESEE-Spack not found: {spack_path}"; exit 2; }}
-source "{spack_path}/scripts/activate.sh"
-test -n "${{ISSM_DIR:-}}" || {{ echo "[missing] ISSM_DIR is not set"; exit 3; }}
-test -d "$ISSM_DIR" || {{ echo "[missing] ISSM_DIR path does not exist: $ISSM_DIR"; exit 4; }}
-echo "[ok] ICESEE-Spack found"
-echo "[ok] ISSM_DIR=$ISSM_DIR"
-'''
-        if model == "icepack":
-            return f'''
-set -e
-test -d "{spack_path}" || {{ echo "[missing] ICESEE-Spack not found: {spack_path}"; exit 2; }}
-source "{spack_path}/scripts/activate.sh"
-python - <<'PY'
-import icepack
-print("[ok] icepack import successful")
-try:
-    import firedrake
-    print("[ok] firedrake import successful")
-except Exception as e:
-    print("[warn] firedrake import failed:", type(e).__name__, e)
-PY
-'''
-    else:
-        return f'''
-set -e
-if ! command -v apptainer >/dev/null 2>&1; then
-    source /etc/profile >/dev/null 2>&1 || true
-    module load apptainer >/dev/null 2>&1 || true
-fi
-command -v apptainer >/dev/null 2>&1 || {{ echo "[missing] apptainer not found"; exit 2; }}
-test -f "{sif_path}" || {{ echo "[missing] container image not found: {sif_path}"; exit 3; }}
-echo "[ok] apptainer found: $(command -v apptainer)"
-echo "[ok] container image found: {sif_path}"
-'''
+    return get_model_adapter(model).build_environment_check(
+        spack_path=spack_path,
+        sif_path=sif_path,
+        backend=backend,
+    )
 
 def build_icesheets_ui():
     try:
@@ -2343,51 +2311,16 @@ def build_icesheets_ui():
 
         def build_model_command():
             backend = backend_dd.value
-            model = model_dd.value
             run_file = selected_run_file()
             run_file_name = Path(run_file).name if run_file else ""
-
-            if model == "issm":
-                default_target = "runme.m"
-            else:
-                default_target = ""
-
-            chosen_target = run_file_name or default_target
-
-            if backend == "spack":
-                if model == "issm":
-                    if chosen_target.endswith(".m"):
-                        return f'cd "{example_dir.value}" && matlab -nodesktop -nosplash -r "run(\'{chosen_target}\'); exit"'
-                    return f'cd "{example_dir.value}" && matlab -nodesktop -nosplash -r "issmversion; exit"'
-
-                if chosen_target.endswith(".py"):
-                    return f'cd "{example_dir.value}" && python "{chosen_target}"'
-                if chosen_target.endswith(".ipynb"):
-                    py_name = Path(chosen_target).with_suffix(".py").name
-                    return f'cd "{example_dir.value}" && jupyter nbconvert --to script "{chosen_target}" && python "{py_name}"'
-                return f'cd "{example_dir.value}" && python -c "import icepack"'
-
-            if model == "issm":
-                if chosen_target.endswith(".m"):
-                    return (
-                        f'mkdir -p "{example_dir.value}" "{exec_dir.value}" && '
-                        f'srun --mpi=pmix -n {slurm_ntasks.value} apptainer exec '
-                        f'-B "{example_dir.value}":/opt/ISSM/examples,"{exec_dir.value}":/opt/ISSM/execution '
-                        f'"{image_uri.value}" with-issm matlab -nodesktop -nosplash -r "run(\'{chosen_target}\'); exit"'
-                    )
-                return (
-                    f'mkdir -p "{example_dir.value}" "{exec_dir.value}" && '
-                    f'srun --mpi=pmix -n {slurm_ntasks.value} apptainer exec '
-                    f'-B "{example_dir.value}":/opt/ISSM/examples,"{exec_dir.value}":/opt/ISSM/execution '
-                    f'"{image_uri.value}" with-issm matlab -nodesktop -nosplash -r "issmversion; exit"'
-                )
-
-            if chosen_target.endswith(".py"):
-                return f'apptainer exec "{image_uri.value}" with-icepack python "{chosen_target}"'
-            if chosen_target.endswith(".ipynb"):
-                py_name = Path(chosen_target).with_suffix(".py").name
-                return f'apptainer exec "{image_uri.value}" with-icepack bash -lc \'jupyter nbconvert --to script "{chosen_target}" && python "{py_name}"\''
-            return f'apptainer exec "{image_uri.value}" with-icepack python -c "import icepack"'
+            return get_model_adapter(model_dd.value).build_run_command(
+                backend=backend,
+                target=run_file_name,
+                example_dir=example_dir.value,
+                exec_dir=exec_dir.value,
+                image_uri=image_uri.value,
+                ntasks=slurm_ntasks.value,
+            )
         
         workspace_manager = WorkspaceManager(
             status=STATUS,
