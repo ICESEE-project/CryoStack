@@ -16,7 +16,13 @@ if str(_REPO_ROOT) not in sys.path:
 
 import pytest
 
-from cryostack_src.workspace import WorkspaceManager, WorkspaceUser, resolve_workspace_user
+from cryostack_src.workspace import (
+    WorkspaceIdentityError,
+    WorkspaceManager,
+    WorkspaceUser,
+    resolve_workspace_user,
+)
+from cryostack_src.workspace.manager import WORKSPACE_ROOT_ENV
 from cryostack_src.workspace.manifest import MANIFEST_NAME
 from cryostack_src.workspace.models import RunInfo
 
@@ -278,6 +284,74 @@ def test_two_ssh_identical_but_cryostack_distinct(tmp_path):
     b2 = make_manager(USER_B, tmp_path)
     assert [r.id for r in a2.refresh()] == ["run-A-0001"]
     assert [r.id for r in b2.refresh()] == ["run-B-0001"]
+
+
+# --------------------------------------------------------------------------- #
+# same-account persistence across logout/login (reconstruction)
+# --------------------------------------------------------------------------- #
+def test_same_account_keeps_namespace_and_runs_across_relogin(tmp_path):
+    # "login A" from the trusted proxy header
+    header_env = {"HTTP_X_CRYOSTACK_USER_ID": "acct-A-stable-uuid", "HTTP_X_CRYOSTACK_USER_NAME": "Ada"}
+    login_1 = resolve_workspace_user(header_env)
+    m1 = make_manager(login_1, tmp_path)
+    safe_id_1 = m1.owner.safe_id
+    root_1 = str(m1.manifest_root)
+    run = m1.register_run(make_run("run-A1", "A"))
+    assert (run.workspace_directory / MANIFEST_NAME).exists()
+
+    # "logout" ... "login A again" -- same header value, brand new manager
+    login_2 = resolve_workspace_user(dict(header_env))
+    m2 = make_manager(login_2, tmp_path)
+
+    assert m2.owner.safe_id == safe_id_1          # same safe_id
+    assert str(m2.manifest_root) == root_1        # same manifest_root
+    assert [r.id for r in m2.refresh()] == ["run-A1"]  # A1 rediscovered
+    assert m2.select_run("run-A1") is not None
+
+    # a different account gets a different root and never sees A1
+    other = resolve_workspace_user({"HTTP_X_CRYOSTACK_USER_ID": "acct-B-stable-uuid"})
+    mb = make_manager(other, tmp_path)
+    assert str(mb.manifest_root) != root_1
+    assert mb.refresh() == []
+
+
+def test_safe_id_is_a_pure_function_of_the_trusted_id():
+    a = resolve_workspace_user({"HTTP_X_CRYOSTACK_USER_ID": "id-123"})
+    b = resolve_workspace_user({"HTTP_X_CRYOSTACK_USER_ID": "id-123", "HTTP_X_CRYOSTACK_USER_NAME": "Renamed"})
+    assert a.safe_id == b.safe_id  # display name does not affect the namespace key
+    assert WorkspaceUser("id-123").safe_id == a.safe_id
+
+
+# --------------------------------------------------------------------------- #
+# fail closed when the protected web path has no trusted identity
+# --------------------------------------------------------------------------- #
+def test_protected_mode_fails_closed_without_trusted_identity(monkeypatch):
+    monkeypatch.delenv("HTTP_X_CRYOSTACK_USER_ID", raising=False)
+    monkeypatch.delenv("CRYOSTACK_WORKSPACE_USER", raising=False)
+
+    with pytest.raises(WorkspaceIdentityError, match="authenticated CryoStack identity was not provided"):
+        resolve_workspace_user({}, require_authenticated=True)
+
+    with pytest.raises(WorkspaceIdentityError):
+        make_manager(None, None)  # owner unresolved, require_authenticated default True
+
+    # unprotected/dev contexts still degrade to an isolated 'anonymous' namespace
+    assert resolve_workspace_user({}).user_id == "anonymous"
+
+
+def test_dev_override_satisfies_protected_mode(monkeypatch):
+    monkeypatch.delenv("HTTP_X_CRYOSTACK_USER_ID", raising=False)
+    user = resolve_workspace_user({"CRYOSTACK_WORKSPACE_USER": "local-dev"}, require_authenticated=True)
+    assert user.user_id == "local-dev"
+    assert user.source == "env-override"
+
+
+def test_workspace_root_env_pins_location(monkeypatch, tmp_path):
+    pinned = tmp_path / "pinned-root"
+    pinned.mkdir()
+    monkeypatch.setenv(WORKSPACE_ROOT_ENV, str(pinned))
+    m = make_manager(USER_A, None)  # no explicit workspace_root -> env wins over cwd
+    assert m.manifest_root.is_relative_to(pinned / "users" / USER_A.safe_id)
 
 
 class _NullOutput:

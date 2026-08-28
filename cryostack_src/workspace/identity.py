@@ -26,6 +26,10 @@ USER_NAME_ENV = "HTTP_X_CRYOSTACK_USER_NAME"
 USER_OVERRIDE_ENV = "CRYOSTACK_WORKSPACE_USER"
 
 
+class WorkspaceIdentityError(RuntimeError):
+    """A protected context was reached without a trusted CryoStack identity."""
+
+
 @dataclass(frozen=True)
 class WorkspaceUser:
     """A CryoStack identity that owns a Workspace namespace."""
@@ -51,8 +55,19 @@ class WorkspaceUser:
         return f"{slug[:40]}-{digest}"
 
 
-def resolve_workspace_user(env: "dict[str, str] | os._Environ[str] | None" = None) -> WorkspaceUser:
-    """Resolve the trusted CryoStack user from the kernel environment."""
+def resolve_workspace_user(
+    env: "dict[str, str] | os._Environ[str] | None" = None,
+    *,
+    require_authenticated: bool = False,
+) -> WorkspaceUser:
+    """Resolve the trusted CryoStack user from the kernel environment.
+
+    ``require_authenticated=True`` (the protected web path) fails closed: if
+    neither the proxy-verified ``HTTP_X_CRYOSTACK_USER_ID`` header nor an
+    explicit ``CRYOSTACK_WORKSPACE_USER`` override is present, it raises
+    :class:`WorkspaceIdentityError` instead of collapsing every web visitor
+    into one shared ``anonymous`` namespace.
+    """
     source_env = os.environ if env is None else env
 
     user_id = (source_env.get(USER_ID_ENV) or "").strip()
@@ -67,7 +82,11 @@ def resolve_workspace_user(env: "dict[str, str] | os._Environ[str] | None" = Non
     if override:
         return WorkspaceUser(user_id=override, display_name=override, source="env-override")
 
-    # No authenticated identity available (deployment without the proxy, or a
-    # direct hit on Voila). Isolate into a dedicated namespace rather than the
-    # legacy shared one; the authenticated web deployment never reaches here.
+    if require_authenticated:
+        raise WorkspaceIdentityError(
+            "Workspace unavailable: authenticated CryoStack identity was not provided."
+        )
+
+    # Unprotected/dev context only (direct hit on Voila, no proxy). Isolated in
+    # its own namespace, never shared with authenticated users.
     return WorkspaceUser(user_id=_ANONYMOUS_ID, display_name="", source="unauthenticated")

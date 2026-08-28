@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import html
+import os
 import re
 import shutil
 import subprocess
@@ -26,6 +27,8 @@ from .manifest import MANIFEST_NAME, read_manifest, write_manifest
 from .models import RunInfo
 
 _SAFE_RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
+#: optional deploy-time pin for the workspace root, independent of process cwd
+WORKSPACE_ROOT_ENV = "CRYOSTACK_WORKSPACE_ROOT"
 
 
 class WorkspaceManager:
@@ -55,6 +58,7 @@ class WorkspaceManager:
         cluster_name,
         owner: WorkspaceUser | None = None,
         workspace_root: str | Path | None = None,
+        require_authenticated: bool = True,
     ) -> None:
         self.status = status
         self.session = session
@@ -82,8 +86,16 @@ class WorkspaceManager:
         # per-run operations stay inside this subtree; a run id owned by
         # another user is simply absent from self._runs and every method
         # short-circuits.
-        self.owner: WorkspaceUser = owner if owner is not None else resolve_workspace_user()
-        root = Path(workspace_root).resolve() if workspace_root else Path.cwd().resolve()
+        self.owner: WorkspaceUser = (
+            owner
+            if owner is not None
+            else resolve_workspace_user(require_authenticated=require_authenticated)
+        )
+        if workspace_root is not None:
+            root = Path(workspace_root).resolve()
+        else:
+            env_root = (os.environ.get(WORKSPACE_ROOT_ENV) or "").strip()
+            root = Path(env_root).resolve() if env_root else Path.cwd().resolve()
         self._workspace_root = root
         self._owner_root = (root / "users" / self.owner.safe_id).resolve()
         self.manifest_root = (self._owner_root / ".cryostack" / "runs").resolve()

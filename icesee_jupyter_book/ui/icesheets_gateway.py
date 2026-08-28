@@ -1102,7 +1102,7 @@ def build_icesheets_ui():
             )
         
         workspace_manager = WorkspaceManager(
-            owner=resolve_workspace_user(),
+            owner=resolve_workspace_user(require_authenticated=True),
             status=STATUS,
             session=SESSION,
             example_dir=example_dir,
