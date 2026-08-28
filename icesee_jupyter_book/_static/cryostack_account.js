@@ -333,7 +333,15 @@
         });
 
         if (response.ok) {
-          window.location.reload();
+          /*
+           * Do not reload this same URL. The current document may still
+           * hold a Voila kernel/session that the server has just culled,
+           * and a reload/bfcache-restore keeps retrying its now-dead
+           * /api/kernels/<id>/channels websocket (404 loop). Replace the
+           * document with a fresh top-level navigation to login so the
+           * next authenticated visit renders a brand-new kernel.
+           */
+          window.location.replace(loginUrl());
         }
       });
   }
