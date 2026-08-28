@@ -19,7 +19,7 @@ from cryostack_src.models.issm.postprocess import (
 from cryostack_src.remote.runtime import expand_remote_home
 
 
-def _issm_container_launcher_shim(*, run_dir: str, ntasks: int) -> str:
+def _issm_container_launcher_shim(*, run_dir: str) -> str:
     """Shell block that drops an in-container ``srun`` shim into the run dir.
 
     ISSM's cluster class inside the ICESEE-Container image writes its solver
@@ -27,23 +27,28 @@ def _issm_container_launcher_shim(*, run_dir: str, ntasks: int) -> str:
     bundled ``generic`` class has no ``mpiexec`` branch on Linux), but the SIF
     ships no Slurm client, so that line fails with ``srun: not found``. This
     shim, placed first on ``PATH`` for the in-container MATLAB process, re-runs
-    the same command as ``mpiexec -np <ntasks>`` on the job's own allocation
-    without binding any host Slurm/PMIx libraries.
+    the same command as ``mpiexec -np <np> <cmd>`` -- preserving the task count
+    ISSM itself passed (``-n N``, ``--ntasks N`` or ``--ntasks=N``) -- without
+    binding any host Slurm/PMIx libraries.
     """
     shim = f"{run_dir}/.cryostack_launcher/srun"
     return (
         f'mkdir -p "{run_dir}/.cryostack_launcher"\n'
         f"cat > \"{shim}\" <<'CRYOSTACK_SRUN'\n"
         "#!/bin/sh\n"
+        'np="${SLURM_NTASKS:-1}"\n'
         "while [ $# -gt 0 ]; do\n"
         '  case "$1" in\n'
-        "    -n|-N|--ntasks|--ntasks-per-node|--cpus-per-task) shift 2 ;;\n"
+        '    -n|--ntasks) np="$2"; shift 2 ;;\n'
+        '    --ntasks=*) np="${1#--ntasks=}"; shift ;;\n'
+        '    -n*) np="${1#-n}"; shift ;;\n'
+        "    -N|--nodes|--ntasks-per-node|--cpus-per-task) shift 2 ;;\n"
         "    --) shift; break ;;\n"
         "    -*) shift ;;\n"
         "    *) break ;;\n"
         "  esac\n"
         "done\n"
-        f'exec mpiexec -np {int(ntasks)} "$@"\n'
+        'exec mpiexec -np "$np" "$@"\n'
         "CRYOSTACK_SRUN\n"
         f'chmod +x "{shim}"'
     )
@@ -336,7 +341,7 @@ fi
             target_m = run_file_name if run_file_name.endswith(".m") else "runme.m"
             run_block = f'''
 mkdir -p "{remote_exec_dir}"
-{_issm_container_launcher_shim(run_dir=remote_run_dir, ntasks=slurm_ntasks)}
+{_issm_container_launcher_shim(run_dir=remote_run_dir)}
 apptainer exec \
 -B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution,"{remote_run_dir}":"{remote_run_dir}" \
 "{sif_path}" with-issm matlab -nodesktop -nosplash -r "setenv('PATH', ['{remote_run_dir}/.cryostack_launcher:' getenv('PATH')]); cd('/opt/ISSM/examples'); ICESEE_RUN_DIR='{remote_run_dir}'; run('{target_m}'); run('{remote_run_dir}/postprocess_icesee.m'); exit"
@@ -761,7 +766,7 @@ apptainer exec \
                 target_m = run_file_name if run_file_name.endswith(".m") else "runme.m"
                 run_block = f'''
 mkdir -p "{remote_exec_dir}"
-{_issm_container_launcher_shim(run_dir=remote_run_dir, ntasks=slurm_ntasks)}
+{_issm_container_launcher_shim(run_dir=remote_run_dir)}
 apptainer exec \
 -B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution,"{remote_run_dir}":"{remote_run_dir}" \
 "{sif_path}" with-issm matlab -nodesktop -nosplash -r "setenv('PATH', ['{remote_run_dir}/.cryostack_launcher:' getenv('PATH')]); cd('/opt/ISSM/examples'); ICESEE_RUN_DIR='{remote_run_dir}'; run('{target_m}'); run('{remote_run_dir}/postprocess_icesee.m'); exit"
