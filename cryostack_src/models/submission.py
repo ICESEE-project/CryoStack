@@ -306,9 +306,9 @@ fi
             target_m = run_file_name if run_file_name.endswith(".m") else "runme.m"
             run_block = f'''
 mkdir -p "{remote_exec_dir}"
-srun --mpi=pmix -n {slurm_ntasks} apptainer exec \
--B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution \
-"{sif_path}" with-issm matlab -nodesktop -nosplash -r "cd('/opt/ISSM/examples'); run('{target_m}'); exit"
+apptainer exec \
+-B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution,"{remote_run_dir}":"{remote_run_dir}" \
+"{sif_path}" with-issm matlab -nodesktop -nosplash -r "cd('/opt/ISSM/examples'); ICESEE_RUN_DIR='{remote_run_dir}'; run('{target_m}'); run('{remote_run_dir}/postprocess_icesee.m'); exit"
 '''
         else:
             if run_file_name.endswith(".py"):
@@ -712,7 +712,7 @@ fi
             if model == "issm":
                 run_block = f'''
 mkdir -p "{remote_exec_dir}"
-srun --mpi=pmix -n {slurm_ntasks} apptainer exec \
+apptainer exec \
 -B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution \
 "{sif_path}" with-issm matlab -nodesktop -nosplash -r "issmversion; exit"
 '''
@@ -730,9 +730,9 @@ apptainer exec \
                 target_m = run_file_name if run_file_name.endswith(".m") else "runme.m"
                 run_block = f'''
 mkdir -p "{remote_exec_dir}"
-srun --mpi=pmix -n {slurm_ntasks} apptainer exec \
--B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution \
-"{sif_path}" with-issm matlab -nodesktop -nosplash -r "cd('/opt/ISSM/examples'); run('{target_m}'); exit"
+apptainer exec \
+-B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution,"{remote_run_dir}":"{remote_run_dir}" \
+"{sif_path}" with-issm matlab -nodesktop -nosplash -r "cd('/opt/ISSM/examples'); ICESEE_RUN_DIR='{remote_run_dir}'; run('{target_m}'); run('{remote_run_dir}/postprocess_icesee.m'); exit"
 '''
             elif model == "icepack":
                 if run_file_name.endswith(".py"):
