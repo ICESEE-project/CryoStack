@@ -13,6 +13,7 @@ from .compat import (
 from .components import COMPONENTS, MODEL_COMPONENTS
 from .container import resolve_container
 from .resolver import ComponentChoice, resolve_component
+from .runtime import component_checkout_plan
 
 
 def resolve_stack(
@@ -61,6 +62,10 @@ def resolve_stack(
             sel = selections.get(key) or ComponentSelection(key)
             choice = ComponentChoice(key, mode=sel.mode, ref=sel.ref)
         software[key] = resolve_component(comp, choice, **resolve_kwargs).as_provenance()
+
+    # Fail here — before any job is submitted or manifest written — if a git
+    # override could not be turned into a run-local checkout plan.
+    component_checkout_plan(software, run_dir="/__stack_validate__")
 
     return {
         "profile": profile,

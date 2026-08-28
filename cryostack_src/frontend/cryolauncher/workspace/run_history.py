@@ -32,6 +32,41 @@ def build_workspace_history_panel(*, manager) -> WorkspaceHistoryPanel:
         value = str(status or "unknown").lower()
         return f"<span class='cryostack-run-badge cryostack-run-badge-{value}'>{value.title()}</span>"
 
+    def software_stack_html(run) -> str:
+        container = getattr(run, "container", None) or {}
+        software = getattr(run, "software", None) or {}
+        if not container and not software:
+            return ""
+        rows = ["<div class='cryostack-section-label cryostack-selected-label'>Software stack</div>",
+                "<div class='cryostack-selected-run-card'>"]
+
+        ref = container.get("reference")
+        bp = container.get("build_provenance") or {}
+        if not ref and container.get("source") == "git":
+            ref = "ICESEE-Containers build"
+        rows.append(f"<div><span>Container</span><b>{html.escape(str(ref or container.get('source') or '—'))}</b></div>")
+
+        digest = container.get("digest")
+        if digest:
+            rows.append(f"<div><span>Digest</span><b>{html.escape(digest)}</b></div>")
+        elif container:
+            note = "not applicable" if bp.get("digest_status") == "not-applicable" else "unresolved"
+            rows.append(f"<div><span>Digest</span><b class='cryostack-stack-lock'>{note}</b></div>")
+
+        for key, sw in sorted(software.items()):
+            src = sw.get("source", "?")
+            commit = sw.get("resolved_commit")
+            short = commit[:8] if commit else "unknown"
+            if src == "image":
+                detail = f"image · {sw.get('version') or '—'} · {short}"
+            else:
+                req = sw.get("requested_ref") or "?"
+                detail = f"git · {req} → {short}"
+            rows.append(f"<div><span>{html.escape(key.upper())}</span><b>{html.escape(detail)}</b></div>")
+
+        rows.append("</div>")
+        return "".join(rows)
+
     def render_cards(discovered):
         cards = []
         for run in discovered:
@@ -93,6 +128,7 @@ def build_workspace_history_panel(*, manager) -> WorkspaceHistoryPanel:
             f"<div><span>Job ID</span><b>{html.escape(str(run.jobid or '—'))}</b></div>"
             f"<div><span>Status</span>{status_badge(run.status)}</div>"
             "</div>"
+            + software_stack_html(run)
         )
         paths = manager.files(run.id)
         labels = [str(path.relative_to(run.workspace_directory)) for path in paths]

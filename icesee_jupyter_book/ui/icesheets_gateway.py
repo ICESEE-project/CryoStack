@@ -91,11 +91,18 @@ from cryostack_src.frontend.cryolauncher.remote_runtime import (
 )
 from cryostack_src.remote import RemoteBridge, expand_remote_home, normalize_remote_path
 from cryostack_src.models import get_model_adapter
-from cryostack_src.models.stack import resolve_stack, stack_log_line
+from cryostack_src.models.stack import (
+    ComponentResolutionError,
+    StackCompatError,
+    StackRuntimeError,
+    resolve_stack,
+    stack_log_line,
+)
 from cryostack_src.models.submission import (
     submit_remote_icesheets,
     submit_remote_icesheets_via_connector,
 )
+from cryostack_src.frontend.cryolauncher.software_stack import build_software_stack_panel
 
 from cryostack_src.frontend.cryolauncher.panels import (
     build_logs_panel,
@@ -400,6 +407,8 @@ def build_icesheets_ui():
         mode_dd = run_settings.execution_mode
         backend_dd = run_settings.backend
         model_dd = run_settings.model
+
+        software_panel = build_software_stack_panel()
 
         example_picker = run_settings.example_picker
         example_info = run_settings.example_info
@@ -1391,6 +1400,7 @@ def build_icesheets_ui():
         backend_dd.observe(update_visibility, names="value")
         model_dd.observe(refresh_example_picker, names="value")
         model_dd.observe(update_summary, names="value")
+        model_dd.observe(lambda _c: software_panel.set_model(model_dd.value), names="value")
         mode_dd.observe(update_visibility, names="value")
         ui_mode_dd.observe(update_visibility, names="value")
         ui_mode_dd.observe(apply_selected_example, names="value")
@@ -1516,20 +1526,31 @@ def build_icesheets_ui():
             try:
                 # Resolve the reproducibility provenance BEFORE any job is
                 # submitted or any manifest is written, so a resolution failure
-                # cannot leave a half-registered run. v1: tested profile only
-                # (no network git resolution, no source overrides).
+                # cannot leave a half-registered run. Tested = image stack, no
+                # network. Custom = resolve each requested ref to an exact SHA
+                # now; the job only ever receives resolved SHAs.
                 stack_provenance = {}
                 stack_line = ""
                 if backend_dd.value == "container":
-                    stack_provenance = resolve_stack(
-                        model=model_dd.value,
-                        profile="tested",
-                        selections=None,
-                        container_source=container_source.value,
-                        image_uri=image_uri.value,
-                        digest_resolver=None,
-                    )
+                    _profile = software_panel.profile()
+                    _selections = software_panel.selections()
+                    try:
+                        stack_provenance = resolve_stack(
+                            model=model_dd.value,
+                            profile=_profile,
+                            selections=_selections,
+                            container_source=container_source.value,
+                            image_uri=image_uri.value,
+                            digest_resolver=None,
+                        )
+                    except (StackCompatError, ComponentResolutionError, StackRuntimeError) as stack_err:
+                        status_chip.value = status_html("fail")
+                        with log_out:
+                            print("[stack][ERROR]", stack_err)
+                        return
                     stack_line = stack_log_line(stack_provenance)
+                    with log_out:
+                        print(stack_line)
 
                 use_connector = should_use_connector()
                 if use_connector:
@@ -1569,6 +1590,7 @@ def build_icesheets_ui():
                         md_config=collect_md_config(),
                         cluster_name=cluster_name_for_keys.value or "pace",
                         stack_log_line=stack_line,
+                        stack_software=stack_provenance.get("software") or {},
                         ),
                     )
                 else:
@@ -1606,6 +1628,7 @@ def build_icesheets_ui():
                         run_file=selected_run_file(),
                         md_config=collect_md_config(),
                         stack_log_line=stack_line,
+                        stack_software=stack_provenance.get("software") or {},
                         ),
                     )
 
@@ -2148,6 +2171,7 @@ def build_icesheets_ui():
             backend_row,
             container_source_row,
             image_uri_row,
+            software_panel.container,
             spack_enable_row,
             spack_repo_row,
             spack_dir_row,
@@ -2162,6 +2186,7 @@ def build_icesheets_ui():
 
             container_source_row.layout.display = "flex" if is_container else "none"
             image_uri_row.layout.display = "flex" if is_container else "none"
+            software_panel.set_visible(is_container)
 
             spack_display = "none" if is_container else "flex"
             spack_box_display = "none" if is_container else "block"

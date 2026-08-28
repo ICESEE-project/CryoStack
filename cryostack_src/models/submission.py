@@ -17,6 +17,11 @@ from icesee_jupyter_book.core.remote_runner import (
 from cryostack_src.models.issm.postprocess import (
     build_postprocess as build_issm_postprocess_script,
 )
+from cryostack_src.models.stack import (
+    checkout_bind_suffix,
+    checkout_setup_block,
+    component_checkout_plan,
+)
 from cryostack_src.remote.runtime import expand_remote_home
 
 
@@ -222,6 +227,7 @@ def submit_remote_icesheets_via_connector(
     md_config: dict | None = None,
     cluster_name: str = "pace",
     stack_log_line: str = "",
+    stack_software: dict | None = None,
 ):
     import base64
     import shlex
@@ -439,28 +445,35 @@ source "{spack_path}/scripts/activate.sh"
             remote_base_abs=remote_base_abs,
             tag=tag,
         )
+        # run-local source overrides (empty for the tested profile)
+        _stack_plan = component_checkout_plan(stack_software, remote_run_dir)
+        _stack_setup = checkout_setup_block(_stack_plan)
+        _stack_binds = checkout_bind_suffix(_stack_plan)
         if model == "issm":
             target_m = run_file_name if run_file_name.endswith(".m") else "runme.m"
             run_block = f'''
 mkdir -p "{remote_exec_dir}"
+{_stack_setup}
 {_issm_container_launcher_shim(run_dir=remote_run_dir)}
 apptainer exec \
--B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution,"{remote_run_dir}":"{remote_run_dir}" \
+-B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution,"{remote_run_dir}":"{remote_run_dir}"{_stack_binds} \
 "{sif_path}" with-issm matlab -nodesktop -nosplash -r "setenv('PATH', ['{remote_run_dir}/.cryostack_launcher:' getenv('PATH')]); cd('/opt/ISSM/examples'); ICESEE_RUN_DIR='{remote_run_dir}'; run('{target_m}'); run('{remote_run_dir}/postprocess_icesee.m'); exit"
 '''
         else:
             if run_file_name.endswith(".py"):
                 run_block = f'''
 mkdir -p "{remote_exec_dir}"
+{_stack_setup}
 apptainer exec \
--B "{remote_example_dir}":/workspace/example,"{remote_exec_dir}":/workspace/run \
+-B "{remote_example_dir}":/workspace/example,"{remote_exec_dir}":/workspace/run{_stack_binds} \
 "{sif_path}" with-icepack bash -lc 'cd /workspace/example && python "{run_file_name}"'
 '''
             elif run_file_name.endswith(".ipynb"):
                 run_block = f'''
 mkdir -p "{remote_exec_dir}"
+{_stack_setup}
 apptainer exec \
--B "{remote_example_dir}":/workspace/example,"{remote_exec_dir}":/workspace/run \
+-B "{remote_example_dir}":/workspace/example,"{remote_exec_dir}":/workspace/run{_stack_binds} \
 "{sif_path}" with-icepack bash -lc 'cd /workspace/example && jupyter nbconvert --to script "{run_file_name}" && python "{run_file_py}"'
 '''
             else:
@@ -591,6 +604,7 @@ def submit_remote_icesheets(
     run_file: str = "",
     md_config: dict | None = None,
     stack_log_line: str = "",
+    stack_software: dict | None = None,
 ):
     import base64
     import shlex
@@ -813,6 +827,10 @@ source "{spack_path}/scripts/activate.sh"
             remote_base_abs=remote_base_abs,
             tag=tag,
         )
+        # run-local source overrides (empty for the tested profile / test_mode)
+        _stack_plan = component_checkout_plan(stack_software, remote_run_dir) if not test_mode else []
+        _stack_setup = checkout_setup_block(_stack_plan)
+        _stack_binds = checkout_bind_suffix(_stack_plan)
 
         if test_mode:
             if model == "issm":
@@ -836,24 +854,27 @@ apptainer exec \
                 target_m = run_file_name if run_file_name.endswith(".m") else "runme.m"
                 run_block = f'''
 mkdir -p "{remote_exec_dir}"
+{_stack_setup}
 {_issm_container_launcher_shim(run_dir=remote_run_dir)}
 apptainer exec \
--B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution,"{remote_run_dir}":"{remote_run_dir}" \
+-B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution,"{remote_run_dir}":"{remote_run_dir}"{_stack_binds} \
 "{sif_path}" with-issm matlab -nodesktop -nosplash -r "setenv('PATH', ['{remote_run_dir}/.cryostack_launcher:' getenv('PATH')]); cd('/opt/ISSM/examples'); ICESEE_RUN_DIR='{remote_run_dir}'; run('{target_m}'); run('{remote_run_dir}/postprocess_icesee.m'); exit"
 '''
             elif model == "icepack":
                 if run_file_name.endswith(".py"):
                     run_block = f'''
 mkdir -p "{remote_exec_dir}"
+{_stack_setup}
 apptainer exec \
--B "{remote_example_dir}":/workspace/example,"{remote_exec_dir}":/workspace/run \
+-B "{remote_example_dir}":/workspace/example,"{remote_exec_dir}":/workspace/run{_stack_binds} \
 "{sif_path}" with-icepack bash -lc 'cd /workspace/example && python "{run_file_name}"'
 '''
                 elif run_file_name.endswith(".ipynb"):
                     run_block = f'''
 mkdir -p "{remote_exec_dir}"
+{_stack_setup}
 apptainer exec \
--B "{remote_example_dir}":/workspace/example,"{remote_exec_dir}":/workspace/run \
+-B "{remote_example_dir}":/workspace/example,"{remote_exec_dir}":/workspace/run{_stack_binds} \
 "{sif_path}" with-icepack bash -lc 'cd /workspace/example && jupyter nbconvert --to script "{run_file_name}" && python "{run_file_py}"'
 '''
                 else:

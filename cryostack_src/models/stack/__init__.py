@@ -49,6 +49,13 @@ from .resolver import (
     ResolvedComponent,
     resolve_component,
 )
+from .runtime import (
+    ComponentCheckout,
+    StackRuntimeError,
+    checkout_bind_suffix,
+    checkout_setup_block,
+    component_checkout_plan,
+)
 
 __all__ = [
     # components
@@ -66,4 +73,7 @@ __all__ = [
     "StackCompatError", "validate_stack", "offered_options", "ICEPACK_FIREDRAKE_COMPAT",
     # provenance
     "resolve_stack", "stack_log_line",
+    # runtime checkout
+    "ComponentCheckout", "StackRuntimeError", "component_checkout_plan",
+    "checkout_setup_block", "checkout_bind_suffix",
 ]
