@@ -35,6 +35,7 @@ class RunHistory:
         jobid: str | None,
         remote_directory: Path,
         log_file: Path | None,
+        metadata: dict | None = None,
     ) -> RunInfo:
         run = RunInfo(
             id=str(uuid4()),
@@ -46,6 +47,7 @@ class RunHistory:
             jobid=jobid,
             remote_directory=remote_directory,
             log_file=log_file,
+            metadata=dict(metadata or {}),
         )
         self.add(run)
         return run

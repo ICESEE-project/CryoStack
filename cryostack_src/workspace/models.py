@@ -27,6 +27,8 @@ class RunInfo:
 
     remote_directory: Optional[Path] = None
 
+    workspace_directory: Optional[Path] = None
+
     results_directory: Optional[Path] = None
 
     figures_directory: Optional[Path] = None
@@ -38,3 +40,5 @@ class RunInfo:
     command: str = ""
 
     notes: str = ""
+
+    metadata: dict = field(default_factory=dict)

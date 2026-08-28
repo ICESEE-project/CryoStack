@@ -19,6 +19,8 @@ from cryostack_src.frontend.cryolauncher.workspace.file_browser import (
     save_selected_file,
 )
 from cryostack_src.frontend.cryolauncher.workspace.tree import list_editable_files
+from .manifest import MANIFEST_NAME, read_manifest, write_manifest
+from .models import RunInfo
 
 
 class WorkspaceManager:
@@ -46,6 +48,7 @@ class WorkspaceManager:
         connector_ssh,
         ssh_run,
         cluster_name,
+        manifest_root: Path | None = None,
     ) -> None:
         self.status = status
         self.session = session
@@ -66,6 +69,21 @@ class WorkspaceManager:
         self.connector_ssh = connector_ssh
         self.ssh_run = ssh_run
         self.cluster_name = cluster_name
+        self.manifest_root = (manifest_root or (Path.cwd() / ".cryostack" / "runs")).resolve()
+        self._runs: dict[str, RunInfo] = {}
+        self._selected_run_id: str | None = None
+        self._tail_handler = None
+
+    def set_tail_handler(self, handler) -> None:
+        self._tail_handler = handler
+
+    def tail(self, run_id: str):
+        run = self.select_run(run_id)
+        if not run:
+            return None
+        if self._tail_handler is None:
+            raise RuntimeError("Workspace log routing is not configured.")
+        return self._tail_handler()
 
     def list_editable_files(self, example_path: str) -> list[tuple[str, str]]:
         return list_editable_files(example_path)
@@ -101,8 +119,86 @@ class WorkspaceManager:
         elif path.exists():
             path.unlink()
 
-    def refresh(self) -> Path | None:
-        return self.refresh_results()
+    def register_run(self, run: RunInfo) -> RunInfo:
+        workspace = self.manifest_root / run.id
+        run.workspace_directory = workspace.resolve()
+        write_manifest(run, workspace)
+        self._runs[run.id] = run
+        return run
+
+    def refresh(self) -> list[RunInfo]:
+        discovered: dict[str, RunInfo] = {}
+        if self.manifest_root.exists():
+            for path in sorted(self.manifest_root.glob(f"*/{MANIFEST_NAME}")):
+                try:
+                    run = read_manifest(path)
+                    if run.id not in discovered or run.created > discovered[run.id].created:
+                        discovered[run.id] = run
+                except (OSError, ValueError, KeyError, TypeError):
+                    continue
+        self._runs = discovered
+        if self._selected_run_id not in discovered:
+            self._selected_run_id = None
+        return self.list_runs()
+
+    def list_runs(self) -> list[RunInfo]:
+        return sorted(self._runs.values(), key=lambda run: run.created, reverse=True)
+
+    def select_run(self, run_id: str) -> RunInfo | None:
+        run = self._runs.get(run_id)
+        self._selected_run_id = run.id if run else None
+        if run:
+            self.status.update(
+                jobid=run.jobid,
+                remote_dir=str(run.remote_directory) if run.remote_directory else None,
+                log_file=str(run.log_file) if run.log_file else None,
+                batch_job_id=run.jobid if run.execution_mode == "cloud" else self.status.get("batch_job_id"),
+                cloud_run=run.metadata.get("cloud_run"),
+            )
+        return run
+
+    def selected_run(self) -> RunInfo | None:
+        return self._runs.get(self._selected_run_id or "")
+
+    def files(self, run_id: str) -> list[Path]:
+        run = self._runs.get(run_id)
+        if not run or not run.workspace_directory or not run.workspace_directory.exists():
+            return []
+        return sorted(path for path in run.workspace_directory.rglob("*") if path.is_file())
+
+    def delete_run(self, run_id: str) -> bool:
+        run = self._runs.get(run_id)
+        if not run or not run.workspace_directory:
+            return False
+        workspace = run.workspace_directory.resolve()
+        try:
+            workspace.relative_to(self.manifest_root)
+        except ValueError:
+            return False
+        manifest = workspace / MANIFEST_NAME
+        try:
+            verified = read_manifest(manifest)
+        except (OSError, ValueError, KeyError, TypeError):
+            return False
+        if verified.id != run_id or workspace == self.manifest_root:
+            return False
+        shutil.rmtree(workspace)
+        self._runs.pop(run_id, None)
+        if self._selected_run_id == run_id:
+            self._selected_run_id = None
+        return True
+
+    def preview_results_for_run(self, run_id: str) -> None:
+        if self.select_run(run_id):
+            self.preview_results()
+
+    def download_results_for_run(self, run_id: str) -> None:
+        if self.select_run(run_id):
+            self.download_results()
+
+    def download_figures_for_run(self, run_id: str) -> None:
+        if self.select_run(run_id):
+            self.download_figures()
 
     def clone_example(self, new_name: str) -> Path | None:
         self.log_output.clear_output()
@@ -293,6 +389,8 @@ class WorkspaceManager:
         document.body.removeChild(a); }}, 100); }})();</script>'''))
 
     def download_results(self, _=None) -> None:
+        if isinstance(_, str) and not self.select_run(_):
+            return
         self.results_output.clear_output()
         outputs_dir = self.refresh_results()
         if outputs_dir is None:
@@ -313,6 +411,8 @@ class WorkspaceManager:
                 print("[download][ERROR]", type(error).__name__, error)
 
     def download_figures(self, _=None) -> None:
+        if isinstance(_, str) and not self.select_run(_):
+            return
         self.results_output.clear_output()
         outputs_dir = self.refresh_results()
         if outputs_dir is None:
@@ -345,6 +445,8 @@ class WorkspaceManager:
                 print("[download][ERROR]", type(error).__name__, error)
 
     def preview_results(self, _=None) -> None:
+        if isinstance(_, str) and not self.select_run(_):
+            return
         self.results_output.clear_output()
         remote_check = self.inspect_remote_results()
         outputs_dir = self.refresh_results()
