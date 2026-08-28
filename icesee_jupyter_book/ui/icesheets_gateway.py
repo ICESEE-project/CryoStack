@@ -80,6 +80,9 @@ from cryostack_src.frontend.shared import (
 from cryostack_src.frontend.cryolauncher.cloud_environment import (
     build_cloud_environment_card,
 )
+from cryostack_src.frontend.cryolauncher.cloud_runtime import (
+    build_cloud_runtime_callbacks,
+)
 
 from cryostack_src.frontend.cryolauncher.panels import (
     build_logs_panel,
@@ -3439,196 +3442,16 @@ def build_icesheets_ui():
                 with log_out:
                     print("[remote][ERROR]", type(e).__name__, e)
 
-        def on_cloud_status(_=None):
-
-            log_out.clear_output()
-
-            jobid = STATUS.get(
-                "batch_job_id"
-            )
-
-            if not jobid:
-
-                with log_out:
-                    print(
-                        "[cloud] No Batch job id yet. "
-                        "Submit first."
-                    )
-
-                return
-
-            try:
-
-                result = current_cloud_bridge().status(
-                    job_id=str(jobid),
-                )
-
-                with log_out:
-
-                    print(
-                        "[cloud] Job status"
-                    )
-
-                    print(
-                        "state:",
-                        result.state,
-                    )
-
-                    if result.raw_state:
-
-                        print(
-                            "AWS state:",
-                            result.raw_state,
-                        )
-
-                    if result.reason:
-
-                        print(
-                            "reason:",
-                            result.reason,
-                        )
-
-                status_chip.value = status_html(
-                    "done"
-                )
-
-            except Exception as e:
-
-                status_chip.value = status_html(
-                    "fail"
-                )
-
-                with log_out:
-
-                    print(
-                        "[cloud][ERROR]",
-                        type(e).__name__,
-                        e,
-                    )
-
-        def on_cloud_logs(_=None):
-
-            log_out.clear_output()
-
-            jobid = STATUS.get(
-                "batch_job_id"
-            )
-
-            if not jobid:
-
-                with log_out:
-                    print(
-                        "[cloud] No Batch job id yet. "
-                        "Submit first."
-                    )
-
-                return
-
-            try:
-
-                result = current_cloud_bridge().logs(
-                    job_id=str(jobid),
-                )
-
-                with log_out:
-
-                    print(
-                        "[cloud] Logs"
-                    )
-
-                    if isinstance(
-                        result,
-                        dict,
-                    ):
-
-                        log_text = (
-                            result.get("logs")
-                            or result.get("log")
-                            or result.get("message")
-                            or ""
-                        )
-
-                        print(
-                            log_text
-                            or "(no log output)"
-                        )
-
-                    else:
-
-                        print(
-                            result
-                            or "(no log output)"
-                        )
-
-                status_chip.value = status_html(
-                    "done"
-                )
-
-            except Exception as e:
-
-                status_chip.value = status_html(
-                    "fail"
-                )
-
-                with log_out:
-
-                    print(
-                        "[cloud][ERROR]",
-                        type(e).__name__,
-                        e,
-                    )
-
-        def on_cloud_terminate(_=None):
-
-            log_out.clear_output()
-
-            jobid = STATUS.get(
-                "batch_job_id"
-            )
-
-            if not jobid:
-
-                with log_out:
-                    print(
-                        "[cloud] No Batch job id yet. "
-                        "Submit first."
-                    )
-
-                return
-
-            try:
-
-                result = current_cloud_bridge().terminate(
-                    job_id=str(jobid),
-                )
-
-                with log_out:
-
-                    print(
-                        "[cloud] Termination requested."
-                    )
-
-                    if result:
-
-                        print(result)
-
-                status_chip.value = status_html(
-                    "done"
-                )
-
-            except Exception as e:
-
-                status_chip.value = status_html(
-                    "fail"
-                )
-
-                with log_out:
-
-                    print(
-                        "[cloud][ERROR]",
-                        type(e).__name__,
-                        e,
-                    )
+        cloud_runtime = build_cloud_runtime_callbacks(
+            runtime_status=STATUS,
+            log_output=log_out,
+            status_widget=status_chip,
+            status_html=status_html,
+            bridge_factory=current_cloud_bridge,
+        )
+        on_cloud_status = cloud_runtime.status
+        on_cloud_logs = cloud_runtime.logs
+        on_cloud_terminate = cloud_runtime.terminate
 
         def refresh_md_overrides_view():
             if not md_overrides:
