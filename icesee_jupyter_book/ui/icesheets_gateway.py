@@ -37,14 +37,7 @@ from icesee_jupyter_book.core.remote_runner import (
     connector_slurm_submit,
     connector_get_public_key,
 )
-from icesee_jupyter_book.core.cloud_runner import (
-    AWSBatchConfig,
-    aws_batch_status,
-)
-
-from cryostack_src.execution.cloud import (
-    CloudBackend,
-)
+from cryostack_src.cloud.bridge import CloudBridge
 
 from icesee_jupyter_book.core.local_connector import build_connector_panel
 from icesee_jupyter_book.ui.shared_ssh_widgets import build_ssh_key_manager
@@ -1673,9 +1666,8 @@ def build_icesheets_ui():
             layout=W.Layout(width="100%", height="120px"),
         )
 
-        def current_cloud_backend():
-
-            return CloudBackend(
+        def current_cloud_bridge():
+            return CloudBridge(
                 provider="aws",
                 region=(
                     aws_region.value.strip()
@@ -1685,6 +1677,7 @@ def build_icesheets_ui():
                     aws_profile.value.strip()
                     or None
                 ),
+                results_sync=workspace_manager.sync_cloud_results,
             )
 
         def current_experiment_configuration() -> dict:
@@ -2813,17 +2806,18 @@ def build_icesheets_ui():
             )
 
             if mode == "cloud":
+                result = current_cloud_bridge().submit(
+                    backend=selected_text(backend_dd),
+                    model=selected_text(model_dd),
+                    display_region=aws_region.value.strip() or "us-east-1",
+                    s3_prefix=cloud_bucket.value.strip(),
+                    job_queue=batch_job_queue.value.strip(),
+                    job_definition=batch_job_def.value.strip(),
+                    job_name=batch_job_name.value.strip() or "icesheets",
+                )
                 with log_out:
-                    print("[cloud] Placeholder for AWS Batch submission.")
-                    print(f"[cloud] backend : {selected_text(backend_dd)}")
-                    print(f"[cloud] model   : {selected_text(model_dd)}")
-                    print(f"[cloud] region  : {aws_region.value.strip() or 'us-east-1'}")
-                    print(f"[cloud] profile : {aws_profile.value.strip() or '(default)'}")
-                    print(f"[cloud] bucket  : {cloud_bucket.value.strip() or '(not set)'}")
-                    print(f"[cloud] queue   : {batch_job_queue.value.strip() or '(not set)'}")
-                    print(f"[cloud] job def : {batch_job_def.value.strip() or '(not set)'}")
-                    print(f"[cloud] job name: {batch_job_name.value.strip() or 'icesheets'}")
-                    print("[cloud] Next step is to adapt submit_cloud_example for model-only workflows.")
+                    for message in result.messages:
+                        print(message)
                 status_chip.value = status_html("done")
                 return
             
@@ -3465,9 +3459,7 @@ def build_icesheets_ui():
 
             try:
 
-                backend = current_cloud_backend()
-
-                result = backend.status(
+                result = current_cloud_bridge().status(
                     job_id=str(jobid),
                 )
 
@@ -3534,9 +3526,7 @@ def build_icesheets_ui():
 
             try:
 
-                backend = current_cloud_backend()
-
-                result = backend.logs(
+                result = current_cloud_bridge().logs(
                     job_id=str(jobid),
                 )
 
@@ -3608,9 +3598,7 @@ def build_icesheets_ui():
 
             try:
 
-                backend = current_cloud_backend()
-
-                result = backend.terminate(
+                result = current_cloud_bridge().terminate(
                     job_id=str(jobid),
                 )
 
@@ -3987,15 +3975,6 @@ def build_icesheets_ui():
             # spack_slurm_row,
             # spack_pmix_row,
         ], layout=W.Layout(gap="8px"))
-
-        cloud_backend = CloudBackend(
-            provider="aws",
-            region=aws_region.value.strip() or "us-east-2",
-            profile=(
-                aws_profile.value.strip()
-                or None
-            ),
-        )
 
         def _toggle_exec_backend_ui(_=None):
             is_container = backend_dd.value == "container"

@@ -173,6 +173,33 @@ class WorkspaceManager:
         root = self.example_root()
         return root / "_icesee_remote_runs" / f"{self.model.value}_{self.backend.value}"
 
+    def sync_cloud_results(
+        self,
+        *,
+        s3_uri: str,
+        region: str | None = None,
+        profile: str | None = None,
+    ) -> Path:
+        outputs_dir = self.local_run_cache_dir() / "cloud_outputs"
+        if outputs_dir.exists():
+            self.delete(outputs_dir)
+        outputs_dir.mkdir(parents=True, exist_ok=True)
+        command = ["aws"]
+        if profile:
+            command.extend(["--profile", profile])
+        if region:
+            command.extend(["--region", region])
+        command.extend([
+            "s3",
+            "sync",
+            f"{s3_uri.rstrip('/')}/outputs/",
+            f"{outputs_dir}/",
+        ])
+        result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError((result.stderr or result.stdout).strip())
+        return outputs_dir
+
     def remote_outputs_dir(self) -> str:
         remote_dir = self.normalize_remote_path(self.status.get("remote_dir") or "")
         return f"{remote_dir}/outputs"

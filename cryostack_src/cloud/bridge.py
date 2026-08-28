@@ -44,6 +44,7 @@ class CloudBridge:
         job_queue = kwargs.get("job_queue", "")
         job_definition = kwargs.get("job_definition", "")
         job_name = kwargs.get("job_name", "icesheets")
+        display_region = kwargs.get("display_region") or self.region
 
         return ExecutionResult(
             success=True,
@@ -52,7 +53,7 @@ class CloudBridge:
                 "[cloud] Placeholder for AWS Batch submission.",
                 f"[cloud] backend : {selected_backend}",
                 f"[cloud] model   : {model}",
-                f"[cloud] region  : {self.region or 'us-east-1'}",
+                f"[cloud] region  : {display_region}",
                 f"[cloud] profile : {self.profile or '(default)'}",
                 f"[cloud] bucket  : {s3_prefix or '(not set)'}",
                 f"[cloud] queue   : {job_queue or '(not set)'}",
@@ -74,7 +75,12 @@ class CloudBridge:
     def results(self, *, s3_uri: str, **kwargs):
         if self.results_sync is None:
             raise RuntimeError("Cloud result synchronization is not configured.")
-        return self.results_sync(s3_uri=s3_uri, **kwargs)
+        return self.results_sync(
+            s3_uri=s3_uri,
+            region=kwargs.pop("region", self.region),
+            profile=kwargs.pop("profile", self.profile),
+            **kwargs,
+        )
 
     def check_environment(self):
         return self.manager.capabilities(
