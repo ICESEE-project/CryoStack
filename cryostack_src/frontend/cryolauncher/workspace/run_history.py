@@ -36,7 +36,7 @@ def build_workspace_history_panel(*, manager) -> WorkspaceHistoryPanel:
         ] or [("No previous runs found", "")]
         if not discovered:
             runs.value = ""
-            show_selection()
+        show_selection()
 
     def show_selection(change=None):
         run = manager.select_run(runs.value or "")

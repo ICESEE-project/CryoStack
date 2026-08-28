@@ -281,6 +281,11 @@ class WorkspaceManager:
                 print("[upload][ERROR]", type(error).__name__, error)
 
     def local_run_cache_dir(self) -> Path:
+        selected = self.selected_run()
+        if selected and selected.workspace_directory:
+            cache = selected.workspace_directory / "cache"
+            cache.mkdir(parents=True, exist_ok=True)
+            return cache
         root = self.example_root()
         return root / "_icesee_remote_runs" / f"{self.model.value}_{self.backend.value}"
 
