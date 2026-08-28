@@ -76,7 +76,7 @@ from icesee_jupyter_book.ui.workspace_bridge import (
     load_workspace_bridge,
 )
 
-from cryostack_src.workspace import WorkspaceBridge, build_workspace_logs
+from cryostack_src.workspace import WorkspaceBridge, WorkspaceManager, build_workspace_logs
 
 from icesee_jupyter_book.core.experiment_status import (
     experiment_update_from_job_status,
@@ -105,10 +105,6 @@ from cryostack_src.frontend.cryolauncher.workspace import (
     build_run_details,
     build_workspace_explorer,
     build_workspace_toolbar,
-    list_editable_files as workspace_list_editable_files,
-    load_selected_file as load_workspace_file,
-    refresh_file_picker as refresh_workspace_file_picker,
-    save_selected_file as save_workspace_file,
 )
 
 from cryostack_src.frontend.cryolauncher.run_settings_state import (
@@ -2434,15 +2430,29 @@ def build_icesheets_ui():
                 return f'apptainer exec "{image_uri.value}" with-icepack bash -lc \'jupyter nbconvert --to script "{chosen_target}" && python "{py_name}"\''
             return f'apptainer exec "{image_uri.value}" with-icepack python -c "import icepack"'
         
+        workspace_manager = WorkspaceManager(
+            status=STATUS,
+            session=SESSION,
+            example_dir=example_dir,
+            model=model_dd,
+            backend=backend_dd,
+            file_picker=file_picker,
+            file_editor=file_editor,
+            log_output=log_out,
+            results_output=results_out,
+            cluster_host=cluster_host,
+            cluster_user=cluster_user,
+            cluster_port=cluster_port,
+            access_mode=access_mode_dd,
+            normalize_remote_path=normalize_remote_path,
+            connector_fetch_archive=connector_fetch_archive,
+        )
+
         def list_editable_files(example_path: str) -> list[tuple[str, str]]:
-            return workspace_list_editable_files(example_path)
+            return workspace_manager.list_editable_files(example_path)
         
         def refresh_file_picker(_=None):
-            refresh_workspace_file_picker(
-                example_dir=example_dir,
-                file_picker=file_picker,
-                file_editor=file_editor,
-            )
+            workspace_manager.refresh_files()
 
         def refresh_run_target_options(_=None):
             files = list_editable_files(example_dir.value.strip())
@@ -2512,14 +2522,10 @@ def build_icesheets_ui():
             run_target.value = opts[0]
 
         def load_selected_file(_=None):
-            load_workspace_file(file_picker=file_picker, file_editor=file_editor)
+            workspace_manager.load_file()
 
         def save_selected_file(_=None):
-            save_workspace_file(
-                file_picker=file_picker,
-                file_editor=file_editor,
-                log_output=log_out,
-            )
+            workspace_manager.save_file()
 
         def selected_run_file() -> str:
             target = (run_target.value or "").strip()
@@ -2543,97 +2549,15 @@ def build_icesheets_ui():
             return target
 
         def deploy_current_example(_=None):
-            log_out.clear_output()
-
-            src = Path(example_dir.value).expanduser()
-            new_name = new_example_name.value.strip()
-
-            if not src.exists():
-                with log_out:
-                    print("[advanced][ERROR] Source example path does not exist.")
-                return
-
-            if not new_name:
-                with log_out:
-                    print("[advanced][ERROR] Provide a new example name first.")
-                return
-
-            try:
-                if src.is_file():
-                    dest = src.parent / new_name
-                    if dest.suffix == "":
-                        dest = dest.with_suffix(src.suffix)
-                    dest.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
-                else:
-                    dest = src.parent / new_name
-                    if dest.exists():
-                        with log_out:
-                            print(f"[advanced][ERROR] Target already exists: {dest}")
-                        return
-
-                    import shutil
-                    shutil.copytree(src, dest)
-
-                with log_out:
-                    print(f"[advanced] New example created: {dest}")
-
-                # Refresh discovered examples after deployment
+            destination = workspace_manager.clone_example(new_example_name.value.strip())
+            if destination is not None:
                 refresh_example_picker()
 
-            except Exception as e:
-                with log_out:
-                    print("[advanced][ERROR]", type(e).__name__, e)
-
         def current_example_root() -> Path | None:
-            p = Path(example_dir.value).expanduser()
-            if p.exists():
-                return p if p.is_dir() else p.parent
-            return None
+            return workspace_manager.example_root()
 
         def save_uploaded_datasets(_=None):
-            log_out.clear_output()
-
-            root = current_example_root()
-            if root is None:
-                with log_out:
-                    print("[upload][ERROR] Example directory is not available.")
-                return
-
-            if not dataset_upload.value:
-                with log_out:
-                    print("[upload] No files selected.")
-                return
-
-            target_dir = root / "_uploaded_datasets"
-            target_dir.mkdir(parents=True, exist_ok=True)
-
-            saved = 0
-
-            try:
-                value = dataset_upload.value
-
-                # ipywidgets may expose tuple/dict depending on version
-                if isinstance(value, dict):
-                    items = value.items()
-                else:
-                    items = []
-                    for item in value:
-                        name = item.get("name", "uploaded_file")
-                        items.append((name, item))
-
-                for name, meta in items:
-                    content = meta["content"] if isinstance(meta, dict) else meta.content
-                    out_path = target_dir / name
-                    with open(out_path, "wb") as f:
-                        f.write(content)
-                    saved += 1
-
-                with log_out:
-                    print(f"[upload] Saved {saved} file(s) to: {target_dir}")
-
-            except Exception as e:
-                with log_out:
-                    print("[upload][ERROR]", type(e).__name__, e)
+            workspace_manager.save_uploaded_datasets(dataset_upload.value)
 
         def make_zip_from_dir(src_dir: Path, zip_path: Path):
             with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -4165,9 +4089,9 @@ def build_icesheets_ui():
         save_file_btn.on_click(save_selected_file)
         deploy_example_btn.on_click(deploy_current_example)
         upload_dataset_btn.on_click(save_uploaded_datasets)
-        results_download_btn.on_click(download_results_bundle)
-        figures_download_btn.on_click(download_figures_bundle)
-        preview_results_btn.on_click(preview_remote_results)
+        results_download_btn.on_click(workspace_manager.download_results)
+        figures_download_btn.on_click(workspace_manager.download_figures)
+        preview_results_btn.on_click(workspace_manager.preview_results)
         add_md_override_btn.on_click(add_md_override)
         clear_md_overrides_btn.on_click(clear_md_overrides)
         start_connector_session_btn.on_click(create_or_refresh_connector_session)

@@ -1,6 +1,7 @@
 from .bridge import WorkspaceBridge
 from .history import RunHistory
 from .logs import WorkspaceLogs, build_workspace_logs
+from .manager import WorkspaceManager
 from .models import RunInfo
 
 __all__ = [
@@ -9,4 +10,5 @@ __all__ = [
     "RunInfo",
     "WorkspaceLogs",
     "build_workspace_logs",
+    "WorkspaceManager",
 ]

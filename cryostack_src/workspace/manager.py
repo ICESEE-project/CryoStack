@@ -1,0 +1,329 @@
+from __future__ import annotations
+
+import base64
+import html
+import shutil
+import subprocess
+import tarfile
+import tempfile
+import time
+import uuid
+import zipfile
+from pathlib import Path
+
+from IPython.display import HTML, Image, display
+
+from cryostack_src.frontend.cryolauncher.workspace.file_browser import (
+    load_selected_file,
+    refresh_file_picker,
+    save_selected_file,
+)
+from cryostack_src.frontend.cryolauncher.workspace.tree import list_editable_files
+
+
+class WorkspaceManager:
+    """Own CryoLauncher workspace and result filesystem operations."""
+
+    def __init__(
+        self,
+        *,
+        status,
+        session,
+        example_dir,
+        model,
+        backend,
+        file_picker,
+        file_editor,
+        log_output,
+        results_output,
+        cluster_host,
+        cluster_user,
+        cluster_port,
+        access_mode,
+        normalize_remote_path,
+        connector_fetch_archive,
+    ) -> None:
+        self.status = status
+        self.session = session
+        self.example_dir = example_dir
+        self.model = model
+        self.backend = backend
+        self.file_picker = file_picker
+        self.file_editor = file_editor
+        self.log_output = log_output
+        self.results_output = results_output
+        self.cluster_host = cluster_host
+        self.cluster_user = cluster_user
+        self.cluster_port = cluster_port
+        self.access_mode = access_mode
+        self.normalize_remote_path = normalize_remote_path
+        self.connector_fetch_archive = connector_fetch_archive
+
+    def list_editable_files(self, example_path: str) -> list[tuple[str, str]]:
+        return list_editable_files(example_path)
+
+    def refresh_files(self) -> None:
+        refresh_file_picker(
+            example_dir=self.example_dir,
+            file_picker=self.file_picker,
+            file_editor=self.file_editor,
+        )
+
+    def load_file(self) -> None:
+        load_selected_file(file_picker=self.file_picker, file_editor=self.file_editor)
+
+    def save_file(self) -> None:
+        save_selected_file(
+            file_picker=self.file_picker,
+            file_editor=self.file_editor,
+            log_output=self.log_output,
+        )
+
+    def example_root(self) -> Path | None:
+        path = Path(self.example_dir.value).expanduser()
+        if path.exists():
+            return path if path.is_dir() else path.parent
+        return None
+
+    def clone_example(self, new_name: str) -> Path | None:
+        self.log_output.clear_output()
+        source = Path(self.example_dir.value).expanduser()
+        if not source.exists():
+            with self.log_output:
+                print("[advanced][ERROR] Source example path does not exist.")
+            return None
+        if not new_name:
+            with self.log_output:
+                print("[advanced][ERROR] Provide a new example name first.")
+            return None
+        try:
+            if source.is_file():
+                destination = source.parent / new_name
+                if destination.suffix == "":
+                    destination = destination.with_suffix(source.suffix)
+                destination.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+            else:
+                destination = source.parent / new_name
+                if destination.exists():
+                    with self.log_output:
+                        print(f"[advanced][ERROR] Target already exists: {destination}")
+                    return None
+                shutil.copytree(source, destination)
+            with self.log_output:
+                print(f"[advanced] New example created: {destination}")
+            return destination
+        except Exception as error:
+            with self.log_output:
+                print("[advanced][ERROR]", type(error).__name__, error)
+            return None
+
+    def save_uploaded_datasets(self, value) -> None:
+        self.log_output.clear_output()
+        root = self.example_root()
+        if root is None:
+            with self.log_output:
+                print("[upload][ERROR] Example directory is not available.")
+            return
+        if not value:
+            with self.log_output:
+                print("[upload] No files selected.")
+            return
+        target_dir = root / "_uploaded_datasets"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        saved = 0
+        try:
+            if isinstance(value, dict):
+                items = value.items()
+            else:
+                items = []
+                for item in value:
+                    name = item.get("name", "uploaded_file")
+                    items.append((name, item))
+            for name, metadata in items:
+                content = metadata["content"] if isinstance(metadata, dict) else metadata.content
+                with open(target_dir / name, "wb") as stream:
+                    stream.write(content)
+                saved += 1
+            with self.log_output:
+                print(f"[upload] Saved {saved} file(s) to: {target_dir}")
+        except Exception as error:
+            with self.log_output:
+                print("[upload][ERROR]", type(error).__name__, error)
+
+    def local_run_cache_dir(self) -> Path:
+        root = self.example_root()
+        return root / "_icesee_remote_runs" / f"{self.model.value}_{self.backend.value}"
+
+    def remote_outputs_dir(self) -> str:
+        remote_dir = self.normalize_remote_path(self.status.get("remote_dir") or "")
+        return f"{remote_dir}/outputs"
+
+    def refresh_results(self) -> Path | None:
+        remote_dir = self.normalize_remote_path(self.status.get("remote_dir") or "")
+        if not remote_dir:
+            with self.results_output:
+                print("[results] No remote run directory found. Submit a job first.")
+            return None
+        host = self.cluster_host.value.strip()
+        user = self.cluster_user.value.strip()
+        port = int(self.cluster_port.value)
+        outputs_dir = self.local_run_cache_dir() / "outputs"
+        if outputs_dir.exists():
+            shutil.rmtree(outputs_dir)
+        outputs_dir.mkdir(parents=True, exist_ok=True)
+        remote_outputs = self.remote_outputs_dir()
+        if self.access_mode.value == "connector":
+            result = self.connector_fetch_archive(
+                self.session["id"], host, user, port,
+                f"{remote_outputs.rstrip('/')}/", timeout=600,
+            )
+            if not result.get("ok"):
+                with self.results_output:
+                    print("[results][ERROR] Could not fetch remote outputs through connector.")
+                    print("Remote source:", remote_outputs)
+                    print("FULL RESPONSE:")
+                    print(result)
+                    print("--- stdout ---")
+                    print(result.get("stdout", ""))
+                    print("--- stderr ---")
+                    print(result.get("stderr", ""))
+                return None
+            try:
+                archive_b64 = result.get("archive_b64")
+                if not archive_b64:
+                    raise RuntimeError("Connector response did not include archive_b64.")
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    archive_path = Path(temp_dir) / "outputs.tar.gz"
+                    archive_path.write_bytes(base64.b64decode(archive_b64))
+                    if outputs_dir.exists():
+                        shutil.rmtree(outputs_dir)
+                    outputs_dir.mkdir(parents=True, exist_ok=True)
+                    with tarfile.open(archive_path, "r:gz") as archive:
+                        archive.extractall(outputs_dir)
+                return outputs_dir
+            except Exception as error:
+                with self.results_output:
+                    print("[results][ERROR] Could not unpack connector archive.")
+                    print(type(error).__name__, error)
+                return None
+        command = [
+            "rsync", "-az", "-e", f"ssh -p {port}",
+            f"{user}@{host}:{remote_outputs.rstrip('/')}/", f"{outputs_dir}/",
+        ]
+        result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode != 0:
+            with self.results_output:
+                print("[results][ERROR] Could not fetch remote outputs.")
+                print("Remote source:", remote_outputs)
+                print("--- stdout ---")
+                print(result.stdout)
+                print("--- stderr ---")
+                print(result.stderr)
+            return None
+        return outputs_dir
+
+    @staticmethod
+    def _make_zip(source: Path, destination: Path) -> None:
+        with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as archive:
+            for path in sorted(source.rglob("*")):
+                if path.is_file():
+                    archive.write(path, arcname=path.relative_to(source))
+
+    @staticmethod
+    def _auto_download(path: Path, filename: str | None = None) -> None:
+        path = Path(path).resolve()
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        filename = filename or path.name
+        stem = Path(filename).stem
+        suffix = Path(filename).suffix or ".zip"
+        download_name = f"{stem}_{stamp}{suffix}"
+        data = base64.b64encode(path.read_bytes()).decode("ascii")
+        element_id = f"icesee_download_{uuid.uuid4().hex}"
+        display(HTML(f'''<div id="{element_id}"></div><script>
+        (function() {{ const a = document.createElement("a");
+        a.href = "data:application/zip;base64,{data}";
+        a.download = "{html.escape(download_name)}"; a.style.display = "none";
+        document.body.appendChild(a); setTimeout(() => {{ a.click();
+        document.body.removeChild(a); }}, 100); }})();</script>'''))
+
+    def download_results(self, _=None) -> None:
+        self.results_output.clear_output()
+        outputs_dir = self.refresh_results()
+        if outputs_dir is None:
+            return
+        zip_path = self.local_run_cache_dir() / "results_bundle.zip"
+        try:
+            if zip_path.exists():
+                zip_path.unlink()
+            self._make_zip(outputs_dir, zip_path)
+            if not zipfile.is_zipfile(zip_path):
+                raise RuntimeError(f"Created file is not a valid zip: {zip_path}")
+            with self.results_output:
+                print(f"Preparing download: {zip_path.name}")
+                print("If the browser blocks repeated downloads, allow multiple downloads for this page.")
+                self._auto_download(zip_path, "results_bundle.zip")
+        except Exception as error:
+            with self.results_output:
+                print("[download][ERROR]", type(error).__name__, error)
+
+    def download_figures(self, _=None) -> None:
+        self.results_output.clear_output()
+        outputs_dir = self.refresh_results()
+        if outputs_dir is None:
+            return
+        pngs = sorted(outputs_dir.rglob("*.png"))
+        if not pngs:
+            with self.results_output:
+                print("[download] No PNG figures found.")
+                print("Checked recursively under:", outputs_dir)
+            return
+        figures_dir = self.local_run_cache_dir() / "_figures_only"
+        if figures_dir.exists():
+            shutil.rmtree(figures_dir)
+        figures_dir.mkdir(parents=True, exist_ok=True)
+        for path in pngs:
+            shutil.copy2(path, figures_dir / path.name)
+        zip_path = self.local_run_cache_dir() / "figures_bundle.zip"
+        try:
+            if zip_path.exists():
+                zip_path.unlink()
+            self._make_zip(figures_dir, zip_path)
+            if not zipfile.is_zipfile(zip_path):
+                raise RuntimeError(f"Created file is not a valid zip: {zip_path}")
+            with self.results_output:
+                print(f"Preparing download: {zip_path.name}")
+                print("If the browser blocks repeated downloads, allow multiple downloads for this page.")
+                self._auto_download(zip_path, "figures_bundle.zip")
+        except Exception as error:
+            with self.results_output:
+                print("[download][ERROR]", type(error).__name__, error)
+
+    def preview_results(self, _=None) -> None:
+        self.results_output.clear_output()
+        outputs_dir = self.refresh_results()
+        if outputs_dir is None:
+            return
+        pngs = sorted(outputs_dir.rglob("*.png"))
+        mats = sorted(outputs_dir.rglob("*.mat"))
+        h5s = sorted(outputs_dir.rglob("*.h5"))
+        all_files = sorted(path for path in outputs_dir.rglob("*") if path.is_file())
+        with self.results_output:
+            print("Fetched remote outputs to:")
+            print(outputs_dir)
+            print()
+            print(f"Files found: {len(all_files)}")
+            for path in all_files[:200]:
+                print(" -", path.relative_to(outputs_dir))
+            print()
+            print(f"MAT files: {len(mats)}")
+            for path in mats[:50]:
+                print(" -", path.relative_to(outputs_dir))
+            print()
+            print(f"HDF5 files: {len(h5s)}")
+            for path in h5s[:50]:
+                print(" -", path.relative_to(outputs_dir))
+            print()
+            print(f"PNG figures: {len(pngs)}")
+            for path in pngs[:20]:
+                print(" -", path.relative_to(outputs_dir))
+                display(Image(filename=str(path)))
