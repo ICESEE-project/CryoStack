@@ -76,6 +76,7 @@ from cryostack_src.frontend.shared import (
 
 from cryostack_src.frontend.cryolauncher.cloud_environment import (
     build_cloud_environment_card,
+    set_cloud_status,
 )
 from cryostack_src.frontend.cryolauncher.cloud_runtime import (
     build_cloud_runtime_callbacks,
@@ -1439,6 +1440,11 @@ def build_icesheets_ui():
                 with log_out:
                     for message in result.messages:
                         print(message)
+                if result.job_id:
+                    STATUS["batch_job_id"] = result.job_id
+                cloud_run = result.metadata.get("s3_run") or result.working_directory
+                if cloud_run:
+                    STATUS["cloud_run"] = cloud_run
                 status_chip.value = status_html("done")
                 return
             
@@ -1686,10 +1692,33 @@ def build_icesheets_ui():
             status_widget=status_chip,
             status_html=status_html,
             bridge_factory=current_cloud_bridge,
+            cloud_environment=cloud_environment,
+            set_cloud_status=set_cloud_status,
+            bucket_value=lambda: cloud_bucket.value.strip(),
+            results_output=results_out,
         )
         on_cloud_status = cloud_runtime.status
         on_cloud_logs = cloud_runtime.logs
         on_cloud_terminate = cloud_runtime.terminate
+        on_cloud_results = cloud_runtime.results
+
+        def on_results_preview(_=None):
+            if mode_dd.value == "cloud":
+                on_cloud_results()
+            else:
+                workspace_manager.preview_results()
+
+        def on_results_download(_=None):
+            if mode_dd.value == "cloud":
+                on_cloud_results()
+            else:
+                workspace_manager.download_results()
+
+        def on_figures_download(_=None):
+            if mode_dd.value == "cloud":
+                on_cloud_results()
+            else:
+                workspace_manager.download_figures()
 
         def refresh_md_overrides_view():
             if not md_overrides:
@@ -1794,12 +1823,14 @@ def build_icesheets_ui():
         cloud_status_btn.on_click(on_cloud_status)
         cloud_logs_btn.on_click(on_cloud_logs)
         cloud_terminate_btn.on_click(on_cloud_terminate)
+        cloud_environment.test_button.on_click(cloud_runtime.check_environment)
+        cloud_environment.prepare_button.on_click(cloud_runtime.prepare_environment)
         save_file_btn.on_click(save_selected_file)
         deploy_example_btn.on_click(deploy_current_example)
         upload_dataset_btn.on_click(save_uploaded_datasets)
-        results_download_btn.on_click(workspace_manager.download_results)
-        figures_download_btn.on_click(workspace_manager.download_figures)
-        preview_results_btn.on_click(workspace_manager.preview_results)
+        results_download_btn.on_click(on_results_download)
+        figures_download_btn.on_click(on_figures_download)
+        preview_results_btn.on_click(on_results_preview)
         add_md_override_btn.on_click(add_md_override)
         clear_md_overrides_btn.on_click(clear_md_overrides)
         start_connector_session_btn.on_click(create_or_refresh_connector_session)
