@@ -46,8 +46,6 @@ from icesee_jupyter_book.core.remote_runner import (
     remote_job_status,
 )
 
-from cryostack_src.remote import RemoteManager
-
 class RemoteBackend(
     ExecutionBackend
 ):
