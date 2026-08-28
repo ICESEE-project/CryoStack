@@ -25,6 +25,7 @@ Public CryoStack cloud API.
 """
 
 from .manager import CloudManager
+from .bridge import CloudBridge
 
 from .drivers.aws import (
     AWSDriver,
@@ -33,6 +34,7 @@ from .drivers.aws import (
 
 __all__ = [
     "CloudManager",
+    "CloudBridge",
     "AWSDriver",
     "AWSConfig",
 ]

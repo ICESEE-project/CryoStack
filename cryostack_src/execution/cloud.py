@@ -44,7 +44,7 @@ from .backend import (
     ExecutionStatus,
 )
 
-from cryostack_src.cloud import CloudManager
+from cryostack_src.cloud.manager import CloudManager
 
 class CloudBackend(
     ExecutionBackend
