@@ -32,9 +32,10 @@ def build_run_details(
     for panel in (runs_panel, files_panel, logs_panel, results_panel):
         panel.add_class("cryostack-output-tab")
     tabs.add_class("cryostack-output-tabs")
+    tabs.add_class("cryostack-workspace-tabs")
     container = W.VBox(
-        [W.HTML("<div class='cryostack-workspace-heading'>Workspace</div>"), tabs],
-        layout=W.Layout(width="100%", height="100%", min_height="0", gap="8px", overflow="hidden"),
+        [W.HTML("<div class='cryostack-workspace-heading'><span>Workspace</span></div>"), tabs],
+        layout=W.Layout(width="100%", height="100%", min_height="0", gap="0", overflow="hidden"),
     )
     container.add_class("cryostack-output-workspace")
     return WorkspaceDetails(container=container, tabs=tabs)

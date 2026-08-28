@@ -1685,6 +1685,7 @@ def build_icesheets_ui():
             bridge_factory=current_remote_bridge,
             experiment_bridge=experiment_bridge,
             experiment_update_from_job_status=experiment_update_from_job_status,
+            on_status_result=workspace_manager.update_run_status_by_job,
         )
         on_test_remote = remote_runtime.check
         on_status = remote_runtime.status
@@ -1720,6 +1721,7 @@ def build_icesheets_ui():
             set_cloud_status=set_cloud_status,
             bucket_value=lambda: cloud_bucket.value.strip(),
             results_output=results_out,
+            on_status_result=workspace_manager.update_run_status_by_job,
         )
         on_cloud_status = cloud_runtime.status
         on_cloud_logs = cloud_runtime.logs
@@ -1733,6 +1735,26 @@ def build_icesheets_ui():
             return on_tail()
 
         workspace_manager.set_tail_handler(tail_selected_workspace_run)
+
+        def resolve_workspace_run_status(run):
+            if run.execution_mode == "cloud":
+                bridge = CloudBridge(
+                    provider="aws",
+                    region=run.metadata.get("region") or "us-east-2",
+                    profile=run.metadata.get("profile") or None,
+                )
+            else:
+                bridge = RemoteBridge(
+                    mode=run.metadata.get("access_mode") or "direct",
+                    host=run.metadata.get("host") or cluster_host.value.strip(),
+                    user=run.metadata.get("user") or cluster_user.value.strip(),
+                    port=int(run.metadata.get("port") or cluster_port.value),
+                    session_id=SESSION.get("id"),
+                    cluster_name=run.metadata.get("cluster_name") or "pace",
+                )
+            return bridge.status(job_id=str(run.jobid)).state
+
+        workspace_manager.set_status_resolver(resolve_workspace_run_status)
 
         def on_results_preview(_=None):
             if mode_dd.value == "cloud":

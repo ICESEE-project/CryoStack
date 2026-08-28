@@ -9,6 +9,7 @@ import tempfile
 import time
 import uuid
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 from IPython.display import HTML, Image, display
@@ -73,9 +74,41 @@ class WorkspaceManager:
         self._runs: dict[str, RunInfo] = {}
         self._selected_run_id: str | None = None
         self._tail_handler = None
+        self._status_resolver = None
 
     def set_tail_handler(self, handler) -> None:
         self._tail_handler = handler
+
+    def set_status_resolver(self, resolver) -> None:
+        self._status_resolver = resolver
+
+    def reconcile_run(self, run_id: str) -> RunInfo | None:
+        run = self._runs.get(run_id)
+        if not run or not run.jobid or self._status_resolver is None:
+            return run
+        if run.status in {"completed", "failed", "cancelled"}:
+            return run
+        try:
+            state = self._status_resolver(run)
+        except Exception:
+            return run
+        return self.update_run_status(run_id, state)
+
+    def update_run_status(self, run_id: str, state: str | None) -> RunInfo | None:
+        run = self._runs.get(run_id)
+        normalized = str(state or "").strip().lower()
+        if not run or normalized not in {"submitted", "queued", "running", "completed", "failed", "cancelled"}:
+            return run
+        if run.status != normalized:
+            run.status = normalized
+            run.finished = datetime.now() if normalized in {"completed", "failed", "cancelled"} else None
+            if run.workspace_directory:
+                write_manifest(run, run.workspace_directory)
+        return run
+
+    def update_run_status_by_job(self, job_id: str, state: str | None) -> RunInfo | None:
+        run = next((item for item in self._runs.values() if str(item.jobid) == str(job_id)), None)
+        return self.update_run_status(run.id, state) if run else None
 
     def tail(self, run_id: str):
         run = self.select_run(run_id)
@@ -139,6 +172,8 @@ class WorkspaceManager:
         self._runs = discovered
         if self._selected_run_id not in discovered:
             self._selected_run_id = None
+        for run in tuple(discovered.values()):
+            self.reconcile_run(run.id)
         return self.list_runs()
 
     def list_runs(self) -> list[RunInfo]:

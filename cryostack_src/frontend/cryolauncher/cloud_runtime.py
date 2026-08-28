@@ -25,6 +25,7 @@ def build_cloud_runtime_callbacks(
     set_cloud_status,
     bucket_value,
     results_output,
+    on_status_result=None,
 ) -> CloudRuntimeCallbacks:
     def _update_environment(capabilities):
         states = (
@@ -97,6 +98,8 @@ def build_cloud_runtime_callbacks(
             return
         try:
             result = bridge_factory().status(job_id=str(job_id))
+            if on_status_result is not None:
+                on_status_result(str(job_id), result.state)
             with log_output:
                 print("[cloud] Job status")
                 print("state:", result.state)

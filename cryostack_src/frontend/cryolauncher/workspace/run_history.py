@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import html
 
 import ipywidgets as W
 
@@ -11,11 +12,13 @@ class WorkspaceHistoryPanel:
     files_panel: W.VBox
     refresh_button: W.Button
     runs: W.Select
+    run_cards: W.VBox
 
 
 def build_workspace_history_panel(*, manager) -> WorkspaceHistoryPanel:
-    refresh_button = W.Button(description="Refresh", icon="refresh")
-    runs = W.Select(description="Previous Runs", rows=4, layout=W.Layout(width="100%"))
+    refresh_button = W.Button(description="Refresh", icon="refresh", layout=W.Layout(width="100px"))
+    runs = W.Select(layout=W.Layout(display="none"))
+    run_cards = W.VBox(layout=W.Layout(width="100%", gap="2px"))
     selected = W.HTML("<div class='icesee-subtle'>No run selected.</div>")
     files = W.HTML("<div class='icesee-subtle'>Select a run to inspect its workspace.</div>")
     tail_button = W.Button(description="Tail Log", icon="file-text")
@@ -23,8 +26,38 @@ def build_workspace_history_panel(*, manager) -> WorkspaceHistoryPanel:
     figures_button = W.Button(description="Figures", icon="image")
     confirm = W.Checkbox(description="Confirm deletion of selected run", indent=False)
     delete_button = W.Button(description="Delete", icon="trash", button_style="danger", disabled=True)
+    suppress_selection_reconcile = False
+
+    def status_badge(status):
+        value = str(status or "unknown").lower()
+        return f"<span class='cryostack-run-badge cryostack-run-badge-{value}'>{value.title()}</span>"
+
+    def render_cards(discovered):
+        cards = []
+        for run in discovered:
+            job = str(run.jobid or "—")
+            short_job = job if len(job) <= 12 else f"…{job[-11:]}"
+            choose = W.Button(
+                description=f"{run.model.upper()}  ·  {run.created:%Y-%m-%d %H:%M}",
+                tooltip=f"Select run {run.id}",
+                layout=W.Layout(flex="1 1 auto", min_width="0"),
+            )
+            choose.add_class("cryostack-run-select")
+            row = W.HBox(
+                [choose, W.HTML(status_badge(run.status)), W.HTML(f"<span class='cryostack-run-job'>#{short_job}</span>")],
+                layout=W.Layout(width="100%", align_items="center", gap="7px"),
+            )
+            row.add_class("cryostack-run-row")
+            if run.id == runs.value:
+                row.add_class("cryostack-run-row-selected")
+            choose.on_click(lambda _, run_id=run.id: setattr(runs, "value", run_id))
+            cards.append(row)
+        run_cards.children = tuple(cards) if cards else (
+            W.HTML("<div class='icesee-subtle cryostack-runs-empty'>No previous runs found.</div>"),
+        )
 
     def refresh(_=None):
+        nonlocal suppress_selection_reconcile
         previously_selected = manager.selected_run() if hasattr(manager, "selected_run") else None
         discovered = manager.refresh()
         runs.options = [
@@ -32,27 +65,38 @@ def build_workspace_history_panel(*, manager) -> WorkspaceHistoryPanel:
             for run in discovered
         ] or [("No previous runs found", "")]
         run_ids = {run.id for run in discovered}
-        if discovered:
-            runs.value = previously_selected.id if previously_selected and previously_selected.id in run_ids else discovered[0].id
-        else:
-            runs.value = ""
+        suppress_selection_reconcile = True
+        try:
+            if discovered:
+                runs.value = previously_selected.id if previously_selected and previously_selected.id in run_ids else discovered[0].id
+            else:
+                runs.value = ""
+        finally:
+            suppress_selection_reconcile = False
+        render_cards(discovered)
         show_selection()
 
     def show_selection(change=None):
         run = manager.select_run(runs.value or "")
+        if run and not suppress_selection_reconcile:
+            run = manager.reconcile_run(run.id)
         confirm.value = False
         if not run:
             selected.value = "<div class='icesee-subtle'>No run selected.</div>"
             files.value = "<div class='icesee-subtle'>Select a run to inspect its workspace.</div>"
             return
         selected.value = (
-            f"<b>{run.model.upper()}</b> · {run.backend} · {run.execution_mode}"
-            f"<br><span class='icesee-subtle'>{run.status.title()} · Job {run.jobid or '—'}</span>"
+            "<div class='cryostack-selected-run-card'>"
+            f"<div><span>Model</span><b>{html.escape(run.model.upper())}</b></div>"
+            f"<div><span>Backend</span><b>{html.escape(run.backend)}</b></div>"
+            f"<div><span>Execution</span><b>{html.escape(run.execution_mode)}</b></div>"
+            f"<div><span>Job ID</span><b>{html.escape(str(run.jobid or '—'))}</b></div>"
+            f"<div><span>Status</span>{status_badge(run.status)}</div>"
+            "</div>"
         )
         paths = manager.files(run.id)
         labels = [str(path.relative_to(run.workspace_directory)) for path in paths]
         if labels:
-            import html
             files.value = (
                 "<pre class='cryostack-workspace-tree'>"
                 + "\n".join(f"├── {html.escape(label)}" for label in labels)
@@ -60,6 +104,7 @@ def build_workspace_history_panel(*, manager) -> WorkspaceHistoryPanel:
             )
         else:
             files.value = "<div class='icesee-subtle'>(workspace files unavailable)</div>"
+        render_cards(manager.list_runs())
 
     def tail(_):
         if runs.value:
@@ -86,11 +131,12 @@ def build_workspace_history_panel(*, manager) -> WorkspaceHistoryPanel:
     delete_button.on_click(delete)
 
     runs_panel = W.VBox([
-        W.HBox([refresh_button]), runs,
-        W.HTML("<div style='font-size:12px;font-weight:700'>Selected Run</div>"),
+        W.HBox([W.HTML("<div class='cryostack-section-label'>Runs</div>"), refresh_button], layout=W.Layout(justify_content="space-between", align_items="center")),
+        runs, run_cards,
+        W.HTML("<div class='cryostack-section-label cryostack-selected-label'>Selected Run</div>"),
         selected,
         W.HBox([tail_button, download_button, figures_button], layout=W.Layout(gap="8px", flex_wrap="wrap")),
-        confirm, delete_button,
+        W.VBox([confirm, delete_button], layout=W.Layout(gap="4px")),
     ], layout=W.Layout(width="100%", height="100%", min_height="0", gap="7px", overflow_y="auto"))
     files_panel = W.VBox(
         [files],
@@ -102,4 +148,5 @@ def build_workspace_history_panel(*, manager) -> WorkspaceHistoryPanel:
         files_panel=files_panel,
         refresh_button=refresh_button,
         runs=runs,
+        run_cards=run_cards,
     )

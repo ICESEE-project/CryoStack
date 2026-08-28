@@ -20,6 +20,7 @@ def build_remote_runtime_callbacks(
     bridge_factory,
     experiment_bridge,
     experiment_update_from_job_status,
+    on_status_result=None,
 ) -> RemoteRuntimeCallbacks:
     def _render_connection(label, result, *, show_ok=False):
         with log_output:
@@ -80,6 +81,8 @@ def build_remote_runtime_callbacks(
         try:
             bridge = bridge_factory()
             status = bridge.status(job_id=str(job_id))
+            if on_status_result is not None:
+                on_status_result(str(job_id), status.state)
             result = status.metadata
             experiment_update = experiment_update_from_job_status(result)
             if experiment_update:
