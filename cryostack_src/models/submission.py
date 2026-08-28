@@ -54,6 +54,136 @@ def _issm_container_launcher_shim(*, run_dir: str) -> str:
     )
 
 
+_ICESEE_CONTAINERS_REPO = "https://github.com/ICESEE-project/ICESEE-Containers.git"
+_ICESEE_CONTAINERS_DEFAULT_DEF = "combined-env-inbuilt-matlab.def"
+_ICESEE_CONTAINERS_DEFAULT_SIF = "combined-env.sif"
+
+
+def _apptainer_preamble() -> str:
+    return (
+        'echo "[container] checking apptainer..."\n'
+        "if ! command -v apptainer >/dev/null 2>&1; then\n"
+        "    source /etc/profile >/dev/null 2>&1 || true\n"
+        "    module load apptainer >/dev/null 2>&1 || true\n"
+        "fi\n"
+        "if ! command -v apptainer >/dev/null 2>&1; then\n"
+        '    echo "[container][ERROR] apptainer not found, and module load apptainer failed."\n'
+        "    exit 2\n"
+        "fi"
+    )
+
+
+def _oci_cache_slug(image_uri: str) -> str:
+    """Deterministic filesystem-safe identity for one OCI reference."""
+    import hashlib
+    import re
+
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", image_uri.strip()).strip("-")[:80] or "image"
+    digest = hashlib.sha256(image_uri.strip().encode("utf-8")).hexdigest()[:12]
+    return f"{cleaned}-{digest}"
+
+
+def build_container_provision(
+    *,
+    container_source: str,
+    image_uri: str,
+    remote_base_abs: str,
+    tag: str,
+) -> tuple[str, str]:
+    """Return ``(sif_path, setup_script)`` for the selected container source.
+
+    Three portable, host-Slurm-free modes, each caching exactly one SIF per
+    source/image identity and reusing it on later runs:
+
+    * ``local``          -- ``image_uri`` is an existing SIF path on the remote.
+    * ``docker`` / ``oci`` -- ``apptainer pull docker://<image_uri>`` into a
+      per-image cache SIF (no image build on the HPC system).
+    * ``git`` (default, also legacy ``registry``/empty) -- clone/update
+      ICESEE-Containers and build the selected ``.def`` only when the cached
+      SIF is absent or older than the definition.
+    """
+    source = (container_source or "").strip().lower() or "git"
+    image_uri = (image_uri or "").strip()
+    root = f"{remote_base_abs.rstrip('/')}/{tag}/ICESEE-Containers"
+    preamble = _apptainer_preamble()
+
+    if source == "local":
+        sif_path = image_uri
+        setup = (
+            f"{preamble}\n"
+            'echo "[container] source: local"\n'
+            f'sif_path="{sif_path}"\n'
+            'if [ ! -f "$sif_path" ]; then\n'
+            '    echo "[container][ERROR] local image not found: $sif_path"\n'
+            "    exit 2\n"
+            "fi\n"
+            'echo "[container] using cached image $sif_path"'
+        )
+        return sif_path, setup
+
+    if source in {"docker", "oci"}:
+        cache_dir = f"{root}/oci-cache"
+        sif_path = f"{cache_dir}/{_oci_cache_slug(image_uri)}.sif"
+        ref = image_uri if "://" in image_uri else f"docker://{image_uri}"
+        setup = (
+            f"{preamble}\n"
+            'echo "[container] source: docker"\n'
+            f'mkdir -p "{cache_dir}"\n'
+            f'sif_path="{sif_path}"\n'
+            'if [ -f "$sif_path" ]; then\n'
+            '    echo "[container] using cached image $sif_path"\n'
+            "else\n"
+            f'    echo "[container] pulling image {ref} ..."\n'
+            f'    if ! apptainer pull "$sif_path" "{ref}"; then\n'
+            '        rm -f "$sif_path"\n'
+            "        exit 2\n"
+            "    fi\n"
+            '    echo "[container] using cached image $sif_path"\n'
+            "fi"
+        )
+        return sif_path, setup
+
+    # default: git -- ICESEE-Containers checkout + apptainer build
+    def_name = image_uri if image_uri.endswith(".def") else _ICESEE_CONTAINERS_DEFAULT_DEF
+    sif_name = (
+        _ICESEE_CONTAINERS_DEFAULT_SIF
+        if def_name == _ICESEE_CONTAINERS_DEFAULT_DEF
+        else f"{def_name[:-4]}.sif"
+    )
+    build_dir = f"{root}/spack-managed/combined-container"
+    sif_path = f"{build_dir}/{sif_name}"
+    setup = (
+        f"{preamble}\n"
+        'echo "[container] source: git"\n'
+        f'mkdir -p "{remote_base_abs.rstrip("/")}/{tag}"\n'
+        f'if [ ! -d "{root}/.git" ]; then\n'
+        '    echo "[container] cloning ICESEE-Containers ..."\n'
+        f'    rm -rf "{root}"\n'
+        f'    git clone {_ICESEE_CONTAINERS_REPO} "{root}"\n'
+        "else\n"
+        '    echo "[container] updating ICESEE-Containers ..."\n'
+        f'    git -C "{root}" pull --ff-only || true\n'
+        "fi\n"
+        f'cd "{build_dir}"\n'
+        f'def_path="{build_dir}/{def_name}"\n'
+        f'sif_path="{sif_path}"\n'
+        'if [ ! -f "$def_path" ]; then\n'
+        '    echo "[container][ERROR] definition file not found: $def_path"\n'
+        "    exit 2\n"
+        "fi\n"
+        'if [ ! -f "$sif_path" ] || [ "$def_path" -nt "$sif_path" ]; then\n'
+        f'    echo "[container] building {sif_name} from {def_name} ..."\n'
+        '    if ! apptainer build "$sif_path" "$def_path"; then\n'
+        '        rm -f "$sif_path"\n'
+        "        exit 2\n"
+        "    fi\n"
+        "else\n"
+        '    echo "[container] using cached image $sif_path"\n'
+        "fi"
+    )
+    return sif_path, setup
+
+
 def submit_remote_icesheets_via_connector(
     *,
     session_id: str,
@@ -301,42 +431,12 @@ source "{spack_path}/scripts/activate.sh"
 '''
 
     else:
-        container_root = f"{remote_base_abs.rstrip('/')}/{tag}/ICESEE-Containers"
-        container_dir = f"{container_root}/spack-managed/combined-container"
-        sif_path = f"{container_dir}/combined-env.sif"
-        def_path = f"{container_dir}/combined-env-inbuilt-matlab.def"
-
-        container_setup = f'''
-echo "[icesheets] Checking apptainer..."
-
-if ! command -v apptainer >/dev/null 2>&1; then
-    echo "[icesheets] apptainer not found in PATH. Trying module load apptainer..."
-    source /etc/profile >/dev/null 2>&1 || true
-    module load apptainer >/dev/null 2>&1 || true
-fi
-
-if ! command -v apptainer >/dev/null 2>&1; then
-    echo "[icesheets][ERROR] apptainer not found, and module load apptainer failed."
-    exit 2
-fi
-
-container_root="{container_root}"
-container_dir="{container_dir}"
-sif_path="{sif_path}"
-def_path="{def_path}"
-
-mkdir -p "{remote_base_abs.rstrip('/')}/{tag}"
-
-if [ ! -d "$container_root" ]; then
-    git clone https://github.com/ICESEE-project/ICESEE-Containers.git "$container_root"
-fi
-
-cd "$container_dir"
-
-if [ ! -f "$sif_path" ]; then
-    apptainer build combined-env.sif combined-env-inbuilt-matlab.def
-fi
-'''
+        sif_path, container_setup = build_container_provision(
+            container_source=container_source,
+            image_uri=image_uri,
+            remote_base_abs=remote_base_abs,
+            tag=tag,
+        )
         if model == "issm":
             target_m = run_file_name if run_file_name.endswith(".m") else "runme.m"
             run_block = f'''
@@ -698,51 +798,12 @@ source "{spack_path}/scripts/activate.sh"
         body = activation_block + "\n" + run_block
 
     else:
-        container_root = f"{remote_base_abs.rstrip('/')}/{tag}/ICESEE-Containers"
-        container_dir = f"{container_root}/spack-managed/combined-container"
-        sif_path = f"{container_dir}/combined-env.sif"
-        def_path = f"{container_dir}/combined-env-inbuilt-matlab.def"
-
-        container_setup = f'''
-# --- ICESEE-Container / Apptainer setup ---
-echo "[icesheets] Checking apptainer..."
-
-if ! command -v apptainer >/dev/null 2>&1; then
-    echo "[icesheets] apptainer not found in PATH. Trying module load apptainer..."
-    source /etc/profile >/dev/null 2>&1 || true
-    module load apptainer >/dev/null 2>&1 || true
-fi
-
-if ! command -v apptainer >/dev/null 2>&1; then
-    echo "[icesheets][ERROR] apptainer not found, and module load apptainer failed."
-    exit 2
-fi
-
-container_root="{container_root}"
-container_dir="{container_dir}"
-sif_path="{sif_path}"
-def_path="{def_path}"
-
-mkdir -p "{remote_base_abs.rstrip('/')}/{tag}"
-
-if [ ! -d "$container_root" ]; then
-    echo "[icesheets] Cloning ICESEE-Containers..."
-    git clone https://github.com/ICESEE-project/ICESEE-Containers.git "$container_root"
-fi
-
-cd "$container_dir"
-
-if [ ! -f "$sif_path" ]; then
-    echo "[icesheets] Building Apptainer image..."
-    if [ ! -f "$def_path" ]; then
-        echo "[icesheets][ERROR] Definition file not found: $def_path"
-        exit 2
-    fi
-    apptainer build combined-env.sif combined-env-inbuilt-matlab.def
-else
-    echo "[icesheets] Using existing Apptainer image: $sif_path"
-fi
-'''
+        sif_path, container_setup = build_container_provision(
+            container_source=container_source,
+            image_uri=image_uri,
+            remote_base_abs=remote_base_abs,
+            tag=tag,
+        )
 
         if test_mode:
             if model == "issm":

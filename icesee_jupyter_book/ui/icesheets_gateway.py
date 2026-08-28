@@ -1356,7 +1356,10 @@ def build_icesheets_ui():
                 </div>
                 """
             else:
-                source_name = "Docker Hub" if container_source.value == "docker" else "AWS Registry"
+                source_name = {
+                    "docker": "Docker / OCI",
+                    "local": "Local SIF",
+                }.get(container_source.value, "ICESEE-Containers (git)")
                 exec_note = (
                     "Create host-side example and execution folders, then bind them into "
                     "the combined ICESEE container before launching the selected model."

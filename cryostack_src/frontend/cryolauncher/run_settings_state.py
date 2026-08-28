@@ -176,10 +176,11 @@ def build_run_settings_state() -> RunSettingsState:
 
     container_source = W.Dropdown(
         options=[
-            ("Registry", "registry"),
-            ("Local", "local"),
+            ("ICESEE-Containers (git)", "git"),
+            ("Local SIF", "local"),
+            ("Docker / OCI", "docker"),
         ],
-        value="registry",
+        value="git",
         layout=W.Layout(
             width="100%",
         ),
