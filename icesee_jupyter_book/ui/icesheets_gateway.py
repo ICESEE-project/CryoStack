@@ -105,6 +105,7 @@ from cryostack_src.frontend.cryolauncher.workspace import (
     build_run_details,
     build_workspace_explorer,
     build_workspace_toolbar,
+    build_workspace_history_panel,
 )
 
 from cryostack_src.frontend.cryolauncher.run_settings_state import (
@@ -592,14 +593,18 @@ def build_icesheets_ui():
         )
 
         def current_cloud_bridge():
+            selected_run = workspace_manager.selected_run()
+            selected_metadata = selected_run.metadata if selected_run and selected_run.execution_mode == "cloud" else {}
             return CloudBridge(
                 provider="aws",
                 region=(
-                    aws_region.value.strip()
+                    selected_metadata.get("region")
+                    or aws_region.value.strip()
                     or "us-east-2"
                 ),
                 profile=(
-                    aws_profile.value.strip()
+                    selected_metadata.get("profile")
+                    or aws_profile.value.strip()
                     or None
                 ),
                 results_sync=workspace_manager.sync_cloud_results,
@@ -1112,6 +1117,7 @@ def build_icesheets_ui():
             ssh_run=ssh_run,
             cluster_name=cluster_name_for_keys,
         )
+        workspace_bridge.attach_manager(workspace_manager)
 
         def list_editable_files(example_path: str) -> list[tuple[str, str]]:
             return workspace_manager.list_editable_files(example_path)
@@ -1445,6 +1451,17 @@ def build_icesheets_ui():
                 cloud_run = result.metadata.get("s3_run") or result.working_directory
                 if cloud_run:
                     STATUS["cloud_run"] = cloud_run
+                if result.job_id or cloud_run:
+                    workspace_bridge.start_run(
+                        name=str(result.metadata.get("run_id") or result.job_id or "cloud-run"),
+                        model=model_dd.value,
+                        backend=backend_dd.value,
+                        execution_mode="cloud",
+                        jobid=result.job_id,
+                        remote_directory=Path(str(cloud_run or "cloud")),
+                        log_file=None,
+                        metadata={"cloud_run": cloud_run, "region": aws_region.value.strip(), "profile": aws_profile.value.strip()},
+                    )
                 status_chip.value = status_html("done")
                 return
             
@@ -1586,6 +1603,13 @@ def build_icesheets_ui():
                         if STATUS.get("log_file")
                         else None
                     ),
+                    metadata={
+                        "host": cluster_host.value.strip(),
+                        "user": cluster_user.value.strip(),
+                        "port": int(cluster_port.value),
+                        "access_mode": access_mode_dd.value,
+                        "cluster_name": cluster_name_for_keys.value or "pace",
+                    },
                 )
 
                 experiment_bridge.create(
@@ -1701,6 +1725,14 @@ def build_icesheets_ui():
         on_cloud_logs = cloud_runtime.logs
         on_cloud_terminate = cloud_runtime.terminate
         on_cloud_results = cloud_runtime.results
+
+        def tail_selected_workspace_run():
+            selected = workspace_manager.selected_run()
+            if selected and selected.execution_mode == "cloud":
+                return on_cloud_logs()
+            return on_tail()
+
+        workspace_manager.set_tail_handler(tail_selected_workspace_run)
 
         def on_results_preview(_=None):
             if mode_dd.value == "cloud":
@@ -2184,10 +2216,15 @@ def build_icesheets_ui():
         remote_actions = remote_log_controls
         cloud_actions = cloud_log_controls
 
+        workspace_history_panel = build_workspace_history_panel(
+            manager=workspace_manager,
+        )
+
         workspace_ui = build_workspace_explorer(
             run_settings=run_settings_panel,
             runtime=actions_card,
             run_details=output_workspace.container,
+            history_panel=workspace_history_panel.container,
         )
 
         row = workspace_ui.container

@@ -155,6 +155,21 @@ class WorkspaceManager:
                 batch_job_id=run.jobid if run.execution_mode == "cloud" else self.status.get("batch_job_id"),
                 cloud_run=run.metadata.get("cloud_run"),
             )
+            for widget, key in (
+                (self.cluster_host, "host"),
+                (self.cluster_user, "user"),
+                (self.cluster_port, "port"),
+                (self.access_mode, "access_mode"),
+                (self.cluster_name, "cluster_name"),
+            ):
+                if run.metadata.get(key) not in (None, ""):
+                    widget.value = run.metadata[key]
+            model_values = [item[1] if isinstance(item, tuple) else item for item in self.model.options]
+            backend_values = [item[1] if isinstance(item, tuple) else item for item in self.backend.options]
+            if run.model in model_values:
+                self.model.value = run.model
+            if run.backend in backend_values:
+                self.backend.value = run.backend
         return run
 
     def selected_run(self) -> RunInfo | None:
