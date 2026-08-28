@@ -36,6 +36,7 @@ class CloudBridge:
 
     def submit(self, **kwargs) -> ExecutionResult:
         if self.submitter is not None:
+            kwargs.pop("display_region", None)
             return self.backend.submit(**kwargs)
 
         selected_backend = kwargs.get("backend", "")
