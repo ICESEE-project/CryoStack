@@ -96,9 +96,18 @@ from cryostack_src.frontend.cryolauncher.panels import (
     build_run_settings_panel,
     build_status_panel,
     build_runtime_panel,
-    build_output_workspace,
     build_run_plan_panel,
 
+)
+
+from cryostack_src.frontend.cryolauncher.workspace import (
+    build_run_details,
+    build_workspace_explorer,
+    build_workspace_toolbar,
+    list_editable_files as workspace_list_editable_files,
+    load_selected_file as load_workspace_file,
+    refresh_file_picker as refresh_workspace_file_picker,
+    save_selected_file as save_workspace_file,
 )
 
 from cryostack_src.frontend.cryolauncher.run_settings_state import (
@@ -2423,40 +2432,14 @@ def build_icesheets_ui():
             return f'apptainer exec "{image_uri.value}" with-icepack python -c "import icepack"'
         
         def list_editable_files(example_path: str) -> list[tuple[str, str]]:
-            root = Path(example_path).expanduser()
-            if not root.exists():
-                return []
-
-            allowed = {".m", ".py", ".ipynb", ".yaml", ".yml", ".sh", ".txt", ".md", ".json"}
-            files = []
-
-            if root.is_file():
-                if root.suffix.lower() in allowed:
-                    return [(root.name, str(root))]
-                return []
-
-            for p in sorted(root.rglob("*")):
-                if p.is_file() and p.suffix.lower() in allowed:
-                    try:
-                        rel = p.relative_to(root)
-                        files.append((str(rel), str(p)))
-                    except Exception:
-                        files.append((p.name, str(p)))
-
-            return files
+            return workspace_list_editable_files(example_path)
         
         def refresh_file_picker(_=None):
-            selected = example_dir.value.strip()
-            files = list_editable_files(selected)
-
-            if not files:
-                file_picker.options = [("(no editable files found)", "")]
-                file_picker.value = ""
-                file_editor.value = ""
-                return
-
-            file_picker.options = files
-            file_picker.value = files[0][1]
+            refresh_workspace_file_picker(
+                example_dir=example_dir,
+                file_picker=file_picker,
+                file_editor=file_editor,
+            )
 
         def refresh_run_target_options(_=None):
             files = list_editable_files(example_dir.value.strip())
@@ -2526,71 +2509,14 @@ def build_icesheets_ui():
             run_target.value = opts[0]
 
         def load_selected_file(_=None):
-            selected_file = file_picker.value or ""
-            if not selected_file:
-                file_editor.value = ""
-                return
-
-            p = Path(selected_file).expanduser()
-            if not p.exists() or not p.is_file():
-                file_editor.value = ""
-                return
-
-            try:
-                if p.suffix.lower() == ".ipynb":
-                    py_path = p.with_suffix(".py")
-
-                    try:
-                        import nbformat
-                        from nbconvert import PythonExporter
-
-                        nb = nbformat.read(str(p), as_version=4)
-                        exporter = PythonExporter()
-                        py_source, _ = exporter.from_notebook_node(nb)
-                        py_path.write_text(py_source, encoding="utf-8")
-                        file_editor.value = py_source
-                        return
-
-                    except Exception as conv_err:
-                        file_editor.value = (
-                            f"[ERROR] Could not convert notebook to Python script:\n"
-                            f"{type(conv_err).__name__}: {conv_err}"
-                        )
-                        return
-
-                file_editor.value = p.read_text(encoding="utf-8")
-
-            except UnicodeDecodeError:
-                file_editor.value = "[Binary or non-text file cannot be displayed here.]"
-            except Exception as e:
-                file_editor.value = f"[ERROR] Could not read file: {type(e).__name__}: {e}"
+            load_workspace_file(file_picker=file_picker, file_editor=file_editor)
 
         def save_selected_file(_=None):
-            log_out.clear_output()
-            selected_file = file_picker.value or ""
-
-            if not selected_file:
-                with log_out:
-                    print("[advanced] No file selected.")
-                return
-
-            p = Path(selected_file).expanduser()
-
-            try:
-                if p.suffix.lower() == ".ipynb":
-                    py_path = p.with_suffix(".py")
-                    py_path.write_text(file_editor.value, encoding="utf-8")
-                    with log_out:
-                        print(f"[advanced] Saved converted script: {py_path}")
-                    return
-
-                p.write_text(file_editor.value, encoding="utf-8")
-                with log_out:
-                    print(f"[advanced] Saved: {p}")
-
-            except Exception as e:
-                with log_out:
-                    print("[advanced][ERROR]", type(e).__name__, e)
+            save_workspace_file(
+                file_picker=file_picker,
+                file_editor=file_editor,
+                log_output=log_out,
+            )
 
         def selected_run_file() -> str:
             target = (run_target.value or "").strip()
@@ -4532,15 +4458,10 @@ fi
         )
 
         # [preview_results_btn, results_download_btn, figures_download_btn],
-        download_buttons_row = W.HBox(
+        download_buttons_row = build_workspace_toolbar(
             [preview_results_btn, results_download_btn],
-            layout=W.Layout(
-                gap="10px",
-                justify_content="flex-end",
-                align_items="center",
-                width="100%",
-                margin="10px 0 0 0",
-            ),
+            justify_content="flex-end",
+            margin="10px 0 0 0",
         )
 
         cluster_name_row = form_pair("Cluster:", cluster_name_for_keys, "90px")
@@ -4698,7 +4619,7 @@ fi
             command_widget=command_preview,
         )
 
-        remote_log_controls = W.HBox(
+        remote_log_controls = build_workspace_toolbar(
             [
                 connect_btn,
                 status_btn,
@@ -4706,38 +4627,19 @@ fi
                 tail_btn,
                 clear_btn,
             ],
-            layout=W.Layout(
-                width="100%",
-                gap="8px",
-                flex_wrap="wrap",
-                align_items="center",
-            ),
         )
 
-        cloud_log_controls = W.HBox(
+        cloud_log_controls = build_workspace_toolbar(
             [
                 cloud_status_btn,
                 cloud_logs_btn,
                 clear_btn,
             ],
-            layout=W.Layout(
-                width="100%",
-                gap="8px",
-                flex_wrap="wrap",
-                align_items="center",
-            ),
         )
 
-        log_runtime_controls = W.HBox(
-            layout=W.Layout(
-                width="100%",
-                gap="8px",
-                flex_wrap="wrap",
-                align_items="center",
-            ),
-        )
+        log_runtime_controls = build_workspace_toolbar([])
 
-        output_workspace = build_output_workspace(
+        output_workspace = build_run_details(
             log_output=log_out,
             results_output=results_out,
             download_controls=download_buttons_row,
@@ -4791,121 +4693,14 @@ fi
         remote_actions = remote_log_controls
         cloud_actions = cloud_log_controls
 
-        left_card = W.VBox(
-            [
-                run_settings_panel,
-                actions_card,
-            ],
-            layout=W.Layout(
-                width="100%",
-                min_width="0",
-                gap="12px",
-            ),
+        workspace_ui = build_workspace_explorer(
+            run_settings=run_settings_panel,
+            runtime=actions_card,
+            run_details=output_workspace.container,
         )
 
-        left_card.add_class(
-            "icesee-card"
-        )
-
-        left_card.add_class(
-            "icesee-left"
-        )
-
-        right_card = W.VBox(
-            [
-                output_workspace.container,
-            ],
-            layout=W.Layout(
-                width="100%",
-                min_width="0",
-                min_height="0",
-                overflow="hidden",
-            ),
-        )
-
-        right_card.add_class(
-            "icesee-card"
-        )
-
-        right_card.add_class(
-            "icesee-right"
-        )
-
-        left_card.add_class("cryostack-left-workspace")
-        right_card.add_class("cryostack-right-workspace")
-
-        row = W.HBox(
-            [
-                left_card,
-                right_card,
-            ],
-            layout=W.Layout(
-                width="100%",
-                # gap="16px",
-                # align_items="stretch",
-            ),
-        )
-
-        row.add_class(
-            "icesee-grid"
-        )
-
-        workspace_height_sync = W.HTML(
-            """
-            <script>
-            (() => {
-                function setupCryoStackWorkspaceSync() {
-                    const left = document.querySelector(
-                        ".cryostack-left-workspace"
-                    );
-
-                    const right = document.querySelector(
-                        ".cryostack-right-workspace"
-                    );
-
-                    if (!left || !right) {
-                        setTimeout(
-                            setupCryoStackWorkspaceSync,
-                            250
-                        );
-                        return;
-                    }
-
-                    if (right.dataset.heightSyncAttached === "1") {
-                        return;
-                    }
-
-                    right.dataset.heightSyncAttached = "1";
-
-                    const syncHeight = () => {
-                        const height = left.getBoundingClientRect().height;
-
-                        if (height > 0) {
-                            right.style.height = `${height}px`;
-                            right.style.maxHeight = `${height}px`;
-                            right.style.minHeight = `${height}px`;
-                        }
-                    };
-
-                    syncHeight();
-
-                    const observer = new ResizeObserver(
-                        syncHeight
-                    );
-
-                    observer.observe(left);
-
-                    window.addEventListener(
-                        "resize",
-                        syncHeight
-                    );
-                }
-
-                setupCryoStackWorkspaceSync();
-            })();
-            </script>
-            """
-        )
+        row = workspace_ui.container
+        workspace_height_sync = workspace_ui.height_sync
 
         auto_tail_btn.observe(on_auto_tail_change, names="value")
 
