@@ -36,6 +36,8 @@ class RunHistory:
         remote_directory: Path,
         log_file: Path | None,
         metadata: dict | None = None,
+        container: dict | None = None,
+        software: dict | None = None,
     ) -> RunInfo:
         run = RunInfo(
             id=str(uuid4()),
@@ -48,6 +50,8 @@ class RunHistory:
             remote_directory=remote_directory,
             log_file=log_file,
             metadata=dict(metadata or {}),
+            container=dict(container or {}),
+            software=dict(software or {}),
         )
         self.add(run)
         return run

@@ -8,7 +8,9 @@ from .models import RunInfo
 
 MANIFEST_NAME = ".cryostack-run.json"
 SCHEMA = "cryostack.run"
-VERSION = 1
+VERSION = 2
+#: schema versions this build can read
+SUPPORTED_VERSIONS = (1, 2)
 
 
 def write_manifest(run: RunInfo, workspace: Path) -> Path:
@@ -35,6 +37,8 @@ def write_manifest(run: RunInfo, workspace: Path) -> Path:
             "command": run.command,
             "notes": run.notes,
             "metadata": run.metadata,
+            "container": run.container or {},
+            "software": run.software or {},
         },
     }
     temporary = path.with_suffix(".tmp")
@@ -45,7 +49,7 @@ def write_manifest(run: RunInfo, workspace: Path) -> Path:
 
 def read_manifest(path: Path) -> RunInfo:
     payload = json.loads(path.read_text(encoding="utf-8"))
-    if payload.get("schema") != SCHEMA or payload.get("version") != VERSION:
+    if payload.get("schema") != SCHEMA or payload.get("version") not in SUPPORTED_VERSIONS:
         raise ValueError("Unsupported CryoStack run manifest")
     data = payload["run"]
     if Path(data["workspace"]).resolve() != path.parent.resolve():
@@ -66,4 +70,7 @@ def read_manifest(path: Path) -> RunInfo:
         log_file=optional_path("log_file"), jobid=data.get("job_id"),
         command=str(data.get("command") or ""), notes=str(data.get("notes") or ""),
         metadata=dict(data.get("metadata") or {}),
+        # v1 manifests have no provenance -> {}
+        container=dict(data.get("container") or {}),
+        software=dict(data.get("software") or {}),
     )

@@ -221,6 +221,7 @@ def submit_remote_icesheets_via_connector(
     run_file: str = "",
     md_config: dict | None = None,
     cluster_name: str = "pace",
+    stack_log_line: str = "",
 ):
     import base64
     import shlex
@@ -470,6 +471,10 @@ apptainer exec "{sif_path}" with-icepack python -c "import icepack; print('Icepa
 
     outfile = f"{remote_run_dir}/icesheets-%j.out"
 
+    # one immutable, human-readable execution record of the resolved stack;
+    # the structured provenance lives in the run manifest.
+    _stack_echo = f"echo {shlex.quote(stack_log_line)}" if stack_log_line else ""
+
     slurm_text = f"""#!/bin/bash
 #SBATCH -J {slurm_job_name.strip() or "ICESHEETS"}
 #SBATCH -t {slurm_time.strip()}
@@ -491,6 +496,7 @@ echo "[icesheets] Host: $(hostname)"
 echo "[icesheets] Date: $(date)"
 echo "[icesheets] PWD : $(pwd)"
 echo "[icesheets] Run dir: {remote_run_dir}"
+{_stack_echo}
 
 {sanitize_multiline(remote_module_lines)}
 {sanitize_multiline(remote_export_lines)}
@@ -584,8 +590,10 @@ def submit_remote_icesheets(
     test_mode: bool = False,
     run_file: str = "",
     md_config: dict | None = None,
+    stack_log_line: str = "",
 ):
     import base64
+    import shlex
     import time
 
     messages: list[str] = []
@@ -863,6 +871,10 @@ apptainer exec "{sif_path}" with-icepack python -c "import icepack; print('Icepa
     # ---------------------------------------------------------
     outfile = f"{remote_run_dir}/icesheets-%j.out"
 
+    # one immutable, human-readable execution record of the resolved stack;
+    # the structured provenance lives in the run manifest.
+    _stack_echo = f"echo {shlex.quote(stack_log_line)}" if stack_log_line else ""
+
     slurm_text = f"""#!/bin/bash
 #SBATCH -J {slurm_job_name.strip() or "ICESHEETS"}
 #SBATCH -t {slurm_time.strip()}
@@ -884,6 +896,7 @@ echo "[icesheets] Host: $(hostname)"
 echo "[icesheets] Date: $(date)"
 echo "[icesheets] PWD : $(pwd)"
 echo "[icesheets] Run dir: {remote_run_dir}"
+{_stack_echo}
 
 {sanitize_multiline(remote_module_lines)}
 {sanitize_multiline(remote_export_lines)}

@@ -42,3 +42,9 @@ class RunInfo:
     notes: str = ""
 
     metadata: dict = field(default_factory=dict)
+
+    # Reproducibility provenance (manifest schema v2). Empty for v1 manifests
+    # and for runs that carry no resolved stack (e.g. the ICESEE-Spack backend).
+    container: dict = field(default_factory=dict)
+
+    software: dict = field(default_factory=dict)

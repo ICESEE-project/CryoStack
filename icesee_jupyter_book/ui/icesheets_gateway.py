@@ -91,6 +91,7 @@ from cryostack_src.frontend.cryolauncher.remote_runtime import (
 )
 from cryostack_src.remote import RemoteBridge, expand_remote_home, normalize_remote_path
 from cryostack_src.models import get_model_adapter
+from cryostack_src.models.stack import resolve_stack, stack_log_line
 from cryostack_src.models.submission import (
     submit_remote_icesheets,
     submit_remote_icesheets_via_connector,
@@ -1513,6 +1514,23 @@ def build_icesheets_ui():
                 return
 
             try:
+                # Resolve the reproducibility provenance BEFORE any job is
+                # submitted or any manifest is written, so a resolution failure
+                # cannot leave a half-registered run. v1: tested profile only
+                # (no network git resolution, no source overrides).
+                stack_provenance = {}
+                stack_line = ""
+                if backend_dd.value == "container":
+                    stack_provenance = resolve_stack(
+                        model=model_dd.value,
+                        profile="tested",
+                        selections=None,
+                        container_source=container_source.value,
+                        image_uri=image_uri.value,
+                        digest_resolver=None,
+                    )
+                    stack_line = stack_log_line(stack_provenance)
+
                 use_connector = should_use_connector()
                 if use_connector:
                     execution_result = current_remote_bridge(mode="connector").submit(
@@ -1550,6 +1568,7 @@ def build_icesheets_ui():
                         run_file=selected_run_file(),
                         md_config=collect_md_config(),
                         cluster_name=cluster_name_for_keys.value or "pace",
+                        stack_log_line=stack_line,
                         ),
                     )
                 else:
@@ -1586,6 +1605,7 @@ def build_icesheets_ui():
                         test_mode=test_mode,
                         run_file=selected_run_file(),
                         md_config=collect_md_config(),
+                        stack_log_line=stack_line,
                         ),
                     )
 
@@ -1619,6 +1639,8 @@ def build_icesheets_ui():
                         "access_mode": access_mode_dd.value,
                         "cluster_name": cluster_name_for_keys.value or "pace",
                     },
+                    container=stack_provenance.get("container") or {},
+                    software=stack_provenance.get("software") or {},
                 )
 
                 experiment_bridge.create(

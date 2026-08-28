@@ -34,6 +34,8 @@ class WorkspaceBridge:
         remote_directory: Path,
         log_file: Path | None,
         metadata: dict | None = None,
+        container: dict | None = None,
+        software: dict | None = None,
     ) -> RunInfo:
         run = self.history.start(
             name=name,
@@ -44,6 +46,8 @@ class WorkspaceBridge:
             remote_directory=remote_directory,
             log_file=log_file,
             metadata=metadata,
+            container=container,
+            software=software,
         )
         if self._manager is not None:
             self._manager.register_run(run)

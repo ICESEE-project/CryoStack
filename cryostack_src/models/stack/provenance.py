@@ -79,7 +79,9 @@ def stack_log_line(resolved: dict) -> str:
     c = resolved.get("container", {})
     cref = c.get("digest") or c.get("reference") or c.get("source", "?")
     parts.append(f"container={cref}")
-    for key, sw in resolved.get("software", {}).items():
+    # sorted so the line is identical whether built from resolve_stack() or
+    # rebuilt from a (key-sorted) manifest.
+    for key, sw in sorted(resolved.get("software", {}).items()):
         commit = sw.get("resolved_commit") or "unknown"
         short = commit[:12] if commit != "unknown" else "unknown"
         ver = sw.get("version")
