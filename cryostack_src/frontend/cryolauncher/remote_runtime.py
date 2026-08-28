@@ -21,10 +21,10 @@ def build_remote_runtime_callbacks(
     experiment_bridge,
     experiment_update_from_job_status,
 ) -> RemoteRuntimeCallbacks:
-    def _render_connection(label, result):
+    def _render_connection(label, result, *, show_ok=False):
         with log_output:
             print(label)
-            if "ok" in result:
+            if show_ok:
                 print("ok:", result.get("ok"))
             print("returncode:", result.get("returncode"))
             if (result.get("stdout") or "").strip():
@@ -43,7 +43,7 @@ def build_remote_runtime_callbacks(
             if bridge.mode == "direct":
                 _render_connection("[direct] Test SSH", result)
             elif bridge.mode == "connector":
-                _render_connection("[connector] Test SSH via relay", result)
+                _render_connection("[connector] Test SSH via relay", result, show_ok=True)
             elif result.get("transport") == "direct" and result.get("ok"):
                 _render_connection("[auto] Direct SSH works.", result)
             elif result.get("connector_missing"):
@@ -55,7 +55,11 @@ def build_remote_runtime_callbacks(
                 status_widget.value = status_html("fail")
                 return
             else:
-                _render_connection("[auto] Direct SSH failed. Used connector fallback.", result)
+                _render_connection(
+                    "[auto] Direct SSH failed. Used connector fallback.",
+                    result,
+                    show_ok=True,
+                )
             status_widget.value = status_html("done" if result.get("ok") else "fail")
         except Exception as error:
             status_widget.value = status_html("fail")
