@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from pathlib import Path
+from uuid import uuid4
+
 from .models import RunInfo
 
 
@@ -21,3 +24,28 @@ class RunHistory:
 
     def clear(self) -> None:
         self._runs.clear()
+
+    def start(
+        self,
+        *,
+        name: str,
+        model: str,
+        backend: str,
+        execution_mode: str,
+        jobid: str | None,
+        remote_directory: Path,
+        log_file: Path | None,
+    ) -> RunInfo:
+        run = RunInfo(
+            id=str(uuid4()),
+            name=name,
+            model=model,
+            backend=backend,
+            execution_mode=execution_mode,
+            status="running",
+            jobid=jobid,
+            remote_directory=remote_directory,
+            log_file=log_file,
+        )
+        self.add(run)
+        return run

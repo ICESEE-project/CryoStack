@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from .history import RunHistory
@@ -13,6 +14,27 @@ class WorkspaceBridge:
 
     def register_run(self, run: RunInfo) -> None:
         self.history.add(run)
+
+    def start_run(
+        self,
+        *,
+        name: str,
+        model: str,
+        backend: str,
+        execution_mode: str,
+        jobid: str | None,
+        remote_directory: Path,
+        log_file: Path | None,
+    ) -> RunInfo:
+        return self.history.start(
+            name=name,
+            model=model,
+            backend=backend,
+            execution_mode=execution_mode,
+            jobid=jobid,
+            remote_directory=remote_directory,
+            log_file=log_file,
+        )
 
     def runs(self) -> list[RunInfo]:
         return self.history.all()
