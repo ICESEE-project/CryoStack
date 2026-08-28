@@ -63,7 +63,12 @@ from icesee_jupyter_book.ui.workspace_bridge import (
     load_workspace_bridge,
 )
 
-from cryostack_src.workspace import WorkspaceBridge, WorkspaceManager, build_workspace_logs
+from cryostack_src.workspace import (
+    WorkspaceBridge,
+    WorkspaceManager,
+    build_workspace_logs,
+    resolve_workspace_user,
+)
 
 from icesee_jupyter_book.core.experiment_status import (
     experiment_update_from_job_status,
@@ -1097,6 +1102,7 @@ def build_icesheets_ui():
             )
         
         workspace_manager = WorkspaceManager(
+            owner=resolve_workspace_user(),
             status=STATUS,
             session=SESSION,
             example_dir=example_dir,

@@ -263,6 +263,12 @@ class ICESEEState:
                 "--port=8870",
                 "--Voila.base_url=/icesheets/",
                 "--Voila.allow_origin=http://127.0.0.1:8080",
+                # Surface the proxy-verified CryoStack identity into the kernel
+                # environment (HTTP_X_CRYOSTACK_USER_ID) so Workspace history is
+                # isolated per authenticated user. preheat_kernel stays disabled
+                # (default) so each render's kernel sees its own request headers.
+                "--VoilaConfiguration.http_header_envs=X-CryoStack-User-Id",
+                "--VoilaConfiguration.http_header_envs=X-CryoStack-User-Name",
             ],
             root,
         )

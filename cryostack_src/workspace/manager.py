@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import html
+import re
 import shutil
 import subprocess
 import tarfile
@@ -20,8 +21,11 @@ from cryostack_src.frontend.cryolauncher.workspace.file_browser import (
     save_selected_file,
 )
 from cryostack_src.frontend.cryolauncher.workspace.tree import list_editable_files
+from .identity import WorkspaceUser, resolve_workspace_user
 from .manifest import MANIFEST_NAME, read_manifest, write_manifest
 from .models import RunInfo
+
+_SAFE_RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 
 
 class WorkspaceManager:
@@ -49,7 +53,8 @@ class WorkspaceManager:
         connector_ssh,
         ssh_run,
         cluster_name,
-        manifest_root: Path | None = None,
+        owner: WorkspaceUser | None = None,
+        workspace_root: str | Path | None = None,
     ) -> None:
         self.status = status
         self.session = session
@@ -70,11 +75,34 @@ class WorkspaceManager:
         self.connector_ssh = connector_ssh
         self.ssh_run = ssh_run
         self.cluster_name = cluster_name
-        self.manifest_root = (manifest_root or (Path.cwd() / ".cryostack" / "runs")).resolve()
+
+        # ---- per-user Workspace isolation -------------------------------
+        # The run history is confined to <workspace-root>/users/<safe-id>/...
+        # for exactly one authenticated CryoStack user. All discovery and all
+        # per-run operations stay inside this subtree; a run id owned by
+        # another user is simply absent from self._runs and every method
+        # short-circuits.
+        self.owner: WorkspaceUser = owner if owner is not None else resolve_workspace_user()
+        root = Path(workspace_root).resolve() if workspace_root else Path.cwd().resolve()
+        self._workspace_root = root
+        self._owner_root = (root / "users" / self.owner.safe_id).resolve()
+        self.manifest_root = (self._owner_root / ".cryostack" / "runs").resolve()
+        if not self.manifest_root.is_relative_to(self._owner_root):
+            raise RuntimeError("Workspace namespace escaped its user root.")
+
         self._runs: dict[str, RunInfo] = {}
         self._selected_run_id: str | None = None
         self._tail_handler = None
         self._status_resolver = None
+
+    def _owns(self, path: Path | None) -> bool:
+        """True when ``path`` resolves inside this user's managed run root."""
+        if path is None:
+            return False
+        try:
+            return path.resolve().is_relative_to(self.manifest_root)
+        except (OSError, ValueError):
+            return False
 
     def set_tail_handler(self, handler) -> None:
         self._tail_handler = handler
@@ -153,8 +181,12 @@ class WorkspaceManager:
             path.unlink()
 
     def register_run(self, run: RunInfo) -> RunInfo:
-        workspace = self.manifest_root / run.id
-        run.workspace_directory = workspace.resolve()
+        if not _SAFE_RUN_ID.match(run.id or ""):
+            raise ValueError(f"Unsafe run id: {run.id!r}")
+        workspace = (self.manifest_root / run.id).resolve()
+        if not workspace.is_relative_to(self.manifest_root):
+            raise ValueError(f"Run id escapes the managed workspace: {run.id!r}")
+        run.workspace_directory = workspace
         write_manifest(run, workspace)
         self._runs[run.id] = run
         return run
@@ -212,7 +244,7 @@ class WorkspaceManager:
 
     def files(self, run_id: str) -> list[Path]:
         run = self._runs.get(run_id)
-        if not run or not run.workspace_directory or not run.workspace_directory.exists():
+        if not run or not self._owns(run.workspace_directory) or not run.workspace_directory.exists():
             return []
         return sorted(path for path in run.workspace_directory.rglob("*") if path.is_file())
 
@@ -221,9 +253,7 @@ class WorkspaceManager:
         if not run or not run.workspace_directory:
             return False
         workspace = run.workspace_directory.resolve()
-        try:
-            workspace.relative_to(self.manifest_root)
-        except ValueError:
+        if not self._owns(workspace):
             return False
         manifest = workspace / MANIFEST_NAME
         try:
