@@ -247,6 +247,11 @@ class RemoteBackend(
             .upper()
         )
 
+        # Slurm reports terminal states with trailing annotations, e.g.
+        # "CANCELLED+" (field-limit marker) or "CANCELLED by 12345" /
+        # "CANCELLED by <uid>". Reduce to the leading state token.
+        value = value.split()[0].rstrip("+") if value.split() else ""
+
         if value in {
             "PENDING",
             "PD",
