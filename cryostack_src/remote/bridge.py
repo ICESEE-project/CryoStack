@@ -48,12 +48,17 @@ class RemoteBridge:
 
     def status(self, *, job_id: str) -> ExecutionStatus:
         if self.mode != "connector":
-            return RemoteBackend().status(
+            status = RemoteBackend().status(
                 job_id=job_id,
                 host=self.host,
                 user=self.user,
                 port=self.port,
             )
+            status.metadata.update(
+                state=status.raw_state,
+                exit_code=status.exit_code,
+            )
+            return status
         result = self._connector_status(job_id)
         raw_state = (result.get("state") or "").strip()
         return ExecutionStatus(

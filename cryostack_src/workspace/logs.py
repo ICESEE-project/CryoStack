@@ -26,6 +26,7 @@ def build_workspace_logs(
     status_html,
     send_command,
     ssh_run,
+    bridge_factory=None,
 ) -> WorkspaceLogs:
     def on_tail(_=None):
         with log_output:
@@ -42,6 +43,30 @@ def build_workspace_logs(
 
         log_file = status.get("log_file") or f"{remote_dir}/icesheets-{jobid}.out"
         log_file = normalize_remote_path(log_file)
+
+        if bridge_factory is not None:
+            try:
+                bridge = bridge_factory()
+                result = bridge.logs(
+                    job_id=str(jobid),
+                    remote_dir=remote_dir,
+                    log_file=log_file,
+                )
+                with log_output:
+                    if bridge.mode == "connector":
+                        print("[connector] Tail log")
+                    if (result.get("stdout") or "").strip():
+                        print(result["stdout"].rstrip())
+                    if (result.get("stderr") or "").strip():
+                        print("--- stderr ---")
+                        print(result["stderr"].strip())
+                status_widget.value = status_html("done" if result.get("ok") else "fail")
+            except Exception as error:
+                status_widget.value = status_html("fail")
+                with log_output:
+                    print("[remote][ERROR]", type(error).__name__, error)
+            return
+
         host = cluster_host.value.strip()
         user = cluster_user.value.strip()
         port = int(cluster_port.value)

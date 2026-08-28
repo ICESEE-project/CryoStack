@@ -83,6 +83,10 @@ from cryostack_src.frontend.cryolauncher.cloud_environment import (
 from cryostack_src.frontend.cryolauncher.cloud_runtime import (
     build_cloud_runtime_callbacks,
 )
+from cryostack_src.frontend.cryolauncher.remote_runtime import (
+    build_remote_runtime_callbacks,
+)
+from cryostack_src.remote.bridge import RemoteBridge
 
 from cryostack_src.frontend.cryolauncher.panels import (
     build_logs_panel,
@@ -1683,6 +1687,18 @@ def build_icesheets_ui():
                 results_sync=workspace_manager.sync_cloud_results,
             )
 
+        def current_remote_bridge(*, mode=None):
+            return RemoteBridge(
+                mode=mode or access_mode_dd.value,
+                host=cluster_host.value.strip(),
+                user=cluster_user.value.strip(),
+                port=int(cluster_port.value),
+                session_id=SESSION.get("id"),
+                cluster_name=cluster_name_for_keys.value or "pace",
+                direct_submitter=submit_remote_icesheets,
+                connector_submitter=submit_remote_icesheets_via_connector,
+            )
+
         def current_experiment_configuration() -> dict:
             return {
                 "user_mode": ui_mode_dd.value,
@@ -2865,7 +2881,9 @@ def build_icesheets_ui():
             try:
                 use_connector = should_use_connector()
                 if use_connector:
-                    result = submit_remote_icesheets_via_connector(
+                    execution_result = current_remote_bridge(mode="connector").submit(
+                        direct_kwargs={},
+                        connector_kwargs=dict(
                         session_id=SESSION["id"],
                         host=host,
                         user=user,
@@ -2898,9 +2916,12 @@ def build_icesheets_ui():
                         run_file=selected_run_file(),
                         md_config=collect_md_config(),
                         cluster_name=cluster_name_for_keys.value or "pace",
+                        ),
                     )
                 else:
-                    result = submit_remote_icesheets(
+                    execution_result = current_remote_bridge(mode="direct").submit(
+                        connector_kwargs={},
+                        direct_kwargs=dict(
                         host=host,
                         user=user,
                         port=port,
@@ -2931,7 +2952,15 @@ def build_icesheets_ui():
                         test_mode=test_mode,
                         run_file=selected_run_file(),
                         md_config=collect_md_config(),
+                        ),
                     )
+
+                result = {
+                    "remote_dir": execution_result.working_directory,
+                    "jobid": execution_result.job_id,
+                    "log_file": execution_result.log_path,
+                    "messages": execution_result.messages,
+                }
 
                 STATUS["remote_dir"] = result["remote_dir"]
                 STATUS["jobid"] = result["jobid"]
@@ -3016,357 +3045,18 @@ def build_icesheets_ui():
             results_out.clear_output()
             status_chip.value = status_html("idle")
 
-        def on_test_remote(_=None):
-            log_out.clear_output()
-            status_chip.value = status_html("running")
-
-            try:
-                access_mode = access_mode_dd.value
-
-                # -----------------------------------------------------
-                # 1. Direct SSH from server
-                # -----------------------------------------------------
-                if access_mode == "direct":
-                    result = remote_test_connection(
-                        cluster_host.value.strip(),
-                        cluster_user.value.strip(),
-                        int(cluster_port.value),
-                    )
-
-                    with log_out:
-                        print("[direct] Test SSH")
-                        print("returncode:", result["returncode"])
-                        if (result["stdout"] or "").strip():
-                            print("--- stdout ---")
-                            print(result["stdout"].strip())
-                        if (result["stderr"] or "").strip():
-                            print("--- stderr ---")
-                            print(result["stderr"].strip())
-
-                    status_chip.value = status_html("done" if result["ok"] else "fail")
-                    return
-
-                # -----------------------------------------------------
-                # 2. Connector / VPN bridge
-                # -----------------------------------------------------
-                if access_mode == "connector":
-                    from icesee_jupyter_book.core.connector_relay_client import send_command
-
-                    if not SESSION.get("id"):
-                        status_chip.value = status_html("fail")
-                        with log_out:
-                            print("[connector][ERROR] No connector session found.")
-                            print("Create/start a connector session first.")
-                        return
-
-                    result = send_command(
-                        SESSION["id"],
-                        "ssh-run",
-                        {
-                            "host": cluster_host.value.strip(),
-                            "user": cluster_user.value.strip(),
-                            "port": int(cluster_port.value),
-                            "command": "hostname && whoami && pwd",
-                            "timeout": 30,
-                        },
-                    )
-
-                    payload = result.get("result", result)
-
-                    with log_out:
-                        print("[connector] Test SSH via relay")
-                        print("ok:", payload.get("ok"))
-                        print("returncode:", payload.get("returncode"))
-                        if (payload.get("stdout") or "").strip():
-                            print("--- stdout ---")
-                            print(payload["stdout"].strip())
-                        if (payload.get("stderr") or "").strip():
-                            print("--- stderr ---")
-                            print(payload["stderr"].strip())
-
-                    status_chip.value = status_html("done" if payload.get("ok") else "fail")
-                    return
-
-                # -----------------------------------------------------
-                # 3. Auto: try direct first, fallback to connector
-                # -----------------------------------------------------
-                direct = remote_test_connection(
-                    cluster_host.value.strip(),
-                    cluster_user.value.strip(),
-                    int(cluster_port.value),
-                )
-
-                if direct.get("ok"):
-                    with log_out:
-                        print("[auto] Direct SSH works.")
-                        print("returncode:", direct["returncode"])
-                        if (direct["stdout"] or "").strip():
-                            print("--- stdout ---")
-                            print(direct["stdout"].strip())
-                        if (direct["stderr"] or "").strip():
-                            print("--- stderr ---")
-                            print(direct["stderr"].strip())
-
-                    status_chip.value = status_html("done")
-                    return
-
-                from icesee_jupyter_book.core.connector_relay_client import send_command
-
-                if not SESSION.get("id"):
-                    status_chip.value = status_html("fail")
-                    with log_out:
-                        print("[auto] Direct SSH failed.")
-                        print("[connector][ERROR] No connector session found for fallback.")
-                        print("--- direct stderr ---")
-                        print((direct.get("stderr") or "").strip())
-                    return
-
-                result = send_command(
-                    SESSION["id"],
-                    "ssh-run",
-                    {
-                        "host": cluster_host.value.strip(),
-                        "user": cluster_user.value.strip(),
-                        "port": int(cluster_port.value),
-                        "command": "hostname && whoami && pwd",
-                        "timeout": 30,
-                    },
-                )
-
-                payload = result.get("result", result)
-
-                with log_out:
-                    print("[auto] Direct SSH failed. Used connector fallback.")
-                    print("ok:", payload.get("ok"))
-                    print("returncode:", payload.get("returncode"))
-                    if (payload.get("stdout") or "").strip():
-                        print("--- stdout ---")
-                        print(payload["stdout"].strip())
-                    if (payload.get("stderr") or "").strip():
-                        print("--- stderr ---")
-                        print(payload["stderr"].strip())
-
-                status_chip.value = status_html("done" if payload.get("ok") else "fail")
-
-            except Exception as e:
-                status_chip.value = status_html("fail")
-                with log_out:
-                    print("[remote][ERROR]", type(e).__name__, e)
-
-        def on_status(_=None):
-            log_out.clear_output()
-            jobid = STATUS.get("jobid")
-
-            if not jobid:
-                with log_out:
-                    print("[remote] No JobID yet. Submit first.")
-                return
-
-            try:
-                # =====================================================
-                # Connector mode
-                # =====================================================
-                if access_mode_dd.value == "connector":
-                    status_cmd = f"""
-        set +e
-
-        live=$(
-            squeue -j {jobid} \
-                -h \
-                -o '%i|%T|%M|%D|%R' \
-                2>/dev/null
+        remote_runtime = build_remote_runtime_callbacks(
+            runtime_status=STATUS,
+            log_output=log_out,
+            status_widget=status_chip,
+            status_html=status_html,
+            bridge_factory=current_remote_bridge,
+            experiment_bridge=experiment_bridge,
+            experiment_update_from_job_status=experiment_update_from_job_status,
         )
-
-        if [ -n "$live" ]; then
-            echo "__CRYOSTACK_SOURCE__=squeue"
-            echo "$live"
-            exit 0
-        fi
-
-        echo "__CRYOSTACK_SOURCE__=sacct"
-
-        sacct -j {jobid} \
-            --noheader \
-            --parsable2 \
-            --format=JobIDRaw,State,ExitCode
-
-        exit $?
-        """
-
-                    payload = send_command(
-                        SESSION["id"],
-                        "ssh-run",
-                        {
-                            "host": cluster_host.value.strip(),
-                            "user": cluster_user.value.strip(),
-                            "port": int(cluster_port.value),
-                            "command": status_cmd,
-                            "timeout": 30,
-                        },
-                    )
-
-                    result = payload.get("result", payload)
-
-                    raw_output = result.get("stdout") or ""
-
-                    lines = [
-                        line.strip()
-                        for line in raw_output.splitlines()
-                        if line.strip()
-                    ]
-
-                    source = None
-                    status_lines = []
-
-                    for line in lines:
-                        if line == "__CRYOSTACK_SOURCE__=squeue":
-                            source = "squeue"
-                            continue
-
-                        if line == "__CRYOSTACK_SOURCE__=sacct":
-                            source = "sacct"
-                            continue
-
-                        status_lines.append(line)
-
-                    state = None
-                    exit_code = None
-
-                    if source == "squeue":
-                        if status_lines:
-                            parts = status_lines[0].split("|")
-
-                            if len(parts) > 1:
-                                state = parts[1].strip()
-
-                    elif source == "sacct":
-                        for line in status_lines:
-                            parts = line.split("|")
-
-                            if len(parts) < 3:
-                                continue
-
-                            if parts[0].strip() == str(jobid):
-                                state = parts[1].strip()
-                                exit_code = parts[2].strip()
-                                break
-
-                    normalized_result = {
-                        "source": source,
-                        "state": state,
-                        "exit_code": exit_code,
-                        "stdout": "\n".join(status_lines),
-                        "stderr": result.get("stderr", ""),
-                        "returncode": result.get(
-                            "returncode",
-                            0 if result.get("ok") else 1,
-                        ),
-                    }
-
-                    experiment_update = (
-                        experiment_update_from_job_status(
-                            normalized_result
-                        )
-                    )
-
-                    if experiment_update:
-                        experiment_bridge.update_by_job(
-                            job_id=str(jobid),
-                            **experiment_update,
-                        )
-
-                    with log_out:
-                        print("[connector] Status")
-
-                        if source == "squeue":
-                            print("--- squeue ---")
-
-                        elif source == "sacct":
-                            print(
-                                "(squeue empty; using Slurm accounting)"
-                            )
-                            print("--- sacct ---")
-
-                        print(
-                            normalized_result["stdout"]
-                            or "(no status output)"
-                        )
-
-                        if experiment_update:
-                            print()
-                            print(
-                                "[experiment] CryoStack status:",
-                                experiment_update["status"],
-                            )
-
-                    status_chip.value = status_html(
-                        "done"
-                        if normalized_result["returncode"] == 0
-                        else "fail"
-                    )
-
-                    return
-
-                # =====================================================
-                # Direct SSH mode
-                # =====================================================
-                result = remote_job_status(
-                    cluster_host.value.strip(),
-                    cluster_user.value.strip(),
-                    int(cluster_port.value),
-                    jobid,
-                )
-
-                experiment_update = (
-                    experiment_update_from_job_status(
-                        result
-                    )
-                )
-
-                if experiment_update:
-                    experiment_bridge.update_by_job(
-                        job_id=str(jobid),
-                        **experiment_update,
-                    )
-
-                with log_out:
-                    print("[remote] Status")
-
-                    if result["source"] == "squeue":
-                        print("--- squeue ---")
-                    else:
-                        print(
-                            "(squeue empty; using Slurm accounting)"
-                        )
-                        print("--- sacct ---")
-
-                    print(
-                        (result["stdout"] or "").strip()
-                        or "(no status output)"
-                    )
-
-                    if experiment_update:
-                        print()
-                        print(
-                            "[experiment] CryoStack status:",
-                            experiment_update["status"],
-                        )
-
-                status_chip.value = status_html(
-                    "done"
-                    if result["returncode"] == 0
-                    else "fail"
-                )
-
-            except Exception as e:
-                status_chip.value = status_html("fail")
-
-                with log_out:
-                    print(
-                        "[remote][ERROR]",
-                        type(e).__name__,
-                        e,
-                    )
+        on_test_remote = remote_runtime.check
+        on_status = remote_runtime.status
+        on_terminate = remote_runtime.terminate
 
         workspace_logs = build_workspace_logs(
             status=STATUS,
@@ -3383,65 +3073,11 @@ def build_icesheets_ui():
             status_html=status_html,
             send_command=send_command,
             ssh_run=ssh_run,
+            bridge_factory=current_remote_bridge,
         )
         on_tail = workspace_logs.on_tail
         on_auto_tail_change = workspace_logs.on_auto_tail_change
         
-        def on_terminate(_=None):
-            log_out.clear_output()
-            jobid = STATUS.get("jobid")
-
-            if not jobid:
-                with log_out:
-                    print("[remote] No JobID found.")
-                return
-
-            host = cluster_host.value.strip()
-            user = cluster_user.value.strip()
-            port = int(cluster_port.value)
-
-            try:
-                if access_mode_dd.value == "connector":
-                    payload = connector_ssh(
-                        SESSION["id"],
-                        host,
-                        user,
-                        port,
-                        f"scancel {jobid}",
-                        timeout=300,
-                        cluster_name=cluster_name_for_keys.value or "pace",
-                    )
-
-                    with log_out:
-                        print("[connector] Cancel job")
-                        print("ok:", payload.get("ok"))
-                        print("returncode:", payload.get("returncode"))
-                        if (payload.get("stdout") or "").strip():
-                            print("--- stdout ---")
-                            print(payload["stdout"].strip())
-                        if (payload.get("stderr") or "").strip():
-                            print("--- stderr ---")
-                            print(payload["stderr"].strip())
-
-                    status_chip.value = status_html("done" if payload.get("ok") else "fail")
-                    return
-
-                result = remote_cancel_job(host, user, port, jobid)
-
-                with log_out:
-                    print("returncode:", result["returncode"])
-                    if (result["stdout"] or "").strip():
-                        print(result["stdout"].strip())
-                    if (result["stderr"] or "").strip():
-                        print(result["stderr"].strip())
-
-                status_chip.value = status_html("done" if result.get("ok") else "fail")
-
-            except Exception as e:
-                status_chip.value = status_html("fail")
-                with log_out:
-                    print("[remote][ERROR]", type(e).__name__, e)
-
         cloud_runtime = build_cloud_runtime_callbacks(
             runtime_status=STATUS,
             log_output=log_out,
