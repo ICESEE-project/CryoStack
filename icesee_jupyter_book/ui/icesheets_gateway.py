@@ -5,7 +5,6 @@ import io
 import yaml
 import zipfile
 import shutil
-import asyncio
 import subprocess
 from pathlib import Path
 from IPython.display import FileLink
@@ -77,7 +76,7 @@ from icesee_jupyter_book.ui.workspace_bridge import (
     load_workspace_bridge,
 )
 
-from cryostack_src.workspace import WorkspaceBridge
+from cryostack_src.workspace import WorkspaceBridge, build_workspace_logs
 
 from icesee_jupyter_book.core.experiment_status import (
     experiment_update_from_job_status,
@@ -3789,204 +3788,24 @@ def build_icesheets_ui():
                         e,
                     )
 
-        def on_tail(_=None):
-
-            with log_out:
-                print("[debug] on_tail invoked")
-
-            log_out.clear_output()
-
-            rdir = normalize_remote_path(STATUS.get("remote_dir") or "")
-            jobid = STATUS.get("jobid")
-
-            if not rdir or not jobid:
-                status_chip.value = status_html("fail")
-                with log_out:
-                    print("[remote] No remote_dir / JobID yet. Submit first.")
-                return
-
-            log_file = STATUS.get("log_file") or f"{rdir}/icesheets-{jobid}.out"
-            log_file = normalize_remote_path(log_file)
-
-            host = cluster_host.value.strip()
-            user = cluster_user.value.strip()
-            port = int(cluster_port.value)
-
-            tail_cmd = f"""
-set -e
-log_file="{log_file}"
-run_dir="{rdir}"
-
-echo "[remote] checking run dir: $run_dir"
-if [ -d "$run_dir" ]; then
-    echo "[remote] run dir exists"
-else
-    echo "[remote] run dir missing"
-fi
-
-if [ -f "$log_file" ]; then
-    echo "[remote] file: $log_file"
-    echo "--- tail ---"
-    tail -n 120 "$log_file"
-else
-    echo "[remote] log file not found yet: $log_file"
-    echo
-    echo "[remote] contents of run dir:"
-    ls -lah "$run_dir" || true
-fi
-"""
-
-            try:
-
-                if access_mode_dd.value == "connector":
-                    payload = send_command(
-                        SESSION["id"],
-                        "ssh-run",
-                        {
-                            "host": host,
-                            "user": user,
-                            "port": port,
-                            "command": tail_cmd,
-                            "timeout": 30,
-                        },
-                    )
-
-                    result = payload.get("result", payload)
-
-                    with log_out:
-                        print("[connector] Tail log")
-                        if (result.get("stdout") or "").strip():
-                            print(result["stdout"].rstrip())
-                        if (result.get("stderr") or "").strip():
-                            print("--- stderr ---")
-                            print(result["stderr"].strip())
-
-                    status_chip.value = status_html("done" if result.get("ok") else "fail")
-                    return
-                
-                result = ssh_run(host, user, port, tail_cmd, timeout=30)
-
-                with log_out:
-                    if (result.stdout or "").strip():
-                        print(result.stdout.rstrip())
-                    if (result.stderr or "").strip():
-                        print("--- stderr ---")
-                        print(result.stderr.strip())
-
-                status_chip.value = status_html("done" if result.returncode == 0 else "fail")
-
-            except Exception as e:
-                status_chip.value = status_html("fail")
-                with log_out:
-                    print("[remote][ERROR]", type(e).__name__, e)
-
-
-
-        async def auto_tail_worker():
-            """
-            Automatically invoke the existing manual tail logic
-            without blocking the Voilà event loop.
-            """
-
-            try:
-                while AUTO_TAIL["running"]:
-
-                    #
-                    # Run the existing synchronous on_tail()
-                    # in a worker thread.
-                    #
-                    await asyncio.to_thread(
-                        on_tail,
-                        None,
-                    )
-
-                    #
-                    # Responsive wait: 5 seconds total,
-                    # but check every 0.25 seconds so Stop
-                    # reacts quickly.
-                    #
-                    for _ in range(20):
-
-                        if not AUTO_TAIL["running"]:
-                            return
-
-                        await asyncio.sleep(0.25)
-
-            except asyncio.CancelledError:
-                pass
-
-            except Exception as e:
-                with log_out:
-                    print(
-                        "[auto-tail][ERROR]",
-                        type(e).__name__,
-                        e,
-                    )
-
-            finally:
-                AUTO_TAIL["running"] = False
-                AUTO_TAIL["task"] = None
-
-        def on_auto_tail_change(change):
-            """
-            Start or stop automatic log refresh.
-            """
-
-            if change.get("name") != "value":
-                return
-
-            if change["new"]:
-
-                current_task = AUTO_TAIL.get(
-                    "task"
-                )
-
-                if (
-                    current_task is not None
-                    and not current_task.done()
-                ):
-                    return
-
-                AUTO_TAIL["running"] = True
-
-                auto_tail_btn.description = (
-                    "Stop auto tail"
-                )
-
-                auto_tail_btn.icon = "stop"
-
-                auto_tail_btn.button_style = (
-                    "warning"
-                )
-
-                loop = asyncio.get_running_loop()
-
-                AUTO_TAIL["task"] = loop.create_task(
-                    auto_tail_worker()
-                )
-
-            else:
-
-                AUTO_TAIL["running"] = False
-
-                task = AUTO_TAIL.get(
-                    "task"
-                )
-
-                if task is not None:
-                    task.cancel()
-
-                AUTO_TAIL["task"] = None
-
-                auto_tail_btn.description = (
-                    "Auto tail"
-                )
-
-                auto_tail_btn.icon = "refresh"
-
-                auto_tail_btn.button_style = (
-                    "info"
-                )
+        workspace_logs = build_workspace_logs(
+            status=STATUS,
+            session=SESSION,
+            auto_tail=AUTO_TAIL,
+            log_output=log_out,
+            status_widget=status_chip,
+            auto_tail_button=auto_tail_btn,
+            cluster_host=cluster_host,
+            cluster_user=cluster_user,
+            cluster_port=cluster_port,
+            access_mode=access_mode_dd,
+            normalize_remote_path=normalize_remote_path,
+            status_html=status_html,
+            send_command=send_command,
+            ssh_run=ssh_run,
+        )
+        on_tail = workspace_logs.on_tail
+        on_auto_tail_change = workspace_logs.on_auto_tail_change
         
         def on_terminate(_=None):
             log_out.clear_output()
