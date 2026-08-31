@@ -17,12 +17,7 @@ from pathlib import Path
 
 from IPython.display import HTML, Image, display
 
-from cryostack_src.frontend.cryolauncher.workspace.file_browser import (
-    load_selected_file,
-    refresh_file_picker,
-    save_selected_file,
-)
-from cryostack_src.frontend.cryolauncher.workspace.tree import list_editable_files
+from .files import list_editable_files
 from .identity import WorkspaceUser, resolve_workspace_user
 from .manifest import MANIFEST_NAME, read_manifest, write_manifest
 from .models import RunInfo
@@ -31,6 +26,10 @@ _SAFE_RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 _SAFE_EXAMPLE_NAME = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 #: optional deploy-time pin for the workspace root, independent of process cwd
 WORKSPACE_ROOT_ENV = "CRYOSTACK_WORKSPACE_ROOT"
+
+
+class WorkspacePermissionError(RuntimeError):
+    """A file operation was attempted outside the caller's managed workspace."""
 
 
 class StagedExample:
@@ -120,6 +119,10 @@ class WorkspaceManager:
         self.manifest_root = (self._owner_root / ".cryostack" / "runs").resolve()
         #: derived, rebuildable working copies of examples staged for a run
         self._working_root = (self._owner_root / ".cryostack" / "working").resolve()
+        #: user-owned example checkouts:  <owner>/examples/<model>/<name>
+        self._examples_root = (self._owner_root / "examples").resolve()
+        #: user-owned reusable datasets:  <owner>/datasets/...
+        self._datasets_root = (self._owner_root / "datasets").resolve()
         if not self.manifest_root.is_relative_to(self._owner_root):
             raise RuntimeError("Workspace namespace escaped its user root.")
 
@@ -182,22 +185,137 @@ class WorkspaceManager:
     def list_editable_files(self, example_path: str) -> list[tuple[str, str]]:
         return list_editable_files(example_path)
 
-    def refresh_files(self) -> None:
-        refresh_file_picker(
-            example_dir=self.example_dir,
-            file_picker=self.file_picker,
-            file_editor=self.file_editor,
-        )
+    # ------------------------------------------------------------------
+    # Generic, model-neutral file operations (containment enforced here)
+    # ------------------------------------------------------------------
+    _SAFE_SEGMENT = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9._+-]{0,127}\Z")
 
-    def load_file(self) -> None:
-        load_selected_file(file_picker=self.file_picker, file_editor=self.file_editor)
+    def _safe_segment(self, name: str) -> str:
+        name = (name or "").strip()
+        if name in {".", ".."} or "/" in name or "\\" in name \
+                or not self._SAFE_SEGMENT.match(name):
+            raise ValueError(f"Unsafe name: {name!r}")
+        return name
 
-    def save_file(self) -> None:
-        save_selected_file(
-            file_picker=self.file_picker,
-            file_editor=self.file_editor,
-            log_output=self.log_output,
+    @staticmethod
+    def _within(path: Path, root: Path) -> bool:
+        try:
+            return path.resolve().is_relative_to(root.resolve())
+        except (OSError, ValueError, RuntimeError):
+            return False
+
+    def is_user_owned(self, path: str | Path | None) -> bool:
+        """True when ``path`` resolves inside this authenticated user's workspace."""
+        return self._is_user_owned_path(Path(path)) if path not in (None, "") else False
+
+    def resolve_user_file(self, path: str | Path, *, must_exist: bool = False) -> Path:
+        """Resolve ``path`` and require it to sit inside this user's workspace."""
+        try:
+            rp = Path(path).expanduser().resolve()
+        except (OSError, RuntimeError):
+            raise WorkspacePermissionError(f"Cannot resolve path: {path!r}")
+        if not rp.is_relative_to(self._owner_root):
+            raise WorkspacePermissionError(
+                "This file is outside your workspace and cannot be modified. "
+                "Clone the example to your workspace first."
+            )
+        if must_exist and not rp.is_file():
+            raise FileNotFoundError(f"No such file: {rp}")
+        return rp
+
+    #: files larger than this are not loaded into the editor buffer
+    MAX_EDITABLE_BYTES = 2 * 1024 * 1024
+
+    def read_text_file(self, path: str | Path) -> str:
+        """Read a text file the user is allowed to view (their workspace or the
+        currently selected example tree). Never leaves those trees."""
+        p = Path(path).expanduser().resolve()
+        roots = [self._owner_root]
+        example = self.example_root()
+        if example is not None:
+            roots.append(example.resolve())
+        if not any(self._within(p, r) for r in roots):
+            raise WorkspacePermissionError("File is outside the current workspace/example.")
+        if not p.is_file():
+            raise FileNotFoundError(str(p))
+        if p.stat().st_size > self.MAX_EDITABLE_BYTES:
+            raise WorkspacePermissionError(
+                f"File is too large to edit here ({p.stat().st_size // 1024} KB)."
+            )
+        return p.read_text(encoding="utf-8")
+
+    def save_text_file(self, path: str | Path, text: str) -> Path:
+        rp = self.resolve_user_file(path)
+        if rp.exists() and not rp.is_file():
+            raise WorkspacePermissionError("Target is not a regular file.")
+        if not rp.parent.is_dir():
+            raise FileNotFoundError(f"Directory does not exist: {rp.parent}")
+        rp.write_text(text, encoding="utf-8")
+        return rp
+
+    def create_text_file(self, directory: str | Path, name: str, text: str = "") -> Path:
+        d = self.resolve_user_file(directory)
+        if not d.is_dir():
+            raise FileNotFoundError(f"Directory does not exist: {d}")
+        target = self.resolve_user_file(d / self._safe_segment(name))
+        if target.exists():
+            raise FileExistsError(f"Already exists: {target.name}")
+        target.write_text(text, encoding="utf-8")
+        return target
+
+    def delete_user_file(self, path: str | Path) -> Path:
+        rp = self.resolve_user_file(path, must_exist=True)
+        if not rp.is_file():
+            raise WorkspacePermissionError("Only regular files can be deleted here.")
+        rp.unlink()
+        return rp
+
+    def user_examples_root(self, model: str | None = None) -> Path:
+        root = self._examples_root
+        if model:
+            root = (root / self._safe_segment(str(model).strip().lower())).resolve()
+        return root
+
+    def clone_example_to_workspace(
+        self, *, source: str | Path, model: str | None, name: str | None = None
+    ) -> Path:
+        """Copy an example (canonical or otherwise) into this user's workspace.
+
+        Result: ``<owner>/examples/<model>/<name>`` -- fully user-owned and
+        editable. The source is never modified.
+        """
+        try:
+            src = Path(source).expanduser().resolve()
+        except (OSError, RuntimeError):
+            raise ValueError(f"Cannot resolve example path: {source!r}")
+        if not src.is_dir():
+            raise ValueError(f"Not an example directory: {src}")
+
+        dest_root = self.user_examples_root(model)
+        dest = (dest_root / self._safe_example_name(name or src.name)).resolve()
+        if not dest.is_relative_to(self._examples_root):
+            raise WorkspacePermissionError("Clone target escaped the workspace.")
+        if dest.exists():
+            raise FileExistsError(
+                f"A workspace example named {dest.name!r} already exists."
+            )
+        dest_root.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(src, dest)
+        (dest / ".cryostack-example.json").write_text(
+            json.dumps(
+                {
+                    "kind": "cryostack-user-example",
+                    "source": str(src),
+                    "source_name": src.name,
+                    "model": (str(model).strip().lower() or None) if model else None,
+                    "owner": self.owner.safe_id,
+                    "created": datetime.now().isoformat(timespec="seconds"),
+                },
+                indent=2, sort_keys=True,
+            ),
+            encoding="utf-8",
         )
+        return dest
 
     def example_root(self) -> Path | None:
         path = Path(self.example_dir.value).expanduser()

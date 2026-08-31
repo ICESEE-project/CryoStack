@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import io
 import html
+import json
 import yaml
 import subprocess
 from pathlib import Path
@@ -125,6 +126,7 @@ from cryostack_src.frontend.cryolauncher.panels import (
 )
 
 from cryostack_src.frontend.cryolauncher.workspace import (
+    build_editor_panel,
     build_run_details,
     build_workspace_explorer,
     build_workspace_toolbar,
@@ -427,18 +429,6 @@ def build_icesheets_ui():
             ],
             value="connector",
             layout=W.Layout(width="100%"),
-        )
-
-        save_file_btn = W.Button(
-            description="Save file",
-            icon="save",
-            button_style="info",
-        )
-
-        deploy_example_btn = W.Button(
-            description="Implement new example",
-            icon="copy",
-            button_style="warning",
         )
 
         upload_dataset_btn = W.Button(
@@ -980,30 +970,55 @@ def build_icesheets_ui():
             example_picker.options = opts
             example_picker.value = opts[0][1]
 
+        _editor_ctx = {"last_example": "", "last_model": model_dd.value}
+
         def apply_selected_example(_=None):
             selected = example_picker.value or ""
+            if selected == _editor_ctx["last_example"]:
+                return
+            # never discard unsaved editor work on an example / model switch
+            if not editor_panel.controller.guard_context_switch():
+                example_picker.value = _editor_ctx["last_example"]
+                return
+            _editor_ctx["last_example"] = selected
+
             STATUS["selected_example_path"] = selected or None
 
             ex = None
             if selected:
                 ex = find_example_by_path(model_dd.value, selected)
-
-            example_info.value = example_summary_text(ex)
+            example_info.value = _example_summary(ex, selected)
 
             if selected:
                 example_dir.value = selected
 
-            refresh_file_picker()
+            editor_panel.controller.refresh()
             refresh_run_target_options()
 
             # reset auto-target when example changes
             run_target.value = ""
             auto_set_run_target()
 
-            load_selected_file()
             if model_dd.value == "issm":
                 md_panel.set_example(example_dir.value)
             update_summary()
+
+        def _example_summary(ex, selected: str) -> str:
+            if ex is not None:
+                return example_summary_text(ex)
+            prov = Path(selected or "") / ".cryostack-example.json"
+            if selected and prov.is_file():
+                try:
+                    data = json.loads(prov.read_text(encoding="utf-8"))
+                    return (
+                        f"Workspace example (your copy)\n"
+                        f"Name: {Path(selected).name}\n"
+                        f"Cloned from: {data.get('source_name', '?')}\n"
+                        f"Path: {selected}"
+                    )
+                except (OSError, ValueError):
+                    pass
+            return example_summary_text(None)
 
         def build_model_command():
             backend = backend_dd.value
@@ -1044,9 +1059,16 @@ def build_icesheets_ui():
 
         def list_editable_files(example_path: str) -> list[tuple[str, str]]:
             return workspace_manager.list_editable_files(example_path)
-        
-        def refresh_file_picker(_=None):
-            workspace_manager.refresh_files()
+
+        # Advanced-mode editor: a generic, model-neutral workspace facility.
+        editor_panel = build_editor_panel(
+            manager=workspace_manager,
+            model_value=lambda: model_dd.value,
+            example_dir_widget=example_dir,
+            log_output=log_out,
+            on_files_changed=lambda: refresh_run_target_options(),
+            on_clone_created=lambda dest: _on_example_cloned(dest),
+        )
 
         def refresh_run_target_options(_=None):
             files = list_editable_files(example_dir.value.strip())
@@ -1073,12 +1095,6 @@ def build_icesheets_ui():
 
             run_target.value = get_model_adapter(model_dd.value).choose_run_target(opts)
 
-        def load_selected_file(_=None):
-            workspace_manager.load_file()
-
-        def save_selected_file(_=None):
-            workspace_manager.save_file()
-
         def selected_run_file() -> str:
             target = (run_target.value or "").strip()
             if not target:
@@ -1095,15 +1111,7 @@ def build_icesheets_ui():
             target = (run_target.value or "").strip()
             if not target:
                 return "(default environment check)"
-
-            if target.endswith(".ipynb"):
-                return f"{target} -> {Path(target).with_suffix('.py').name}"
             return target
-
-        def deploy_current_example(_=None):
-            destination = workspace_manager.clone_example(new_example_name.value.strip())
-            if destination is not None:
-                refresh_example_picker()
 
         def current_example_root() -> Path | None:
             return workspace_manager.example_root()
@@ -1111,13 +1119,12 @@ def build_icesheets_ui():
         def save_uploaded_datasets(_=None):
             workspace_manager.save_uploaded_datasets(dataset_upload.value)
 
-        def maybe_seed_run_target_from_file(_=None):
-            current = (run_target.value or "").strip()
-            selected_file = file_picker.value or ""
-            if current or not selected_file:
-                return
-
-            run_target.value = Path(selected_file).name
+        def _on_example_cloned(dest) -> None:
+            entry = (f"⧉ My workspace / {dest.name}", str(dest))
+            opts = list(example_picker.options)
+            if entry not in opts:
+                example_picker.options = opts + [entry]
+            example_picker.value = str(dest)          # triggers apply_selected_example
 
         def on_check_backend(_=None):
             log_out.clear_output()
@@ -1207,11 +1214,9 @@ def build_icesheets_ui():
             exec_row.layout.display = ""
 
             advanced_action_row.layout.display = "" if is_advanced else "none"
-            file_picker_row.layout.display = "" 
-            file_editor_row.layout.display = "" if is_advanced else "none"
-            run_target_row.layout.display = "" 
+            editor_panel.container.layout.display = "" if is_advanced else "none"
+            run_target_row.layout.display = ""
             advanced_buttons_row.layout.display = "" if is_advanced else "none"
-            new_example_row.layout.display = "" if is_advanced else "none"
             dataset_upload_row.layout.display = "" if is_advanced else "none"
             download_buttons_row.layout.display = ""
 
@@ -1332,7 +1337,17 @@ def build_icesheets_ui():
             # run_target.value = compute_run_target_text()
             command_preview.value = build_model_command()
 
+        def _guard_model_switch(change):
+            # never discard unsaved editor work on a model switch
+            if change["new"] == _editor_ctx["last_model"]:
+                return
+            if not editor_panel.controller.guard_context_switch():
+                model_dd.value = _editor_ctx["last_model"]   # revert (re-fires, then no-ops)
+                return
+            _editor_ctx["last_model"] = change["new"]
+
         backend_dd.observe(update_visibility, names="value")
+        model_dd.observe(_guard_model_switch, names="value")   # must precede the reloaders
         model_dd.observe(refresh_example_picker, names="value")
         model_dd.observe(update_summary, names="value")
         model_dd.observe(lambda _c: software_panel.set_model(model_dd.value), names="value")
@@ -1341,17 +1356,12 @@ def build_icesheets_ui():
         image_panel.on_change(update_summary)
         mode_dd.observe(update_visibility, names="value")
         ui_mode_dd.observe(update_visibility, names="value")
-        ui_mode_dd.observe(apply_selected_example, names="value")
         container_source.observe(update_summary, names="value")
         image_uri.observe(update_summary, names="value")
         example_dir.observe(update_summary, names="value")
-        example_dir.observe(refresh_file_picker, names="value")
         exec_dir.observe(update_summary, names="value")
         slurm_ntasks.observe(update_summary, names="value")
         example_picker.observe(apply_selected_example, names="value")
-        file_picker.observe(load_selected_file, names="value")
-        # run_target.observe(update_summary, names="value")
-        file_picker.observe(maybe_seed_run_target_from_file, names="value")
         access_mode_dd.observe(lambda change: create_or_refresh_connector_session() if change["new"] == "connector" else None, names="value")
         
 
@@ -1373,13 +1383,13 @@ def build_icesheets_ui():
             mode = mode_dd.value
 
             # ----------------------------------------
-            # DEPLOY
+            # DEPLOY  (clone the selected example into the user's workspace)
             # ----------------------------------------
             if ui_mode_dd.value == "advanced" and action == "deploy":
-                deploy_current_example()
+                editor_panel.controller.clone_example()
                 status_chip.value = status_html("done")
                 return
-            
+
             # ----------------------------------------
             # TEST (force environment check)
             # ----------------------------------------
@@ -1942,8 +1952,6 @@ def build_icesheets_ui():
         cloud_terminate_btn.on_click(on_cloud_terminate)
         cloud_environment.test_button.on_click(cloud_runtime.check_environment)
         cloud_environment.prepare_button.on_click(cloud_runtime.prepare_environment)
-        save_file_btn.on_click(save_selected_file)
-        deploy_example_btn.on_click(deploy_current_example)
         upload_dataset_btn.on_click(save_uploaded_datasets)
         results_download_btn.on_click(on_results_download)
         figures_download_btn.on_click(on_figures_download)
@@ -1990,13 +1998,10 @@ def build_icesheets_ui():
         example_row = form_row("Example path:", example_dir)
         exec_row = form_row("Exec dir:", exec_dir)
         advanced_action_row = form_row("Action:", advanced_action_dd)
-        file_picker_row = form_row("Files:", file_picker)
-        file_editor_row = form_row("Editor:", file_editor)
         run_target_row = form_row("Run target:", run_target)
         md_config_panel = W.Accordion(children=[md_panel.container])
         md_config_panel.set_title(0, "⚙️ ISSM configuration (Basic)")
         # md_config_panel.selected_index = 0  # open by default
-        new_example_row = form_row("New name:", new_example_name)
         dataset_upload_row = form_row("Datasets:", dataset_upload)
         container_source_row = form_row("Source:", container_source)
         image_uri_row = form_row("Image:", image_uri)
@@ -2054,7 +2059,7 @@ def build_icesheets_ui():
         )
 
         advanced_buttons_row = W.HBox(
-            [save_file_btn, deploy_example_btn, upload_dataset_btn],
+            [upload_dataset_btn],
             layout=W.Layout(gap="10px", flex_wrap="wrap"),
         )
 
@@ -2325,11 +2330,9 @@ def build_icesheets_ui():
                 example_row,
                 exec_row,
                 advanced_action_row,
-                file_picker_row,
-                file_editor_row,
+                editor_panel.container,
                 run_target_row,
                 md_config_panel,
-                new_example_row,
                 advanced_buttons_row,
                 dataset_upload_row,
             ],
