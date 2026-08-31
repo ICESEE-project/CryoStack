@@ -32,6 +32,33 @@ class WorkspacePermissionError(RuntimeError):
     """A file operation was attempted outside the caller's managed workspace."""
 
 
+# ── model-adapter dispatch for result reading / visualization ──────────────
+# The generic workspace layer never imports a model directly: it asks the
+# adapter for its result reader / visualizer. Models that have not implemented
+# these yet (Icepack, for now) simply return nothing and the Results tab
+# degrades gracefully.
+def _result_reader_for(model: str):
+    from cryostack_src.models import get_model_adapter
+
+    try:
+        adapter = get_model_adapter(model or "issm")
+    except ValueError:
+        adapter = get_model_adapter("issm")
+    reader = getattr(adapter, "discover_results", None)
+    if reader is not None:
+        return reader
+    from cryostack_src.models.issm.results import discover_results
+    return discover_results  # neutral: reports legacy/missing for other models
+
+
+def _visualizer_for(model: str):
+    name = (model or "issm").strip().lower()
+    if name == "issm":
+        from cryostack_src.visualization import issm as _viz
+        return _viz
+    return None  # no deterministic visualizer for this model yet
+
+
 class StagedExample:
     """A user-owned working copy of an example, staged for a run.
 
@@ -815,9 +842,9 @@ class WorkspaceManager:
         Legacy runs (only ``md_final.mat`` / figures) come back with
         ``status == "legacy"`` rather than raising.
         """
-        from cryostack_src.models.issm.results import discover_results
-
         run = self._runs.get(run_id)
+        discover_results = _result_reader_for(run.model if run else "issm")
+
         if not run or not self._owns(run.workspace_directory):
             return discover_results(self.manifest_root / (run_id or "_missing"))
         base = run.workspace_directory
@@ -836,9 +863,11 @@ class WorkspaceManager:
 
     def recommended_plots_for_run(self, run_id: str) -> list[dict]:
         """Metadata-driven plot descriptions for a run (renders nothing)."""
-        from cryostack_src.visualization import issm as _viz
-
-        return _viz.recommended_plots(self.result_package_for_run(run_id))
+        run = self._runs.get(run_id)
+        viz = _visualizer_for(run.model if run else "issm")
+        if viz is None:
+            return []
+        return viz.recommended_plots(self.result_package_for_run(run_id))
 
     def render_run_plot(self, run_id: str, *, solution: str, field: str,
                         timestep=None, kind: str = "map"):
@@ -848,9 +877,14 @@ class WorkspaceManager:
         render from -- and write figures into -- their own runs; this never
         raises into the UI (unsupported selections come back with ``ok=False``).
         """
-        from cryostack_src.visualization import issm as _viz
-
         run = self._runs.get(run_id)
+        _viz = _visualizer_for(run.model if run else "issm")
+        if _viz is None:
+            from cryostack_src.visualization.issm import RenderResult
+            return RenderResult.unsupported(
+                solution or "", field or "",
+                f"visualization is not available yet for model "
+                f"{(run.model if run else '?')!r}", kind=kind)
         if not run or not self._owns(run.workspace_directory):
             return _viz.RenderResult.unsupported(
                 solution or "", field or "",

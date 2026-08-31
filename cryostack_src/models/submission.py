@@ -483,7 +483,7 @@ python -c "import icepack; print('Icepack import successful')"
                 target_m = run_file_name if run_file_name.endswith(".m") else "runme.m"
                 run_block = f'''
 cd "{remote_example_dir}"
-matlab -nodesktop -nosplash -r "{issm_matlab_setup} ICESEE_RUN_DIR='{remote_run_dir}'; run('{target_m}'); run('../postprocess_icesee.m'); exit"
+matlab -nodesktop -nosplash -r "{issm_matlab_setup} ICESEE_RUN_DIR='{remote_run_dir}'; setenv('ICESEE_RUN_DIR','{remote_run_dir}'); run('{target_m}'); run('../postprocess_icesee.m'); exit"
 '''
             elif model == "icepack":
                 if run_file_name.endswith(".py"):
@@ -532,7 +532,7 @@ mkdir -p "{remote_exec_dir}"
 {matlab_log_line}
 apptainer exec {matlab_env_flag}\
 -B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution,"{remote_run_dir}":"{remote_run_dir}"{_stack_binds} \
-"{sif_path}" with-issm matlab -nodesktop -nosplash -r "setenv('PATH', ['{remote_run_dir}/.cryostack_launcher:' getenv('PATH')]); cd('/opt/ISSM/examples'); ICESEE_RUN_DIR='{remote_run_dir}'; run('{target_m}'); run('{remote_run_dir}/postprocess_icesee.m'); exit"
+"{sif_path}" with-issm matlab -nodesktop -nosplash -r "setenv('PATH', ['{remote_run_dir}/.cryostack_launcher:' getenv('PATH')]); cd('/opt/ISSM/examples'); ICESEE_RUN_DIR='{remote_run_dir}'; setenv('ICESEE_RUN_DIR','{remote_run_dir}'); run('{target_m}'); run('{remote_run_dir}/postprocess_icesee.m'); exit"
 '''
         else:
             if run_file_name.endswith(".py"):
@@ -870,7 +870,7 @@ python -c "import icepack; print('Icepack import successful')"
                 target_m = run_file_name if run_file_name.endswith(".m") else "runme.m"
                 run_block = f'''
 cd "{remote_example_dir}"
-matlab -nodesktop -nosplash -r "{issm_matlab_setup} ICESEE_RUN_DIR='{remote_run_dir}'; run('{target_m}'); run('../postprocess_icesee.m'); exit"
+matlab -nodesktop -nosplash -r "{issm_matlab_setup} ICESEE_RUN_DIR='{remote_run_dir}'; setenv('ICESEE_RUN_DIR','{remote_run_dir}'); run('{target_m}'); run('../postprocess_icesee.m'); exit"
 '''
             elif model == "icepack":
                 if run_file_name.endswith(".py"):
@@ -938,7 +938,7 @@ mkdir -p "{remote_exec_dir}"
 {matlab_log_line}
 apptainer exec {matlab_env_flag}\
 -B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution,"{remote_run_dir}":"{remote_run_dir}"{_stack_binds} \
-"{sif_path}" with-issm matlab -nodesktop -nosplash -r "setenv('PATH', ['{remote_run_dir}/.cryostack_launcher:' getenv('PATH')]); cd('/opt/ISSM/examples'); ICESEE_RUN_DIR='{remote_run_dir}'; run('{target_m}'); run('{remote_run_dir}/postprocess_icesee.m'); exit"
+"{sif_path}" with-issm matlab -nodesktop -nosplash -r "setenv('PATH', ['{remote_run_dir}/.cryostack_launcher:' getenv('PATH')]); cd('/opt/ISSM/examples'); ICESEE_RUN_DIR='{remote_run_dir}'; setenv('ICESEE_RUN_DIR','{remote_run_dir}'); run('{target_m}'); run('{remote_run_dir}/postprocess_icesee.m'); exit"
 '''
             elif model == "icepack":
                 if run_file_name.endswith(".py"):

@@ -26,28 +26,52 @@ _MESH_ELEMENT_COLUMNS = {3, 4, 6}
 
 # Preference layer only -- the field list in ``metadata.json`` is always
 # authoritative. This just decides *ordering* and which fields a compact UI
-# should surface first, by ISSM solution family. Unknown solutions fall back to
-# metadata order.
+# should surface first, by ISSM solution family. Unknown solutions (and unknown
+# fields within a known solution) fall back to metadata order.
+#
+# Field names are taken from the ISSM class ``defaultoutputs`` (e.g.
+# ``src/m/classes/stressbalance.m``), not guessed. A transient run's field set
+# is whatever the sub-analyses actually produced -- the extra names here are
+# just a sensible surfacing order when present.
 PREFERRED_FIELDS: dict[str, tuple[str, ...]] = {
-    "StressbalanceSolution": ("Vel", "Pressure", "Vx", "Vy", "Vz"),
+    "StressbalanceSolution": ("Vel", "Vx", "Vy", "Vz", "Pressure"),
     "ThermalSolution": (
-        "Temperature", "BasalforcingsGroundediceMeltingRate",
-        "Enthalpy", "Waterfraction", "Watercolumn",
+        "Temperature", "Enthalpy", "Waterfraction", "Watercolumn",
+        "BasalforcingsGroundediceMeltingRate",
+    ),
+    "SteadystateSolution": (
+        "Vel", "Vx", "Vy", "Pressure", "Temperature",
+        "BasalforcingsGroundediceMeltingRate",
     ),
     "MasstransportSolution": ("Thickness", "Surface", "Base"),
+    "BalancethicknessSolution": ("Thickness", "Vel"),
+    "BalancevelocitySolution": ("Vel", "Vx", "Vy"),
     "TransientSolution": (
-        "Vel", "Thickness", "Surface", "Base", "Temperature",
-        "Sealevel", "Pressure", "MaskOceanLevelset", "MaskIceLevelset",
+        "Vel", "Vx", "Vy", "Vz", "Thickness", "Surface", "Base", "Pressure",
+        "Temperature", "MaskIceLevelset", "MaskOceanLevelset",
+        "BasalforcingsGroundediceMeltingRate", "SmbMassBalance",
+        "EffectivePressure", "HydrologyHead", "HydrologyGapHeight",
+        "HydraulicPotential", "Watercolumn",
     ),
-    "EsaSolution": ("EsaUmotion", "EsaNmotion", "EsaEmotion", "EsaXmotion"),
+    "HydrologySolution": (
+        "EffectivePressure", "HydrologyHead", "HydraulicPotential",
+        "HydrologyGapHeight", "HydrologySheetThickness", "Watercolumn",
+        "HydrologyBasalFlux", "DegreeOfChannelization",
+        "ChannelArea", "ChannelDischarge",
+        "HydrologyWaterVx", "HydrologyWaterVy",
+    ),
+    "DamageEvolutionSolution": ("DamageDbar", "DamageD"),
+    "EsaSolution": (
+        "EsaUmotion", "EsaNmotion", "EsaEmotion", "EsaXmotion",
+        "EsaStrainratexx", "EsaStrainrateyy", "EsaRotationrate",
+    ),
+    "GiaSolution": ("GiaW", "GiaER", "UGia", "URGia"),
+    "LoveSolution": (),
+    "SamplingSolution": ("Sample",),
+    "OceantransportSolution": ("Thickness", "Surface", "Base"),
+    # Forward-compat: sea-level-change families that some ISSM builds expose.
     "SealevelchangeSolution": ("Sealevel", "Bslc", "SealevelBarystaticIce"),
     "SlrSolution": ("Sealevel", "Bslc"),
-    "HydrologySolution": (
-        "EffectivePressure", "HydrologyHead", "HydrologyGapHeight",
-        "HydrologyWatercolumn", "SedimentHead", "EplHead",
-    ),
-    "BalancethicknessSolution": ("Thickness",),
-    "DamageEvolutionSolution": ("Damage", "DamageDbar"),
 }
 
 

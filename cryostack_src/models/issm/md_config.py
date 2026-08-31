@@ -23,20 +23,30 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 # ── solver detection ────────────────────────────────────────────────────────
+# Mirrors the accepted strings in ISSM ``src/m/solve/solve.m`` (abbreviation
+# and full name both map to the same normalised key). Keep this in lock-step
+# with ISSM -- a name ISSM rejects must not appear here.
 _SOLVER_ALIASES = {
-    "stressbalance": "stressbalance", "sb": "stressbalance",
-    "transient": "transient", "tr": "transient",
-    "thermal": "thermal", "th": "thermal",
-    "steadystate": "steadystate", "ss": "steadystate",
-    "masstransport": "masstransport", "mt": "masstransport",
-    "balancethickness": "balancethickness", "bt": "balancethickness",
-    "hydrology": "hydrology", "hydrologyshakti": "hydrology",
+    "sb": "stressbalance", "stressbalance": "stressbalance",
+    "mt": "masstransport", "masstransport": "masstransport",
+    "oceant": "oceantransport", "oceantransport": "oceantransport",
+    "th": "thermal", "thermal": "thermal",
+    "ss": "steadystate", "steadystate": "steadystate",
+    "tr": "transient", "transient": "transient",
+    "mc": "balancethickness", "balancethickness": "balancethickness",
+    "balancethickness2": "balancethickness2",
+    "mcsoft": "balancethicknesssoft", "balancethicknesssoft": "balancethicknesssoft",
+    "bv": "balancevelocity", "balancevelocity": "balancevelocity",
+    "bsl": "bedslope", "bedslope": "bedslope",
+    "ssl": "surfaceslope", "surfaceslope": "surfaceslope",
+    "hy": "hydrology", "hydrology": "hydrology",
+    "da": "damageevolution", "damageevolution": "damageevolution",
+    "gia": "gia",
+    "lv": "love", "love": "love",
     "esa": "esa",
-    "slr": "slr", "sealevelchange": "slr",
-    "damageevolution": "damageevolution",
-    "levelset": "levelset",
+    "smp": "sampling", "sampling": "sampling",
 }
-_SOLVE_RE = re.compile(r"""solve\s*\(\s*[A-Za-z_]\w*\s*,\s*['"]([A-Za-z]+)['"]""")
+_SOLVE_RE = re.compile(r"""solve\s*\(\s*[A-Za-z_]\w*\s*,\s*['"]([A-Za-z0-9]+)['"]""")
 
 
 def detect_solvers(runme_text: str) -> tuple[str, ...]:

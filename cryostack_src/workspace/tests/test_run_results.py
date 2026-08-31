@@ -116,6 +116,21 @@ def test_unknown_run_is_missing_not_error(tmp_path):
     assert pkg.available_solutions() == []
 
 
+def test_non_issm_model_degrades_gracefully(tmp_path):
+    """Icepack has no result reader / visualizer yet -- the Results tab must
+    not crash, it just offers nothing."""
+    m = _mgr(USER_A, tmp_path / "ws")
+    run = m.register_run(RunInfo(
+        id="ip-1", name="ip-1", model="icepack", backend="c",
+        execution_mode="remote", status="completed", created=datetime.now(), jobid="j"))
+    m.select_run(run.id)
+    _drop_package(run.workspace_directory)
+
+    assert m.recommended_plots_for_run(run.id) == []
+    result = m.render_run_plot(run.id, solution="X", field="Y")
+    assert result.ok is False and "icepack" in result.reason
+
+
 def test_another_user_cannot_read_the_package(tmp_path):
     root = tmp_path / "ws"
     m_a = _mgr(USER_A, root)

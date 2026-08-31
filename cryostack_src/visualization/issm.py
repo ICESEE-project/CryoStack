@@ -192,16 +192,30 @@ def render_field(pkg: ResultPackage, solution: str, field: str,
             raise _Unsupported(
                 f"elemental field has {values.size} values but the mesh has "
                 f"{ne} elements")
-        if not np.isfinite(values).any():
+        finite_mask = np.isfinite(values)
+        if not finite_mask.any():
             raise _Unsupported("field is entirely non-finite at this timestep")
+        n_masked = int((~finite_mask).sum())
 
         triang = _triangulation(mesh)
         step_txt = f" — timestep {ts + 1}/{sol.timesteps}" if ts is not None else ""
         fig, ax = _new_axes(f"{solution} · {field}{step_txt}")
+
+        finite = values[finite_mask]
+        vmin, vmax = float(finite.min()), float(finite.max())
+        clim = {"vmin": vmin, "vmax": vmax} if vmin != vmax else {}
+
         if info.location == "nodal":
-            mappable = ax.tripcolor(triang, values, shading="gouraud")
+            # Degenerate / masked nodes (NaN/Inf -- common on masked-out ice
+            # fronts): hide any triangle that touches one, keep the rest.
+            if n_masked:
+                elems = np.asarray(mesh["elements"])
+                triang.set_mask(~finite_mask[elems].all(axis=1))
+            plot_values = np.where(finite_mask, values, vmin)
+            mappable = ax.tripcolor(triang, plot_values, shading="gouraud", **clim)
         else:
-            mappable = ax.tripcolor(triang, facecolors=values)
+            mappable = ax.tripcolor(
+                triang, facecolors=np.ma.masked_invalid(values), **clim)
         ax.set_aspect("equal")
         ax.set_xlabel("x")
         ax.set_ylabel("y")
@@ -211,11 +225,11 @@ def render_field(pkg: ResultPackage, solution: str, field: str,
             solution, field, kind="map", timestep=ts)
         fig.savefig(out, format="png", bbox_inches="tight")
 
-        finite = values[np.isfinite(values)]
         caption = (
             f"{field}\n{info.location} · {values.size:,} values"
             + (f" · timestep {ts + 1}/{sol.timesteps}" if ts is not None else "")
-            + f" · range [{finite.min():.3g}, {finite.max():.3g}]"
+            + f" · range [{vmin:.3g}, {vmax:.3g}]"
+            + (f" · {n_masked:,} masked" if n_masked else "")
         )
         return RenderResult(ok=True, solution=solution, field=field, kind="map",
                             timestep=ts, path=out, caption=caption)

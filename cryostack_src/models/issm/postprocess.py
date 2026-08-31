@@ -22,7 +22,13 @@ _MATLAB = r"""
 % =====================================================================
 disp('[cryostack] exporting neutral result package ...');
 
+% A runme.m may call `clear`/`clear all` (some ISSM examples do), which wipes
+% the ICESEE_RUN_DIR variable. Recover it from the environment (setenv'd by the
+% launcher and NOT cleared by `clear`), then fall back to pwd.
 if ~exist('ICESEE_RUN_DIR', 'var') || isempty(ICESEE_RUN_DIR)
+    ICESEE_RUN_DIR = getenv('ICESEE_RUN_DIR');
+end
+if isempty(ICESEE_RUN_DIR)
     ICESEE_RUN_DIR = pwd;
 end
 cs_outdir  = fullfile(ICESEE_RUN_DIR, 'outputs');
