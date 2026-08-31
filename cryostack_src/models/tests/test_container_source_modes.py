@@ -28,6 +28,7 @@ if str(_REPO_ROOT) not in sys.path:
 import pytest
 
 import cryostack_src.models.submission as submission
+from cryostack_src.resources.profiles import get_compute_profile
 
 _RUN_DIR = "/home/u/base/icesheets/runs/issm_container"
 _CONTAINERS = "/home/u/base/icesheets/ICESEE-Containers"
@@ -87,6 +88,7 @@ def render(monkeypatch):
             slurm_time="01:00:00", slurm_job_name="ICESHEETS", slurm_nodes=1,
             slurm_ntasks=8, slurm_tpn=8, slurm_part="cpu", slurm_mem="16G",
             slurm_account="", slurm_mail="", test_mode=False, run_file="",
+            matlab_license=get_compute_profile("pace").matlab_license_config(),
         )
         return _fake_ssh_run.sbatch
 
@@ -222,6 +224,7 @@ def test_connector_submission_shares_the_same_source_modes(monkeypatch):
         slurm_time="01:00:00", slurm_job_name="ICESHEETS", slurm_nodes=1,
         slurm_ntasks=8, slurm_tpn=8, slurm_part="cpu", slurm_mem="16G",
         slurm_account="", slurm_mail="", test_mode=False, run_file="",
+        matlab_license=get_compute_profile("pace").matlab_license_config(),
     )
 
     txt = captured["sbatch"]

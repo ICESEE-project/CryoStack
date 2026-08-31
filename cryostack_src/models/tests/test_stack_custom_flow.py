@@ -27,6 +27,7 @@ from cryostack_src.models.stack import (
     resolve_stack,
     stack_log_line,
 )
+from cryostack_src.resources.profiles import get_compute_profile
 from cryostack_src.workspace.manifest import MANIFEST_NAME, read_manifest, write_manifest
 from cryostack_src.workspace.models import RunInfo
 
@@ -93,6 +94,7 @@ def render(monkeypatch):
             test_mode=False, run_file="",
             stack_log_line=stack_log_line(prov),
             stack_software=prov["software"],
+            matlab_license=get_compute_profile("pace").matlab_license_config(),
         )
         return prov, captured["sbatch"]
 

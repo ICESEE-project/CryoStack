@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import re
+import shlex
 import subprocess
+from collections.abc import Mapping
 from pathlib import Path
 
 from icesee_jupyter_book.core.remote_runner import (
@@ -57,6 +60,55 @@ def _issm_container_launcher_shim(*, run_dir: str) -> str:
         'exec mpiexec -np "$np" "$@"\n'
         "CRYOSTACK_SRUN\n"
         f'chmod +x "{shim}"'
+    )
+
+
+_ENV_NAME_RE = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
+
+
+def _matlab_container_env(
+    matlab_license: Mapping | None,
+    *,
+    backend: str,
+    model: str,
+) -> tuple[str, str]:
+    """``(apptainer --env fragment, execution-log line)`` for MATLAB licensing.
+
+    ISSM runs MATLAB inside the portable ICESEE container, which ships no
+    license server. The compute-resource profile must supply one; it is passed
+    explicitly with ``apptainer exec --env`` -- never via implicit
+    host-environment forwarding.
+
+    Returns ``("", "")`` for any non-ISSM or non-container run (Icepack /
+    Firedrake / Spack are untouched). Raises :class:`RuntimeError` -- before any
+    job is written or submitted -- when an ISSM container run has no configured
+    license, so a Slurm allocation never sits idle on a checkout that will fail.
+
+    ``matlab_license`` is runtime configuration only: the value is spliced into
+    the generated command, never logged and never persisted to provenance.
+    """
+    if backend != "container" or model != "issm":
+        return "", ""
+
+    lic = matlab_license or {}
+    env_var = str(lic.get("env_var") or "MLM_LICENSE_FILE").strip()
+    value = str(lic.get("value") or "").strip()
+
+    if not value:
+        raise RuntimeError(
+            "[container][ERROR] MATLAB licensing is not configured for this "
+            "compute resource. Configure the compute profile's MATLAB license "
+            "(e.g. MLM_LICENSE_FILE=<port>@<host>) before running ISSM in a "
+            "container."
+        )
+    if not _ENV_NAME_RE.match(env_var):
+        raise RuntimeError(
+            f"[container][ERROR] invalid MATLAB license env var name: {env_var!r}"
+        )
+
+    return (
+        f"--env {env_var}={shlex.quote(value)} ",
+        'echo "[container] MATLAB licensing: configured"',
     )
 
 
@@ -228,6 +280,7 @@ def submit_remote_icesheets_via_connector(
     cluster_name: str = "pace",
     stack_log_line: str = "",
     stack_software: dict | None = None,
+    matlab_license: Mapping | None = None,
 ):
     import base64
     import shlex
@@ -239,6 +292,12 @@ def submit_remote_icesheets_via_connector(
 
     if not host or not user:
         raise ValueError("Provide Host + User first.")
+
+    # Preflight: an ISSM container run needs a MATLAB license from the compute
+    # profile. Fail here, before any staging or submission.
+    matlab_env_flag, matlab_log_line = _matlab_container_env(
+        matlab_license, backend=backend, model=model
+    )
 
     # Resolve remote base through connector.
     remote_base_input = (remote_base_dir or "").strip() or "~/r-arobel3-0"
@@ -455,7 +514,8 @@ source "{spack_path}/scripts/activate.sh"
 mkdir -p "{remote_exec_dir}"
 {_stack_setup}
 {_issm_container_launcher_shim(run_dir=remote_run_dir)}
-apptainer exec \
+{matlab_log_line}
+apptainer exec {matlab_env_flag}\
 -B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution,"{remote_run_dir}":"{remote_run_dir}"{_stack_binds} \
 "{sif_path}" with-issm matlab -nodesktop -nosplash -r "setenv('PATH', ['{remote_run_dir}/.cryostack_launcher:' getenv('PATH')]); cd('/opt/ISSM/examples'); ICESEE_RUN_DIR='{remote_run_dir}'; run('{target_m}'); run('{remote_run_dir}/postprocess_icesee.m'); exit"
 '''
@@ -605,6 +665,7 @@ def submit_remote_icesheets(
     md_config: dict | None = None,
     stack_log_line: str = "",
     stack_software: dict | None = None,
+    matlab_license: Mapping | None = None,
 ):
     import base64
     import shlex
@@ -614,6 +675,12 @@ def submit_remote_icesheets(
 
     if not host or not user:
         raise ValueError("Provide Host + User first.")
+
+    # Preflight: an ISSM container run needs a MATLAB license from the compute
+    # profile. Fail here, before any staging or submission.
+    matlab_env_flag, matlab_log_line = _matlab_container_env(
+        matlab_license, backend=backend, model=model
+    )
 
     # ---------------------------------------------------------
     # Remote base/run paths
@@ -836,7 +903,8 @@ source "{spack_path}/scripts/activate.sh"
             if model == "issm":
                 run_block = f'''
 mkdir -p "{remote_exec_dir}"
-apptainer exec \
+{matlab_log_line}
+apptainer exec {matlab_env_flag}\
 -B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution \
 "{sif_path}" with-issm matlab -nodesktop -nosplash -r "issmversion; exit"
 '''
@@ -856,7 +924,8 @@ apptainer exec \
 mkdir -p "{remote_exec_dir}"
 {_stack_setup}
 {_issm_container_launcher_shim(run_dir=remote_run_dir)}
-apptainer exec \
+{matlab_log_line}
+apptainer exec {matlab_env_flag}\
 -B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution,"{remote_run_dir}":"{remote_run_dir}"{_stack_binds} \
 "{sif_path}" with-issm matlab -nodesktop -nosplash -r "setenv('PATH', ['{remote_run_dir}/.cryostack_launcher:' getenv('PATH')]); cd('/opt/ISSM/examples'); ICESEE_RUN_DIR='{remote_run_dir}'; run('{target_m}'); run('{remote_run_dir}/postprocess_icesee.m'); exit"
 '''

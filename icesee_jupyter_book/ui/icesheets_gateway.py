@@ -104,6 +104,7 @@ from cryostack_src.models.submission import (
     submit_remote_icesheets,
     submit_remote_icesheets_via_connector,
 )
+from cryostack_src.resources.profiles import get_compute_profile
 from cryostack_src.frontend.cryolauncher.software_stack import build_software_stack_panel
 from cryostack_src.frontend.cryolauncher.container_image import build_container_image_panel
 
@@ -1619,6 +1620,27 @@ def build_icesheets_ui():
                     with log_out:
                         print(stack_line)
 
+                # Site-specific runtime config (e.g. MATLAB licensing) comes from
+                # the compute-resource profile, never the container image.
+                _compute_profile = get_compute_profile(cluster_name_for_keys.value or "pace")
+                _matlab_license = _compute_profile.matlab_license_config()
+
+                # ISSM runs MATLAB inside the container; fail now (not after a
+                # multi-hour allocation blocks on license checkout) if the
+                # compute resource has no MATLAB license configured.
+                if (
+                    backend_dd.value == "container"
+                    and model_dd.value == "issm"
+                    and _matlab_license is None
+                ):
+                    status_chip.value = status_html("fail")
+                    with log_out:
+                        print(
+                            "[container][ERROR] MATLAB licensing is not configured "
+                            "for this compute resource."
+                        )
+                    return
+
                 use_connector = should_use_connector()
                 if use_connector:
                     execution_result = current_remote_bridge(mode="connector").submit(
@@ -1658,6 +1680,7 @@ def build_icesheets_ui():
                         cluster_name=cluster_name_for_keys.value or "pace",
                         stack_log_line=stack_line,
                         stack_software=stack_provenance.get("software") or {},
+                        matlab_license=_matlab_license,
                         ),
                     )
                 else:
@@ -1696,6 +1719,7 @@ def build_icesheets_ui():
                         md_config=collect_md_config(),
                         stack_log_line=stack_line,
                         stack_software=stack_provenance.get("software") or {},
+                        matlab_license=_matlab_license,
                         ),
                     )
 
