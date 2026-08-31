@@ -8,3 +8,8 @@ traitlets>=5.14
 # Your GUI pages
 ipywidgets>=8.1
 papermill>=2.5
+
+# Neutral result package reader + deterministic visualization
+numpy>=1.24
+h5py>=3.8
+matplotlib>=3.7

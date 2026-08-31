@@ -1,0 +1,109 @@
+"""Combine container identity + per-component resolution into the authoritative
+structured provenance for a run (the manifest ``software`` / ``container``
+blocks). This records *what will actually execute*, not what was requested.
+"""
+from __future__ import annotations
+
+from .compat import (
+    ComponentSelection,
+    StackCompatError,
+    STACK_PROFILE_TESTED,
+    validate_stack,
+)
+from .components import COMPONENTS, MODEL_COMPONENTS
+from .container import resolve_container
+from .images import get_tested_image
+from .resolver import ComponentChoice, resolve_component
+from .runtime import component_checkout_plan
+
+
+def resolve_stack(
+    *,
+    model: str,
+    profile: str,
+    selections: dict[str, ComponentSelection] | None = None,
+    container_source: str | None,
+    image_uri: str | None,
+    tested_image_key: str | None = None,
+    ls_remote=None,
+    digest_resolver=None,
+) -> dict:
+    """Validate the requested stack and resolve it to immutable provenance.
+
+    ``tested_image_key`` selects a curated
+    :data:`cryostack_src.models.stack.TESTED_IMAGES` entry; for a Docker/OCI
+    source the run then anchors on that entry's reference and verified digest and
+    ``image_uri`` may be empty.
+
+    Raises :class:`StackCompatError` if the combination is not a trusted,
+    submittable stack, or :class:`ContainerIdentityError` if a Docker/OCI source
+    has neither a tested image nor a reference. On success returns::
+
+        {
+          "profile": "tested" | "custom",
+          "container": {"source", "reference", "digest", "build_provenance"?},
+          "software": {"<component>": {"source", "requested_ref",
+                                       "resolved_commit", "version"?, ...}},
+        }
+    """
+    model = (model or "").strip().lower()
+    profile = (profile or STACK_PROFILE_TESTED).strip().lower()
+    selections = selections or {}
+
+    validation = validate_stack(model=model, profile=profile, selections=selections)
+    if not validation.ok:
+        raise StackCompatError(validation)
+
+    tested_image = get_tested_image(tested_image_key) if tested_image_key else None
+    container = resolve_container(
+        container_source=container_source,
+        image_uri=image_uri,
+        tested_image=tested_image,
+        digest_resolver=digest_resolver,
+    )
+
+    resolve_kwargs = {} if ls_remote is None else {"ls_remote": ls_remote}
+    software: dict[str, dict] = {}
+    for key in MODEL_COMPONENTS[model]:
+        comp = COMPONENTS[key]
+        if profile == STACK_PROFILE_TESTED:
+            choice = ComponentChoice(key)  # image
+        else:
+            sel = selections.get(key) or ComponentSelection(key)
+            choice = ComponentChoice(key, mode=sel.mode, ref=sel.ref)
+        software[key] = resolve_component(comp, choice, **resolve_kwargs).as_provenance()
+
+    # Fail here — before any job is submitted or manifest written — if a git
+    # override could not be turned into a run-local checkout plan.
+    component_checkout_plan(software, run_dir="/__stack_validate__")
+
+    return {
+        "profile": profile,
+        "container": container.as_provenance(),
+        "software": software,
+    }
+
+
+def stack_log_line(resolved: dict) -> str:
+    """A single immutable, human-readable line for the execution log, e.g.::
+
+        [stack] tested | container=docker://…@sha256:… | issm=image 2026.1 (self-reported)
+                @e70338d8 | icesee=image 0.1.9 @unknown
+    """
+    parts = [f"[stack] {resolved.get('profile', '?')}"]
+    c = resolved.get("container", {})
+    cref = c.get("digest") or c.get("reference") or c.get("source", "?")
+    parts.append(f"container={cref}")
+    # sorted so the line is identical whether built from resolve_stack() or
+    # rebuilt from a (key-sorted) manifest.
+    for key, sw in sorted(resolved.get("software", {}).items()):
+        commit = sw.get("resolved_commit") or "unknown"
+        short = commit[:12] if commit != "unknown" else "unknown"
+        ver = sw.get("version")
+        tag = f"{sw.get('source', '?')}"
+        if ver:
+            tag += f" {ver}"
+        if sw.get("requested_ref"):
+            tag += f" ({sw['requested_ref']})"
+        parts.append(f"{key}={tag} @{short}")
+    return " | ".join(parts)

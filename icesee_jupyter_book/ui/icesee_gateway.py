@@ -281,7 +281,7 @@ back_link = W.HTML("""
 
 <div class="icesee-back-wrap">
   <a href="https://cryostack.eas.gatech.edu/index.html#" class="icesee-back">
-    ← Back to ICESEE Run Center
+    ← Back to CryoStack Home
   </a>
 </div>
 """)

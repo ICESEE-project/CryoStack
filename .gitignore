@@ -7,6 +7,10 @@ icesee_jupyter_book/_build/
 **/__pycache__/
 *.py[cod]
 
+# CryoLauncher Workspace run history (per-user, runtime data)
+icesee_jupyter_book/icesee_jupyter_notebooks/.cryostack/
+icesee_jupyter_book/icesee_jupyter_notebooks/users/
+
 # Local and generated test outputs
 external/ICESEE/applications/lorenz_model/examples/lorenz96/_modelrun_datasets/
 
