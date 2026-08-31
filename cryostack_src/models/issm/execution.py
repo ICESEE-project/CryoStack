@@ -1,5 +1,34 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+#: filenames that make a directory a runnable ISSM example
+EXAMPLE_ENTRYPOINTS = ("runme.m",)
+
+
+def example_runnable(path) -> bool:
+    """A directory is a runnable ISSM example iff it has an entrypoint file."""
+    root = Path(path)
+    return root.is_dir() and any((root / e).is_file() for e in EXAMPLE_ENTRYPOINTS)
+
+
+def example_template() -> dict[str, str]:
+    """Minimal starter files for a new user ISSM example."""
+    return {
+        "runme.m": (
+            "% New ISSM example -- scaffold created by CryoLauncher.\n"
+            "% Build your mesh / parameters, then run the solver, e.g.:\n"
+            "%\n"
+            "%   md = model();\n"
+            "%   md = triangle(md, 'DomainOutline.exp', 50000);\n"
+            "%   md = setmask(md, 'all', '');\n"
+            "%   md = parameterize(md, 'Square.par');\n"
+            "%   md = setflowequation(md, 'SSA', 'all');\n"
+            "%   md.cluster = generic('name', oshostname, 'np', 2);\n"
+            "%   md = solve(md, 'Stressbalance');\n"
+        ),
+    }
+
 
 def build_run_command(*, backend, target, example_dir, exec_dir, image_uri, ntasks) -> str:
     target = target or "runme.m"

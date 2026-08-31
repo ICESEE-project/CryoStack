@@ -17,8 +17,7 @@ import ipywidgets as W
 from IPython.display import display
 
 from icesee_jupyter_book.core.icesheet_examples import (
-    examples_as_dropdown_options,
-    find_example_by_path,
+    merged_examples_for_model,
     example_summary_text,
 )
 from icesee_jupyter_book.core.remote_runner import (
@@ -126,6 +125,7 @@ from cryostack_src.frontend.cryolauncher.panels import (
 )
 
 from cryostack_src.frontend.cryolauncher.workspace import (
+    build_dataset_panel,
     build_editor_panel,
     build_run_details,
     build_workspace_explorer,
@@ -429,12 +429,6 @@ def build_icesheets_ui():
             ],
             value="connector",
             layout=W.Layout(width="100%"),
-        )
-
-        upload_dataset_btn = W.Button(
-            description="Upload datasets",
-            icon="upload",
-            button_style="info",
         )
 
         results_download_btn = W.Button(
@@ -955,20 +949,34 @@ def build_icesheets_ui():
                     return label
             return str(dd.value)
         
-        def refresh_example_picker(_=None):
-            opts = examples_as_dropdown_options(model_dd.value)
+        def _discover_examples():
+            model = model_dd.value
+            adapter = get_model_adapter(model)
+            return merged_examples_for_model(
+                model,
+                user_examples=workspace_manager.list_user_examples(model),
+                runnable_check=getattr(adapter, "example_runnable", None),
+            )
+
+        def refresh_example_picker(_=None, *, select: str | None = None):
+            examples = _discover_examples()
+            opts = [(ex.label, str(ex.path)) for ex in examples]
             if not opts:
                 example_picker.options = [("(no examples found)", "")]
                 example_picker.value = ""
-                example_info.value = "No native examples were discovered for this model."
+                example_info.value = "No examples were discovered for this model."
                 if ui_mode_dd.value == "basic":
                     example_dir.value = ""
                 STATUS["selected_example_path"] = None
                 update_summary()
                 return
 
+            values = [v for _l, v in opts]
+            keep = select if select in values else (
+                example_picker.value if example_picker.value in values else values[0]
+            )
             example_picker.options = opts
-            example_picker.value = opts[0][1]
+            example_picker.value = keep
 
         _editor_ctx = {"last_example": "", "last_model": model_dd.value}
 
@@ -986,7 +994,8 @@ def build_icesheets_ui():
 
             ex = None
             if selected:
-                ex = find_example_by_path(model_dd.value, selected)
+                ex = next((e for e in _discover_examples()
+                           if str(e.path) == selected), None)
             example_info.value = _example_summary(ex, selected)
 
             if selected:
@@ -1004,21 +1013,19 @@ def build_icesheets_ui():
             update_summary()
 
         def _example_summary(ex, selected: str) -> str:
-            if ex is not None:
-                return example_summary_text(ex)
-            prov = Path(selected or "") / ".cryostack-example.json"
-            if selected and prov.is_file():
-                try:
-                    data = json.loads(prov.read_text(encoding="utf-8"))
-                    return (
-                        f"Workspace example (your copy)\n"
-                        f"Name: {Path(selected).name}\n"
-                        f"Cloned from: {data.get('source_name', '?')}\n"
-                        f"Path: {selected}"
-                    )
-                except (OSError, ValueError):
-                    pass
-            return example_summary_text(None)
+            if ex is None:
+                return example_summary_text(None)
+            lines = [
+                f"Model: {ex.model_name.upper()}",
+                f"Name: {Path(selected).name}",
+                "Access: your workspace (editable)" if ex.owned
+                else "Access: application example (read-only)",
+                f"Runnable: {'yes' if ex.runnable else 'no — add a run target'}",
+                f"Path: {selected}",
+            ]
+            if ex.description:
+                lines.append(ex.description)
+            return "\n".join(lines)
 
         def build_model_command():
             backend = backend_dd.value
@@ -1067,7 +1074,20 @@ def build_icesheets_ui():
             example_dir_widget=example_dir,
             log_output=log_out,
             on_files_changed=lambda: refresh_run_target_options(),
-            on_clone_created=lambda dest: _on_example_cloned(dest),
+            on_clone_created=lambda dest: refresh_example_picker(select=str(dest)),
+            on_examples_changed=lambda _action, dest: refresh_example_picker(
+                select=str(dest) if dest is not None else None
+            ),
+            example_template=lambda: (
+                getattr(get_model_adapter(model_dd.value), "example_template", lambda: None)()
+            ),
+        )
+
+        dataset_panel = build_dataset_panel(
+            manager=workspace_manager,
+            uploader=dataset_upload,
+            log_output=log_out,
+            current_example_path=lambda: example_dir.value,
         )
 
         def refresh_run_target_options(_=None):
@@ -1115,16 +1135,6 @@ def build_icesheets_ui():
 
         def current_example_root() -> Path | None:
             return workspace_manager.example_root()
-
-        def save_uploaded_datasets(_=None):
-            workspace_manager.save_uploaded_datasets(dataset_upload.value)
-
-        def _on_example_cloned(dest) -> None:
-            entry = (f"⧉ My workspace / {dest.name}", str(dest))
-            opts = list(example_picker.options)
-            if entry not in opts:
-                example_picker.options = opts + [entry]
-            example_picker.value = str(dest)          # triggers apply_selected_example
 
         def on_check_backend(_=None):
             log_out.clear_output()
@@ -1216,8 +1226,7 @@ def build_icesheets_ui():
             advanced_action_row.layout.display = "" if is_advanced else "none"
             editor_panel.container.layout.display = "" if is_advanced else "none"
             run_target_row.layout.display = ""
-            advanced_buttons_row.layout.display = "" if is_advanced else "none"
-            dataset_upload_row.layout.display = "" if is_advanced else "none"
+            dataset_panel.container.layout.display = "" if is_advanced else "none"
             download_buttons_row.layout.display = ""
 
             md_config_panel.layout.display = "" if model_dd.value == "issm" else "none"
@@ -1468,9 +1477,10 @@ def build_icesheets_ui():
                     print(f"[remote][ERROR] Example path does not exist locally: {local_example}")
                 return
 
-            # Basic-mode ISSM md overrides: validate, then stage a user-owned
-            # working copy with the override step injected before the first
-            # solve(...). The canonical example is never modified.
+            # Stage a user-owned working copy when the run needs one: Basic-mode
+            # ISSM md overrides (validated + injected before the first solve),
+            # and/or referenced datasets to materialise. The canonical example
+            # is never modified.
             effective_example_dir = example_dir.value
             md_run_provenance: dict = {}
             if model_dd.value == "issm" and not test_mode:
@@ -1482,20 +1492,28 @@ def build_icesheets_ui():
                         for _err in _md_validation.errors:
                             print("  -", _err)
                     return
-                if _md_validation.normalized:
+                _has_ds_refs = bool(
+                    workspace_manager.example_dataset_references(example_dir.value)
+                )
+                if _md_validation.normalized or _has_ds_refs:
+                    _extra = (
+                        {"cryostack_md_overrides.m":
+                         build_md_override_script(_md_validation.normalized)}
+                        if _md_validation.normalized else None
+                    )
                     try:
-                        _staged = workspace_manager.stage_example_for_md_overrides(
+                        _staged = workspace_manager.stage_example_for_run(
                             source_example=example_dir.value,
-                            override_script=build_md_override_script(
-                                _md_validation.normalized
+                            extra_files=_extra,
+                            entrypoint_transform=(
+                                inject_override_step if _md_validation.normalized else None
                             ),
-                            overrides=_md_validation.normalized,
-                            entrypoint_transform=inject_override_step,
+                            overrides=_md_validation.normalized or None,
                         )
                     except Exception as _stage_err:
                         status_chip.value = status_html("fail")
                         with log_out:
-                            print("[md][ERROR] Could not stage a working copy:",
+                            print("[stage][ERROR] Could not stage a working copy:",
                                   type(_stage_err).__name__, _stage_err)
                         return
                     effective_example_dir = str(_staged.path)
@@ -1504,11 +1522,15 @@ def build_icesheets_ui():
                         "md_working_copy": str(_staged.path),
                         "md_example_source": _staged.source,
                         "md_working_copy_from_canonical": _staged.from_canonical,
+                        "staged_datasets": _staged.provenance.get("staged_datasets", []),
                     }
                     with log_out:
-                        print(f"[md] staged working copy: {_staged.path}")
-                        print(f"[md] overrides: "
-                              f"{', '.join(sorted(_md_validation.normalized))}")
+                        print(f"[stage] working copy: {_staged.path}")
+                        if _md_validation.normalized:
+                            print("[stage] md overrides: "
+                                  f"{', '.join(sorted(_md_validation.normalized))}")
+                        for _d in _staged.provenance.get("staged_datasets", []):
+                            print(f"[stage] dataset -> {_d['as']}")
 
             # ICESEE-Spack scientific runs are blocked unless the live
             # environment probe reports Ready. Never install silently at Run.
@@ -1952,7 +1974,6 @@ def build_icesheets_ui():
         cloud_terminate_btn.on_click(on_cloud_terminate)
         cloud_environment.test_button.on_click(cloud_runtime.check_environment)
         cloud_environment.prepare_button.on_click(cloud_runtime.prepare_environment)
-        upload_dataset_btn.on_click(save_uploaded_datasets)
         results_download_btn.on_click(on_results_download)
         figures_download_btn.on_click(on_figures_download)
         preview_results_btn.on_click(on_results_preview)
@@ -2002,7 +2023,6 @@ def build_icesheets_ui():
         md_config_panel = W.Accordion(children=[md_panel.container])
         md_config_panel.set_title(0, "⚙️ ISSM configuration (Basic)")
         # md_config_panel.selected_index = 0  # open by default
-        dataset_upload_row = form_row("Datasets:", dataset_upload)
         container_source_row = form_row("Source:", container_source)
         image_uri_row = form_row("Image:", image_uri)
 
@@ -2056,11 +2076,6 @@ def build_icesheets_ui():
             border="1px solid rgba(0,0,0,.08)",
             border_radius="12px",
             margin="8px 0 4px 0"
-        )
-
-        advanced_buttons_row = W.HBox(
-            [upload_dataset_btn],
-            layout=W.Layout(gap="10px", flex_wrap="wrap"),
         )
 
         # [preview_results_btn, results_download_btn, figures_download_btn],
@@ -2333,8 +2348,7 @@ def build_icesheets_ui():
                 editor_panel.container,
                 run_target_row,
                 md_config_panel,
-                advanced_buttons_row,
-                dataset_upload_row,
+                dataset_panel.container,
             ],
             remote_panel=remote_box,
             cloud_panel=cloud_box,

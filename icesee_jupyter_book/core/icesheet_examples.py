@@ -44,6 +44,9 @@ class IcesheetExample:
     entrypoint: str | None = None    # e.g. "runme.m" for ISSM
     editable: bool = True            # Advanced mode can edit/deploy
     source_root: Path | None = None  # native model root if known
+    owned: bool = False              # user-owned workspace example
+    read_only: bool = True           # canonical examples are read-only
+    runnable: bool = True            # has a model run target
 
     def to_dict(self) -> dict:
         data = asdict(self)
@@ -51,6 +54,61 @@ class IcesheetExample:
         if self.source_root is not None:
             data["source_root"] = str(self.source_root)
         return data
+
+
+def merged_examples_for_model(
+    model_name: str,
+    *,
+    issm_root=None,
+    icepack_root=None,
+    user_examples: list[dict] | None = None,
+    runnable_check=None,
+) -> list[IcesheetExample]:
+    """Canonical (read-only) + this user's workspace examples, tagged.
+
+    ``user_examples`` is ``WorkspaceManager.list_user_examples(model)``; a user
+    only ever sees their own. ``runnable_check(path) -> bool`` (from the model
+    adapter) filters canonical *directories* so utility folders (Data/, Mesh/,
+    Functions/) are not offered as runnable.
+    """
+    canonical = discover_examples_for_model(
+        model_name=model_name, issm_root=issm_root, icepack_root=icepack_root
+    )
+    if runnable_check is not None:
+        canonical = [
+            ex for ex in canonical
+            if ex.kind != "directory" or runnable_check(ex.path)
+        ]
+    # canonical examples keep the dataclass defaults: owned=False, read_only=True
+
+    user: list[IcesheetExample] = []
+    for item in (user_examples or []):
+        path = Path(item["path"]).resolve()
+        runnable = bool(runnable_check(path)) if runnable_check is not None else True
+        src = item.get("source_name")
+        user.append(IcesheetExample(
+            model_name=model_name,
+            label=f"⧉ {item['name']}" + ("" if not src else f"  (from {src})"),
+            path=path, kind="directory", category="workspace",
+            beginner_friendly=False,
+            description=f"Your workspace example ({item.get('source_type') or 'user'}).",
+            entrypoint=None, editable=True, source_root=None,
+            owned=True, read_only=False, runnable=runnable,
+        ))
+
+    return sort_examples(canonical) + sorted(user, key=lambda e: e.label.lower())
+
+
+def find_merged_example(model_name: str, selected_path, **kwargs) -> IcesheetExample | None:
+    target = Path(selected_path).expanduser().resolve()
+    for ex in merged_examples_for_model(model_name, **kwargs):
+        try:
+            if ex.path.resolve() == target:
+                return ex
+        except OSError:
+            if str(ex.path) == str(target):
+                return ex
+    return None
 
 
 # ------------------------------------------------------------

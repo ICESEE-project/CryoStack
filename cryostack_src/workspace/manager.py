@@ -17,7 +17,7 @@ from pathlib import Path
 
 from IPython.display import HTML, Image, display
 
-from .files import list_editable_files
+from .files import EDITABLE_SUFFIXES, list_editable_files
 from .identity import WorkspaceUser, resolve_workspace_user
 from .manifest import MANIFEST_NAME, read_manifest, write_manifest
 from .models import RunInfo
@@ -227,15 +227,20 @@ class WorkspaceManager:
     MAX_EDITABLE_BYTES = 2 * 1024 * 1024
 
     def read_text_file(self, path: str | Path) -> str:
-        """Read a text file the user is allowed to view (their workspace or the
-        currently selected example tree). Never leaves those trees."""
+        """Read a text file the user is allowed to view: their own workspace, or
+        the selected example tree -- but never another user's namespace."""
         p = Path(path).expanduser().resolve()
-        roots = [self._owner_root]
-        example = self.example_root()
-        if example is not None:
-            roots.append(example.resolve())
-        if not any(self._within(p, r) for r in roots):
-            raise WorkspacePermissionError("File is outside the current workspace/example.")
+        if not p.is_relative_to(self._owner_root):
+            example = self.example_root()
+            if example is None or not self._within(p, example.resolve()):
+                raise WorkspacePermissionError(
+                    "File is outside the current workspace/example."
+                )
+            users_root = (self._workspace_root / "users").resolve()
+            if self._within(p, users_root):
+                raise WorkspacePermissionError(
+                    "File belongs to another user's workspace."
+                )
         if not p.is_file():
             raise FileNotFoundError(str(p))
         if p.stat().st_size > self.MAX_EDITABLE_BYTES:
@@ -276,13 +281,40 @@ class WorkspaceManager:
             root = (root / self._safe_segment(str(model).strip().lower())).resolve()
         return root
 
+    # ── one generic copy-into-workspace primitive ─────────────────────────
+    def _copy_example_tree(self, src: Path, dest: Path, *, overwrite: bool) -> None:
+        """Copy an example directory to ``dest`` inside this user's workspace."""
+        dest = dest.resolve()
+        if not dest.is_relative_to(self._owner_root):
+            raise WorkspacePermissionError("Destination escaped the workspace.")
+        if dest.exists():
+            if not overwrite:
+                raise FileExistsError(f"Already exists: {dest.name}")
+            shutil.rmtree(dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(src, dest)
+
+    def _example_provenance(self, path: Path) -> dict:
+        prov = path / ".cryostack-example.json"
+        if prov.is_file():
+            try:
+                return json.loads(prov.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                return {}
+        return {}
+
+    def _write_example_provenance(self, path: Path, data: dict) -> None:
+        (path / ".cryostack-example.json").write_text(
+            json.dumps(data, indent=2, sort_keys=True), encoding="utf-8"
+        )
+
+    # ── user example lifecycle ───────────────────────────────────────────
     def clone_example_to_workspace(
         self, *, source: str | Path, model: str | None, name: str | None = None
     ) -> Path:
-        """Copy an example (canonical or otherwise) into this user's workspace.
+        """Copy an example into this user's workspace as an editable copy.
 
-        Result: ``<owner>/examples/<model>/<name>`` -- fully user-owned and
-        editable. The source is never modified.
+        Result: ``<owner>/examples/<model>/<name>``. The source is never modified.
         """
         try:
             src = Path(source).expanduser().resolve()
@@ -291,31 +323,138 @@ class WorkspaceManager:
         if not src.is_dir():
             raise ValueError(f"Not an example directory: {src}")
 
-        dest_root = self.user_examples_root(model)
-        dest = (dest_root / self._safe_example_name(name or src.name)).resolve()
-        if not dest.is_relative_to(self._examples_root):
-            raise WorkspacePermissionError("Clone target escaped the workspace.")
-        if dest.exists():
-            raise FileExistsError(
-                f"A workspace example named {dest.name!r} already exists."
-            )
-        dest_root.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(src, dest)
-        (dest / ".cryostack-example.json").write_text(
-            json.dumps(
-                {
-                    "kind": "cryostack-user-example",
-                    "source": str(src),
-                    "source_name": src.name,
-                    "model": (str(model).strip().lower() or None) if model else None,
-                    "owner": self.owner.safe_id,
-                    "created": datetime.now().isoformat(timespec="seconds"),
-                },
-                indent=2, sort_keys=True,
-            ),
-            encoding="utf-8",
-        )
+        dest = (self.user_examples_root(model)
+                / self._safe_example_name(name or src.name)).resolve()
+        self._copy_example_tree(src, dest, overwrite=False)
+        self._write_example_provenance(dest, {
+            "kind": "cryostack-user-example",
+            "model": (str(model).strip().lower() or None) if model else None,
+            "name": dest.name,
+            "owner": self.owner.safe_id,
+            "created": datetime.now().isoformat(timespec="seconds"),
+            "source": str(src),
+            "source_name": src.name,
+            "source_type": "user-clone" if self._is_user_owned_path(src) else "canonical-clone",
+            "datasets": [],
+        })
         return dest
+
+    def create_user_example(
+        self, *, model: str, name: str, template: dict[str, str] | None = None
+    ) -> Path:
+        """Create a minimal user-owned example directory. ``template`` (if any)
+        is supplied by the model adapter -- the generic layer knows no filenames."""
+        dest = (self.user_examples_root(model)
+                / self._safe_example_name(name)).resolve()
+        if not dest.is_relative_to(self._examples_root):
+            raise WorkspacePermissionError("Example target escaped the workspace.")
+        if dest.exists():
+            raise FileExistsError(f"A workspace example named {dest.name!r} already exists.")
+        dest.mkdir(parents=True)
+        for fname, body in (template or {}).items():
+            (dest / self._safe_segment(fname)).write_text(str(body), encoding="utf-8")
+        self._write_example_provenance(dest, {
+            "kind": "cryostack-user-example",
+            "model": (model or "").strip().lower() or None,
+            "name": dest.name,
+            "owner": self.owner.safe_id,
+            "created": datetime.now().isoformat(timespec="seconds"),
+            "source": None,
+            "source_name": None,
+            "source_type": "new-template" if template else "new-empty",
+            "datasets": [],
+        })
+        return dest
+
+    def _user_example_dir(self, model: str, name: str) -> Path:
+        d = (self.user_examples_root(model) / self._safe_example_name(name)).resolve()
+        if not d.is_relative_to(self._examples_root):
+            raise WorkspacePermissionError("Example escaped the workspace.")
+        if not (d.is_dir() and (d / ".cryostack-example.json").is_file()):
+            raise FileNotFoundError(f"No such workspace example: {name}")
+        return d
+
+    def rename_user_example(self, *, model: str, old: str, new: str) -> Path:
+        src = self._user_example_dir(model, old)
+        dest = (self.user_examples_root(model) / self._safe_example_name(new)).resolve()
+        if not dest.is_relative_to(self._examples_root):
+            raise WorkspacePermissionError("Rename target escaped the workspace.")
+        if dest.exists():
+            raise FileExistsError(f"A workspace example named {dest.name!r} already exists.")
+        src.rename(dest)
+        prov = self._example_provenance(dest)
+        prov["name"] = dest.name
+        self._write_example_provenance(dest, prov)
+        return dest
+
+    def delete_user_example(self, *, model: str, name: str) -> Path:
+        d = self._user_example_dir(model, name)
+        shutil.rmtree(d)              # datasets live in <owner>/datasets/, never here
+        return d
+
+    def list_user_examples(self, model: str | None = None) -> list[dict]:
+        root = self.user_examples_root(model) if model else self._examples_root
+        out: list[dict] = []
+        if not root.is_dir():
+            return out
+        candidates = (
+            sorted(root.iterdir()) if model
+            else [p for m in sorted(root.iterdir()) if m.is_dir()
+                  for p in sorted(m.iterdir())]
+        )
+        for d in candidates:
+            if not d.is_dir() or not (d / ".cryostack-example.json").is_file():
+                continue
+            prov = self._example_provenance(d)
+            out.append({
+                "name": d.name, "path": str(d),
+                "model": prov.get("model"),
+                "source_type": prov.get("source_type"),
+                "source_name": prov.get("source_name"),
+                "datasets": prov.get("datasets", []),
+            })
+        return out
+
+    # ── dataset references (metadata only -- no copy until run staging) ───
+    def example_dataset_references(self, example_path: str | Path) -> list[dict]:
+        p = Path(example_path).expanduser().resolve()
+        return list(self._example_provenance(p).get("datasets", []))
+
+    def reference_dataset(
+        self, *, example_path: str | Path, dataset_name: str, as_path: str | None = None
+    ) -> list[dict]:
+        d = self.resolve_user_file(example_path).parent \
+            if Path(example_path).is_file() else self.resolve_user_file(example_path)
+        if not d.is_dir():
+            raise FileNotFoundError(f"Not a workspace example: {d}")
+        ds = self._resolve_dataset(dataset_name)             # ownership + existence
+        rel = self._safe_relpath(as_path or ds.name)
+        prov = self._example_provenance(d)
+        refs = [r for r in prov.get("datasets", []) if r.get("name") != ds.name]
+        refs.append({"name": ds.name, "as": rel})
+        prov["datasets"] = refs
+        self._write_example_provenance(d, prov)
+        return refs
+
+    def unreference_dataset(self, *, example_path: str | Path, dataset_name: str) -> list[dict]:
+        d = self.resolve_user_file(example_path)
+        prov = self._example_provenance(d)
+        prov["datasets"] = [r for r in prov.get("datasets", []) if r.get("name") != dataset_name]
+        self._write_example_provenance(d, prov)
+        return prov["datasets"]
+
+    def examples_referencing_dataset(self, dataset_name: str) -> list[str]:
+        hits: list[str] = []
+        if not self._examples_root.is_dir():
+            return hits
+        for prov_file in self._examples_root.glob("*/*/.cryostack-example.json"):
+            try:
+                data = json.loads(prov_file.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if any(r.get("name") == dataset_name for r in data.get("datasets", [])):
+                hits.append(prov_file.parent.name)
+        return hits
 
     def example_root(self) -> Path | None:
         path = Path(self.example_dir.value).expanduser()
@@ -342,51 +481,49 @@ class WorkspaceManager:
             raise ValueError(f"Unsafe example name: {name!r}")
         return name
 
-    def stage_example_for_md_overrides(
+    def stage_example_for_run(
         self,
         *,
         source_example: str | Path,
-        override_script: str,
-        overrides: dict,
+        extra_files: dict[str, str] | None = None,
         entrypoint: str = "runme.m",
         entrypoint_transform=None,
+        overrides: dict | None = None,
     ) -> StagedExample:
-        """Return a user-owned working copy of ``source_example`` with the
-        Basic-mode override step injected before its first ``solve(...)``.
+        """Materialise a user-owned working copy of ``source_example`` for a run.
 
-        * canonical example  -> a fresh copy is built under
-          ``<owner_root>/.cryostack/working/<name>`` (rebuilt each run, so the
-          injection is deterministic and never doubled);
+        Generic, model-neutral filesystem staging:
+
+        * canonical example  -> a fresh copy under
+          ``<owner_root>/.cryostack/working/<name>`` (rebuilt each run);
         * user-owned example -> operated on in place.
 
-        The canonical example is never modified. Provenance is written to
-        ``.cryostack-example.json`` inside the working copy.
+        ``extra_files`` are written into the copy and any datasets the example
+        references are copied into ``data/<as>``. ``entrypoint_transform`` (an
+        opaque callable -- the ISSM md-override injector, for instance) may
+        rewrite the entrypoint. The canonical example is never modified.
         """
         src = Path(source_example).expanduser().resolve()
         if not src.exists() or not src.is_dir():
             raise ValueError(f"Example directory not found: {src}")
 
         if self._is_user_owned_path(src):
-            target = src
-            from_canonical = False
+            target, from_canonical = src, False
         else:
-            name = self._safe_example_name(src.name)
-            self._working_root.mkdir(parents=True, exist_ok=True)
-            target = (self._working_root / name).resolve()
-            if not target.is_relative_to(self._working_root):
-                raise ValueError("Working copy escaped the user workspace.")
-            if target.exists():
-                shutil.rmtree(target)
-            shutil.copytree(src, target)
+            target = (self._working_root / self._safe_example_name(src.name)).resolve()
+            self._copy_example_tree(src, target, overwrite=True)
             from_canonical = True
 
-        (target / "cryostack_md_overrides.m").write_text(override_script, encoding="utf-8")
+        for fname, body in (extra_files or {}).items():
+            (target / self._safe_segment(fname)).write_text(str(body), encoding="utf-8")
 
         entry = target / entrypoint
         if entrypoint_transform is not None and entry.is_file():
             entry.write_text(
                 entrypoint_transform(entry.read_text(encoding="utf-8")), encoding="utf-8"
             )
+
+        staged_datasets = self._stage_referenced_datasets(src, target)
 
         provenance = {
             "kind": "cryostack-working-copy",
@@ -397,13 +534,168 @@ class WorkspaceManager:
             "created": datetime.now().isoformat(timespec="seconds"),
             "entrypoint": entrypoint,
             "md_overrides": dict(overrides or {}),
+            "staged_datasets": staged_datasets,
         }
-        (target / ".cryostack-example.json").write_text(
-            json.dumps(provenance, indent=2, sort_keys=True), encoding="utf-8"
-        )
+        # A fresh working copy has no user identity of its own -- record the
+        # staging provenance. An in-place user example keeps its own
+        # .cryostack-example.json (name / source_type / dataset references).
+        if from_canonical:
+            self._write_example_provenance(target, provenance)
         return StagedExample(
             path=target, source=str(src), from_canonical=from_canonical, provenance=provenance
         )
+
+    def stage_example_for_md_overrides(
+        self,
+        *,
+        source_example: str | Path,
+        override_script: str,
+        overrides: dict,
+        entrypoint: str = "runme.m",
+        entrypoint_transform=None,
+    ) -> StagedExample:
+        """Basic-mode ISSM path: stage a working copy with the override script
+        (``cryostack_md_overrides.m``) written and injected before the first
+        ``solve(...)``. Thin wrapper over :meth:`stage_example_for_run`."""
+        return self.stage_example_for_run(
+            source_example=source_example,
+            extra_files={"cryostack_md_overrides.m": override_script},
+            entrypoint=entrypoint, entrypoint_transform=entrypoint_transform,
+            overrides=overrides,
+        )
+
+    # ------------------------------------------------------------------
+    # Reusable user datasets:  <owner_root>/datasets/
+    # ------------------------------------------------------------------
+    #: per-file cap for the widget-based uploader (kernel memory + comm limits)
+    MAX_DATASET_UPLOAD_BYTES = 50 * 1024 * 1024
+
+    def datasets_root(self) -> Path:
+        self._datasets_root.mkdir(parents=True, exist_ok=True)
+        return self._datasets_root
+
+    @staticmethod
+    def _safe_dataset_name(raw: str) -> str:
+        name = str(raw or "").strip()
+        if (not name or "\x00" in name or "/" in name or "\\" in name
+                or ".." in name or name.startswith(".")
+                or Path(name).is_absolute() or len(name) > 200):
+            raise ValueError(
+                f"Unsafe dataset filename: {raw!r} "
+                "(no paths, no '..', no leading dot)"
+            )
+        return name
+
+    @staticmethod
+    def _safe_relpath(raw: str) -> str:
+        parts = [p for p in str(raw or "").replace("\\", "/").split("/") if p]
+        if not parts:
+            raise ValueError("empty reference path")
+        for p in parts:
+            if p in {".", ".."} or "\x00" in p or len(p) > 128:
+                raise ValueError(f"Unsafe reference path segment: {p!r}")
+        return "/".join(parts)
+
+    def _resolve_dataset(self, name: str) -> Path:
+        p = (self._datasets_root / self._safe_dataset_name(name)).resolve()
+        if not p.is_relative_to(self._datasets_root):
+            raise WorkspacePermissionError("Dataset escaped the datasets root.")
+        if not p.is_file():
+            raise FileNotFoundError(f"No such dataset: {name}")
+        return p
+
+    def list_datasets(self) -> list[dict]:
+        root = self._datasets_root
+        if not root.is_dir():
+            return []
+        out: list[dict] = []
+        for p in sorted(root.iterdir()):
+            if not p.is_file() or p.name.startswith("."):
+                continue
+            out.append({
+                "name": p.name,
+                "path": str(p),
+                "size": p.stat().st_size,
+                "suffix": p.suffix.lower(),
+                "editable": p.suffix.lower() in EDITABLE_SUFFIXES,
+                "referenced_by": self.examples_referencing_dataset(p.name),
+            })
+        return out
+
+    def save_datasets(self, uploads, *, overwrite: bool = False) -> dict:
+        """Persist ``ipywidgets.FileUpload.value`` into ``<owner>/datasets/``.
+
+        Returns ``{"saved": [...], "skipped": [...], "errors": [...]}``. No
+        extension restriction (scientific data); traversal-proof; overwrite
+        needs ``overwrite=True``; oversized files are rejected with a clear
+        message.
+        """
+        root = self.datasets_root()
+        items = uploads.values() if isinstance(uploads, dict) else (uploads or [])
+        saved, skipped, errors = [], [], []
+        for item in items:
+            raw_name = (item.get("name") if isinstance(item, dict)
+                        else getattr(item, "name", "upload"))
+            try:
+                name = self._safe_dataset_name(raw_name)
+                content = item["content"] if isinstance(item, dict) else item.content
+                content = bytes(content)
+            except (KeyError, AttributeError, TypeError, ValueError) as err:
+                errors.append(f"{raw_name}: {err}")
+                continue
+            if len(content) > self.MAX_DATASET_UPLOAD_BYTES:
+                errors.append(
+                    f"{name}: {len(content) // (1024 * 1024)} MB exceeds the "
+                    f"{self.MAX_DATASET_UPLOAD_BYTES // (1024 * 1024)} MB browser "
+                    "upload limit -- stage large data on the compute resource instead."
+                )
+                continue
+            target = (root / name).resolve()
+            if not target.is_relative_to(self._datasets_root):
+                errors.append(f"{name}: rejected")
+                continue
+            if target.exists() and not overwrite:
+                skipped.append(name)
+                continue
+            target.write_bytes(content)
+            saved.append(name)
+        return {"saved": saved, "skipped": skipped, "errors": errors}
+
+    def delete_dataset(self, name: str) -> Path:
+        p = self._resolve_dataset(name)
+        p.unlink()
+        return p
+
+    def rename_dataset(self, old: str, new: str) -> Path:
+        src = self._resolve_dataset(old)
+        dest = (self._datasets_root / self._safe_dataset_name(new)).resolve()
+        if not dest.is_relative_to(self._datasets_root):
+            raise WorkspacePermissionError("Rename target escaped the datasets root.")
+        if dest.exists():
+            raise FileExistsError(f"A dataset named {dest.name!r} already exists.")
+        src.rename(dest)
+        return dest
+
+    def _stage_referenced_datasets(self, source: Path, working_copy: Path) -> list[dict]:
+        """Copy the datasets the source example references into ``working_copy/data``."""
+        refs = self._example_provenance(source).get("datasets", [])
+        staged: list[dict] = []
+        for ref in refs:
+            try:
+                ds = self._resolve_dataset(ref.get("name", ""))
+            except (FileNotFoundError, WorkspacePermissionError, ValueError):
+                continue
+            try:
+                rel = self._safe_relpath(ref.get("as") or ds.name)
+            except ValueError:
+                continue
+            dest = (working_copy / "data" / rel).resolve()
+            if not dest.is_relative_to(working_copy.resolve()):
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ds, dest)
+            staged.append({"name": ds.name, "as": f"data/{rel}"})
+        return staged
 
     def delete(self, path: Path) -> None:
         """Delete one explicitly resolved workspace path."""
@@ -544,39 +836,6 @@ class WorkspaceManager:
             with self.log_output:
                 print("[advanced][ERROR]", type(error).__name__, error)
             return None
-
-    def save_uploaded_datasets(self, value) -> None:
-        self.log_output.clear_output()
-        root = self.example_root()
-        if root is None:
-            with self.log_output:
-                print("[upload][ERROR] Example directory is not available.")
-            return
-        if not value:
-            with self.log_output:
-                print("[upload] No files selected.")
-            return
-        target_dir = root / "_uploaded_datasets"
-        target_dir.mkdir(parents=True, exist_ok=True)
-        saved = 0
-        try:
-            if isinstance(value, dict):
-                items = value.items()
-            else:
-                items = []
-                for item in value:
-                    name = item.get("name", "uploaded_file")
-                    items.append((name, item))
-            for name, metadata in items:
-                content = metadata["content"] if isinstance(metadata, dict) else metadata.content
-                with open(target_dir / name, "wb") as stream:
-                    stream.write(content)
-                saved += 1
-            with self.log_output:
-                print(f"[upload] Saved {saved} file(s) to: {target_dir}")
-        except Exception as error:
-            with self.log_output:
-                print("[upload][ERROR]", type(error).__name__, error)
 
     def local_run_cache_dir(self) -> Path:
         selected = self.selected_run()

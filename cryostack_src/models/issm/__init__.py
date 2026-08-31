@@ -1,5 +1,8 @@
 from .configuration import build_environment_check, validate_configuration
-from .execution import build_activation_check, build_run_command, choose_run_target, order_run_targets
+from .execution import (
+    EXAMPLE_ENTRYPOINTS, build_activation_check, build_run_command,
+    choose_run_target, example_runnable, example_template, order_run_targets,
+)
 from .md_config import (
     CURATED_MD_PARAMETERS,
     build_md_override_script,

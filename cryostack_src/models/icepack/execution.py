@@ -2,6 +2,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
+#: Icepack examples are notebook/script based rather than a fixed entrypoint file
+EXAMPLE_ENTRYPOINTS: tuple[str, ...] = ()
+_EXAMPLE_GLOBS = ("*.ipynb", "*.py")
+
+
+def example_runnable(path) -> bool:
+    root = Path(path)
+    return root.is_dir() and any(next(root.glob(g), None) for g in _EXAMPLE_GLOBS)
+
+
+def example_template():
+    return None
+
 
 def build_run_command(*, backend, target, example_dir, exec_dir, image_uri, ntasks) -> str:
     if backend == "spack":

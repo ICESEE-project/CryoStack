@@ -55,11 +55,15 @@ def setup(tmp_path):
     example_dir = _Widget(str(canon))
     mgr = _mgr(tmp_path / "ws", example_dir)
     clones: list[Path] = []
+    changes: list[tuple] = []
     panel = build_editor_panel(
         manager=mgr, model_value=lambda: "issm", example_dir_widget=example_dir,
         log_output=_Log(), on_files_changed=lambda: None,
         on_clone_created=clones.append,
+        on_examples_changed=lambda action, dest: changes.append((action, dest)),
+        example_template=lambda: {"runme.m": "md = model();\n"},
     )
+    panel.controller._changes = changes
     return mgr, example_dir, panel.controller, canon, clones
 
 
@@ -165,3 +169,38 @@ def test_new_and_delete_inside_workspace_example(setup):
     ctrl.confirm_delete.value = True
     ctrl.delete()
     assert not (clones[0] / "scratch.m").exists()
+
+
+# ── user example management from the editor ───────────────────────────────
+def test_new_example_creates_from_template_and_notifies(setup):
+    mgr, example_dir, ctrl, canon, _ = setup
+    ctrl.refresh()
+    ctrl.name_field.value = "myrun"
+    ctrl.new_example()
+    dest = mgr.user_examples_root("issm") / "myrun"
+    assert (dest / "runme.m").read_text() == "md = model();\n"
+    assert ("created", dest) in ctrl._changes
+
+
+def test_rename_and_delete_only_for_user_owned_examples(setup):
+    mgr, example_dir, ctrl, canon, clones = setup
+    ctrl.refresh()
+    ctrl.rename_example()                       # canonical selected -> refused
+    ctrl.delete_example()
+    assert ctrl._changes == []
+
+    ctrl.clone_example()
+    example_dir.value = str(clones[0])
+    ctrl.refresh()
+    ctrl.name_field.value = "renamed"
+    ctrl.rename_example()
+    assert ("renamed", mgr.user_examples_root("issm") / "renamed") in ctrl._changes
+
+    example_dir.value = str(mgr.user_examples_root("issm") / "renamed")
+    ctrl.refresh()
+    ctrl.delete_example()                       # not confirmed
+    assert (mgr.user_examples_root("issm") / "renamed").exists()
+    ctrl._confirm_example_delete.value = True
+    ctrl.delete_example()
+    assert not (mgr.user_examples_root("issm") / "renamed").exists()
+    assert ("deleted", None) in ctrl._changes

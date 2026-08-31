@@ -58,11 +58,17 @@ class EditorController:
         buttons: dict,
         on_files_changed=None,
         on_clone_created=None,
+        on_examples_changed=None,
+        example_template=None,
+        confirm_example_delete: W.Checkbox | None = None,
     ) -> None:
         self.m = manager
         self._model_value = model_value
         self._example_dir = example_dir_widget
         self._log = log_output
+        self._on_examples_changed = on_examples_changed
+        self._example_template = example_template or (lambda: None)
+        self._confirm_example_delete = confirm_example_delete
         self.file_picker = file_picker
         self.editor = editor
         self.status = status
@@ -88,6 +94,12 @@ class EditorController:
         buttons["delete"].on_click(self.delete)
         buttons["refresh"].on_click(lambda _b: self.refresh())
         buttons["clone"].on_click(self.clone_example)
+        if "new_example" in buttons:
+            buttons["new_example"].on_click(self.new_example)
+        if "rename_example" in buttons:
+            buttons["rename_example"].on_click(self.rename_example)
+        if "delete_example" in buttons:
+            buttons["delete_example"].on_click(self.delete_example)
 
     # ── state ────────────────────────────────────────────────────────────
     @property
@@ -283,6 +295,69 @@ class EditorController:
         if self._on_clone_created is not None:
             self._on_clone_created(dest)
 
+    # ── user example lifecycle ───────────────────────────────────────────
+    def _current_user_example_name(self) -> str | None:
+        ex = (self._example_dir.value or "").strip()
+        return Path(ex).name if ex and self.m.is_user_owned(ex) else None
+
+    def new_example(self, _=None) -> None:
+        name = self.name_field.value.strip()
+        try:
+            dest = self.m.create_user_example(
+                model=self._model_value(), name=name, template=self._example_template(),
+            )
+        except Exception as err:  # noqa: BLE001 - surfaced to the user log
+            self._print("[editor][ERROR]", type(err).__name__, err)
+            return
+        self.name_field.value = ""
+        self._print(f"[editor] Created workspace example: {dest}")
+        if self._on_examples_changed is not None:
+            self._on_examples_changed("created", dest)
+
+    def rename_example(self, _=None) -> None:
+        old = self._current_user_example_name()
+        if old is None:
+            self._print("[editor] Only your own workspace examples can be renamed.")
+            return
+        if not self.guard_context_switch():
+            return
+        new = self.name_field.value.strip()
+        try:
+            dest = self.m.rename_user_example(model=self._model_value(), old=old, new=new)
+        except Exception as err:  # noqa: BLE001 - surfaced to the user log
+            self._print("[editor][ERROR]", type(err).__name__, err)
+            return
+        self.name_field.value = ""
+        self._print(f"[editor] Renamed to: {dest}")
+        if self._on_examples_changed is not None:
+            self._on_examples_changed("renamed", dest)
+
+    def delete_example(self, _=None) -> None:
+        name = self._current_user_example_name()
+        if name is None:
+            self._print("[editor] Only your own workspace examples can be deleted.")
+            return
+        # deleting the example discards its buffer anyway; still require an
+        # explicit discard so it is never silent
+        if self.dirty and not self.discard_toggle.value:
+            self._print("[editor] Unsaved changes — save, or tick 'Discard unsaved "
+                        "changes', before deleting the example.")
+            return
+        self.discard_toggle.value = False
+        if self._confirm_example_delete is None or not self._confirm_example_delete.value:
+            self._print(f"[editor] Tick 'Confirm delete example' to remove {name}.")
+            return
+        try:
+            removed = self.m.delete_user_example(model=self._model_value(), name=name)
+        except Exception as err:  # noqa: BLE001 - surfaced to the user log
+            self._print("[editor][ERROR]", type(err).__name__, err)
+            return
+        self._confirm_example_delete.value = False
+        self._loaded_path, self._clean_text = None, ""
+        self._print(f"[editor] Deleted workspace example: {removed}")
+        if self._on_examples_changed is not None:
+            self._on_examples_changed("deleted", None)
+
     def _notify_files_changed(self) -> None:
         if self._on_files_changed is not None:
             try:
@@ -302,6 +377,11 @@ class EditorController:
             self._loaded_path and self.m.is_user_owned(self._loaded_path)))
         b["new"].disabled = b["save_as"].disabled
         b["clone"].disabled = user_example or not (self._example_dir.value or "").strip()
+        if "rename_example" in b:
+            b["rename_example"].disabled = not user_example
+            b["delete_example"].disabled = not user_example
+        if self._confirm_example_delete is not None:
+            self._confirm_example_delete.layout.display = "" if user_example else "none"
 
         self.discard_toggle.layout.display = "" if self.dirty else "none"
         self.confirm_delete.layout.display = "" if not b["delete"].disabled else "none"
@@ -333,17 +413,21 @@ def build_editor_panel(
     log_output,
     on_files_changed=None,
     on_clone_created=None,
+    on_examples_changed=None,
+    example_template=None,
 ) -> EditorPanel:
     file_picker = W.Dropdown(options=[("(no editable files found)", "")],
                              layout=W.Layout(width="100%"))
     editor = W.Textarea(value="", layout=W.Layout(width="100%", height="320px"))
     status = W.HTML()
-    name_field = W.Text(placeholder="new / save-as / clone name",
-                        layout=W.Layout(width="240px"))
+    name_field = W.Text(placeholder="name for new / rename / save-as / clone",
+                        layout=W.Layout(width="260px"))
     discard_toggle = W.Checkbox(value=False, description="Discard unsaved changes",
                                 indent=False, layout=W.Layout(display="none"))
     confirm_delete = W.Checkbox(value=False, description="Confirm delete",
                                 indent=False, layout=W.Layout(display="none"))
+    confirm_example_delete = W.Checkbox(value=False, description="Confirm delete example",
+                                        indent=False, layout=W.Layout(display="none"))
 
     def _btn(desc, icon, style=""):
         return W.Button(description=desc, icon=icon, button_style=style,
@@ -356,6 +440,9 @@ def build_editor_panel(
         "delete": _btn("Delete", "trash", "danger"),
         "refresh": _btn("Refresh", "refresh"),
         "clone": _btn("Clone to My Workspace", "cloud-download", "info"),
+        "new_example": _btn("New example", "folder-open", "info"),
+        "rename_example": _btn("Rename example", "pencil"),
+        "delete_example": _btn("Delete example", "trash", "danger"),
     }
 
     controller = EditorController(
@@ -364,10 +451,16 @@ def build_editor_panel(
         name_field=name_field, discard_toggle=discard_toggle,
         confirm_delete=confirm_delete, buttons=buttons,
         on_files_changed=on_files_changed, on_clone_created=on_clone_created,
+        on_examples_changed=on_examples_changed, example_template=example_template,
+        confirm_example_delete=confirm_example_delete,
     )
 
     container = W.VBox(
         [
+            W.HBox([buttons["new_example"], buttons["clone"],
+                    buttons["rename_example"], buttons["delete_example"],
+                    confirm_example_delete],
+                   layout=W.Layout(gap="6px", align_items="center", flex_wrap="wrap")),
             W.HBox([W.HTML("<div class='icesee-lbl'>File:</div>",
                            layout=W.Layout(width="90px", min_width="90px")),
                     file_picker, buttons["refresh"]],
@@ -375,7 +468,7 @@ def build_editor_panel(
             status,
             editor,
             W.HBox([buttons["save"], buttons["save_as"], buttons["new"],
-                    buttons["delete"], buttons["clone"]],
+                    buttons["delete"]],
                    layout=W.Layout(gap="6px", flex_wrap="wrap")),
             W.HBox([name_field, discard_toggle, confirm_delete],
                    layout=W.Layout(gap="12px", align_items="center", flex_wrap="wrap")),
