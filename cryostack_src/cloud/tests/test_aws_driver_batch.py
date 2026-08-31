@@ -93,3 +93,25 @@ def test_image_copier_is_forwarded(monkeypatch, captured):
     AWSDriver(region="us-east-2").prepare_batch(
         network=_NET, iam=_IAM, image_copier=sentinel)
     assert seen == {"model": "issm", "copier": sentinel}
+
+
+def test_default_copier_is_buildx_imagetools(monkeypatch, captured):
+    """With no override, prepare_batch uses the activated buildx copier."""
+    seen = {}
+
+    def spy(config, *, model, copier):
+        seen["copier_callable"] = callable(copier)
+        return _delivery()
+
+    made = {"n": 0}
+    real_factory = driver_mod.buildx_imagetools_copier
+
+    def counting_factory(config):
+        made["n"] += 1
+        return real_factory(config)
+
+    monkeypatch.setattr(driver_mod, "mirror_tested_image", spy)
+    monkeypatch.setattr(driver_mod, "buildx_imagetools_copier", counting_factory)
+
+    AWSDriver(region="us-east-2").prepare_batch(network=_NET, iam=_IAM)
+    assert made["n"] == 1 and seen["copier_callable"] is True

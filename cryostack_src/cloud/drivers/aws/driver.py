@@ -57,6 +57,7 @@ from .batch_provision import (
 
 from .registry_delivery import (
     RegistryDeliveryError,
+    buildx_imagetools_copier,
     mirror_tested_image,
 )
 
@@ -208,20 +209,26 @@ class AWSDriver(
         never points Batch at an unverified image.
 
         Discovery results for network / IAM may be passed in to avoid
-        re-describing. ``image_copier`` is the registry-to-registry transfer
-        (see :func:`registry_delivery.buildx_imagetools_copier`); when omitted,
-        a mirror that would need a transfer fails cleanly.
+        re-describing. ``image_copier`` overrides the transfer mechanism; by
+        default it is ``buildx_imagetools_copier`` -- a one-time, idempotent
+        registry-to-registry copy (``docker buildx imagetools create``): no
+        image rebuild, no Apptainer conversion, and Batch never depends on a
+        mutable tag. The copy runs only when the exact tested image is not
+        already in ECR.
         """
 
         network = network or self.network()
         iam = iam or self.iam()
+
+        copier = (image_copier if image_copier is not None
+                  else buildx_imagetools_copier(self.config))
 
         delivery = None
         issm_image = None
         delivery_messages: list[str] = []
         try:
             delivery = mirror_tested_image(
-                self.config, model="issm", copier=image_copier,
+                self.config, model="issm", copier=copier,
             )
             if delivery.verified and delivery.immutable_reference:
                 issm_image = delivery.immutable_reference
