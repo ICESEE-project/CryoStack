@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import base64
+import re
+import shlex
 from collections.abc import Callable
 
+import cryostack_src.remote.spack_env as spack_env
 from cryostack_src.execution.backend import ExecutionResult, ExecutionStatus
 from cryostack_src.execution.remote import RemoteBackend
+from cryostack_src.remote.spack_env import EnvReport, EnvStatus, SetupSlurmOpts
 from icesee_jupyter_book.core.connector_relay_client import send_command
 from icesee_jupyter_book.core.remote_runner import (
+    connector_slurm_submit,
     connector_ssh,
     remote_cancel_job,
     remote_job_status,
@@ -151,6 +157,144 @@ class RemoteBridge:
         if preparer is None:
             raise RuntimeError("Remote environment preparer has not been configured.")
         return preparer(**kwargs)
+
+    # ------------------------------------------------------------------
+    # ICESEE-Spack environment lifecycle (Remote backend)
+    # ------------------------------------------------------------------
+    def _run_script(self, script: str, *, timeout: int = 180) -> dict:
+        """Run a shell script on the resource over the active transport."""
+        return self.check_backend(command=script, timeout=timeout)
+
+    def resolve_remote_base(self, path: str) -> str:
+        """Expand ~ and resolve to an absolute remote path (both transports)."""
+        expr = f"import os,sys; print(os.path.abspath(os.path.expanduser({path!r})))"
+        res = self._run_script(f"python3 -c {shlex.quote(expr)}", timeout=60)
+        out = (res.get("stdout") or "").strip().splitlines()
+        if not res.get("ok") or not out:
+            raise RuntimeError(
+                f"Could not resolve remote base dir {path!r}: "
+                f"{(res.get('stderr') or res.get('stdout') or '').strip()}"
+            )
+        return out[-1].strip()
+
+    def _write_remote_file(self, remote_path: str, text: str) -> None:
+        encoded = base64.b64encode(text.encode("utf-8")).decode("ascii")
+        writer = (
+            "import base64, pathlib; "
+            f"p = pathlib.Path({remote_path!r}); "
+            "p.parent.mkdir(parents=True, exist_ok=True); "
+            f"p.write_text(base64.b64decode({encoded!r}).decode('utf-8'), encoding='utf-8'); "
+            "print(str(p))"
+        )
+        res = self._run_script(f"python3 -c {shlex.quote(writer)}", timeout=60)
+        if not res.get("ok"):
+            raise RuntimeError(
+                "Failed to write remote file "
+                f"{remote_path}: {(res.get('stderr') or res.get('stdout') or '').strip()}"
+            )
+
+    def environment_status(
+        self,
+        *,
+        model: str,
+        remote_base: str,
+        spack_dirname: str = spack_env.DEFAULT_SPACK_DIRNAME,
+        base_is_absolute: bool = False,
+    ) -> EnvReport:
+        """Fast, live readiness probe for ICESEE-Spack + the selected model."""
+        base_abs = remote_base if base_is_absolute else self.resolve_remote_base(remote_base)
+        paths = spack_env.spack_paths(base_abs, spack_dirname)
+        res = self._run_script(
+            spack_env.probe_script(model=model, paths=paths), timeout=180
+        )
+        return spack_env.classify_probe(
+            res.get("stdout") or "", model=model, ok=bool(res.get("ok"))
+        )
+
+    def submit_spack_setup_job(
+        self,
+        *,
+        model: str,
+        remote_base: str,
+        setup_dir: str | None = None,
+        spack_dirname: str = spack_env.DEFAULT_SPACK_DIRNAME,
+        repo_url: str = spack_env.DEFAULT_SPACK_REPO,
+        slurm: SetupSlurmOpts | None = None,
+        matlab_license: dict | None = None,
+        base_is_absolute: bool = False,
+    ) -> dict:
+        """Stage + sbatch the durable ICESEE-Spack setup job. Returns immediately."""
+        base_abs = remote_base if base_is_absolute else self.resolve_remote_base(remote_base)
+        paths = spack_env.spack_paths(base_abs, spack_dirname)
+        setup_dir = (setup_dir or f"{base_abs.rstrip('/')}/ICESEE-Spack-setup").rstrip("/")
+        script = spack_env.install_sbatch_text(
+            model=model, paths=paths, setup_dir=setup_dir,
+            repo_url=repo_url, slurm=slurm, matlab_license=matlab_license,
+        )
+        script_path = f"{setup_dir}/spack_setup.sbatch"
+        self._run_script(f"mkdir -p {shlex.quote(setup_dir)}", timeout=60)
+        self._write_remote_file(script_path, script)
+
+        job_id = self._sbatch(script_path)
+        return {
+            "job_id": job_id,
+            "setup_dir": setup_dir,
+            "log_file": f"{setup_dir}/spack-setup-{job_id}.out",
+            "spack_repo": paths.repo,
+        }
+
+    def _sbatch(self, script_path: str) -> str:
+        if self.mode == "connector":
+            res = connector_slurm_submit(
+                self._require_session(), self.host, self.user, self.port,
+                script_path, timeout=60,
+            )
+            if not res.get("ok") or not res.get("submitted"):
+                raise RuntimeError(
+                    "Failed to submit setup job through connector: "
+                    f"{(res.get('stderr') or res.get('stdout') or '').strip()}"
+                )
+            return str(res["jobid"])
+        res = ssh_run(self.host, self.user, self.port,
+                      f"sbatch {shlex.quote(script_path)}", timeout=60)
+        if res.returncode != 0:
+            raise RuntimeError(f"sbatch failed: {(res.stderr or res.stdout).strip()}")
+        m = re.search(r"Submitted batch job\s+(\d+)", res.stdout or "")
+        if not m:
+            raise RuntimeError(f"Could not parse setup job id from: {res.stdout!r}")
+        return m.group(1)
+
+    def prepare_spack_environment(
+        self,
+        *,
+        model: str,
+        remote_base: str,
+        setup_dir: str | None = None,
+        spack_dirname: str = spack_env.DEFAULT_SPACK_DIRNAME,
+        repo_url: str = spack_env.DEFAULT_SPACK_REPO,
+        slurm: SetupSlurmOpts | None = None,
+        matlab_license: dict | None = None,
+    ) -> dict:
+        """Probe first (decision 4). If Ready, reuse. Otherwise sbatch a setup job.
+
+        Never runs a synchronous multi-hour install: the build is a Slurm job and
+        this returns as soon as it is queued.
+        """
+        base_abs = self.resolve_remote_base(remote_base)
+        report = self.environment_status(
+            model=model, remote_base=base_abs,
+            spack_dirname=spack_dirname, base_is_absolute=True,
+        )
+        if report.is_ready:
+            return {"status": EnvStatus.READY, "reused": True, "report": report}
+
+        job = self.submit_spack_setup_job(
+            model=model, remote_base=base_abs, setup_dir=setup_dir,
+            spack_dirname=spack_dirname, repo_url=repo_url, slurm=slurm,
+            matlab_license=matlab_license, base_is_absolute=True,
+        )
+        return {"status": EnvStatus.INSTALLING, "reused": False, "job": job,
+                "previous": report}
 
     def _connector_check(self):
         response = send_command(

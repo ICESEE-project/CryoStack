@@ -11,12 +11,12 @@ from icesee_jupyter_book.core.remote_runner import (
     connector_ssh,
     connector_stage_archive,
     remote_ensure_spack,
-    remote_maybe_install_spack,
     resolve_remote_abs_path,
     sanitize_multiline,
     slurm_optional_lines,
     ssh_run,
 )
+import cryostack_src.remote.spack_env as spack_env
 from cryostack_src.models.issm.postprocess import (
     build_postprocess as build_issm_postprocess_script,
 )
@@ -109,6 +109,25 @@ def _matlab_container_env(
     return (
         f"--env {env_var}={shlex.quote(value)} ",
         'echo "[container] MATLAB licensing: configured"',
+    )
+
+
+def _assert_spack_ready(run_script, *, model: str, spack_path: str) -> None:
+    """Block a scientific ICESEE-Spack run unless the live probe reports Ready.
+
+    ``run_script(script) -> (returncode, stdout, stderr)``. Never installs here --
+    a synchronous build must never hold a submission request open. The user runs
+    Check / Prepare environment first.
+    """
+    paths = spack_env.spack_paths_from_repo(spack_path)
+    rc, out, err = run_script(spack_env.probe_script(model=model, paths=paths))
+    report = spack_env.classify_probe(out or "", model=model, ok=(rc == 0))
+    if report.is_ready:
+        return
+    raise RuntimeError(
+        f"ICESEE-Spack is not ready for {model.upper()} on this resource.\n"
+        "Check or prepare the environment before running.\n"
+        + "\n".join(report.messages)
     )
 
 
@@ -398,19 +417,16 @@ echo "{spack_path}"
         messages.append("[connector] Spack backend enabled")
         messages.append(f"[connector] ICESEE-Spack path: {spack_path}")
 
-        if spack_install_if_needed:
-            install_flag = spack_install_mode or ""
-            install_cmd = f'''
-set -e
-cd "{spack_path}"
-bash ./install.sh {install_flag}
-'''
-            ires = connector_ssh(session_id, host, user, port, install_cmd, timeout=7200, cluster_name=cluster_name)
-            if not ires.get("ok"):
-                raise RuntimeError(
-                    "Remote ICESEE-Spack install failed through connector\n"
-                    f"STDOUT:\n{ires.get('stdout','')}\n\nSTDERR:\n{ires.get('stderr','')}"
-                )
+        # A scientific run must not start unless the live environment is Ready.
+        # Building the environment is a durable Slurm setup job (Prepare
+        # environment), never a synchronous install here.
+        def _probe(script, _sid=session_id):
+            r = connector_ssh(_sid, host, user, port, script, timeout=180,
+                              cluster_name=cluster_name)
+            return (0 if r.get("ok") else 1, r.get("stdout", ""), r.get("stderr", ""))
+
+        _assert_spack_ready(_probe, model=model, spack_path=spack_path)
+        messages.append(f"[connector] ICESEE-Spack ready for {model.upper()}")
 
     elif backend == "container":
         messages.append("[connector] ICESEE-Container backend selected")
@@ -745,18 +761,15 @@ def submit_remote_icesheets(
         spack_path = resolve_remote_abs_path(host, user, port, spack_path_raw)
         messages.append(f"[remote] Resolved ICESEE-Spack path: {spack_path}")
 
-        if spack_install_if_needed:
-            install_flag = spack_install_mode or ""
-            messages.append(f"[remote] Spack install requested: {install_flag or '(default)'}")
-            rc, out, err = remote_maybe_install_spack(
-                host, user, port, spack_path, install_flag, spack_slurm_dir, spack_pmix_dir
-            )
-            if out.strip():
-                messages.append(out.strip())
-            if err.strip():
-                messages.append(err.strip())
-            if rc != 0:
-                raise RuntimeError("Remote ICESEE-Spack install failed.")
+        # A scientific run must not start unless the live environment is Ready.
+        # Building the environment is a durable Slurm setup job (Prepare
+        # environment), never a synchronous install here.
+        def _probe(script):
+            r = ssh_run(host, user, port, script, timeout=180)
+            return (r.returncode, r.stdout, r.stderr)
+
+        _assert_spack_ready(_probe, model=model, spack_path=spack_path)
+        messages.append(f"[remote] ICESEE-Spack ready for {model.upper()}")
 
     elif backend == "container":
         messages.append("[remote] ICESEE-Container backend selected")

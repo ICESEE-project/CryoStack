@@ -23,8 +23,6 @@ from icesee_jupyter_book.core.icesheet_examples import (
 from icesee_jupyter_book.core.remote_runner import (
     ssh_run,
     slurm_optional_lines,
-    remote_ensure_spack,
-    remote_maybe_install_spack,
     resolve_remote_abs_path,
     remote_stage_and_submit,
     sanitize_multiline,
@@ -78,6 +76,7 @@ from icesee_jupyter_book.core.experiment_status import (
 
 from cryostack_src.frontend.shared import (
     CRYOSTACK_FRONTEND_CSS,
+    status_badge as status_badge_html,
 )
 
 from cryostack_src.frontend.cryolauncher.cloud_environment import (
@@ -91,6 +90,8 @@ from cryostack_src.frontend.cryolauncher.remote_runtime import (
     build_remote_runtime_callbacks,
 )
 from cryostack_src.remote import RemoteBridge, expand_remote_home, normalize_remote_path
+from cryostack_src.remote.spack_env import SetupSlurmOpts
+from cryostack_src.frontend.cryolauncher.spack_runtime import build_spack_runtime_callbacks
 from cryostack_src.models import get_model_adapter
 from cryostack_src.models.stack import (
     ComponentResolutionError,
@@ -1582,6 +1583,38 @@ def build_icesheets_ui():
                     print(f"[remote][ERROR] Example path does not exist locally: {local_example}")
                 return
 
+            # ICESEE-Spack scientific runs are blocked unless the live
+            # environment probe reports Ready. Never install silently at Run.
+            if backend_dd.value == "spack":
+                try:
+                    _env = current_remote_bridge(
+                        mode="connector" if should_use_connector() else "direct"
+                    ).environment_status(
+                        model=model_dd.value,
+                        remote_base=remote_base_dir.value.strip() or "~/r-arobel3-0",
+                        spack_dirname=spack_dirname.value.strip() or "ICESEE-Spack",
+                    )
+                except Exception as _env_err:
+                    status_chip.value = status_html("fail")
+                    with log_out:
+                        print("[spack][ERROR] Could not check the environment:",
+                              type(_env_err).__name__, _env_err)
+                    return
+                if not _env.is_ready:
+                    status_chip.value = status_html("fail")
+                    spack_env_badge.value = status_badge_html(
+                        _env.status.badge_state, label=_env.status.label
+                    )
+                    with log_out:
+                        print(
+                            f"ICESEE-Spack is not ready for {model_dd.value.upper()} "
+                            "on this resource."
+                        )
+                        print("Check or prepare the environment before running.")
+                        for _m in _env.messages:
+                            print(" ", _m)
+                    return
+
             try:
                 # Resolve the reproducibility provenance BEFORE any job is
                 # submitted or any manifest is written, so a resolution failure
@@ -1855,7 +1888,7 @@ def build_icesheets_ui():
         )
         on_tail = workspace_logs.on_tail
         on_auto_tail_change = workspace_logs.on_auto_tail_change
-        
+
         cloud_runtime = build_cloud_runtime_callbacks(
             runtime_status=STATUS,
             log_output=log_out,
@@ -2245,6 +2278,35 @@ def build_icesheets_ui():
             layout=W.Layout(width="100%"),
         )
 
+        # --- Remote + ICESEE-Spack: Environment lifecycle ------------------
+        spack_env_badge = W.HTML(status_badge_html("idle", label="Unknown"))
+        spack_env_setup_label = W.HTML("")
+        spack_check_env_btn = W.Button(
+            description="Check environment", icon="search", button_style="info",
+        )
+        spack_prepare_env_btn = W.Button(
+            description="Prepare environment", icon="wrench", button_style="primary",
+        )
+        spack_setup_log_btn = W.Button(
+            description="View setup log", icon="file-text",
+            layout=W.Layout(display="none"),
+        )
+        spack_env_row = W.VBox(
+            [
+                W.HBox(
+                    [W.HTML("<div class='icesee-lbl'>Environment</div>",
+                            layout=W.Layout(width="120px", min_width="120px")),
+                     spack_env_badge, spack_env_setup_label],
+                    layout=W.Layout(align_items="center", gap="10px"),
+                ),
+                W.HBox(
+                    [spack_check_env_btn, spack_prepare_env_btn, spack_setup_log_btn],
+                    layout=W.Layout(gap="8px", flex_wrap="wrap", margin="0 0 0 120px"),
+                ),
+            ],
+            layout=W.Layout(width="100%", gap="6px"),
+        )
+
         backend_row = form_row("Backend:", backend_dd)
 
         container_source_row = form_row("Source:", container_source)
@@ -2267,8 +2329,7 @@ def build_icesheets_ui():
             spack_enable_row,
             spack_repo_row,
             spack_dir_row,
-            spack_install_row,
-            spack_install_mode_row,
+            spack_env_row,
             # spack_slurm_row,
             # spack_pmix_row,
         ], layout=W.Layout(gap="8px"))
@@ -2290,8 +2351,9 @@ def build_icesheets_ui():
             spack_enable_row.layout.display = spack_box_display
             spack_repo_row.layout.display = spack_display
             spack_dir_row.layout.display = spack_display
-            spack_install_row.layout.display = spack_box_display
-            spack_install_mode_row.layout.display = spack_display
+            spack_env_row.layout.display = spack_box_display
+            spack_install_row.layout.display = "none"
+            spack_install_mode_row.layout.display = "none"
             spack_slurm_row.layout.display = spack_display
             spack_pmix_row.layout.display = spack_display
         
@@ -2299,6 +2361,52 @@ def build_icesheets_ui():
         container_source.observe(_toggle_exec_backend_ui, names="value")
         container_source.observe(update_visibility, names="value")
         _toggle_exec_backend_ui()
+
+        # --- Remote + ICESEE-Spack environment lifecycle callbacks ---------
+        def _setup_slurm_opts():
+            return SetupSlurmOpts(
+                partition=slurm_part.value.strip() or "cpu-small",
+                time="08:00:00",
+                nodes=1,
+                ntasks=int(slurm_ntasks.value or 8),
+                mem=slurm_mem.value.strip() or "32G",
+                account=slurm_account.value.strip(),
+                mail=slurm_mail.value.strip(),
+            )
+
+        def _spack_matlab_license(model):
+            if model != "issm":
+                return None
+            return get_compute_profile(
+                cluster_name_for_keys.value or "pace"
+            ).matlab_license_config()
+
+        spack_runtime = build_spack_runtime_callbacks(
+            runtime_status=STATUS,
+            log_output=log_out,
+            status_widget=status_chip,
+            status_html=status_html,
+            bridge_factory=current_remote_bridge,
+            ensure_connector_session=(
+                lambda: (create_or_refresh_connector_session()
+                         if should_use_connector() else None)
+            ),
+            env_badge=spack_env_badge,
+            setup_job_label=spack_env_setup_label,
+            view_log_button=spack_setup_log_btn,
+            model_value=lambda: model_dd.value,
+            remote_base_value=lambda: remote_base_dir.value.strip() or "~/r-arobel3-0",
+            spack_dirname_value=lambda: spack_dirname.value.strip() or "ICESEE-Spack",
+            spack_repo_value=lambda: (
+                spack_repo_url.value.strip()
+                or "https://github.com/ICESEE-project/ICESEE-Spack.git"
+            ),
+            setup_slurm_opts=_setup_slurm_opts,
+            matlab_license_for=_spack_matlab_license,
+        )
+        spack_check_env_btn.on_click(spack_runtime.check)
+        spack_prepare_env_btn.on_click(spack_runtime.prepare)
+        spack_setup_log_btn.on_click(spack_runtime.view_setup_log)
 
         exec_backend_box = W.Accordion(children=[exec_backend_inner])
         exec_backend_box.set_title(0, "⚙️ Execution backend")
