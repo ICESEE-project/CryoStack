@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import io
+import html
 import yaml
 import subprocess
 from pathlib import Path
@@ -93,6 +94,7 @@ from cryostack_src.remote import RemoteBridge, expand_remote_home, normalize_rem
 from cryostack_src.models import get_model_adapter
 from cryostack_src.models.stack import (
     ComponentResolutionError,
+    ContainerIdentityError,
     StackCompatError,
     StackRuntimeError,
     resolve_stack,
@@ -103,6 +105,7 @@ from cryostack_src.models.submission import (
     submit_remote_icesheets_via_connector,
 )
 from cryostack_src.frontend.cryolauncher.software_stack import build_software_stack_panel
+from cryostack_src.frontend.cryolauncher.container_image import build_container_image_panel
 
 from cryostack_src.frontend.cryolauncher.panels import (
     build_logs_panel,
@@ -409,6 +412,7 @@ def build_icesheets_ui():
         model_dd = run_settings.model
 
         software_panel = build_software_stack_panel()
+        image_panel = build_container_image_panel()
 
         example_picker = run_settings.example_picker
         example_info = run_settings.example_info
@@ -426,6 +430,29 @@ def build_icesheets_ui():
 
         container_source = run_settings.container_source
         image_uri = run_settings.image_uri
+
+        def _is_oci_source() -> bool:
+            return (
+                backend_dd.value == "container"
+                and container_source.value in ("docker", "oci")
+            )
+
+        def effective_image_uri() -> str:
+            """The image reference to submit.
+
+            For a Docker/OCI source this is the curated tested-image reference or
+            the advanced user's custom URI; for git / local SIF it is the
+            gateway's existing free-text field (``.def`` name / SIF path).
+            """
+            if _is_oci_source():
+                return image_panel.selection().image_uri
+            return image_uri.value
+
+        def selected_tested_image_key() -> str | None:
+            if _is_oci_source():
+                sel = image_panel.selection()
+                return sel.tested_key if sel.mode == "tested" else None
+            return None
 
         access_mode_dd = W.Dropdown(
             options=[
@@ -1107,7 +1134,7 @@ def build_icesheets_ui():
                 target=run_file_name,
                 example_dir=example_dir.value,
                 exec_dir=exec_dir.value,
-                image_uri=image_uri.value,
+                image_uri=effective_image_uri(),
                 ntasks=slurm_ntasks.value,
             )
         
@@ -1261,9 +1288,11 @@ def build_icesheets_ui():
         # =========================================================
         def update_visibility(_=None):
             is_container = backend_dd.value == "container"
+            is_oci = is_container and container_source.value in ("docker", "oci")
 
             container_source.layout.display = "" if is_container else "none"
-            image_uri.layout.display = "" if is_container else "none"
+            image_uri.layout.display = "" if (is_container and not is_oci) else "none"
+            image_panel.set_visible(is_oci)
 
             spack_enable.layout.display = "none" if is_container else ""
             spack_repo_url.layout.display = "none" if is_container else ""
@@ -1279,7 +1308,7 @@ def build_icesheets_ui():
             is_advanced = ui_mode_dd.value == "advanced"
 
             container_source_row.layout.display = "" if is_container else "none"
-            image_uri_row.layout.display = "" if is_container else "none"
+            image_uri_row.layout.display = "" if (is_container and not is_oci) else "none"
 
             remote_box.layout.display = "" if is_remote else "none"
             cloud_box.layout.display = "" if is_cloud else "none"
@@ -1381,6 +1410,32 @@ def build_icesheets_ui():
                     "the combined ICESEE container before launching the selected model."
                 )
 
+                if container_source.value in ("docker", "oci"):
+                    sel = image_panel.selection()
+                    ti = sel.tested_image
+                    if ti is not None:
+                        image_lines = (
+                            f"<div><span class='icesee-summary-k'>Container image:</span> "
+                            f"{html.escape(ti.label)} — Tested</div>"
+                            f"<div><span class='icesee-summary-k'>OCI reference:</span> "
+                            f"{html.escape(ti.reference)}</div>"
+                            f"<div><span class='icesee-summary-k'>Digest:</span> "
+                            f"{html.escape(ti.short_digest)}</div>"
+                        )
+                    else:
+                        custom_uri = (sel.custom_uri or "").strip()
+                        image_lines = (
+                            "<div><span class='icesee-summary-k'>Container image:</span> Custom</div>"
+                            f"<div><span class='icesee-summary-k'>OCI reference:</span> "
+                            f"{html.escape(custom_uri) or '<em>not set</em>'}</div>"
+                            "<div><span class='icesee-summary-k'>Digest:</span> unresolved</div>"
+                        )
+                else:
+                    image_lines = (
+                        f"<div><span class='icesee-summary-k'>Image:</span> "
+                        f"{html.escape(image_uri.value) or '<em>default</em>'}</div>"
+                    )
+
                 summary_html.value = f"""
                 <div class="icesee-summary">
                   <div><span class="icesee-summary-k">User mode:</span> {user_mode.title()}</div>
@@ -1389,7 +1444,7 @@ def build_icesheets_ui():
                   <div><span class="icesee-summary-k">Model:</span> {model.upper()}</div>
                   {selected_line}
                   <div><span class="icesee-summary-k">Image source:</span> {source_name}</div>
-                  <div><span class="icesee-summary-k">Image:</span> {image_uri.value}</div>
+                  {image_lines}
                   <div><span class="icesee-summary-k">Execution:</span> {exec_note}</div>
                 </div>
                 """
@@ -1401,6 +1456,9 @@ def build_icesheets_ui():
         model_dd.observe(refresh_example_picker, names="value")
         model_dd.observe(update_summary, names="value")
         model_dd.observe(lambda _c: software_panel.set_model(model_dd.value), names="value")
+        model_dd.observe(lambda _c: image_panel.set_model(model_dd.value), names="value")
+        software_panel.observe_profile(lambda profile: image_panel.set_profile(profile))
+        image_panel.on_change(update_summary)
         mode_dd.observe(update_visibility, names="value")
         ui_mode_dd.observe(update_visibility, names="value")
         ui_mode_dd.observe(apply_selected_example, names="value")
@@ -1534,16 +1592,25 @@ def build_icesheets_ui():
                 if backend_dd.value == "container":
                     _profile = software_panel.profile()
                     _selections = software_panel.selections()
+                    if _is_oci_source():
+                        _img_err = image_panel.validate()
+                        if _img_err:
+                            status_chip.value = status_html("fail")
+                            with log_out:
+                                print("[container][ERROR]", _img_err)
+                            return
                     try:
                         stack_provenance = resolve_stack(
                             model=model_dd.value,
                             profile=_profile,
                             selections=_selections,
                             container_source=container_source.value,
-                            image_uri=image_uri.value,
+                            image_uri=effective_image_uri(),
+                            tested_image_key=selected_tested_image_key(),
                             digest_resolver=None,
                         )
-                    except (StackCompatError, ComponentResolutionError, StackRuntimeError) as stack_err:
+                    except (StackCompatError, ComponentResolutionError,
+                            StackRuntimeError, ContainerIdentityError) as stack_err:
                         status_chip.value = status_html("fail")
                         with log_out:
                             print("[stack][ERROR]", stack_err)
@@ -1567,7 +1634,7 @@ def build_icesheets_ui():
                         model=model_dd.value,
                         example_dir=example_dir.value,
                         exec_dir=exec_dir.value,
-                        image_uri=image_uri.value,
+                        image_uri=effective_image_uri(),
                         container_source=container_source.value,
                         spack_enable=spack_enable.value,
                         spack_repo_url=spack_repo_url.value,
@@ -1606,7 +1673,7 @@ def build_icesheets_ui():
                         model=model_dd.value,
                         example_dir=example_dir.value,
                         exec_dir=exec_dir.value,
-                        image_uri=image_uri.value,
+                        image_uri=effective_image_uri(),
                         container_source=container_source.value,
                         spack_enable=True,
                         spack_repo_url="https://github.com/ICESEE-project/ICESEE-Spack.git",
@@ -2171,6 +2238,7 @@ def build_icesheets_ui():
             backend_row,
             container_source_row,
             image_uri_row,
+            image_panel.container,
             software_panel.container,
             spack_enable_row,
             spack_repo_row,
@@ -2183,9 +2251,13 @@ def build_icesheets_ui():
 
         def _toggle_exec_backend_ui(_=None):
             is_container = backend_dd.value == "container"
+            is_oci = is_container and container_source.value in ("docker", "oci")
 
             container_source_row.layout.display = "flex" if is_container else "none"
-            image_uri_row.layout.display = "flex" if is_container else "none"
+            image_uri_row.layout.display = (
+                "flex" if (is_container and not is_oci) else "none"
+            )
+            image_panel.set_visible(is_oci)
             software_panel.set_visible(is_container)
 
             spack_display = "none" if is_container else "flex"
@@ -2200,6 +2272,8 @@ def build_icesheets_ui():
             spack_pmix_row.layout.display = spack_display
         
         backend_dd.observe(_toggle_exec_backend_ui, names="value")
+        container_source.observe(_toggle_exec_backend_ui, names="value")
+        container_source.observe(update_visibility, names="value")
         _toggle_exec_backend_ui()
 
         exec_backend_box = W.Accordion(children=[exec_backend_inner])
@@ -2346,6 +2420,8 @@ def build_icesheets_ui():
             layout=W.Layout(width="100%"),
         )
 
+        image_panel.set_model(model_dd.value)
+        image_panel.set_profile(software_panel.profile())
         update_visibility()
         update_summary()
 

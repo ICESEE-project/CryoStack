@@ -3,7 +3,8 @@
 One declarative registry (:mod:`components`), one resolver that normalises a
 version choice to an immutable commit SHA (:mod:`resolver`), one compatibility
 authority (:mod:`compat`), one container-identity resolver (:mod:`container`),
-and the provenance combiner (:mod:`provenance`).
+a curated tested-image registry (:mod:`images`), and the provenance combiner
+(:mod:`provenance`).
 """
 from __future__ import annotations
 
@@ -40,7 +41,17 @@ from .container import (
     BASE_IMAGE_DIGEST,
     BASE_IMAGE_REF,
     ContainerIdentity,
+    ContainerIdentityError,
     resolve_container,
+)
+from .images import (
+    TESTED_IMAGES,
+    TestedImage,
+    all_tested_images,
+    default_tested_image_for_model,
+    find_tested_image,
+    get_tested_image,
+    tested_images_for_model,
 )
 from .provenance import resolve_stack, stack_log_line
 from .resolver import (
@@ -66,7 +77,11 @@ __all__ = [
     # resolver
     "ComponentChoice", "ResolvedComponent", "resolve_component", "ComponentResolutionError",
     # container
-    "ContainerIdentity", "resolve_container", "BASE_IMAGE_REF", "BASE_IMAGE_DIGEST",
+    "ContainerIdentity", "ContainerIdentityError", "resolve_container",
+    "BASE_IMAGE_REF", "BASE_IMAGE_DIGEST",
+    # tested-image registry
+    "TESTED_IMAGES", "TestedImage", "all_tested_images", "get_tested_image",
+    "tested_images_for_model", "default_tested_image_for_model", "find_tested_image",
     # compat
     "STACK_PROFILES", "STACK_PROFILE_TESTED", "STACK_PROFILE_CUSTOM",
     "ComponentSelection", "ComponentOption", "ComponentVerdict", "StackValidation",

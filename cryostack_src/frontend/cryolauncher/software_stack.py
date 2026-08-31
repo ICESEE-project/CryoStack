@@ -33,6 +33,12 @@ class SoftwareStackPanel:
     def profile(self) -> str:
         return self._state["profile"].value
 
+    def observe_profile(self, callback) -> None:
+        """Call ``callback(profile_str)`` whenever the Tested/Custom toggle changes."""
+        self._state["profile"].observe(
+            lambda _c: callback(self._state["profile"].value), names="value"
+        )
+
     def selections(self) -> dict:
         """Non-image selections, keyed by component. Empty under 'Tested'."""
         if self.profile() != _PROFILE_CUSTOM:

@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .images import TestedImage
+
 ICESEE_CONTAINERS_REPO = "https://github.com/ICESEE-project/ICESEE-Containers.git"
 ICESEE_CONTAINERS_DEF = "spack-managed/combined-container/combined-env-inbuilt-matlab.def"
 
@@ -19,6 +21,10 @@ ICESEE_CONTAINERS_DEF = "spack-managed/combined-container/combined-env-inbuilt-m
 # published icesee-combined image) derive from — verified against Docker Hub.
 BASE_IMAGE_REF = "docker.io/bkyanjo/combined-lean:v1.0"
 BASE_IMAGE_DIGEST = "sha256:e2dc1c0dec138c632f4db95de89775a62175c3542170012c093845bd4e0e63f3"
+
+
+class ContainerIdentityError(RuntimeError):
+    """A container source/reference combination that must not reach submission."""
 
 
 @dataclass(frozen=True)
@@ -43,18 +49,40 @@ def resolve_container(
     *,
     container_source: str | None,
     image_uri: str | None,
+    tested_image: TestedImage | None = None,
     digest_resolver=None,
 ) -> ContainerIdentity:
     """Resolve the container the run will execute in.
 
+    ``tested_image`` is a curated :class:`~cryostack_src.models.stack.TestedImage`
+    the user selected from the tested-image dropdown; when present (Docker/OCI
+    source only) the run anchors on its registry reference and *verified* digest
+    and no user-typed URI is needed.
+
     ``digest_resolver`` is an optional callable ``(oci_ref) -> "sha256:..."|None``
-    (e.g. ``skopeo inspect``); when absent, a Docker/OCI reference is recorded
-    without a digest and the caller is responsible for surfacing that gap.
+    (e.g. ``skopeo inspect``); when absent, a *custom* Docker/OCI reference is
+    recorded without a digest and the caller is responsible for surfacing that
+    gap. A mutable tag is never recorded as if it were immutable.
     """
     src = (container_source or "git").strip().lower()
     uri = (image_uri or "").strip()
 
     if src in {"docker", "oci"}:
+        if tested_image is not None:
+            return ContainerIdentity(
+                source="docker",
+                reference=tested_image.docker_reference,
+                digest=tested_image.digest,
+                build_provenance={
+                    "tested_image": tested_image.key,
+                    "tested_image_label": tested_image.label,
+                    "digest_source": "cryostack-tested-registry",
+                },
+            )
+        if not uri:
+            raise ContainerIdentityError(
+                "Docker/OCI source selected but no image reference was provided."
+            )
         ref = uri if "://" in uri else f"docker://{uri}"
         digest = None
         if digest_resolver is not None:

@@ -12,6 +12,7 @@ from .compat import (
 )
 from .components import COMPONENTS, MODEL_COMPONENTS
 from .container import resolve_container
+from .images import get_tested_image
 from .resolver import ComponentChoice, resolve_component
 from .runtime import component_checkout_plan
 
@@ -23,13 +24,20 @@ def resolve_stack(
     selections: dict[str, ComponentSelection] | None = None,
     container_source: str | None,
     image_uri: str | None,
+    tested_image_key: str | None = None,
     ls_remote=None,
     digest_resolver=None,
 ) -> dict:
     """Validate the requested stack and resolve it to immutable provenance.
 
+    ``tested_image_key`` selects a curated
+    :data:`cryostack_src.models.stack.TESTED_IMAGES` entry; for a Docker/OCI
+    source the run then anchors on that entry's reference and verified digest and
+    ``image_uri`` may be empty.
+
     Raises :class:`StackCompatError` if the combination is not a trusted,
-    submittable stack. On success returns::
+    submittable stack, or :class:`ContainerIdentityError` if a Docker/OCI source
+    has neither a tested image nor a reference. On success returns::
 
         {
           "profile": "tested" | "custom",
@@ -46,9 +54,11 @@ def resolve_stack(
     if not validation.ok:
         raise StackCompatError(validation)
 
+    tested_image = get_tested_image(tested_image_key) if tested_image_key else None
     container = resolve_container(
         container_source=container_source,
         image_uri=image_uri,
+        tested_image=tested_image,
         digest_resolver=digest_resolver,
     )
 
