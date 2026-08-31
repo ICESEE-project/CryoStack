@@ -128,6 +128,7 @@ from cryostack_src.frontend.cryolauncher.workspace import (
     build_dataset_panel,
     build_editor_panel,
     build_run_details,
+    build_visualization_panel,
     build_workspace_explorer,
     build_workspace_toolbar,
     build_workspace_history_panel,
@@ -1088,6 +1089,17 @@ def build_icesheets_ui():
             uploader=dataset_upload,
             log_output=log_out,
             current_example_path=lambda: example_dir.value,
+        )
+
+        # Deterministic Results visualization (model adapter supplies the
+        # renderer; this panel stays a model-neutral selector).
+        visualization_panel = build_visualization_panel(
+            manager=workspace_manager,
+            selected_run_id=lambda: (
+                workspace_manager.selected_run().id
+                if workspace_manager.selected_run() else ""
+            ),
+            log_output=log_out,
         )
 
         def refresh_run_target_options(_=None):
@@ -2381,6 +2393,7 @@ def build_icesheets_ui():
 
         workspace_history_panel = build_workspace_history_panel(
             manager=workspace_manager,
+            on_run_selected=lambda _run_id: visualization_panel.controller.refresh(),
         )
 
         output_workspace = build_run_details(
@@ -2390,6 +2403,7 @@ def build_icesheets_ui():
             log_controls=log_runtime_controls,
             runs_panel=workspace_history_panel.runs_panel,
             files_panel=workspace_history_panel.files_panel,
+            visualization_panel=visualization_panel.container,
         )
 
         workspace_ui = build_workspace_explorer(

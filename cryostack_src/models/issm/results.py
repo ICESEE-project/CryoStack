@@ -9,8 +9,9 @@ It is completely unaware of SSH / connector / Slurm / Apptainer / AWS /
 Workspace: point it at any local directory that contains an ``outputs/`` tree
 and it behaves identically.
 
-Deterministic plotting is NOT here. :meth:`ResultPackage.recommended_plots`
-returns plot *descriptions* only; rendering is Commit 5.
+Deterministic plotting is NOT here -- it lives in
+:mod:`cryostack_src.visualization.issm`, which consumes this package.
+:meth:`ResultPackage.recommended_plots` returns plot *descriptions* only.
 """
 from __future__ import annotations
 
@@ -22,6 +23,41 @@ SCHEMA = "cryostack.issm.results"
 METADATA_NAME = "metadata.json"
 
 _MESH_ELEMENT_COLUMNS = {3, 4, 6}
+
+# Preference layer only -- the field list in ``metadata.json`` is always
+# authoritative. This just decides *ordering* and which fields a compact UI
+# should surface first, by ISSM solution family. Unknown solutions fall back to
+# metadata order.
+PREFERRED_FIELDS: dict[str, tuple[str, ...]] = {
+    "StressbalanceSolution": ("Vel", "Pressure", "Vx", "Vy", "Vz"),
+    "ThermalSolution": (
+        "Temperature", "BasalforcingsGroundediceMeltingRate",
+        "Enthalpy", "Waterfraction", "Watercolumn",
+    ),
+    "MasstransportSolution": ("Thickness", "Surface", "Base"),
+    "TransientSolution": (
+        "Vel", "Thickness", "Surface", "Base", "Temperature",
+        "Sealevel", "Pressure", "MaskOceanLevelset", "MaskIceLevelset",
+    ),
+    "EsaSolution": ("EsaUmotion", "EsaNmotion", "EsaEmotion", "EsaXmotion"),
+    "SealevelchangeSolution": ("Sealevel", "Bslc", "SealevelBarystaticIce"),
+    "SlrSolution": ("Sealevel", "Bslc"),
+    "HydrologySolution": (
+        "EffectivePressure", "HydrologyHead", "HydrologyGapHeight",
+        "HydrologyWatercolumn", "SedimentHead", "EplHead",
+    ),
+    "BalancethicknessSolution": ("Thickness",),
+    "DamageEvolutionSolution": ("Damage", "DamageDbar"),
+}
+
+
+def preferred_order(solution: str, fields) -> list[str]:
+    """Order ``fields`` (names actually present) by the solution's preference,
+    with anything not listed kept in its original order at the end."""
+    names = list(fields)
+    ranked = PREFERRED_FIELDS.get(solution, ())
+    index = {name: i for i, name in enumerate(ranked)}
+    return sorted(names, key=lambda n: (index.get(n, len(ranked)), names.index(n)))
 
 
 class ResultError(RuntimeError):
@@ -233,8 +269,9 @@ class ResultPackage:
             fields=fields, skipped=skipped,
         )
 
-    def available_fields(self, solution: str) -> list[str]:
-        return [f.name for f in self.solution(solution).fields]
+    def available_fields(self, solution: str, *, preferred: bool = True) -> list[str]:
+        names = [f.name for f in self.solution(solution).fields]
+        return preferred_order(solution, names) if preferred else names
 
     def field_metadata(self, solution: str, field: str) -> FieldInfo:
         return self.solution(solution).field(field)
@@ -310,24 +347,41 @@ class ResultPackage:
                 return a.T
         return a
 
-    # -- recommendations (metadata only -- NO rendering in Commit 4) ----
-    def recommended_plots(self, solution: str) -> list[dict]:
-        sol = self.solution(solution)
+    # -- recommendations (metadata only -- rendering lives in
+    #    cryostack_src.visualization.issm) -----------------------------------
+    def recommended_plots(self, solution: str | None = None) -> list[dict]:
+        """Plot *descriptions*, ordered by :data:`PREFERRED_FIELDS`. Renders
+        nothing. ``solution=None`` aggregates across every solution."""
+        targets = ([solution] if solution is not None
+                   else self.available_solutions())
         out: list[dict] = []
-        for f in sol.fields:
-            if f.location in ("nodal", "elemental"):
-                out.append({
-                    "solution": solution, "field": f.name,
-                    "kind": "map", "location": f.location,
-                    "transient": f.transient,
-                    "timestep": (sol.timesteps - 1) if f.transient else None,
-                })
-            elif f.location == "scalar" and f.transient:
-                out.append({
-                    "solution": solution, "field": f.name,
-                    "kind": "timeseries", "location": "scalar", "transient": True,
-                })
+        for name in targets:
+            sol = self.solution(name)
+            by_name = {f.name: f for f in sol.fields}
+            for field_name in preferred_order(name, by_name):
+                f = by_name[field_name]
+                if f.location in ("nodal", "elemental"):
+                    out.append({
+                        "solution": name, "field": f.name,
+                        "kind": "map", "location": f.location,
+                        "transient": f.transient,
+                        "timestep": (self._default_timestep(sol, f)
+                                     if f.transient else None),
+                    })
+                elif f.location == "scalar" and f.transient:
+                    out.append({
+                        "solution": name, "field": f.name,
+                        "kind": "timeseries", "location": "scalar",
+                        "transient": True, "timestep": None,
+                    })
         return out
+
+    @staticmethod
+    def _default_timestep(sol: SolutionInfo, field: FieldInfo) -> int:
+        """Last timestep the field is actually available at."""
+        if field.available_timesteps:
+            return max(field.available_timesteps)
+        return max(sol.timesteps - 1, 0)
 
     # -- legacy / figures ----------------------------------------------
     def figures(self) -> list[Path]:

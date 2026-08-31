@@ -13,15 +13,19 @@ class WorkspaceDetails:
 
 def build_run_details(
     *, log_output, results_output, download_controls, log_controls,
-    runs_panel, files_panel,
+    runs_panel, files_panel, visualization_panel=None,
 ):
     logs_panel = W.VBox(
         [log_output, log_controls],
         layout=W.Layout(width="100%", height="100%", min_height="0", gap="8px", overflow="hidden"),
     )
+    results_children = [results_output, download_controls]
+    if visualization_panel is not None:
+        results_children.insert(0, visualization_panel)
     results_panel = W.VBox(
-        [results_output, download_controls],
-        layout=W.Layout(width="100%", height="100%", min_height="0", gap="8px", overflow="hidden"),
+        results_children,
+        layout=W.Layout(width="100%", height="100%", min_height="0", gap="8px",
+                        overflow_y="auto"),
     )
     tabs = W.Tab(
         children=[runs_panel, files_panel, logs_panel, results_panel],

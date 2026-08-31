@@ -13,8 +13,8 @@ from .md_config import (
 )
 from .postprocess import build_postprocess
 from .results import (
-    FieldInfo, ResultError, ResultPackage, SkippedField, SolutionInfo,
-    discover_results,
+    PREFERRED_FIELDS, FieldInfo, ResultError, ResultPackage, SkippedField,
+    SolutionInfo, discover_results, preferred_order,
 )
 from .slurm import build_container_fragment, build_slurm_script
 
@@ -25,5 +25,5 @@ __all__ = [
     "CURATED_MD_PARAMETERS", "curated_parameters_for", "detect_solvers",
     "validate_md_config", "build_md_override_script", "inject_override_step",
     "discover_results", "ResultPackage", "ResultError", "FieldInfo",
-    "SolutionInfo", "SkippedField",
+    "SolutionInfo", "SkippedField", "preferred_order", "PREFERRED_FIELDS",
 ]

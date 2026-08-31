@@ -15,7 +15,7 @@ class WorkspaceHistoryPanel:
     run_cards: W.VBox
 
 
-def build_workspace_history_panel(*, manager) -> WorkspaceHistoryPanel:
+def build_workspace_history_panel(*, manager, on_run_selected=None) -> WorkspaceHistoryPanel:
     refresh_button = W.Button(description="Refresh", icon="refresh", layout=W.Layout(width="100px"))
     runs = W.Select(layout=W.Layout(display="none"))
     run_cards = W.VBox(layout=W.Layout(width="100%", gap="2px"))
@@ -141,6 +141,11 @@ def build_workspace_history_panel(*, manager) -> WorkspaceHistoryPanel:
         else:
             files.value = "<div class='icesee-subtle'>(workspace files unavailable)</div>"
         render_cards(manager.list_runs())
+        if on_run_selected is not None:
+            try:
+                on_run_selected(run.id)
+            except Exception:  # noqa: BLE001 - a viz refresh must never break run selection
+                pass
 
     def tail(_):
         if runs.value:

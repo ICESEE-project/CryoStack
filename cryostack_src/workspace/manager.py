@@ -834,6 +834,32 @@ class WorkspaceManager:
                     return package
         return discover_results(base)
 
+    def recommended_plots_for_run(self, run_id: str) -> list[dict]:
+        """Metadata-driven plot descriptions for a run (renders nothing)."""
+        from cryostack_src.visualization import issm as _viz
+
+        return _viz.recommended_plots(self.result_package_for_run(run_id))
+
+    def render_run_plot(self, run_id: str, *, solution: str, field: str,
+                        timestep=None, kind: str = "map"):
+        """Deterministic render of one field / series for a run the caller owns.
+
+        Figures are cached inside that run's owned directory. A user can only
+        render from -- and write figures into -- their own runs; this never
+        raises into the UI (unsupported selections come back with ``ok=False``).
+        """
+        from cryostack_src.visualization import issm as _viz
+
+        run = self._runs.get(run_id)
+        if not run or not self._owns(run.workspace_directory):
+            return _viz.RenderResult.unsupported(
+                solution or "", field or "",
+                "run not found in your workspace", kind=kind)
+        package = self.result_package_for_run(run_id)
+        if kind == "timeseries":
+            return _viz.render_timeseries(package, solution, field)
+        return _viz.render_field(package, solution, field, timestep=timestep)
+
     def clone_example(self, new_name: str) -> Path | None:
         self.log_output.clear_output()
         source = Path(self.example_dir.value).expanduser()
