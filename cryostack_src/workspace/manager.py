@@ -805,6 +805,35 @@ class WorkspaceManager:
         if self.select_run(run_id):
             self.download_figures()
 
+    def result_package_for_run(self, run_id: str):
+        """Return a read-only :class:`ResultPackage` for a run's already-fetched
+        outputs -- data only, no fetching and no rendering.
+
+        Looks only at what is present locally (a run retrieved from Remote,
+        Container or Cloud all land in the same ``outputs/`` shape), so the
+        Workspace Results tab can enumerate solutions/fields without MATLAB.
+        Legacy runs (only ``md_final.mat`` / figures) come back with
+        ``status == "legacy"`` rather than raising.
+        """
+        from cryostack_src.models.issm.results import discover_results
+
+        run = self._runs.get(run_id)
+        if not run or not self._owns(run.workspace_directory):
+            return discover_results(self.manifest_root / (run_id or "_missing"))
+        base = run.workspace_directory
+        candidates = [
+            base / "cache" / "outputs",
+            base / "cache" / "cloud_outputs",
+            base / "outputs",
+            base,
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                package = discover_results(candidate)
+                if package.outputs is not None:
+                    return package
+        return discover_results(base)
+
     def clone_example(self, new_name: str) -> Path | None:
         self.log_output.clear_output()
         source = Path(self.example_dir.value).expanduser()

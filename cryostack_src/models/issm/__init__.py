@@ -12,6 +12,10 @@ from .md_config import (
     validate_md_config,
 )
 from .postprocess import build_postprocess
+from .results import (
+    FieldInfo, ResultError, ResultPackage, SkippedField, SolutionInfo,
+    discover_results,
+)
 from .slurm import build_container_fragment, build_slurm_script
 
 __all__ = [
@@ -20,4 +24,6 @@ __all__ = [
     "build_container_fragment", "choose_run_target", "order_run_targets",
     "CURATED_MD_PARAMETERS", "curated_parameters_for", "detect_solvers",
     "validate_md_config", "build_md_override_script", "inject_override_step",
+    "discover_results", "ResultPackage", "ResultError", "FieldInfo",
+    "SolutionInfo", "SkippedField",
 ]
