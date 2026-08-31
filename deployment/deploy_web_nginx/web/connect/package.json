@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "type": "module",
+  "//": "Marks connect.js as an ES module so Node (unit tests) and the browser agree. No dependencies, no build step."
+}

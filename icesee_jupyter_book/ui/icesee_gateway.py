@@ -873,7 +873,7 @@ def build_icesee_ui():
                     SESSION["ws_url"] = sess["ws_url"]
 
                     connector_setup_link.value = f"""
-                    <a href="https://cryostack.eas.gatech.edu/connect/?session={SESSION['id']}"
+                    <a href="https://cryostack.eas.gatech.edu/connect/?session={SESSION['id']}&app=icesee"
                     target="_blank"
                     style="
                         display:inline-block;
@@ -884,7 +884,7 @@ def build_icesee_ui():
                         text-decoration:none;
                         font-weight:700;
                         margin:6px 0;">
-                    Open ICESEE Connector Setup
+                    Open CryoStack Connector Setup
                     </a>
                     """
 

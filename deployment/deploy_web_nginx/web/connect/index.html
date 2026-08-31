@@ -1,31 +1,40 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>CryoStack Connector</title>
 
   <style>
     :root {
       --blue: #0d6efd;
+      --blue-dark: #0b5ed7;
       --green: #198754;
+      --amber: #b45309;
       --ink: #1f2937;
       --muted: #5f6b7a;
-      --border: rgba(0,0,0,.08);
+      --line: rgba(0,0,0,.10);
       --soft-blue: rgba(13,110,253,.09);
-      --soft-green: rgba(25,135,84,.09);
+      --soft-green: rgba(25,135,84,.10);
+      --soft-amber: rgba(217,119,6,.14);
+      --bg: #f7f8fa;
+      --card: #ffffff;
     }
+
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
-      background: #fff;
+      background: var(--bg);
       color: var(--ink);
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      line-height: 1.6;
     }
 
     .page {
-      max-width: 1080px;
+      max-width: 1000px;
       margin: 0 auto;
-      padding: 70px 28px;
+      padding: 56px 22px 72px;
     }
 
     .badge {
@@ -33,536 +42,319 @@
       background: var(--soft-blue);
       color: var(--blue);
       font-weight: 800;
-      font-size: 13px;
-      padding: 7px 13px;
+      font-size: 12.5px;
+      letter-spacing: .02em;
+      padding: 6px 12px;
       border-radius: 999px;
-      margin-bottom: 18px;
+      margin-bottom: 16px;
     }
 
     h1 {
-      font-size: 42px;
-      line-height: 1.1;
-      margin: 0 0 16px;
+      font-size: 38px;
+      line-height: 1.12;
+      margin: 0 0 14px;
       letter-spacing: -0.03em;
     }
 
     .lead {
       color: var(--muted);
-      font-size: 18px;
-      max-width: 780px;
-      line-height: 1.65;
-      margin-bottom: 34px;
+      font-size: 17px;
+      max-width: 720px;
+      margin: 0 0 28px;
     }
 
-    .grid {
-      display: grid;
-      grid-template-columns: 1.05fr .95fr;
-      gap: 24px;
-      align-items: stretch;
+    /* --- step rail --- */
+    .rail {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 0 0 34px;
+      padding: 0;
+      list-style: none;
+    }
+    .rail li {
+      flex: 1 1 140px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .rail li span {
+      display: block;
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .03em;
     }
 
-    .card {
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      padding: 28px;
-      background: #fff;
-      box-shadow: 0 10px 30px rgba(0,0,0,.05);
+    section.block {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 26px;
+      margin: 0 0 22px;
+      box-shadow: 0 8px 26px rgba(0,0,0,.04);
     }
 
-    .card h2 {
-      margin: 0 0 14px;
-      font-size: 23px;
+    section.block > h2 {
+      margin: 0 0 6px;
+      font-size: 21px;
       letter-spacing: -0.02em;
     }
-
-    .osbox {
-      background: linear-gradient(
-        to bottom,
-        rgba(13,110,253,.04),
-        rgba(13,110,253,.08)
-      );
-
-      border: 1px solid rgba(13,110,253,.12);
-      border-radius: 14px;
-      padding: 16px;
-      margin: 18px 0;
-    }
-
-    .osline {
+    section.block > .hint {
+      margin: 0 0 18px;
       color: var(--muted);
-      margin-bottom: 4px;
+      font-size: 14.5px;
     }
 
-    #os {
-      font-size: 22px;
-      font-weight: 850;
-      color: var(--ink);
+    .dl-banner {
+      margin: 0 0 16px;
+      padding: 12px 14px;
+      background: var(--soft-blue);
+      border-radius: 10px;
+      font-size: 14.5px;
     }
+
+    .dl-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+    }
+
+    .dl-card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: #fff;
+    }
+    .dl-card.is-recommended {
+      border-color: rgba(13,110,253,.45);
+      box-shadow: 0 0 0 3px var(--soft-blue);
+    }
+    .dl-flag {
+      margin: 0;
+      align-self: flex-start;
+      background: var(--blue);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 800;
+      padding: 4px 10px;
+      border-radius: 999px;
+    }
+    .dl-head { display: flex; gap: 12px; align-items: center; }
+    .dl-icon { font-size: 34px; line-height: 1; }
+    .dl-title h3 { margin: 0; font-size: 18px; }
+    .dl-sub { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+
+    .dl-meta { margin: 0; display: grid; gap: 8px; }
+    .dl-meta div { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+    .dl-meta dt {
+      margin: 0; font-size: 12px; font-weight: 800; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .03em; min-width: 66px;
+    }
+    .dl-meta dd { margin: 0; font-size: 14px; }
+    .sha-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    code, .sha, .pair-code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+      word-break: break-all;
+      overflow-wrap: anywhere;
+    }
+    .sha {
+      background: #f1f3f5;
+      padding: 2px 6px;
+      border-radius: 6px;
+    }
+
+    button.copy {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--blue);
+      font-weight: 700;
+      font-size: 12.5px;
+      padding: 5px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      min-height: 34px;
+    }
+    button.copy:hover { background: var(--soft-blue); }
 
     .btn {
       display: inline-block;
       background: var(--blue);
-      color: white;
-      padding: 12px 18px;
+      color: #fff;
+      padding: 11px 18px;
       border-radius: 10px;
       text-decoration: none;
       font-weight: 800;
-      box-shadow: 0 8px 18px rgba(13,110,253,.20);
-      margin-top: 8px;
+      font-size: 15px;
+      text-align: center;
+      box-shadow: 0 8px 18px rgba(13,110,253,.18);
     }
+    .btn:hover { background: var(--blue-dark); }
 
-    .btn:hover {
-      background: #0b5ed7;
+    details.dl-steps {
+      border-top: 1px solid var(--line);
+      padding-top: 10px;
     }
-
-    .steps {
-      margin: 14px 0 0;
-      padding-left: 22px;
-      line-height: 1.9;
-      color: var(--ink);
-    }
-
-    .manual {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-top: 14px;
-    }
-
-    .manual a {
-      display: inline-block;
-      color: var(--blue);
-      background: var(--soft-blue);
-      text-decoration: none;
-      font-weight: 750;
-      padding: 8px 12px;
-      border-radius: 9px;
+    details.dl-steps summary {
       cursor: pointer;
-    }
-
-    .manual a:hover {
-      background: rgba(13,110,253,.15);
-    }
-
-    .status {
-      background: var(--soft-green);
-      border: 1px solid rgba(25,135,84,.13);
-      border-radius: 14px;
-      padding: 15px;
-      color: var(--ink);
-      line-height: 1.55;
-      margin-top: 16px;
-    }
-
-    .small {
-      color: var(--muted);
+      font-weight: 700;
       font-size: 14px;
-      line-height: 1.6;
     }
+    details.dl-steps ol {
+      margin: 10px 0 0;
+      padding-left: 20px;
+    }
+    details.dl-steps li { margin: 6px 0; }
+
+    .pair-code {
+      display: block;
+      background: #f1f3f5;
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin: 4px 0 12px;
+      font-size: 14px;
+    }
+    .pair-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+
+    .notice {
+      border-radius: 12px;
+      padding: 14px 16px;
+      font-size: 14.5px;
+    }
+    .notice.error { background: var(--soft-amber); color: var(--amber); }
+    .notice p { margin: 6px 0 0; }
+    .notice a { color: inherit; }
+
+    /* --- connection status --- */
+    #conn {
+      border-radius: 12px;
+      padding: 16px 18px;
+      background: var(--soft-blue);
+    }
+    #conn[data-tone="ok"] { background: var(--soft-green); }
+    #conn[data-tone="error"] { background: var(--soft-amber); }
+    #conn[data-tone="neutral"] { background: #eef1f4; }
+    .conn-title { margin: 0; font-size: 16px; font-weight: 800; }
+    .conn-detail { margin: 6px 0 0; font-size: 14.5px; }
+    .conn-return { margin-top: 14px; }
 
     .footer {
-      margin-top: 34px;
+      margin-top: 30px;
       color: var(--muted);
-      font-size: 14px;
+      font-size: 13.5px;
+    }
+    .footer a { color: var(--muted); }
+
+    pre, code { max-width: 100%; }
+
+    @media (max-width: 768px) {
+      .page { padding: 40px 16px 56px; }
+      h1 { font-size: 30px; }
+      section.block { padding: 20px; }
+      .dl-grid { grid-template-columns: 1fr; }
     }
 
-    code {
-      word-break: break-word;
+    @media (max-width: 430px) {
+      .page { padding: 32px 13px 48px; }
+      h1 { font-size: 26px; }
+      .lead { font-size: 15.5px; }
+      .rail li { flex-basis: 100%; }
+      .btn { display: block; width: 100%; }
+      .dl-meta dt { min-width: 100%; }
+      button.copy { width: 100%; }
     }
 
-    @media (max-width: 860px) {
-      .grid {
-        grid-template-columns: 1fr;
-      }
-
-      h1 {
-        font-size: 34px;
-      }
-    }
-
-    .download-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 14px;
-      margin-top: 14px;
-    }
-
-    .download-card {
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 18px 12px;
-      text-align: center;
-      background: #fff;
-    }
-
-    .download-icon {
-      font-size: 42px;
-      margin-bottom: 8px;
-    }
-
-    .download-card h3 {
-      margin: 4px 0 10px;
-      font-size: 18px;
-    }
-
-    .download-card .mini {
-      display: inline-block;
-      margin: 4px;
-      padding: 7px 10px;
-      border-radius: 8px;
-      background: var(--soft-blue);
-      color: var(--blue);
-      font-weight: 750;
-      text-decoration: none;
-      font-size: 13px;
-    }
-
-    .download-card .mini:hover {
-      background: rgba(13,110,253,.15);
-    }
-
-    @media (max-width: 860px) {
-      .download-grid {
-        grid-template-columns: 1fr;
-      }
+    @media (max-width: 360px) {
+      h1 { font-size: 23px; }
+      section.block { padding: 16px; border-radius: 12px; }
     }
   </style>
 </head>
 
 <body>
-
   <main class="page">
-
-    <div class="badge">
-      Remote HPC Connector
-    </div>
-
-    <h1>
-      Install CryoStack Connector
-    </h1>
-
+    <div class="badge">CryoStack Connector</div>
+    <h1>Connect CryoStack to your compute resource</h1>
     <p class="lead">
-      CryoStack detected that you want to run a remote HPC workflow.
-      The connector lets your workstation act as the secure bridge
-      to VPN-protected clusters while the CryoLauncher web interface
-      remains simple and browser-based.
+      The CryoStack Connector runs on your own computer and acts as a secure
+      bridge from the CryoStack web interface to VPN-protected clusters. It is a
+      shared platform component used by CryoLauncher and ICESEE.
     </p>
 
-    <div class="grid">
+    <ol class="rail">
+      <li><span>Step 1</span>Download</li>
+      <li><span>Step 2</span>Install</li>
+      <li><span>Step 3</span>Launch</li>
+      <li><span>Step 4</span>Pair</li>
+      <li><span>Step 5</span>Connected</li>
+    </ol>
 
-      <!-- LEFT CARD -->
-
-      <section class="card">
-        <h2>Download Connector</h2>
-
-        <div class="osbox">
-          <div class="osline">Recommended download</div>
-          <div id="os">detecting...</div>
-
-          <a id="download" class="btn" href="/downloads/">
-            Download Recommended Connector
-          </a>
-
-          <p class="small" id="detect-note">
-            If this does not match your machine, choose manually below.
-          </p>
-        </div>
-
-        <h2 style="margin-top:24px;">Choose manually</h2>
-
-        <div class="download-grid">
-
-          <div class="download-card">
-            <div class="download-icon"></div>
-            <h3>macOS</h3>
-            <a class="mini" href="/downloads/connectors/CryoStack-Connector-macos-arm64.dmg">Apple Silicon</a>
-            <a class="mini" href="/downloads/connectors/CryoStack-Connector-macos-x86_64.dmg">Intel</a>
+    <section class="block">
+      <h2>1 &amp; 2 &mdash; Download and install</h2>
+      <p class="hint">
+        Platform detection below is only a recommendation. Every published
+        download is always listed &mdash; nothing is hidden.
+      </p>
+      <div id="downloads">
+        <noscript>
+          <div class="notice error">
+            <b>JavaScript is required to list the available connector downloads.</b>
+            <p>You can browse them directly at
+              <a href="/downloads/connectors/">/downloads/connectors/</a>.</p>
           </div>
+        </noscript>
+      </div>
+    </section>
 
-          <div class="download-card">
-            <div class="download-icon">🐧</div>
-            <h3>Linux</h3>
-            <a class="mini" href="/downloads/connectors/CryoStack-Connector-linux-x86_64.tar.gz">x86_64</a>
-            <a class="mini" href="/downloads/connectors/CryoStack-Connector-linux-arm64.tar.gz">ARM64</a>
-          </div>
+    <section class="block">
+      <h2>3 &amp; 4 &mdash; Launch and pair</h2>
 
-          <div class="download-card">
-            <div class="download-icon">▦</div>
-            <h3>Windows</h3>
-            <a class="mini" href="/downloads/connectors/CryoStack-Connector-windows-x86_64.exe">x86_64</a>
-            <a class="mini" href="/downloads/connectors/CryoStack-Connector-windows-arm64.exe">ARM64</a>
-          </div>
-
+      <div id="pair" hidden>
+        <p class="hint">
+          This browser has an active pairing session. CryoStack Connector pairs
+          with your most recent session automatically &mdash; just launch it. If
+          you started it <em>before</em> opening this page, quit and relaunch it.
+        </p>
+        <span class="pair-code" aria-label="Session code"></span>
+        <div class="pair-actions">
+          <button type="button" class="copy">Copy session code</button>
+          <span class="hint" style="margin:0;">Session codes are never added to download links.</span>
         </div>
-      </section>
+      </div>
 
-      <!-- RIGHT CARD -->
+      <div id="pair-missing" class="notice error" hidden>
+        <b>No pairing session in this link.</b>
+        <p>Open Connector Setup from CryoLauncher or ICESEE to generate one.
+          You can still download and install the connector now.</p>
+      </div>
+    </section>
 
-      <section class="card">
-
-        <h2>
-          Connector Session
-        </h2>
-
-        <div class="status"
-             id="session-box"
-             style="display:none;">
-
-          <b>Session detected</b><br>
-
-          Session ID:
-          <code id="session-id"></code>
-
-          <p class="small"
-             id="session-instructions">
-          </p>
-
-          <p class="small">
-            Once started, the connector automatically finds
-            the active CryoStack session and connects.
-          </p>
-
-        </div>
-
-        <h2 style="margin-top:24px;">
-          After installation
-        </h2>
-
-        <ol class="steps"
-            id="after-steps">
-        </ol>
-
-        <div class="status">
-
-          <b>What this connector does</b><br>
-
-          It allows CryoStack to submit, monitor, and retrieve
-          remote HPC jobs through your local VPN-connected
-          workstation without exposing your cluster directly
-          to the public web.
-
-        </div>
-
-      </section>
-
-    </div>
+    <section class="block">
+      <h2>5 &mdash; Connection status</h2>
+      <p class="hint">Live status from the CryoStack relay &mdash; no fake timers.</p>
+      <div id="conn" data-tone="neutral">
+        <p class="conn-title">Waiting…</p>
+        <p class="conn-detail"></p>
+        <div class="conn-return" hidden></div>
+      </div>
+    </section>
 
     <div class="footer">
-      CryoStack · HPC bridge setup · cryostack.eas.gatech.edu
+      CryoStack &middot; compute bridge setup &middot;
+      <a href="https://cryostack.eas.gatech.edu">cryostack.eas.gatech.edu</a>
     </div>
-
   </main>
 
-  <script>
-
-    function normalizeArch(raw) {
-      raw = (raw || "").toLowerCase();
-
-      if (
-        raw.includes("arm64") ||
-        raw.includes("aarch64") ||
-        raw.includes("arm")
-      ) {
-        return "arm64";
-      }
-
-      if (
-        raw.includes("x86_64") ||
-        raw.includes("x64") ||
-        raw.includes("amd64") ||
-        raw.includes("win64")
-      ) {
-        return "x86_64";
-      }
-
-      return "x86_64";
-    }
-
-    async function detectOS() {
-      const ua = navigator.userAgent.toLowerCase();
-      const platform = (
-        navigator.userAgentData?.platform ||
-        navigator.platform ||
-        ""
-      ).toLowerCase();
-
-      let archRaw = "";
-
-      if (navigator.userAgentData?.getHighEntropyValues) {
-        try {
-          const data = await navigator.userAgentData.getHighEntropyValues(["architecture", "bitness"]);
-          archRaw = `${data.architecture || ""} ${data.bitness || ""}`;
-        } catch (e) {
-          archRaw = "";
-        }
-      }
-
-      archRaw = archRaw || navigator.platform || navigator.userAgent;
-
-      const arch = normalizeArch(archRaw);
-
-      if (platform.includes("mac") || ua.includes("mac os")) {
-        if (navigator.userAgent.includes("Mac") && navigator.maxTouchPoints > 1) {
-          return "macos-arm64";
-        }
-        return `macos-${arch}`;
-      }
-
-      if (platform.includes("win") || ua.includes("windows")) {
-        return `windows-${arch}`;
-      }
-
-      if (platform.includes("linux") || ua.includes("linux")) {
-        return `linux-${arch}`;
-      }
-
-      return "unknown";
-    }
-
-    async function initPage() {
-      let selectedOS = await detectOS();
-      setOS(selectedOS);
-
-      const params = new URLSearchParams(window.location.search);
-      const session = params.get("session");
-
-      if (session) {
-        document.getElementById("session-box").style.display = "block";
-        document.getElementById("session-id").textContent = session;
-      }
-    }
-
-    initPage();
-
-    const urls = {
-      "macos-arm64": "/downloads/connectors/CryoStack-Connector-macos-arm64.dmg",
-      "macos-x86_64": "/downloads/connectors/CryoStack-Connector-macos-x86_64.dmg",
-      "windows-x86_64": "/downloads/connectors/CryoStack-Connector-windows-x86_64.exe",
-      "windows-arm64": "/downloads/connectors/CryoStack-Connector-windows-arm64.exe",
-      "linux-x86_64": "/downloads/connectors/CryoStack-Connector-linux-x86_64.tar.gz",
-      "linux-arm64": "/downloads/connectors/CryoStack-Connector-linux-arm64.tar.gz",
-      unknown: "/downloads/"
-    };
-
-    const labels = {
-      "macos-arm64": "macOS Apple Silicon",
-      "macos-x86_64": "macOS Intel",
-      "windows-x86_64": "Windows x86_64",
-      "windows-arm64": "Windows ARM64",
-      "linux-x86_64": "Linux x86_64",
-      "linux-arm64": "Linux ARM64",
-      unknown: "Unknown"
-    };
-
-    const sessionInstructions = {
-      "macos-arm64": "Download the connector, open the DMG, drag CryoStack-Connector.app to Applications, then double-click it.",
-      "macos-x86_64": "Download the connector, open the DMG, drag CryoStack-Connector.app to Applications, then double-click it.",
-      "windows-x86_64": "Download the connector installer, run CryoStack-Connector.exe, and allow it to start the local bridge.",
-      "windows-arm64": "Download the connector installer, run CryoStack-Connector.exe, and allow it to start the local bridge.",
-      "linux-x86_64": "Download the Linux x86_64 tar.gz file, extract it, then run the connector binary.",
-      "linux-arm64": "Download the Linux ARM64 tar.gz file, extract it, then run the connector binary.",
-      unknown: "Download the connector for your operating system, start it, and return to CryoStack."
-    };
-
-    const afterSteps = {
-      "macos-arm64": [
-        "Turn on your university VPN.",
-        "Start CryoStack-Connector.app.",
-        "Return to CryoLauncher. The connector status should change to online automatically."
-      ],
-      "macos-x86_64": [
-        "Turn on your university VPN.",
-        "Start CryoStack-Connector.app.",
-        "Return to CryoLauncher. The connector status should change to online automatically."
-      ],
-      "windows-x86_64": [
-        "Turn on your university VPN.",
-        "Start CryoStack-Connector.exe.",
-        "Return to CryoLauncher. The connector status should change to online automatically."
-      ],
-      "windows-arm64": [
-        "Turn on your university VPN.",
-        "Start CryoStack-Connector.exe.",
-        "Return to CryoLauncher. The connector status should change to online automatically."
-      ],
-      "linux-x86_64": [
-        "Turn on your university VPN.",
-        "Extract the tar.gz file.",
-        "Run ./CryoStack-Connector from the extracted folder.",
-        "Return to CryoLauncher. The connector status should change to online automatically."
-      ],
-      "linux-arm64": [
-        "Turn on your university VPN.",
-        "Extract the tar.gz file.",
-        "Run ./CryoStack-Connector from the extracted folder.",
-        "Return to CryoLauncher. The connector status should change to online automatically."
-      ],
-      unknown: [
-        "Turn on your university VPN.",
-        "Start the CryoStack Connector.",
-        "Return to CryoLauncher. The connector status should change to online automatically."
-      ]
-    };
-
-    function setOS(os) {
-
-      os = urls[os] ? os : "unknown";
-
-      document.getElementById("os").textContent =
-        labels[os] || labels.unknown;
-
-      document.getElementById("download").href =
-        urls[os] || urls.unknown;
-
-      const sessionText =
-        document.getElementById("session-instructions");
-
-      if (sessionText) {
-        sessionText.textContent =
-          sessionInstructions[os] ||
-          sessionInstructions.unknown;
-      }
-
-      const steps =
-        document.getElementById("after-steps");
-
-      if (steps) {
-
-        steps.innerHTML = "";
-
-        (afterSteps[os] || afterSteps.unknown)
-          .forEach((step) => {
-
-            const li =
-              document.createElement("li");
-
-            li.textContent = step;
-
-            steps.appendChild(li);
-          });
-      }
-    }
-
-    let selectedOS = detectOS();
-
-    setOS(selectedOS);
-
-    const params =
-      new URLSearchParams(window.location.search);
-
-    const session =
-      params.get("session");
-
-    if (session) {
-
-      document.getElementById("session-box")
-        .style.display = "block";
-
-      document.getElementById("session-id")
-        .textContent = session;
-    }
-
+  <script type="module">
+    import { initConnectPage } from "./connect.js";
+    initConnectPage();
   </script>
-
 </body>
 </html>
