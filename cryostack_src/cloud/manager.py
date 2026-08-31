@@ -191,6 +191,23 @@ class CloudManager:
             bucket=bucket,
         )
 
+    def prepare_batch(
+        self,
+        *,
+        provider: str,
+        region: str,
+        profile: str | None = None,
+        include_icepack: bool = False,
+    ):
+
+        return self.driver(
+            provider=provider,
+            region=region,
+            profile=profile,
+        ).prepare_batch(
+            include_icepack=include_icepack,
+        )
+
     # ---------------------------------------------------------
     # Runtime lifecycle
     # ---------------------------------------------------------

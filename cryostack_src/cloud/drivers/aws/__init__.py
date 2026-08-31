@@ -24,6 +24,8 @@
 AWS cloud provider implementation.
 """
 
+from .batch_config import FargateJobConfig
+from .batch_provision import AWSBatchProvisionResult, ensure_batch_resources
 from .driver import AWSDriver
 from .models import AWSConfig, AWSCapabilities
 
@@ -31,4 +33,7 @@ __all__ = [
     "AWSDriver",
     "AWSConfig",
     "AWSCapabilities",
+    "AWSBatchProvisionResult",
+    "FargateJobConfig",
+    "ensure_batch_resources",
 ]

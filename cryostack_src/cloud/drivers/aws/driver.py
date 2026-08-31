@@ -46,6 +46,15 @@ from .batch import (
     discover_batch_resources,
 )
 
+from .batch_config import (
+    DEFAULT_MAX_VCPUS,
+)
+
+from .batch_provision import (
+    AWSBatchProvisionResult,
+    ensure_batch_resources,
+)
+
 from .capabilities import (
     discover_capabilities,
 )
@@ -171,6 +180,52 @@ class AWSDriver(
 
         return discover_batch_resources(
             self.config
+        )
+
+    def prepare_batch(
+        self,
+        *,
+        network=None,
+        iam=None,
+        registry=None,
+        max_vcpus: int = DEFAULT_MAX_VCPUS,
+        include_icepack: bool = False,
+    ) -> AWSBatchProvisionResult:
+        """
+        Idempotently provision AWS Batch on Fargate: a scale-to-zero compute
+        environment, a job queue, and the ISSM job definition (+ log group).
+
+        Discovery results for network / IAM / registry may be passed in to
+        avoid re-describing; anything omitted is discovered here.
+        """
+
+        network = network or self.network()
+        iam = iam or self.iam()
+
+        if registry is None:
+            registry = self.registry()
+
+        issm_repo_uri = getattr(
+            registry,
+            "issm_repository_uri",
+            None,
+        )
+
+        issm_image = (
+            f"{issm_repo_uri}:tested"
+            if issm_repo_uri
+            else None
+        )
+
+        return ensure_batch_resources(
+            self.config,
+            subnets=network.subnet_ids,
+            security_groups=network.security_group_ids,
+            job_role_arn=iam.job_role,
+            execution_role_arn=iam.ecs_execution_role,
+            issm_image=issm_image,
+            max_vcpus=max_vcpus,
+            include_icepack=include_icepack,
         )
 
     def bootstrap(
@@ -350,10 +405,32 @@ class AWSDriver(
 
         #
         # ---------------------------------------------------------
-        # Batch discovery
+        # Batch (Fargate) provisioning
         # ---------------------------------------------------------
         #
-        batch = self.batch()
+        batch_result = self.prepare_batch(
+            network=network,
+            iam=iam,
+            registry=registry,
+        )
+
+        batch = batch_result.resources
+
+        for label, items in (
+            ("Created", batch_result.created),
+            ("Updated", batch_result.updated),
+            ("Reused", batch_result.reused),
+        ):
+            if items:
+                messages.append(
+                    f"{label} AWS Batch resources: "
+                    + ", ".join(items)
+                )
+
+        for skipped in batch_result.skipped:
+            messages.append(
+                f"AWS Batch: skipped {skipped}"
+            )
 
         if (
             batch.compute_environment
@@ -362,7 +439,7 @@ class AWSDriver(
         ):
 
             messages.append(
-                "AWS Batch environment discovered."
+                "AWS Batch environment is ready."
             )
 
         else:
@@ -381,6 +458,7 @@ class AWSDriver(
             and capabilities.storage_ready
             and capabilities.network_ready
             and capabilities.iam_ready
+            and capabilities.batch_ready
         )
 
         return {

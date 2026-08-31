@@ -38,6 +38,11 @@ import json
 from dataclasses import dataclass
 
 from .auth import run_aws
+from .batch_config import (
+    COMPUTE_ENVIRONMENT_NAME,
+    JOB_DEFINITION_NAMES,
+    JOB_QUEUE_NAME,
+)
 from .models import AWSConfig
 
 
@@ -228,6 +233,7 @@ def discover_batch_resources(
         compute_environments,
         field="computeEnvironmentName",
         names=[
+            COMPUTE_ENVIRONMENT_NAME,
             "cryostack-compute",
             "icesee-compute",
             "cryostack-batch-compute",
@@ -238,7 +244,7 @@ def discover_batch_resources(
         job_queues,
         field="jobQueueName",
         names=[
-            "cryostack-queue",
+            JOB_QUEUE_NAME,
             "icesee-queue",
             "cryostack-batch-queue",
         ],
@@ -248,7 +254,7 @@ def discover_batch_resources(
         job_definitions,
         field="jobDefinitionName",
         names=[
-            "cryostack-issm",
+            JOB_DEFINITION_NAMES["issm"],
             "icesee-issm",
             "issm",
         ],
@@ -258,7 +264,7 @@ def discover_batch_resources(
         job_definitions,
         field="jobDefinitionName",
         names=[
-            "cryostack-icepack",
+            JOB_DEFINITION_NAMES["icepack"],
             "icesee-icepack",
             "icepack",
         ],
