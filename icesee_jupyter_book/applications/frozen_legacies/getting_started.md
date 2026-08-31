@@ -308,9 +308,9 @@ The available account functionality depends on the CryoStack deployment.
 
 After becoming familiar with the application:
 
-- Read the [Frozen Legacies User Manual](user_manual.html) for a more complete description of the interface and available scientific information.
-- Read the [Developer Guide](developer.html) if you need to add datasets, adapters, products, or storage backends.
-- Return to [Frozen Legacies](/frozen-legacies/) to continue exploring the available radar observations.
+- Read the [Frozen Legacies User Manual](user_manual) for a more complete description of the interface and available scientific information.
+- Read the [Developer Guide](developer) if you need to add datasets, adapters, products, or storage backends.
+- Return to <a href="/frozen-legacies/">Frozen Legacies</a> to continue exploring the available radar observations.
 
 :::{raw} html
   </div>

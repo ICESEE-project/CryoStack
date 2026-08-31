@@ -700,11 +700,11 @@ When extending Frozen Legacies:
 
 ## Next Steps
 
-Return to the [User Manual](user_manual.html) for the scientific-user workflow.
+Return to the [User Manual](user_manual) for the scientific-user workflow.
 
-Use [Getting Started](getting_started.html) for a shorter introduction to the application.
+Use [Getting Started](getting_started) for a shorter introduction to the application.
 
-Return to [Frozen Legacies](/frozen-legacies/) to inspect the current deployment.
+Return to <a href="/frozen-legacies/">Frozen Legacies</a> to inspect the current deployment.
 
 :::{raw} html
   </div>

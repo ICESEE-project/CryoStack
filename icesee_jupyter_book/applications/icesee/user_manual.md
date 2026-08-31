@@ -792,7 +792,7 @@ For reliable experiments:
 
 - Read [Getting Started with ICESEE](getting_started) to run a first experiment.
 - Review [ICESEE Resources](resources) for repositories, publications, software, and supporting documentation.
-- Open [CryoLauncher Documentation](/documentation.html) for model execution without data assimilation.
+- Open <a href="../../documentation.html">CryoLauncher Documentation</a> for model execution without data assimilation.
 - Launch [ICESEE](https://cryostack.eas.gatech.edu/icesee-gui/) through the CryoStack platform.
 
 :::{raw} html

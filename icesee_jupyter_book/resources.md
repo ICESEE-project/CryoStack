@@ -17,11 +17,12 @@
       CryoStack Resources
     </div>
 
-    <h1>Documentation, software, data, and community resources.</h1>
+    <h1>Applications, software, data, and support across the ecosystem.</h1>
 
     <p>
-      Use this page to access CryoStack repositories, application guides,
-      scientific software, datasets, publications, and support channels.
+      An ecosystem-wide index. For CryoLauncher-specific depth (examples,
+      datasets, result formats), see the
+      <a href="applications/icesheets/resources.html">CryoLauncher Resources</a>.
     </p>
 
     <div class="cryostack-docs-actions">
@@ -29,331 +30,303 @@
         Platform Documentation
       </a>
 
-      <a
-        class="cryostack-btn secondary"
-        href="https://github.com/ICESEE-project"
-        target="_blank"
-        rel="noopener noreferrer">
-        View GitHub Organization
+      <a class="cryostack-btn secondary"
+         href="https://github.com/ICESEE-project"
+         target="_blank" rel="noopener noreferrer">
+        GitHub Organization
       </a>
     </div>
 
   </section>
 
-  <section class="cryostack-section">
+  <section id="applications" class="cryostack-section">
 
-    <div class="cryostack-section-label">
-      Platform
-    </div>
-
-    <h2>CryoStack resources.</h2>
-
-    <p class="cryostack-section-intro">
-      Core resources for understanding, deploying, contributing to,
-      and reporting issues with the CryoStack platform.
-    </p>
+    <div class="cryostack-section-label">Scientific Applications</div>
+    <h2>CryoStack applications.</h2>
 
     <div class="cryostack-resource-grid">
 
       <article class="cryostack-resource-card">
-        <div class="cryostack-resource-tag">Documentation</div>
-        <h3>Platform Documentation</h3>
-        <p>
-          Learn how CryoStack applications, computational backends,
-          and scientific workflows fit together.
-        </p>
-        <a href="documentation.html">Open Documentation →</a>
-      </article>
-
-      <article class="cryostack-resource-card">
-        <div class="cryostack-resource-tag">Source Code</div>
-        <h3>CryoLauncher Repository</h3>
-        <p>
-          Access the main CryoStack gateway, application interfaces,
-          deployment scripts, and platform integration code.
-        </p>
-        <a
-          href="https://github.com/ICESEE-project/CryoLauncher"
-          target="_blank"
-          rel="noopener noreferrer">
-          View Repository →
-        </a>
-      </article>
-
-      <article class="cryostack-resource-card">
-        <div class="cryostack-resource-tag">Support</div>
-        <h3>Issue Tracker</h3>
-        <p>
-          Report platform bugs, deployment problems, documentation issues,
-          or feature requests.
-        </p>
-        <a
-          href="https://github.com/ICESEE-project/CryoLauncher/issues"
-          target="_blank"
-          rel="noopener noreferrer">
-          Report an Issue →
-        </a>
-      </article>
-
-      <article class="cryostack-resource-card">
-        <div class="cryostack-resource-tag">Development</div>
-        <h3>ICESEE Project Organization</h3>
-        <p>
-          Browse the repositories that support CryoStack, ICESEE,
-          containers, Spack environments, and related scientific tools.
-        </p>
-        <a
-          href="https://github.com/ICESEE-project"
-          target="_blank"
-          rel="noopener noreferrer">
-          Explore Projects →
-        </a>
-      </article>
-
-    </div>
-
-  </section>
-
-  <section class="cryostack-section">
-
-    <div class="cryostack-section-label">
-      Applications
-    </div>
-
-    <h2>Application resources.</h2>
-
-    <div class="cryostack-resource-directory">
-
-      <div class="cryostack-resource-directory-row">
-        <div>
-          <span>Numerical Modeling</span>
-          <h3>CryoLauncher</h3>
-          <p>
-            Browser-based access to supported ice-sheet models,
-            remote execution, HPC submission, and workflow monitoring.
-          </p>
-        </div>
-
-        <div class="cryostack-resource-links">
-          <a href="/icesheets/">Open Application</a>
+        <div class="cryostack-resource-tag">Numerical Modeling</div>
+        <h3>CryoLauncher <span class="cryostack-status supported">Supported</span></h3>
+        <p>Configure and run supported ice-sheet models in the browser.</p>
+        <div class="cryostack-resource-inline-links">
+          <a href="/icesheets/">Open</a>
           <a href="applications/icesheets/getting_started.html">Getting Started</a>
-          <a href="/icesheets/">User Manual</a>
-          <a href="/icesheets/">Resources</a>
+          <a href="applications/icesheets/user_manual.html">User Manual</a>
         </div>
-      </div>
+      </article>
 
-      <div class="cryostack-resource-directory-row">
-        <div>
-          <span>Data Assimilation</span>
-          <h3>ICESEE</h3>
-          <p>
-            Ensemble-based state estimation, parameter inference,
-            and data assimilation with supported numerical models.
-          </p>
+      <article class="cryostack-resource-card">
+        <div class="cryostack-resource-tag">Data Assimilation</div>
+        <h3>ICESEE</h3>
+        <p>Ensemble state estimation and parameter inference with supported models.</p>
+        <div class="cryostack-resource-inline-links">
+          <a href="/icesee-gui/">Open</a>
+          <a href="applications/icesee/getting_started.html">Getting Started</a>
+          <a href="applications/icesee/user_manual.html">User Manual</a>
         </div>
+      </article>
 
-        <div class="cryostack-resource-links">
-          <a href="/icesee-gui/">Open Application</a>
-          <a href="/icesee-gui/">Getting Started</a>
-          <a href="/icesee-gui/">User Manual</a>
-          <a href="/icesee-gui/">Resources</a>
-        </div>
-      </div>
-
-      <div class="cryostack-resource-directory-row">
-        <div>
-          <span>Scientific Data Products</span>
-          <h3>LIVIST</h3>
-          <p>
-            Antarctic ice-sheet temperature visualization,
-            borehole constraints, Python tools, and published datasets.
-          </p>
-        </div>
-
-        <div class="cryostack-resource-links">
-          <a href="/livist/">Open Application</a>
+      <article class="cryostack-resource-card">
+        <div class="cryostack-resource-tag">Scientific Data</div>
+        <h3>LIVIST</h3>
+        <p>Antarctic ice-sheet temperature products from radar and boreholes.</p>
+        <div class="cryostack-resource-inline-links">
+          <a href="/livist/">Open</a>
           <a href="/livist/docs/livist_user_manual/">User Manual</a>
-          <a href="/livist/docs/api/">Python Documentation</a>
-          <a
-            href="https://source.coop/englacial/ice-sheet-temperature"
-            target="_blank"
-            rel="noopener noreferrer">
-            Data Repository
-          </a>
+          <a href="/livist/docs/api/">Python Docs</a>
         </div>
-      </div>
+      </article>
+
+      <article class="cryostack-resource-card">
+        <div class="cryostack-resource-tag">Radar Archive</div>
+        <h3>Frozen Legacies</h3>
+        <p>Historical Antarctic airborne radar surveys and processed products.</p>
+        <div class="cryostack-resource-inline-links">
+          <a href="/frozen-legacies/">Open</a>
+          <a href="applications/frozen_legacies/getting_started.html">Getting Started</a>
+          <a href="applications/frozen_legacies/user_manual.html">User Manual</a>
+        </div>
+      </article>
 
     </div>
-
   </section>
 
-  <section class="cryostack-section">
+  <section id="models" class="cryostack-section">
 
-    <div class="cryostack-section-label">
-      Community Software
-    </div>
-
-    <h2>Scientific software used by CryoStack.</h2>
+    <div class="cryostack-section-label">Models</div>
+    <h2>Scientific models.</h2>
 
     <div class="cryostack-resource-grid">
 
       <article class="cryostack-resource-card">
         <div class="cryostack-resource-tag">Ice-Sheet Model</div>
-        <h3>ISSM</h3>
-        <p>
-          A multiphysics framework for ice-sheet and sea-level simulations.
-        </p>
-        <a
-          href="https://issm.jpl.nasa.gov/"
-          target="_blank"
-          rel="noopener noreferrer">
-          Visit ISSM →
-        </a>
+        <h3>ISSM <span class="cryostack-status supported">Supported</span></h3>
+        <p>The Ice-sheet and Sea-level System Model — the mature CryoLauncher path.</p>
+        <div class="cryostack-resource-inline-links">
+          <a href="https://issm.jpl.nasa.gov/" target="_blank" rel="noopener noreferrer">Website</a>
+          <a href="https://issmteam.github.io/ISSM-Documentation/" target="_blank" rel="noopener noreferrer">Docs</a>
+          <a href="https://github.com/ISSMteam/ISSM" target="_blank" rel="noopener noreferrer">GitHub</a>
+        </div>
       </article>
 
       <article class="cryostack-resource-card">
         <div class="cryostack-resource-tag">Ice-Sheet Model</div>
-        <h3>Icepack</h3>
-        <p>
-          A Python library for modeling glacier and ice-sheet flow
-          using Firedrake.
-        </p>
-        <a
-          href="https://icepack.github.io/"
-          target="_blank"
-          rel="noopener noreferrer">
-          Visit Icepack →
-        </a>
+        <h3>Icepack <span class="cryostack-status dev">Experimental</span></h3>
+        <p>A Python library on Firedrake. Selectable in CryoLauncher, not yet at ISSM parity.</p>
+        <div class="cryostack-resource-inline-links">
+          <a href="https://icepack.github.io/" target="_blank" rel="noopener noreferrer">Docs</a>
+          <a href="https://github.com/icepack/icepack" target="_blank" rel="noopener noreferrer">GitHub</a>
+        </div>
       </article>
 
       <article class="cryostack-resource-card">
         <div class="cryostack-resource-tag">Finite Elements</div>
-        <h3>Firedrake</h3>
-        <p>
-          An automated system for solving partial differential equations
-          using finite-element methods.
-        </p>
-        <a
-          href="https://www.firedrakeproject.org/"
-          target="_blank"
-          rel="noopener noreferrer">
-          Visit Firedrake →
-        </a>
-      </article>
-
-      <article class="cryostack-resource-card">
-        <div class="cryostack-resource-tag">Scientific Computing</div>
-        <h3>PETSc</h3>
-        <p>
-          Scalable numerical libraries for scientific applications
-          and high-performance computing.
-        </p>
-        <a
-          href="https://petsc.org/"
-          target="_blank"
-          rel="noopener noreferrer">
-          Visit PETSc →
-        </a>
+        <h3>Firedrake / PETSc</h3>
+        <p>The finite-element and linear-algebra libraries under Icepack.</p>
+        <div class="cryostack-resource-inline-links">
+          <a href="https://www.firedrakeproject.org/" target="_blank" rel="noopener noreferrer">Firedrake</a>
+          <a href="https://petsc.org/" target="_blank" rel="noopener noreferrer">PETSc</a>
+        </div>
       </article>
 
     </div>
-
   </section>
 
-  <section class="cryostack-section">
+  <section id="environments" class="cryostack-section">
 
-    <div class="cryostack-section-label">
-      Deployment and Environments
-    </div>
-
-    <h2>Build and run reproducibly.</h2>
+    <div class="cryostack-section-label">Software Environments</div>
+    <h2>Containers and Spack.</h2>
 
     <div class="cryostack-resource-grid">
 
       <article class="cryostack-resource-card">
         <div class="cryostack-resource-tag">Containers</div>
-        <h3>ICESEE Containers</h3>
+        <h3>Tested container images <span class="cryostack-status supported">Supported</span></h3>
         <p>
-          Reproducible container environments for CryoStack applications
-          and supported scientific software.
+          CryoLauncher's Docker / OCI path uses a curated image whose stack is
+          validated and pinned by verified digest.
         </p>
-        <a
-          href="https://github.com/ICESEE-project/ICESEE-Containers"
-          target="_blank"
-          rel="noopener noreferrer">
-          View Repository →
-        </a>
+        <a href="https://github.com/ICESEE-project/ICESEE-Containers" target="_blank" rel="noopener noreferrer">ICESEE-Containers &rarr;</a>
       </article>
 
       <article class="cryostack-resource-card">
         <div class="cryostack-resource-tag">Package Management</div>
-        <h3>ICESEE Spack</h3>
+        <h3>ICESEE-Spack</h3>
         <p>
-          Spack-based environments for installing supported models,
-          dependencies, and scientific computing tools.
+          Spack-managed environments with a first-time check-and-prepare
+          workflow before a run is allowed.
         </p>
-        <a
-          href="https://github.com/ICESEE-project/ICESEE-Spack"
-          target="_blank"
-          rel="noopener noreferrer">
-          View Repository →
-        </a>
+        <a href="https://github.com/ICESEE-project/ICESEE-Spack" target="_blank" rel="noopener noreferrer">ICESEE-Spack &rarr;</a>
       </article>
 
       <article class="cryostack-resource-card">
-        <div class="cryostack-resource-tag">HPC</div>
-        <h3>Remote and Slurm Execution</h3>
-        <p>
-          Use CryoStack with Linux servers and Slurm-managed HPC systems.
-        </p>
-        <a href="documentation.html">
-          Read Platform Documentation →
-        </a>
+        <div class="cryostack-resource-tag">Containers</div>
+        <h3>Apptainer &amp; Docker</h3>
+        <p>The container runtimes used on HPC systems and for portable builds.</p>
+        <div class="cryostack-resource-inline-links">
+          <a href="https://apptainer.org/" target="_blank" rel="noopener noreferrer">Apptainer</a>
+          <a href="https://www.docker.com/" target="_blank" rel="noopener noreferrer">Docker</a>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section id="compute" class="cryostack-section">
+
+    <div class="cryostack-section-label">HPC and Compute Resources</div>
+    <h2>Where runs execute.</h2>
+
+    <div class="cryostack-resource-grid">
+
+      <article class="cryostack-resource-card">
+        <div class="cryostack-resource-tag">Execution</div>
+        <h3>Remote / HPC <span class="cryostack-status supported">Supported</span></h3>
+        <p>SSH and CryoStack Connector access to Linux servers and Slurm clusters.</p>
+        <a href="applications/icesheets/user_manual.html#execution-modes-and-backends">Execution guide &rarr;</a>
       </article>
 
       <article class="cryostack-resource-card">
-        <div class="cryostack-resource-tag">Cloud</div>
-        <h3>Cloud Execution</h3>
+        <div class="cryostack-resource-tag">Execution</div>
+        <h3>Cloud <span class="cryostack-status dev">In development</span></h3>
+        <p>AWS Batch execution. Infrastructure exists; real execution not yet accepted.</p>
+        <a href="documentation.html#execution">Platform status &rarr;</a>
+      </article>
+
+      <article class="cryostack-resource-card">
+        <div class="cryostack-resource-tag">Scheduler</div>
+        <h3>Slurm</h3>
+        <p>Reference for the scheduler settings CryoLauncher exposes.</p>
+        <a href="https://slurm.schedmd.com/documentation.html" target="_blank" rel="noopener noreferrer">Slurm docs &rarr;</a>
+      </article>
+
+      <article class="cryostack-resource-card">
+        <div class="cryostack-resource-tag">Georgia Tech HPC</div>
+        <h3>PACE</h3>
+        <p>Georgia Tech research computing and HPC services.</p>
+        <a href="https://pace.gatech.edu/" target="_blank" rel="noopener noreferrer">Visit PACE &rarr;</a>
+      </article>
+
+    </div>
+  </section>
+
+  <section id="data-results" class="cryostack-section">
+
+    <div class="cryostack-section-label">Example Workflows, Data, and Results</div>
+    <h2>Working with examples, datasets, and outputs.</h2>
+
+    <div class="cryostack-resource-grid">
+
+      <article class="cryostack-resource-card">
+        <div class="cryostack-resource-tag">Examples</div>
+        <h3>Example workflows</h3>
         <p>
-          Connect supported workflows to cloud infrastructure
-          and user-provided computing resources.
+          Application examples (read-only) plus your own workspace examples,
+          with <code>SquareIceShelf</code> as the recommended first ISSM run.
         </p>
-        <a href="documentation.html">
-          Learn More →
+        <a href="applications/icesheets/user_manual.html#application-examples-vs-my-workspace">Examples &rarr;</a>
+      </article>
+
+      <article class="cryostack-resource-card">
+        <div class="cryostack-resource-tag">My Workspace</div>
+        <h3>Datasets</h3>
+        <p>Upload reusable inputs, reference them from examples, and stage them with a run.</p>
+        <a href="applications/icesheets/user_manual.html#dataset-management">Dataset guide &rarr;</a>
+      </article>
+
+      <article class="cryostack-resource-card">
+        <div class="cryostack-resource-tag">Results</div>
+        <h3>Result formats &amp; visualization</h3>
+        <p>
+          The structured result package, and deterministic Solution / Field /
+          Timestep rendering.
+        </p>
+        <div class="cryostack-resource-inline-links">
+          <a href="applications/icesheets/user_manual.html#result-format-reference">Result format</a>
+          <a href="applications/icesheets/user_manual.html#visualization">Visualization</a>
+        </div>
+      </article>
+
+      <article class="cryostack-resource-card">
+        <div class="cryostack-resource-tag">Data Products</div>
+        <h3>Published datasets</h3>
+        <p>Externally hosted scientific data products used by CryoStack's data applications.</p>
+        <a href="https://source.coop/englacial/ice-sheet-temperature" target="_blank" rel="noopener noreferrer">
+          Ice-sheet temperature data &rarr;
         </a>
       </article>
 
     </div>
+  </section>
+
+  <section id="tutorials" class="cryostack-section">
+
+    <div class="cryostack-section-label">Tutorials</div>
+    <h2>Guided walkthroughs.</h2>
+    <p class="cryostack-section-intro">
+      <span class="cryostack-status planned">Planned</span>
+      &nbsp;Dedicated step-by-step tutorials are planned. The
+      <a href="applications/icesheets/getting_started.html">CryoLauncher Getting Started</a>
+      guide and the
+      <a href="applications/icesheets/user_manual.html">User Manual</a>
+      currently cover the full workflow.
+    </p>
 
   </section>
 
-  <section class="cryostack-section cryostack-resources-support">
+  <section id="repositories" class="cryostack-section">
 
-    <div class="cryostack-section-label">
-      Support
+    <div class="cryostack-section-label">Repositories and Citation</div>
+    <h2>Source code and how to cite.</h2>
+
+    <div class="cryostack-resource-grid">
+
+      <article class="cryostack-resource-card">
+        <div class="cryostack-resource-tag">Source Code</div>
+        <h3>CryoLauncher</h3>
+        <p>The gateway, application layer, connector, and deployment.</p>
+        <a href="https://github.com/ICESEE-project/CryoLauncher" target="_blank" rel="noopener noreferrer">View repository &rarr;</a>
+      </article>
+
+      <article class="cryostack-resource-card">
+        <div class="cryostack-resource-tag">Organization</div>
+        <h3>ICESEE project</h3>
+        <p>ICESEE, CryoLauncher, containers, and Spack environments.</p>
+        <a href="https://github.com/ICESEE-project" target="_blank" rel="noopener noreferrer">View organization &rarr;</a>
+      </article>
+
+      <article class="cryostack-resource-card">
+        <div class="cryostack-resource-tag">Citation</div>
+        <h3>Citing CryoStack</h3>
+        <p>Cite CryoStack together with the models, datasets, and publications you used.</p>
+        <a href="about.html#citation">Citation guidance &rarr;</a>
+      </article>
+
     </div>
+  </section>
 
-    <h2>Need help?</h2>
+  <section id="support" class="cryostack-section cryostack-docs-next">
+
+    <div class="cryostack-section-label">Support</div>
+    <h2>Get help.</h2>
 
     <p>
-      Use the GitHub issue tracker for platform bugs, documentation problems,
-      deployment questions, or feature requests. Scientific questions related
-      to an individual application should be directed through that application’s
-      documentation and support channels.
+      Use the
+      <a href="https://github.com/ICESEE-project/CryoLauncher/issues" target="_blank" rel="noopener noreferrer">CryoLauncher issue tracker</a>
+      for platform bugs, connector and remote-execution problems, documentation
+      issues, and feature requests. Questions about ISSM, Icepack, Firedrake, or
+      PETSc themselves belong on those projects' own support channels.
     </p>
 
     <div class="cryostack-docs-actions">
-      <a
-        class="cryostack-btn primary"
-        href="https://github.com/ICESEE-project/CryoLauncher/issues"
-        target="_blank"
-        rel="noopener noreferrer">
+      <a class="cryostack-btn primary"
+         href="https://github.com/ICESEE-project/CryoLauncher/issues"
+         target="_blank" rel="noopener noreferrer">
         Open Issue Tracker
       </a>
-
-      <a class="cryostack-btn secondary" href="about.html">
-        About CryoStack
-      </a>
+      <a class="cryostack-btn secondary" href="documentation.html">Documentation</a>
     </div>
 
   </section>

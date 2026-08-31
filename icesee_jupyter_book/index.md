@@ -21,8 +21,9 @@
       <h1>CryoStack</h1>
 
       <p class="cryostack-hero-description">
-        An integrated scientific computing platform for cryosphere modeling,
-        data assimilation, visualization, and HPC-enabled research.
+        The umbrella platform that connects cryosphere modeling and data
+        assimilation applications to reproducible software environments and
+        computing resources — from a laptop to an HPC cluster.
       </p>
 
       <div class="cryostack-hero-statements">
@@ -188,27 +189,26 @@
   <section class="cryostack-section cryostack-workflow-section">
 
     <div class="cryostack-section-label">
-      Connected Scientific Workflow
+      How CryoStack Works
     </div>
 
-    <h2>How CryoStack works.</h2>
+    <h2>Configure, execute, monitor, visualize, download.</h2>
 
     <p class="cryostack-section-intro">
-      CryoStack connects observational products, numerical models,
-      data assimilation, and analysis within one extensible platform.
-      Applications can be used independently or combined into a broader
-      cryosphere research workflow.
+      CryoStack is the infrastructure that connects scientific applications to
+      reproducible software environments and computational resources. Each
+      application follows the same shape.
     </p>
 
     <div class="cryostack-workflow">
 
       <div class="cryostack-workflow-card">
         <div class="cryostack-workflow-number">01</div>
-        <div class="cryostack-workflow-icon">OBS</div>
-        <h3>Observations</h3>
+        <div class="cryostack-workflow-icon">CFG</div>
+        <h3>Configure</h3>
         <p>
-          Begin with radar products, borehole measurements,
-          satellite observations, or other scientific datasets.
+          Choose a model and example and set the scientific options through a
+          guided or an advanced workflow in your own workspace.
         </p>
       </div>
 
@@ -218,11 +218,11 @@
 
       <div class="cryostack-workflow-card">
         <div class="cryostack-workflow-number">02</div>
-        <div class="cryostack-workflow-icon">LIV</div>
-        <h3>Explore Data</h3>
+        <div class="cryostack-workflow-icon">RUN</div>
+        <h3>Execute</h3>
         <p>
-          Use LIVIST and future data applications to inspect,
-          compare, and access cryosphere data products.
+          Submit the run to a remote server, an HPC cluster, or a container,
+          against a reproducible software environment.
         </p>
       </div>
 
@@ -232,11 +232,11 @@
 
       <div class="cryostack-workflow-card">
         <div class="cryostack-workflow-number">03</div>
-        <div class="cryostack-workflow-icon">SIM</div>
-        <h3>Run Models</h3>
+        <div class="cryostack-workflow-icon">MON</div>
+        <h3>Monitor</h3>
         <p>
-          Configure and launch community ice-sheet models
-          through CryoLauncher on local, HPC, or cloud resources.
+          Follow staging, the scheduler job, and progress in a run log and
+          run history that persist across sessions.
         </p>
       </div>
 
@@ -246,11 +246,11 @@
 
       <div class="cryostack-workflow-card">
         <div class="cryostack-workflow-number">04</div>
-        <div class="cryostack-workflow-icon">DA</div>
-        <h3>Assimilate</h3>
+        <div class="cryostack-workflow-icon">VIZ</div>
+        <h3>Visualize</h3>
         <p>
-          Combine simulations and observations through ICESEE
-          for state estimation and parameter inference.
+          Discover what the run actually produced and render fields and
+          diagnostics deterministically in the browser.
         </p>
       </div>
 
@@ -260,14 +260,20 @@
 
       <div class="cryostack-workflow-card">
         <div class="cryostack-workflow-number">05</div>
-        <div class="cryostack-workflow-icon">OUT</div>
-        <h3>Analyze Results</h3>
+        <div class="cryostack-workflow-icon">DL</div>
+        <h3>Download</h3>
         <p>
-          Inspect outputs, download results, and continue
-          analysis using reproducible scientific workflows.
+          Take the structured result package or the rendered figures for
+          further analysis.
         </p>
       </div>
 
+    </div>
+
+    <div class="cryostack-exec-status">
+      <span><b>Remote / HPC</b> <span class="cryostack-status supported">Supported</span></span>
+      <span><b>Containers</b> <span class="cryostack-status supported">Supported</span></span>
+      <span><b>Cloud</b> <span class="cryostack-status dev">In development</span></span>
     </div>
 
   </section>
@@ -334,66 +340,152 @@
 
       </div>
 
-      <section class="cryostack-section cryostack-updates-section">
+    </section>
+
+  <section class="cryostack-section">
+
+    <div class="cryostack-section-label">
+      Available Now
+    </div>
+
+    <h2>What CryoStack does today.</h2>
+
+    <p class="cryostack-section-intro">
+      Capabilities that are implemented and in use, primarily through the
+      CryoLauncher / ISSM path.
+    </p>
+
+    <div class="cryostack-feature-row">
+
+      <div>
+        <h3>User-isolated workspaces</h3>
+        <p>
+          Each authenticated user has a private workspace for examples,
+          edits, and datasets that persists across sessions and is never
+          visible to other users.
+        </p>
+      </div>
+
+      <div>
+        <h3>Reproducible environments</h3>
+        <p>
+          Runs execute against tested container images or managed Spack
+          environments rather than an ad hoc local install.
+        </p>
+      </div>
+
+      <div>
+        <h3>Software &amp; container provenance</h3>
+        <p>
+          Every run records the environment it used, resolved to a specific
+          identity — a tested image is pinned by verified digest.
+        </p>
+      </div>
+
+      <div>
+        <h3>Structured scientific results</h3>
+        <p>
+          Completed ISSM runs export a transport-neutral result package that
+          describes exactly which solutions and fields were produced.
+        </p>
+      </div>
+
+      <div>
+        <h3>Deterministic visualization</h3>
+        <p>
+          Fields and diagnostics are rendered in the browser from the result
+          package — the same selection always produces the same plot.
+        </p>
+      </div>
+
+      <div>
+        <h3>Downloadable outputs</h3>
+        <p>
+          Take the full structured result package or just the rendered
+          figures for offline analysis.
+        </p>
+      </div>
+
+    </div>
+
+  </section>
+
+  <section class="cryostack-section cryostack-updates-section">
 
     <div class="cryostack-section-label">
       Platform Updates
     </div>
 
-    <h2>Latest developments.</h2>
+    <h2>Recent developments.</h2>
 
     <p class="cryostack-section-intro">
-      CryoStack continues to evolve as new applications, execution backends,
-      documentation, and scientific workflows are integrated into the platform.
+      Major work completed as CryoStack matures. Cloud execution is actively
+      under development and is not yet available for real runs.
     </p>
 
     <div class="cryostack-updates-grid">
 
       <article class="cryostack-update-card">
-        <div class="cryostack-update-status">New Application</div>
+        <div class="cryostack-update-status">CryoLauncher</div>
 
-        <h3>LIVIST integrated into CryoStack</h3>
+        <h3>Basic and Advanced workflows</h3>
 
         <p>
-          The Living Ice Sheet Temperature explorer is now hosted directly
-          within CryoStack, together with its user manual, Python documentation,
-          and data repository.
+          A guided, validated configuration surface and a user-owned
+          workspace editor, with per-user examples and datasets that stay
+          isolated between users.
         </p>
 
-        <a href="/livist/">
-          Open LIVIST →
+        <a href="applications/icesheets/user_manual.html">
+          User Manual →
         </a>
       </article>
 
       <article class="cryostack-update-card">
-        <div class="cryostack-update-status">Interface</div>
+        <div class="cryostack-update-status">Execution</div>
 
-        <h3>Unified application navigation</h3>
+        <h3>Tested container and Spack execution</h3>
 
         <p>
-          CryoLauncher, ICESEE, and LIVIST now follow a consistent application
-          navigation pattern for accessing their interfaces, manuals, and
-          supporting resources.
+          Docker / OCI runs use a digest-pinned tested image; the
+          ICESEE-Spack backend has a first-time environment check and
+          prepare workflow before a run is allowed.
+        </p>
+
+        <a href="applications/icesheets/user_manual.html#execution-modes-and-backends">
+          Execution guide →
+        </a>
+      </article>
+
+      <article class="cryostack-update-card">
+        <div class="cryostack-update-status">Results</div>
+
+        <h3>Structured ISSM results and visualization</h3>
+
+        <p>
+          Completed runs export a structured result package, and CryoLauncher
+          discovers and deterministically renders the solutions, fields, and
+          timesteps a run actually produced.
+        </p>
+
+        <a href="applications/icesheets/user_manual.html#results">
+          Results guide →
+        </a>
+      </article>
+
+      <article class="cryostack-update-card">
+        <div class="cryostack-update-status">In development</div>
+
+        <h3>Cloud execution</h3>
+
+        <p>
+          AWS Batch infrastructure provisioning and the cloud run contract
+          are in place. Real cloud scientific execution has not been accepted
+          yet — use Remote execution.
         </p>
 
         <a href="documentation.html">
-          View documentation →
-        </a>
-      </article>
-
-      <article class="cryostack-update-card">
-        <div class="cryostack-update-status">Infrastructure</div>
-
-        <h3>Georgia Tech deployment</h3>
-
-        <p>
-          CryoStack is now operating from the Georgia Tech virtual machine with
-          support for remote execution, WebSocket applications, and connection
-          to HPC resources.
-        </p>
-
-        <a href="resources.html">
-          Explore resources →
+          Documentation →
         </a>
       </article>
 

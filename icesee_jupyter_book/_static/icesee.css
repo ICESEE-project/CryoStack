@@ -3374,6 +3374,26 @@ article.bd-article code.literal {
 .cryostack-status.dev       { background: rgba(217,119,6,.16);  color: #b45309; }
 .cryostack-status.planned   { background: rgba(100,116,139,.16); color: #64748b; }
 
+/* Restrained execution-environment status strip (home page) */
+.cryostack-exec-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 26px;
+  margin-top: 26px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(15,23,42,.08);
+  font-size: 14px;
+  color: rgba(17,24,39,.72);
+}
+.cryostack-exec-status > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+@media (max-width: 480px) {
+  .cryostack-exec-status { flex-direction: column; gap: 8px; }
+}
+
 /* ---- 3. Laptop (<= 1024px): pull the wide containers in --------------- */
 @media (max-width: 1024px) {
   .cryostack-home,
@@ -3396,6 +3416,7 @@ article.bd-article code.literal {
   .cryostack-updates-grid,
   .cryostack-manual-grid,
   .cryostack-resource-card-grid,
+  .cryostack-resource-grid,
   .cryostack-docs-summary-grid,
   .cryostack-docs-app-grid,
   .cryostack-docs-architecture,
@@ -3430,7 +3451,8 @@ article.bd-article code.literal {
   .cryostack-hero-simple,
   .cryostack-app-doc-hero,
   .cryostack-docs-hero,
-  .cryostack-about-hero {
+  .cryostack-about-hero,
+  .cryostack-resources-hero {
     padding: 30px 20px;
     margin: 16px auto 30px;
     border-radius: 20px;
@@ -3441,7 +3463,8 @@ article.bd-article code.literal {
   .cryostack-hero-content h1,
   .cryostack-app-doc-hero h1,
   .cryostack-docs-hero h1,
-  .cryostack-about-hero h1 {
+  .cryostack-about-hero h1,
+  .cryostack-resources-hero h1 {
     font-size: 28px;
     line-height: 1.15;
   }
@@ -3458,6 +3481,7 @@ article.bd-article code.literal {
   .cryostack-app-doc-hero p,
   .cryostack-docs-hero p,
   .cryostack-about-hero p,
+  .cryostack-resources-hero > p,
   .cryostack-section-intro {
     font-size: 16px;
     line-height: 1.6;
@@ -3515,6 +3539,7 @@ article.bd-article code.literal {
   .cryostack-app-doc-content,
   .cryostack-docs-page,
   .cryostack-about-page,
+  .cryostack-resources-page,
   .cryostack-home {
     padding-left: 2px;
     padding-right: 2px;
@@ -3525,7 +3550,8 @@ article.bd-article code.literal {
   .cryostack-hero-content h1,
   .cryostack-app-doc-hero h1,
   .cryostack-docs-hero h1,
-  .cryostack-about-hero h1 {
+  .cryostack-about-hero h1,
+  .cryostack-resources-hero h1 {
     font-size: 25px;
     letter-spacing: -0.02em;
   }
@@ -3558,7 +3584,8 @@ article.bd-article code.literal {
   .cryostack-hero-simple,
   .cryostack-app-doc-hero,
   .cryostack-docs-hero,
-  .cryostack-about-hero {
+  .cryostack-about-hero,
+  .cryostack-resources-hero {
     padding: 24px 16px;
   }
 
@@ -3567,7 +3594,8 @@ article.bd-article code.literal {
   .cryostack-hero-content h1,
   .cryostack-app-doc-hero h1,
   .cryostack-docs-hero h1,
-  .cryostack-about-hero h1 {
+  .cryostack-about-hero h1,
+  .cryostack-resources-hero h1 {
     font-size: 23px;
   }
 
