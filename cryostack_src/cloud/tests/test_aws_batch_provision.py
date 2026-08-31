@@ -296,3 +296,36 @@ def test_missing_image_skips_only_the_job_definition(aws):
     result = _provision(issm_image=None)
     assert set(result.created) == {"compute_environment", "job_queue"}
     assert any("issm_job_definition" in s for s in result.skipped)
+
+
+# ── driver end to end: digest pin, one revision, idempotent second run ──
+def test_prepare_batch_pins_digest_and_makes_exactly_one_revision(aws, monkeypatch):
+    from types import SimpleNamespace
+
+    from cryostack_src.cloud.drivers.aws import driver as driver_mod
+    from cryostack_src.cloud.drivers.aws.driver import AWSDriver
+    from cryostack_src.cloud.drivers.aws.registry_delivery import ECRImageDelivery
+
+    immutable = f"{IMAGE.rsplit(':', 1)[0]}@sha256:cafebabe"
+    delivery = ECRImageDelivery(
+        model="issm", repository="cryostack-issm",
+        repository_uri=IMAGE.rsplit(":", 1)[0], tag="tested",
+        source_reference="bkyanjo/icesee-combined:v1.0.0",
+        source_digest="sha256:a727f60a", destination_digest="sha256:cafebabe",
+        immutable_reference=immutable, verified=True, reused=True)
+    monkeypatch.setattr(driver_mod, "mirror_tested_image",
+                        lambda config, **kw: delivery)
+
+    net = SimpleNamespace(subnet_ids=SUBNETS, security_group_ids=SGS)
+    iam = SimpleNamespace(job_role=JOB_ROLE, ecs_execution_role=EXEC_ROLE)
+    driver = AWSDriver(region="us-east-2")
+
+    first = driver.prepare_batch(network=net, iam=iam)
+    assert "issm_job_definition" in first.created
+    assert aws.job_defs[-1]["containerProperties"]["image"] == immutable
+    assert "@sha256:" in aws.job_defs[-1]["containerProperties"]["image"]
+    assert first.image_delivery.verified is True
+
+    second = driver.prepare_batch(network=net, iam=iam)
+    assert "issm_job_definition" in second.reused
+    assert aws.count("batch", "register-job-definition") == 1     # no new revision

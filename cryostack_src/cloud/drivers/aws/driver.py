@@ -55,6 +55,11 @@ from .batch_provision import (
     ensure_batch_resources,
 )
 
+from .registry_delivery import (
+    RegistryDeliveryError,
+    mirror_tested_image,
+)
+
 from .capabilities import (
     discover_capabilities,
 )
@@ -187,37 +192,47 @@ class AWSDriver(
         *,
         network=None,
         iam=None,
-        registry=None,
+        registry=None,          # accepted for call-site compatibility; unused
         max_vcpus: int = DEFAULT_MAX_VCPUS,
         include_icepack: bool = False,
+        image_copier=None,
     ) -> AWSBatchProvisionResult:
         """
         Idempotently provision AWS Batch on Fargate: a scale-to-zero compute
         environment, a job queue, and the ISSM job definition (+ log group).
 
-        Discovery results for network / IAM / registry may be passed in to
-        avoid re-describing; anything omitted is discovered here.
+        The ISSM job definition is pinned to the tested image **by digest**:
+        the tested image is mirrored into ECR (once) and the resulting
+        ``<repo>@sha256:...`` reference feeds the job definition. A failed or
+        unconfigured mirror leaves the job definition untouched -- CryoStack
+        never points Batch at an unverified image.
+
+        Discovery results for network / IAM may be passed in to avoid
+        re-describing. ``image_copier`` is the registry-to-registry transfer
+        (see :func:`registry_delivery.buildx_imagetools_copier`); when omitted,
+        a mirror that would need a transfer fails cleanly.
         """
 
         network = network or self.network()
         iam = iam or self.iam()
 
-        if registry is None:
-            registry = self.registry()
+        delivery = None
+        issm_image = None
+        delivery_messages: list[str] = []
+        try:
+            delivery = mirror_tested_image(
+                self.config, model="issm", copier=image_copier,
+            )
+            if delivery.verified and delivery.immutable_reference:
+                issm_image = delivery.immutable_reference
+                delivery_messages.extend(delivery.messages)
+        except RegistryDeliveryError as err:
+            delivery_messages.append(
+                f"Tested-image delivery not ready: {err} "
+                "-- ISSM job definition left unchanged."
+            )
 
-        issm_repo_uri = getattr(
-            registry,
-            "issm_repository_uri",
-            None,
-        )
-
-        issm_image = (
-            f"{issm_repo_uri}:tested"
-            if issm_repo_uri
-            else None
-        )
-
-        return ensure_batch_resources(
+        result = ensure_batch_resources(
             self.config,
             subnets=network.subnet_ids,
             security_groups=network.security_group_ids,
@@ -227,6 +242,9 @@ class AWSDriver(
             max_vcpus=max_vcpus,
             include_icepack=include_icepack,
         )
+        result.image_delivery = delivery
+        result.messages.extend(delivery_messages)
+        return result
 
     def bootstrap(
         self,
@@ -431,6 +449,9 @@ class AWSDriver(
             messages.append(
                 f"AWS Batch: skipped {skipped}"
             )
+
+        for message in batch_result.messages:
+            messages.append(message)
 
         if (
             batch.compute_environment

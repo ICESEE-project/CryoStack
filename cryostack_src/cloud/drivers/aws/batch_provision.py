@@ -73,6 +73,9 @@ class AWSBatchProvisionResult:
     log_groups: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
     messages: list[str] = field(default_factory=list)
+    #: infrastructure state for the mirrored tested image (set by the driver);
+    #: never a substitute for the scientific ``container`` provenance block.
+    image_delivery: object | None = None
 
 
 def _require_success(code: int, stdout: str, stderr: str, *, what: str) -> str:

@@ -28,6 +28,13 @@ from .batch_config import FargateJobConfig
 from .batch_provision import AWSBatchProvisionResult, ensure_batch_resources
 from .driver import AWSDriver
 from .models import AWSConfig, AWSCapabilities
+from .registry_delivery import (
+    ECRImageDelivery,
+    RegistryDeliveryError,
+    buildx_imagetools_copier,
+    ensure_ecr_lifecycle_policy,
+    mirror_tested_image,
+)
 
 __all__ = [
     "AWSDriver",
@@ -36,4 +43,9 @@ __all__ = [
     "AWSBatchProvisionResult",
     "FargateJobConfig",
     "ensure_batch_resources",
+    "ECRImageDelivery",
+    "RegistryDeliveryError",
+    "mirror_tested_image",
+    "ensure_ecr_lifecycle_policy",
+    "buildx_imagetools_copier",
 ]

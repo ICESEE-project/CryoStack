@@ -35,6 +35,7 @@ import json
 from dataclasses import dataclass
 
 from .auth import run_aws
+from .batch_config import ECR_REPOSITORY_NAMES
 from .models import AWSConfig
 from .registry import (
     AWSRegistryResources,
@@ -202,12 +203,12 @@ def ensure_registry_resources(
     reused: list[str] = []
 
     required = [
-        "cryostack-issm",
+        ECR_REPOSITORY_NAMES["issm"],
     ]
 
     if include_icepack:
         required.append(
-            "cryostack-icepack"
+            ECR_REPOSITORY_NAMES["icepack"]
         )
 
     for repository_name in required:

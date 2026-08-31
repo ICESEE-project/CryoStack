@@ -46,6 +46,12 @@ JOB_DEFINITION_NAMES = {
     "issm": "cryostack-issm",
     "icepack": "cryostack-icepack",
 }
+# ECR repositories that hold CryoStack's tested images (one per model). Kept
+# here so provisioning, delivery and discovery agree on the name.
+ECR_REPOSITORY_NAMES = {
+    "issm": "cryostack-issm",
+    "icepack": "cryostack-icepack",
+}
 
 LOG_GROUP_PREFIX = "/cryostack/batch"
 LOG_RETENTION_DAYS = 30                       # cost guardrail
