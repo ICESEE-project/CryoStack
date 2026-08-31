@@ -263,11 +263,13 @@ def ensure_job_definition(
     execution_role_arn: str,
     region: str,
     job_config: FargateJobConfig = DEFAULT_ISSM_JOB_CONFIG,
+    command: list[str] | None = None,
 ) -> str:
     name = job_definition_name(model)
     desired_cp = container_properties_payload(
         model=model, image=image, job_role_arn=job_role_arn,
         execution_role_arn=execution_role_arn, region=region, config=job_config,
+        command=command,
     )
     desired_fp = job_definition_fingerprint(
         container_properties=desired_cp,
@@ -317,6 +319,7 @@ def ensure_batch_resources(
     issm_image: str | None,
     max_vcpus: int = DEFAULT_MAX_VCPUS,
     issm_job_config: FargateJobConfig = DEFAULT_ISSM_JOB_CONFIG,
+    job_command: list[str] | None = None,
     include_icepack: bool = False,
     icepack_image: str | None = None,
     icepack_job_config: FargateJobConfig | None = None,
@@ -350,7 +353,7 @@ def ensure_batch_resources(
         _bucket("issm_job_definition", ensure_job_definition(
             config, model="issm", image=issm_image, job_role_arn=job_role_arn,
             execution_role_arn=execution_role_arn, region=config.region,
-            job_config=issm_job_config,
+            job_config=issm_job_config, command=job_command,
         ))
     else:
         result.skipped.append(
@@ -362,6 +365,7 @@ def ensure_batch_resources(
             config, model="icepack", image=icepack_image, job_role_arn=job_role_arn,
             execution_role_arn=execution_role_arn, region=config.region,
             job_config=icepack_job_config or DEFAULT_ISSM_JOB_CONFIG,
+            command=job_command,
         ))
 
     result.resources = discover_batch_resources(config)

@@ -35,6 +35,7 @@ from .registry_delivery import (
     ensure_ecr_lifecycle_policy,
     mirror_tested_image,
 )
+from .staging import CloudRunStaging, CloudStagingError, stage_run_inputs
 
 __all__ = [
     "AWSDriver",
@@ -48,4 +49,7 @@ __all__ = [
     "mirror_tested_image",
     "ensure_ecr_lifecycle_policy",
     "buildx_imagetools_copier",
+    "CloudRunStaging",
+    "CloudStagingError",
+    "stage_run_inputs",
 ]

@@ -239,6 +239,8 @@ class AWSDriver(
                 "-- ISSM job definition left unchanged."
             )
 
+        from cryostack_src.cloud.runtime import cloud_run_command
+
         result = ensure_batch_resources(
             self.config,
             subnets=network.subnet_ids,
@@ -247,6 +249,7 @@ class AWSDriver(
             execution_role_arn=iam.ecs_execution_role,
             issm_image=issm_image,
             max_vcpus=max_vcpus,
+            job_command=cloud_run_command(),
             include_icepack=include_icepack,
         )
         result.image_delivery = delivery

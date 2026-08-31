@@ -25,14 +25,35 @@ Public CryoStack cloud API.
 """
 
 from .manager import CloudManager
+from .preflight import assert_cloud_run_allowed, cloud_run_preflight
+from .runtime import (
+    SUPPORTED_CLOUD_MODELS,
+    CloudRuntimeError,
+    build_cloud_runner,
+    build_run_descriptor,
+    is_supported_cloud_model,
+)
 
 from .drivers.aws import (
-    AWSDriver,
     AWSConfig,
+    AWSDriver,
+    CloudRunStaging,
+    CloudStagingError,
+    stage_run_inputs,
 )
 
 __all__ = [
     "CloudManager",
     "AWSDriver",
     "AWSConfig",
+    "SUPPORTED_CLOUD_MODELS",
+    "CloudRuntimeError",
+    "build_cloud_runner",
+    "build_run_descriptor",
+    "is_supported_cloud_model",
+    "cloud_run_preflight",
+    "assert_cloud_run_allowed",
+    "CloudRunStaging",
+    "CloudStagingError",
+    "stage_run_inputs",
 ]
