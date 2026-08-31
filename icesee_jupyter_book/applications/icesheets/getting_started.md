@@ -1,4 +1,4 @@
-# Getting Started 
+# Getting Started
 
 :::{raw} html
 <style>
@@ -18,8 +18,9 @@
     <h1>Getting Started with CryoLauncher</h1>
 
     <p>
-      Configure and run your first ice-sheet simulation through CryoStack
-      using local, remote, HPC, or cloud computing resources.
+      Configure and run your first ice-sheet simulation through CryoStack,
+      then inspect the structured results — without installing the scientific
+      software stack yourself.
     </p>
 
     <div class="cryostack-docs-actions">
@@ -27,15 +28,11 @@
         Open CryoLauncher
       </a>
 
-      <a
-        class="cryostack-btn secondary"
-        href="user_manual.html">
+      <a class="cryostack-btn secondary" href="user_manual.html">
         User Manual
       </a>
 
-      <a
-        class="cryostack-btn secondary"
-        href="resources.html">
+      <a class="cryostack-btn secondary" href="resources.html">
         Resources
       </a>
     </div>
@@ -45,196 +42,227 @@
   <div class="cryostack-app-doc-content">
 :::
 
-CryoLauncher provides browser-based access to supported ice-sheet models through the CryoStack platform. It allows users to configure simulations, select computing resources, submit jobs, monitor execution, and inspect results without manually managing the complete scientific software environment.
+CryoLauncher is the numerical-modeling application in CryoStack. It runs in a
+web browser and lets you choose a model and example, configure it through a
+guided or an advanced editing workflow, submit the run to a computing
+resource, follow it in a run log, and then explore the results — figures,
+fields, and downloadable output packages.
+
+**ISSM is the mature CryoLauncher path today.** Icepack is available in the
+interface but is still experimental and is not at ISSM feature parity. Cloud
+execution is in development and is not yet accepted for real runs; use
+**Remote** execution.
+
+## Before you begin
+
+You need:
+
+- a modern web browser;
+- access to the CryoStack platform;
+- for **Remote** execution: access to a Linux/HPC computing resource and valid
+  credentials (SSH, or a CryoStack Connector session when the resource cannot
+  be reached directly).
+
+Browsing the interface and preparing a run does not require a local
+installation.
+
+## The workflow at a glance
+
+:::{raw} html
+<div class="cryostack-manual-grid">
+
+  <article class="cryostack-manual-card">
+    <div class="cryostack-manual-number">01</div>
+    <h3>Choose &amp; configure</h3>
+    <p>
+      Pick a model and example, choose Basic or Advanced mode, choose an
+      execution backend, and set the scientific and resource options.
+    </p>
+  </article>
+
+  <article class="cryostack-manual-card">
+    <div class="cryostack-manual-number">02</div>
+    <h3>Prepare &amp; run</h3>
+    <p>
+      Check or prepare the environment where required, submit the run, and
+      follow progress in the run log.
+    </p>
+  </article>
+
+  <article class="cryostack-manual-card">
+    <div class="cryostack-manual-number">03</div>
+    <h3>Results &amp; download</h3>
+    <p>
+      Preview the structured results, render a Solution / Field / Timestep,
+      and download the result package or figures.
+    </p>
+  </article>
+
+</div>
+:::
+
+## 1. Open CryoLauncher
+
+Open [https://cryostack.eas.gatech.edu/icesheets/](https://cryostack.eas.gatech.edu/icesheets/).
+
+The interface has two areas:
+
+1. **Run settings** — model, example, mode, execution backend, configuration,
+   and computing resources.
+2. **Workspace** — run history, files, the run log, and results.
+
+## 2. Choose an application / model
+
+Select the model from the **Model** menu:
+
+:::{raw} html
+<p>
+  <b>ISSM</b>
+  <span class="cryostack-status supported">Supported</span>
+  &nbsp;— the Ice-sheet and Sea-level System Model. This is the mature
+  CryoLauncher path: curated configuration, structured results, and
+  deterministic visualization are all implemented.
+</p>
+<p>
+  <b>Icepack</b>
+  <span class="cryostack-status dev">Experimental</span>
+  &nbsp;— available in the interface, but configuration, result
+  interpretation, and visualization are not yet at ISSM parity.
+</p>
+:::
+
+The rest of this guide uses **ISSM**.
+
+## 3. Basic or Advanced mode
+
+Basic and Advanced are CryoLauncher-wide application modes.
+
+**Basic mode** is a *guided* scientific-configuration surface. You adjust a
+small set of curated, validated parameters (for ISSM: solver tolerances and
+iteration limits, time stepping, transient physics toggles, friction and ice
+rigidity multipliers, extra requested outputs). Example defaults are kept
+unless you explicitly change a value, and every change is range-checked before
+the run is submitted. You never edit raw model code in Basic mode.
+
+**Advanced mode** is a user-owned workspace and file editor. You open and edit
+the actual example files (`runme.m`, parameter files, notebooks, YAML/JSON),
+with Save / Save As / New / Delete and unsaved-change protection. Application
+(canonical) examples are read-only — Advanced mode offers **Clone to My
+Workspace** to make an editable copy.
 
-## Before You Begin
+For a first run, start with **Basic mode**.
 
-To use CryoLauncher, you need:
+## 4. Choose an example
 
-- A modern web browser.
-- Access to the CryoStack platform.
-- Access to a supported computing resource for remote or HPC execution.
-- Valid credentials when connecting to a remote system.
+The **Example** menu merges two kinds of entry:
 
-Basic exploration of the interface does not require a local software installation.
+- **Application examples** — the canonical examples shipped with the model
+  (for ISSM, `SquareIceShelf` is the best first choice). These are
+  **read-only**.
+- **My Workspace examples** — examples you own, under your personal workspace.
+  These are editable and persist across sessions. Only you can see them.
 
-## Supported Models
+You do not need to clone before a Basic-mode run: if you change a Basic-mode
+parameter against a read-only application example, CryoLauncher automatically
+stages a user-owned working copy for that run and leaves the canonical example
+untouched. You clone explicitly (**Clone to My Workspace**) when you want to
+*edit files* in Advanced mode.
 
-CryoLauncher currently supports:
+## 5. Choose an execution backend
 
-### ISSM
+Set the **Execution** and **Backend** menus:
 
-The Ice-sheet and Sea-level System Model is a multiphysics framework for ice-sheet and sea-level simulations.
+:::{raw} html
+<p>
+  <b>Remote</b>
+  <span class="cryostack-status supported">Supported</span>
+  &nbsp;— run on a Linux server or HPC cluster you have access to, over SSH or
+  through the CryoStack Connector. Slurm settings appear when the resource is
+  scheduler-managed.
+</p>
+<p>
+  <b>Cloud</b>
+  <span class="cryostack-status dev">In development</span>
+  &nbsp;— AWS Batch execution. Provisioning and the run contract exist, but
+  real cloud execution has not been accepted yet.
+</p>
+:::
 
-### Icepack
+For **Remote**, choose a backend:
 
-Icepack is a Python library built on Firedrake for modeling ice flow and related glaciological processes.
+- **ICESEE-Container** — run inside a container. The **Docker / OCI** source
+  with a *tested* image is the validated container path. Local SIF and the
+  ICESEE-Containers (git) build are also available.
+- **ICESEE-Spack** — run against a Spack-managed software environment on the
+  remote resource. First-time use requires an onboarding step (below).
 
-The models and examples available in the interface depend on the scientific environments configured on the selected execution backend.
+## 6. Configure
 
-## Open CryoLauncher
+**Basic mode (ISSM):** open the *ISSM configuration (Basic)* panel. Enable only
+the parameters you want to change; leave the rest at the example defaults. The
+panel only shows parameters relevant to the solver the example actually runs,
+and validates every value before the run is allowed.
 
-Open:
+**Advanced mode:** use the file editor to inspect and edit the run target and
+supporting files in your workspace copy. Save before submitting.
 
-[https://cryostack.eas.gatech.edu/icesheets/](https://cryostack.eas.gatech.edu/icesheets/)
+## 7. Prepare / check the environment
 
-The interface contains two main areas:
+Some backends need a one-time setup on the remote resource:
 
-1. **Run settings** — configure the model, example, execution mode, files, and computing resources.
-2. **Run log and results preview** — monitor the simulation and inspect available outputs.
+- **Remote + ICESEE-Spack** — use **Check environment** to verify the Spack
+  environment, and **Prepare environment** (a durable setup job) if it is not
+  ready. A run is blocked until the live check reports *Ready*.
+- **Remote + Container (tested image)** — no preparation step; the tested
+  image is used directly.
 
-## Choose a User Mode
+## 8. Run and monitor
 
-CryoLauncher provides two user modes.
+Submit the run. The **Run log** reports staging, the submission command, the
+scheduler job id, and progress. A scheduler job keeps running if you close the
+browser, as long as submission completed.
 
-### Basic Mode
+Open the **Runs** panel to see run history and status; select a run to inspect
+its files and logs.
 
-Basic Mode is intended for first-time users and standard examples. It automatically discovers supported models, examples, files, and execution targets.
+## 9. Results
 
-Use Basic Mode to:
+Select the completed run and open the **Results** tab, then click
+**Preview Results**. CryoLauncher fetches the run's outputs into a local cache
+and reads the structured result package (`metadata.json`, `mesh/`, `fields/`,
+`model/`, `figures/`).
 
-- Run an existing model example.
-- Use automatically discovered paths and files.
-- Submit a simulation with minimal configuration.
-- Learn the standard CryoLauncher workflow.
+The **Field visualization** panel then populates:
 
-### Advanced Mode
+- **Solution** — the ISSM solution(s) the run produced (e.g.
+  `StressbalanceSolution`).
+- **Field** — the fields in that solution, most useful first (e.g. `Vel`,
+  `Pressure`).
+- **Timestep** — shown only for transient runs; defaults to *Final*.
 
-Advanced Mode provides more control over paths, files, execution commands, and backend configuration.
+An initial recommended plot is rendered automatically. Use **Render** to draw
+any Solution / Field / Timestep you select. Nodal, elemental, transient, and
+scalar diagnostics are each rendered appropriately; a field that cannot be
+plotted shows a clear reason instead of failing.
 
-Use Advanced Mode to:
+Legacy runs (from before structured export) still show their existing figures
+and model file, with a note that the structured selector is unavailable.
 
-- Run a custom model setup.
-- Modify input files.
-- Select custom execution paths.
-- Configure expert workflows.
+## 10. Download
 
-For your first simulation, begin with **Basic Mode**.
+From the Results controls:
 
-## Choose an Execution Mode
+- **Download Results** — the full structured output package as an archive.
+- **Download Figures** — just the rendered figures.
 
-CryoLauncher supports several execution pathways.
+## Next steps
 
-### Local
-
-Runs the selected workflow on the system hosting CryoStack.
-
-Use Local mode for testing, development, and smaller examples.
-
-### Remote
-
-Runs the workflow on another workstation, server, or HPC cluster.
-
-Remote mode may require:
-
-- SSH configuration.
-- Authentication credentials.
-- A connector session.
-- A remote execution directory.
-- Scheduler settings.
-
-### Cloud
-
-Runs supported workflows using configured cloud infrastructure.
-
-Cloud execution depends on the available deployment and user-provided computing resources or cloud credits.
-
-## Run Your First Simulation
-
-A typical first run follows these steps:
-
-1. Open CryoLauncher.
-2. Select **Basic** user mode.
-3. Select an execution mode.
-4. Select a supported model.
-5. Select an available example.
-6. Review the automatically discovered files and run target.
-7. Configure the required computing resources.
-8. Submit the simulation.
-9. Monitor progress in the run log.
-10. Inspect the results preview when execution completes.
-
-## Running an ISSM Example
-
-For an initial ISSM workflow:
-
-1. Select **ISSM**.
-2. Choose an available example, such as **ISMIP**.
-3. Review the detected directory, files, and run target.
-4. Select the required execution mode.
-5. Configure remote or Slurm settings when needed.
-6. Submit the simulation.
-7. Follow progress in the run log.
-
-The available examples depend on the configured ISSM installation.
-
-## Running an Icepack Example
-
-For an initial Icepack workflow:
-
-1. Select **Icepack**.
-2. Choose one of the available examples.
-3. Review the detected Python entry point and configuration files.
-4. Select the execution mode.
-5. Submit the workflow.
-6. Monitor the run log and results preview.
-
-Icepack workflows use the Firedrake environment configured on the selected backend.
-
-## Remote and HPC Execution
-
-Remote execution settings are organized into expandable sections.
-
-Depending on the workflow, you may need to configure:
-
-- Remote connection details.
-- Authentication.
-- Server-side SSH keys.
-- Execution directory.
-- Slurm account and partition.
-- Number of nodes and tasks.
-- Wall-clock time.
-- Execution backend.
-
-The CryoStack connector can be used when the remote system cannot be reached directly from the CryoStack server.
-
-## Monitoring a Run
-
-After submission, the **Run log** reports the workflow status.
-
-The log may include:
-
-- Connector status.
-- File-staging operations.
-- Submission commands.
-- Scheduler job identifiers.
-- Execution progress.
-- Warnings and errors.
-- Output locations.
-
-## Viewing Results
-
-When supported outputs are available, CryoLauncher displays them in the **Results preview** area.
-
-Results may include:
-
-- Figures.
-- Reports.
-- Log files.
-- Model outputs.
-- Downloadable archives.
-- Links to execution directories.
-
-The available results depend on the selected model and example.
-
-## Next Steps
-
-After completing your first simulation:
-
-- Read the [CryoLauncher User Manual](user_manual) for a complete description of the interface.
-- Review [CryoLauncher Resources](resources) for model documentation and external references.
-- Use **Advanced Mode** for custom workflows.
-- Open [ICESEE](https://cryostack.eas.gatech.edu/icesee-gui/) when ensemble data assimilation is required.
+- Read the [CryoLauncher User Manual](user_manual) for the full reference.
+- Browse [CryoLauncher Resources](resources) for models, containers, examples,
+  and result formats.
+- Use **Advanced mode** and **Clone to My Workspace** to modify an example.
+- Open [ICESEE](https://cryostack.eas.gatech.edu/icesee-gui/) for ensemble data
+  assimilation.
 
 :::{raw} html
   </div>

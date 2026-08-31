@@ -174,20 +174,27 @@ article.bd-article {
   }
 }
 
-/* Reduce left sidebar width so the app gets more room */
-.bd-sidebar-primary {
-  max-width: 260px !important;
-  width: 260px !important;
-  flex: 0 0 260px !important;
+/* Wide-content layout tweaks for the doc site.
+   Desktop only: on tablet/phone the sphinx-book-theme collapses the primary
+   sidebar and the main column must be allowed to take the full width, so
+   these fixed widths must NOT apply there (they previously forced
+   .bd-main to calc(100% - 260px) on a 390px phone). */
+@media (min-width: 992px) {
+  /* Reduce left sidebar width so the app gets more room */
+  .bd-sidebar-primary {
+    max-width: 260px !important;
+    width: 260px !important;
+    flex: 0 0 260px !important;
+  }
+
+  /* Let main content expand more */
+  .bd-main {
+    width: calc(100% - 260px) !important;
+    max-width: calc(100% - 260px) !important;
+  }
 }
 
-/* Let main content expand more */
-.bd-main {
-  width: calc(100% - 260px) !important;
-  max-width: calc(100% - 260px) !important;
-}
-
-/* Keep the article area wide */
+/* Keep the article area wide (safe at every width) */
 .bd-page-width {
   max-width: 100% !important;
 }

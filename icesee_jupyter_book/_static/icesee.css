@@ -3275,3 +3275,329 @@ nav.bd-links p.caption.icesee-caption:hover {
     padding-left: 0.9rem !important;
     line-height: 1.25 !important;
 }
+
+/* ==========================================================================
+   CryoStack Responsive Foundation
+   --------------------------------------------------------------------------
+   Shared, class-driven responsive rules for every CryoStack / CryoLauncher
+   documentation page. Appended last so it wins ties without touching the
+   page-specific blocks above. Keyed on the established component classes so
+   new pages inherit the behaviour automatically.
+   Breakpoints: 1024 (laptop) / 768 (tablet) / 600 (large phone) /
+   480 (phone) / 380 (small phone).
+   ========================================================================== */
+
+/* ---- 1. Global safety: never let content widen the page ---------------- */
+html,
+body {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
+.cryostack-home img,
+.cryostack-docs-page img,
+.cryostack-about-page img,
+.cryostack-app-doc-page img,
+article.bd-article img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Code / command blocks scroll inside their own box */
+.cryostack-app-doc-content pre,
+.cryostack-docs-page pre,
+.cryostack-about-page pre,
+article.bd-article div.highlight,
+article.bd-article pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* Tables scroll horizontally instead of stretching the layout */
+.cryostack-app-doc-content table,
+.cryostack-docs-page table,
+.cryostack-about-page table,
+article.bd-article table.table,
+article.bd-article table.docutils {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Long paths / commands / URLs wrap rather than push the page wide */
+.cryostack-app-doc-content p,
+.cryostack-app-doc-content li,
+.cryostack-docs-page p,
+.cryostack-about-page p,
+article.bd-article p,
+article.bd-article li {
+  overflow-wrap: anywhere;
+}
+
+.cryostack-app-doc-content code,
+.cryostack-docs-page code,
+.cryostack-about-page code,
+article.bd-article code.literal {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Headings wrap cleanly on small screens */
+.cryostack-home h1,
+.cryostack-home h2,
+.cryostack-docs-page h1,
+.cryostack-docs-page h2,
+.cryostack-about-page h1,
+.cryostack-about-page h2,
+.cryostack-app-doc-page h1,
+.cryostack-app-doc-page h2,
+.cryostack-app-doc-page h3 {
+  overflow-wrap: break-word;
+  hyphens: none;
+}
+
+/* ---- 2. Maturity status badge (shared component) --------------------- */
+.cryostack-status {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  line-height: 1.5;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.cryostack-status.supported { background: rgba(25,135,84,.12);  color: #198754; }
+.cryostack-status.dev       { background: rgba(217,119,6,.16);  color: #b45309; }
+.cryostack-status.planned   { background: rgba(100,116,139,.16); color: #64748b; }
+
+/* ---- 3. Laptop (<= 1024px): pull the wide containers in --------------- */
+@media (max-width: 1024px) {
+  .cryostack-home,
+  .cryostack-hero,
+  .cryostack-hero-simple,
+  .cryostack-section,
+  .cryostack-workflow-section,
+  .cryostack-value-section,
+  .cryostack-updates-section {
+    max-width: 100%;
+  }
+}
+
+/* ---- 4. Tablet (<= 768px): single-column card grids ------------------ */
+@media (max-width: 768px) {
+  .cryostack-grid,
+  .cryostack-feature-row,
+  .cryostack-value-grid,
+  .cryostack-workflow,
+  .cryostack-updates-grid,
+  .cryostack-manual-grid,
+  .cryostack-resource-card-grid,
+  .cryostack-docs-summary-grid,
+  .cryostack-docs-app-grid,
+  .cryostack-docs-architecture,
+  .cryostack-docs-environments,
+  .cryostack-about-app-grid,
+  .cryostack-about-mission,
+  .cryostack-about-tech-grid,
+  .cryostack-about-principles,
+  .cryostack-about-open-grid,
+  .cryostack-about-citation,
+  .cryostack-about-development,
+  .cryostack-footer-main {
+    grid-template-columns: 1fr !important;
+    display: grid !important;
+  }
+
+  /* Horizontal step strips: drop the connecting arrows, stack the cards */
+  .cryostack-workflow-arrow,
+  .cryostack-architecture-arrow {
+    display: none !important;
+  }
+
+  .cryostack-workflow,
+  .cryostack-docs-architecture {
+    gap: 14px;
+  }
+}
+
+/* ---- 5. Large phone (<= 600px): tighten hero + typography ------------ */
+@media (max-width: 600px) {
+  .cryostack-hero,
+  .cryostack-hero-simple,
+  .cryostack-app-doc-hero,
+  .cryostack-docs-hero,
+  .cryostack-about-hero {
+    padding: 30px 20px;
+    margin: 16px auto 30px;
+    border-radius: 20px;
+  }
+
+  .cryostack-hero h1,
+  .cryostack-hero-simple h1,
+  .cryostack-hero-content h1,
+  .cryostack-app-doc-hero h1,
+  .cryostack-docs-hero h1,
+  .cryostack-about-hero h1 {
+    font-size: 28px;
+    line-height: 1.15;
+  }
+
+  .cryostack-section h2,
+  .cryostack-app-doc-content h2 {
+    font-size: 24px;
+    line-height: 1.2;
+  }
+
+  .cryostack-hero p,
+  .cryostack-hero-simple p,
+  .cryostack-hero-description,
+  .cryostack-app-doc-hero p,
+  .cryostack-docs-hero p,
+  .cryostack-about-hero p,
+  .cryostack-section-intro {
+    font-size: 16px;
+    line-height: 1.6;
+  }
+
+  .cryostack-card,
+  .cryostack-manual-card,
+  .cryostack-resource-card,
+  .cryostack-docs-app-card,
+  .cryostack-about-app-card,
+  .cryostack-update-card,
+  .cryostack-workflow-card,
+  .cryostack-value-card,
+  .cryostack-docs-summary-card {
+    padding: 20px;
+  }
+
+  /* Action rows: full-width, stacked, comfortable touch targets */
+  .cryostack-actions,
+  .cryostack-docs-actions,
+  .cryostack-hero-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .cryostack-actions .cryostack-btn,
+  .cryostack-docs-actions .cryostack-btn,
+  .cryostack-hero-actions .cryostack-btn,
+  .cryostack-card-btn,
+  .cryostack-card-link {
+    display: block;
+    width: 100%;
+    text-align: center;
+    padding: 13px 18px;
+    min-height: 44px;
+    box-sizing: border-box;
+  }
+
+  /* Card-internal action link rows */
+  .cryostack-docs-card-actions {
+    flex-wrap: wrap;
+    gap: 8px 14px;
+  }
+
+  /* Section rhythm */
+  .cryostack-section {
+    margin: 0 auto 34px;
+  }
+}
+
+/* ---- 6. Phone (<= 480px) -------------------------------------------- */
+@media (max-width: 480px) {
+  .cryostack-app-doc-content,
+  .cryostack-docs-page,
+  .cryostack-about-page,
+  .cryostack-home {
+    padding-left: 2px;
+    padding-right: 2px;
+  }
+
+  .cryostack-hero h1,
+  .cryostack-hero-simple h1,
+  .cryostack-hero-content h1,
+  .cryostack-app-doc-hero h1,
+  .cryostack-docs-hero h1,
+  .cryostack-about-hero h1 {
+    font-size: 25px;
+    letter-spacing: -0.02em;
+  }
+
+  .cryostack-hero-statements {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .cryostack-hero-statements span:not(:last-child)::after {
+    content: "" !important;
+  }
+
+  .cryostack-capabilities,
+  .cryostack-mini-list {
+    gap: 6px;
+  }
+
+  /* Numbered strips: shrink the oversized number chip */
+  .cryostack-workflow-number,
+  .cryostack-manual-number,
+  .cryostack-architecture-node > span {
+    font-size: 13px;
+  }
+}
+
+/* ---- 7. Small phone (<= 380px) ------------------------------------- */
+@media (max-width: 380px) {
+  .cryostack-hero,
+  .cryostack-hero-simple,
+  .cryostack-app-doc-hero,
+  .cryostack-docs-hero,
+  .cryostack-about-hero {
+    padding: 24px 16px;
+  }
+
+  .cryostack-hero h1,
+  .cryostack-hero-simple h1,
+  .cryostack-hero-content h1,
+  .cryostack-app-doc-hero h1,
+  .cryostack-docs-hero h1,
+  .cryostack-about-hero h1 {
+    font-size: 23px;
+  }
+
+  .cryostack-section h2,
+  .cryostack-app-doc-content h2 {
+    font-size: 21px;
+  }
+
+  .cryostack-card,
+  .cryostack-manual-card,
+  .cryostack-resource-card,
+  .cryostack-docs-app-card {
+    padding: 16px;
+  }
+}
+
+/* ---- 8. Touch-target minimums (all small screens) ------------------ */
+@media (max-width: 768px) {
+  .cryostack-btn,
+  .cryostack-card-btn,
+  .cryostack-card-link,
+  .cryostack-app-doc-content a.cryostack-btn {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .cryostack-troubleshooting details > summary {
+    padding: 12px 10px;
+    min-height: 44px;
+  }
+}
