@@ -48,11 +48,34 @@ class _Widget:
         self.options = ()
 
 
-def _mgr(owner, root):
+class _CaptureOut(list):
+    """Stand-in for an ipywidgets Output that records printed text."""
+
+    def __enter__(self):
+        import builtins
+        self._orig = builtins.print
+        builtins.print = lambda *a, **k: self.append(" ".join(str(x) for x in a))
+        return self
+
+    def __exit__(self, *exc):
+        import builtins
+        builtins.print = self._orig
+        return False
+
+    def clear_output(self, *a, **k):
+        self.clear()
+
+    @property
+    def text(self):
+        return "\n".join(self)
+
+
+def _mgr(owner, root, *, results_output=None):
     return WorkspaceManager(
         owner=owner, workspace_root=root, status={}, session={"id": "s"},
         example_dir=_Widget(str(root)), model=_Widget("issm"), backend=_Widget("c"),
-        file_picker=_Widget(), file_editor=_Widget(), log_output=None, results_output=None,
+        file_picker=_Widget(), file_editor=_Widget(), log_output=None,
+        results_output=results_output,
         cluster_host=_Widget(""), cluster_user=_Widget(""), cluster_port=_Widget(1),
         access_mode=_Widget(""), normalize_remote_path=lambda p: p,
         connector_fetch_archive=None, should_use_connector=lambda: False,
@@ -76,6 +99,85 @@ def _drop_package(base: Path, subdir: str = "cache/outputs") -> Path:
     (outputs / "model").mkdir(exist_ok=True)
     (outputs / "model" / "md_final.mat").write_bytes(b"stub")
     return outputs
+
+
+# The exact run shape from the field report: a steady Stressbalance run whose
+# outputs/ was fetched into <run>/cache/outputs but whose selectors stayed empty.
+_SCREENSHOT_METADATA = {
+    "schema": "cryostack.issm.results", "version": 1, "model": "issm",
+    "status": "ok",
+    "mesh": {"path": "mesh/mesh.h5", "numberofvertices": 3, "numberofelements": 1,
+             "dimension": 2, "element_columns": 3,
+             "connectivity_indexing": "1-based", "has_z": False},
+    "solutions": [{
+        "name": "StressbalanceSolution", "transient": False, "timesteps": 1,
+        "time": [], "step": [], "skipped": [],
+        "fields": [
+            {"name": "Vx", "location": "nodal", "shape": [3], "dtype": "float64",
+             "path": "fields/StressbalanceSolution/Vx.h5"},
+            {"name": "Vy", "location": "nodal", "shape": [3], "dtype": "float64",
+             "path": "fields/StressbalanceSolution/Vy.h5"},
+            {"name": "Vel", "location": "nodal", "shape": [3], "dtype": "float64",
+             "path": "fields/StressbalanceSolution/Vel.h5"},
+            {"name": "Pressure", "location": "nodal", "shape": [3], "dtype": "float64",
+             "path": "fields/StressbalanceSolution/Pressure.h5"},
+            {"name": "StressbalanceConvergenceNumSteps", "location": "scalar",
+             "shape": [1], "dtype": "float64",
+             "path": "fields/StressbalanceSolution/StressbalanceConvergenceNumSteps.h5"},
+        ],
+    }],
+}
+
+
+def _drop_screenshot_package(base: Path, subdir: str = "cache/outputs") -> Path:
+    outputs = base / subdir
+    for rel in ("mesh", "fields/StressbalanceSolution", "model"):
+        (outputs / rel).mkdir(parents=True, exist_ok=True)
+    (outputs / "metadata.json").write_text(
+        json.dumps(_SCREENSHOT_METADATA), encoding="utf-8")
+    (outputs / "mesh" / "mesh.h5").write_bytes(b"h5stub")
+    for f in ("Vx", "Vy", "Vel", "Pressure", "StressbalanceConvergenceNumSteps"):
+        (outputs / "fields" / "StressbalanceSolution" / f"{f}.h5").write_bytes(b"h5stub")
+    (outputs / "model" / "md_final.mat").write_bytes(b"stub")
+    return outputs
+
+
+def test_diagnostic_boundary_after_fetch_returns_ok_with_all_fields(tmp_path):
+    """The exact boundary the field report pointed at:
+    result_package_for_run(run_id) after the fetch has landed cache/outputs."""
+    m = _mgr(USER_A, tmp_path / "ws")
+    run = _register(m)
+    _drop_screenshot_package(run.workspace_directory)
+
+    pkg = m.result_package_for_run(run.id)
+    assert pkg.status == "ok"
+    assert pkg.is_readable() is True
+    assert "StressbalanceSolution" in pkg.available_solutions()
+    fields = pkg.available_fields("StressbalanceSolution")
+    for expected in ("Vel", "Vx", "Vy", "Pressure"):
+        assert expected in fields, fields
+    assert fields[0] == "Vel"                                   # preference order
+
+
+def test_preview_results_reports_structured_available_when_no_pngs(tmp_path):
+    """figures/ is intentionally empty on a fresh Commit-4 run -- Preview Results
+    must say structured results are available, not 'nothing to preview'."""
+    out = _CaptureOut()
+    m = _mgr(USER_A, tmp_path / "ws", results_output=out)
+    run = _register(m)
+    outputs = _drop_screenshot_package(run.workspace_directory)
+
+    class _Stub:
+        stdout = ""
+        stderr = ""
+
+    m.inspect_remote_results = lambda: _Stub()
+    m.refresh_results = lambda: outputs
+
+    m.preview_results()
+    assert "Structured results are available" in out.text
+    assert "nothing to preview" not in out.text.lower()
+    assert "No structured results" not in out.text
 
 
 def test_locates_fetched_outputs(tmp_path):

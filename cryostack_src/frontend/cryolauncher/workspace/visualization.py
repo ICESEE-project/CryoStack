@@ -114,6 +114,27 @@ class VisualizationController:
         self._auto_rendered_run = None            # a fresh package -> re-preview
         self.refresh()
 
+    def preview(self, _=None):
+        """The *Preview Results* entry point for this panel.
+
+        The execution backend has usually just synchronised the run's outputs
+        into the local cache (``preview_results`` / ``sync_cloud_results``). This
+        re-reads the local :class:`ResultPackage` for the currently selected
+        run, rebuilds the Solution / Field / Timestep selectors, and renders an
+        initial recommended plot. If nothing is local yet and a fetch callback
+        is available, it falls back to fetching first.
+        """
+        run_id = self._run_id()
+        if not run_id:
+            self.refresh()
+            return
+        package = self.manager.result_package_for_run(run_id)
+        if package.status == "missing" and self._fetch_results is not None:
+            self.fetch()
+            return
+        self._auto_rendered_run = None            # force a fresh initial preview
+        self.refresh()
+
     # -- lifecycle -----------------------------------------------------
     def refresh(self, _=None):
         run_id = self._run_id()

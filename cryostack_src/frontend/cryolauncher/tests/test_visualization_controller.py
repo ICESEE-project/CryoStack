@@ -108,6 +108,53 @@ def _drop_package(base: Path, *, subdir="cache/outputs"):
     return outputs
 
 
+def _drop_screenshot_package(base: Path, *, subdir="cache/outputs"):
+    """The exact run shape from the field report: a steady Stressbalance run
+    (Vx, Vy, Vel, Pressure nodal + a scalar convergence diagnostic), figures/
+    empty."""
+    outputs = base / subdir
+    _h5(outputs / "mesh" / "mesh.h5",
+        {"/x": np.linspace(0, 1, NV), "/y": np.linspace(0, 1, NV), "/elements": ELEMENTS})
+    _h5(outputs / "fields" / "StressbalanceSolution" / "Vel.h5",
+        {"/values": np.linspace(1, 90, NV)})
+    _h5(outputs / "fields" / "StressbalanceSolution" / "Vx.h5",
+        {"/values": np.linspace(-5, 5, NV)})
+    _h5(outputs / "fields" / "StressbalanceSolution" / "Vy.h5",
+        {"/values": np.linspace(-2, 2, NV)})
+    _h5(outputs / "fields" / "StressbalanceSolution" / "Pressure.h5",
+        {"/values": np.linspace(0, 1e6, NV)})
+    _h5(outputs / "fields" / "StressbalanceSolution" / "StressbalanceConvergenceNumSteps.h5",
+        {"/values": np.array([7.0])})
+    (outputs / "model").mkdir(parents=True, exist_ok=True)
+    (outputs / "model" / "md_final.mat").write_bytes(b"stub")
+    meta = {
+        "schema": "cryostack.issm.results", "version": 1, "model": "issm",
+        "status": "ok",
+        "mesh": {"path": "mesh/mesh.h5", "numberofvertices": NV,
+                 "numberofelements": NE, "dimension": 2, "element_columns": 3,
+                 "connectivity_indexing": "1-based", "has_z": False},
+        "solutions": [{
+            "name": "StressbalanceSolution", "transient": False, "timesteps": 1,
+            "time": [], "step": [], "skipped": [],
+            "fields": [
+                {"name": "Vx", "location": "nodal", "shape": [NV], "dtype": "float64",
+                 "path": "fields/StressbalanceSolution/Vx.h5"},
+                {"name": "Vy", "location": "nodal", "shape": [NV], "dtype": "float64",
+                 "path": "fields/StressbalanceSolution/Vy.h5"},
+                {"name": "Vel", "location": "nodal", "shape": [NV], "dtype": "float64",
+                 "path": "fields/StressbalanceSolution/Vel.h5"},
+                {"name": "Pressure", "location": "nodal", "shape": [NV], "dtype": "float64",
+                 "path": "fields/StressbalanceSolution/Pressure.h5"},
+                {"name": "StressbalanceConvergenceNumSteps", "location": "scalar",
+                 "shape": [1], "dtype": "float64",
+                 "path": "fields/StressbalanceSolution/StressbalanceConvergenceNumSteps.h5"},
+            ],
+        }],
+    }
+    (outputs / "metadata.json").write_text(json.dumps(meta), encoding="utf-8")
+    return outputs
+
+
 def _register(m, run_id="run-1", **over):
     kw = dict(id=run_id, name=run_id, model="issm", backend="c",
               execution_mode="remote", status="completed",
@@ -219,6 +266,68 @@ def test_preview_flow_refreshes_visualization_after_fetch(tmp_path):
     _drop_package(run.workspace_directory)                      # preview_results() synced
     c.refresh()                                                 # gateway calls this next
     assert list(c.solution_dd.options) == ["StressbalanceSolution", "TransientSolution"]
+
+
+def test_screenshot_reproduction_preview_populates_all_selectors(tmp_path):
+    """Field report, reproduced exactly: run selected, outputs already fetched
+    into <run>/cache/outputs, selectors were empty. After the Preview Results
+    entry point (controller.preview()) they must be fully populated."""
+    m = _mgr(USER_A, tmp_path / "ws")
+    run = _register(m)
+    c = _panel(m, fetch_results=lambda: None).controller
+
+    # 1. initial state -- nothing local yet
+    c.refresh()
+    assert list(c.solution_dd.options) == []
+    assert "have not been fetched" in c.status.value
+
+    # 2. Preview Results: the backend syncs outputs, then the panel previews
+    _drop_screenshot_package(run.workspace_directory)           # == preview_results() sync
+    c.preview()
+
+    # 3. selectors are populated for this exact run
+    assert "fetched" not in c.status.value.lower() or "have not been" not in c.status.value
+    assert "StressbalanceSolution" in list(c.solution_dd.options)
+    assert c.solution_dd.value == "StressbalanceSolution"
+    fields = list(c.field_dd.options)
+    for expected in ("Vel", "Vx", "Vy", "Pressure"):
+        assert expected in fields, fields
+    assert c.field_dd.value                                      # non-empty selection
+    assert c.field_dd.value == "Vel"                             # preferred first
+    assert c.timestep_dd.layout.display == "none"                # steady solution
+    assert c.render_btn.disabled is False
+
+
+def test_preview_with_empty_figures_dir_is_normal(tmp_path):
+    """Commit 4 makes figures/ initially empty -- that is the normal state, not
+    'nothing to preview'. Preview must still populate + render."""
+    m = _mgr(USER_A, tmp_path / "ws")
+    run = _register(m)
+    outputs = _drop_screenshot_package(run.workspace_directory)
+    assert not (outputs / "figures").exists()
+
+    c = _panel(m).controller
+    c.preview()
+
+    assert c.solution_dd.value == "StressbalanceSolution"
+    rendered = outputs / "figures" / "StressbalanceSolution_Vel.png"
+    assert rendered.is_file()                                    # initial preview render
+    assert "Vel" in c.meta.value
+
+
+def test_preview_fetches_first_when_still_missing(tmp_path):
+    m = _mgr(USER_A, tmp_path / "ws")
+    run = _register(m)
+    calls = {"n": 0}
+
+    def fake_fetch():
+        calls["n"] += 1
+        _drop_screenshot_package(run.workspace_directory)
+
+    c = _panel(m, fetch_results=fake_fetch).controller
+    c.preview()                                                  # nothing local -> fetch
+    assert calls["n"] == 1
+    assert c.solution_dd.value == "StressbalanceSolution"
 
 
 def test_fetch_button_hidden_without_a_fetch_callback(tmp_path):

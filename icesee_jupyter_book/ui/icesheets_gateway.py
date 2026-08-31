@@ -1914,14 +1914,14 @@ def build_icesheets_ui():
             return workspace_manager.refresh_results()
 
         def on_results_preview(_=None):
-            # 1. fetch/synchronise outputs, 2. print the run summary + existing
-            # figures, 3. refresh the structured visualization panel so its
-            # Solution/Field/Timestep selectors populate from the same package.
+            # 1. fetch/synchronise outputs + print the run summary, 2. drive the
+            # structured visualization panel: re-read the local package, rebuild
+            # Solution/Field/Timestep, and render an initial recommended plot.
             if active_execution_mode() == "cloud":
                 on_cloud_results()
             else:
                 workspace_manager.preview_results()
-            visualization_panel.controller.refresh()
+            visualization_panel.controller.preview()
 
         def on_results_download(_=None):
             if active_execution_mode() == "cloud":

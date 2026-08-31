@@ -1122,6 +1122,7 @@ class WorkspaceManager:
         mats = sorted(outputs_dir.rglob("*.mat"))
         h5s = sorted(outputs_dir.rglob("*.h5"))
         all_files = sorted(path for path in outputs_dir.rglob("*") if path.is_file())
+        structured = (outputs_dir / "metadata.json").is_file()
         with self.results_output:
             print("Fetched outputs:", outputs_dir)
             print(f"Figures: {len(pngs)}")
@@ -1133,16 +1134,20 @@ class WorkspaceManager:
                     print(" -", path.relative_to(outputs_dir))
                 print()
             if pngs:
-                print("Found figures at:")
-                for path in pngs[:10]:
-                    print(" -", path)
-            if pngs:
                 print("Preview figures:")
                 for path in pngs:
                     print("\n", path.name)
                     display(Image(filename=str(path)))
+            elif structured:
+                # Commit 4 makes figures/ initially empty on purpose -- an "ok"
+                # structured package is available, not "nothing to preview".
+                print("Structured results are available "
+                      "(no pre-rendered PNGs -- figures/ is written on demand).")
+                print("The Field visualization panel below has been populated; "
+                      "an initial recommended plot is rendered there.")
+                print("Use it to render any Solution / Field / Timestep.")
             else:
-                print("No PNG figures found locally after fetch.\n")
+                print("No structured results and no PNG figures after fetch.\n")
                 print("--- Remote inspection ---")
                 print((remote_check.stdout or "").strip())
                 if (remote_check.stderr or "").strip():
