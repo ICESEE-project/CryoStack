@@ -5,44 +5,6 @@ def validate_configuration(configuration: dict) -> dict:
     return dict(configuration or {})
 
 
-def build_configuration_script(configuration: dict) -> str:
-    lines = [
-        "disp('[ICESEE-GUI] Applying editable md configuration...');",
-        "if ~exist('md','var')",
-        "    disp('[ICESEE-GUI][WARN] md does not exist yet. Skipping md configuration.');",
-        "    return;",
-        "end",
-    ]
-    for key, item in (configuration or {}).items():
-        key = str(key).strip()
-        if not key:
-            continue
-        target = key if key.startswith("md.") else f"md.{key}"
-        if isinstance(item, dict):
-            raw_value = str(item.get("value", "")).strip()
-            value_type = item.get("type", "string")
-        else:
-            raw_value = str(item).strip()
-            value_type = "string"
-        if value_type == "number":
-            matlab_value = raw_value
-        elif value_type == "bool":
-            matlab_value = "true" if raw_value.lower() in {"true", "1", "yes", "on"} else "false"
-        elif value_type == "expr":
-            matlab_value = raw_value
-        else:
-            matlab_value = "'" + raw_value.replace("'", "''") + "'"
-        lines.extend([
-            "try",
-            f"    {target} = {matlab_value};",
-            f"    disp('[ICESEE-GUI] set {target} = {raw_value}');",
-            "catch ME",
-            f"    disp(['[ICESEE-GUI][WARN] could not set {target}: ' ME.message]);",
-            "end",
-        ])
-    return "\n".join(lines) + "\n"
-
-
 def build_environment_check(*, spack_path: str, sif_path: str, backend: str) -> str:
     if backend != "spack":
         return _container_check(sif_path)

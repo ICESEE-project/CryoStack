@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import html
+import json
 import os
 import re
 import shutil
@@ -27,8 +28,26 @@ from .manifest import MANIFEST_NAME, read_manifest, write_manifest
 from .models import RunInfo
 
 _SAFE_RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
+_SAFE_EXAMPLE_NAME = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 #: optional deploy-time pin for the workspace root, independent of process cwd
 WORKSPACE_ROOT_ENV = "CRYOSTACK_WORKSPACE_ROOT"
+
+
+class StagedExample:
+    """A user-owned working copy of an example, staged for a run.
+
+    The canonical example is never touched: when ``source`` is a bundled
+    (canonical) example a fresh copy is made under the authenticated user's
+    workspace; when ``source`` is already user-owned it is used in place.
+    """
+
+    __slots__ = ("path", "source", "from_canonical", "provenance")
+
+    def __init__(self, *, path: Path, source: str, from_canonical: bool, provenance: dict) -> None:
+        self.path = path
+        self.source = source
+        self.from_canonical = from_canonical
+        self.provenance = provenance
 
 
 class WorkspaceManager:
@@ -99,6 +118,8 @@ class WorkspaceManager:
         self._workspace_root = root
         self._owner_root = (root / "users" / self.owner.safe_id).resolve()
         self.manifest_root = (self._owner_root / ".cryostack" / "runs").resolve()
+        #: derived, rebuildable working copies of examples staged for a run
+        self._working_root = (self._owner_root / ".cryostack" / "working").resolve()
         if not self.manifest_root.is_relative_to(self._owner_root):
             raise RuntimeError("Workspace namespace escaped its user root.")
 
@@ -183,6 +204,88 @@ class WorkspaceManager:
         if path.exists():
             return path if path.is_dir() else path.parent
         return None
+
+    # ------------------------------------------------------------------
+    # Per-user example staging (canonical examples are read-only)
+    # ------------------------------------------------------------------
+    def _is_user_owned_path(self, path: Path | None) -> bool:
+        """True when ``path`` resolves inside this authenticated user's workspace."""
+        if path is None:
+            return False
+        try:
+            return path.resolve().is_relative_to(self._owner_root)
+        except (OSError, ValueError):
+            return False
+
+    @staticmethod
+    def _safe_example_name(name: str) -> str:
+        name = (name or "").strip()
+        if name in {".", ".."} or not _SAFE_EXAMPLE_NAME.match(name):
+            raise ValueError(f"Unsafe example name: {name!r}")
+        return name
+
+    def stage_example_for_md_overrides(
+        self,
+        *,
+        source_example: str | Path,
+        override_script: str,
+        overrides: dict,
+        entrypoint: str = "runme.m",
+        entrypoint_transform=None,
+    ) -> StagedExample:
+        """Return a user-owned working copy of ``source_example`` with the
+        Basic-mode override step injected before its first ``solve(...)``.
+
+        * canonical example  -> a fresh copy is built under
+          ``<owner_root>/.cryostack/working/<name>`` (rebuilt each run, so the
+          injection is deterministic and never doubled);
+        * user-owned example -> operated on in place.
+
+        The canonical example is never modified. Provenance is written to
+        ``.cryostack-example.json`` inside the working copy.
+        """
+        src = Path(source_example).expanduser().resolve()
+        if not src.exists() or not src.is_dir():
+            raise ValueError(f"Example directory not found: {src}")
+
+        if self._is_user_owned_path(src):
+            target = src
+            from_canonical = False
+        else:
+            name = self._safe_example_name(src.name)
+            self._working_root.mkdir(parents=True, exist_ok=True)
+            target = (self._working_root / name).resolve()
+            if not target.is_relative_to(self._working_root):
+                raise ValueError("Working copy escaped the user workspace.")
+            if target.exists():
+                shutil.rmtree(target)
+            shutil.copytree(src, target)
+            from_canonical = True
+
+        (target / "cryostack_md_overrides.m").write_text(override_script, encoding="utf-8")
+
+        entry = target / entrypoint
+        if entrypoint_transform is not None and entry.is_file():
+            entry.write_text(
+                entrypoint_transform(entry.read_text(encoding="utf-8")), encoding="utf-8"
+            )
+
+        provenance = {
+            "kind": "cryostack-working-copy",
+            "source": str(src),
+            "source_name": src.name,
+            "from_canonical": from_canonical,
+            "owner": self.owner.safe_id,
+            "created": datetime.now().isoformat(timespec="seconds"),
+            "entrypoint": entrypoint,
+            "md_overrides": dict(overrides or {}),
+        }
+        (target / ".cryostack-example.json").write_text(
+            json.dumps(provenance, indent=2, sort_keys=True), encoding="utf-8"
+        )
+        return StagedExample(
+            path=target, source=str(src), from_canonical=from_canonical, provenance=provenance
+        )
 
     def delete(self, path: Path) -> None:
         """Delete one explicitly resolved workspace path."""

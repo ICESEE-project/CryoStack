@@ -93,6 +93,10 @@ from cryostack_src.remote import RemoteBridge, expand_remote_home, normalize_rem
 from cryostack_src.remote.spack_env import SetupSlurmOpts
 from cryostack_src.frontend.cryolauncher.spack_runtime import build_spack_runtime_callbacks
 from cryostack_src.models import get_model_adapter
+from cryostack_src.models.issm.md_config import (
+    build_md_override_script,
+    inject_override_step,
+)
 from cryostack_src.models.stack import (
     ComponentResolutionError,
     ContainerIdentityError,
@@ -108,6 +112,7 @@ from cryostack_src.models.submission import (
 from cryostack_src.resources.profiles import get_compute_profile
 from cryostack_src.frontend.cryolauncher.software_stack import build_software_stack_panel
 from cryostack_src.frontend.cryolauncher.container_image import build_container_image_panel
+from cryostack_src.frontend.cryolauncher.issm_md_panel import build_issm_md_panel
 
 from cryostack_src.frontend.cryolauncher.panels import (
     build_logs_panel,
@@ -319,48 +324,6 @@ session_bridge = W.HTML("""
 
 app_menu = build_icesheets_app_menu()
 shared_styles = shared_application_styles()
-
-def build_issm_md_config_script(md_config: dict) -> str:
-    return get_model_adapter("issm").build_configuration_script(md_config)
-
-def build_default_md_fields(section: str) -> dict:
-    """
-    Fallback field map. This avoids missing sections, but still lets users
-    add any field manually if a section is not pre-populated.
-    """
-    known = {
-        "geometry": ["surface", "thickness", "base", "bed"],
-        "mesh": ["x", "y", "elements", "numberofvertices", "numberofelements"],
-        "mask": ["ice_levelset", "ocean_levelset"],
-        "materials": ["rho_ice", "rho_water", "rheology_B", "rheology_n"],
-        "friction": ["coefficient", "p", "q"],
-        "stressbalance": ["restol", "reltol", "abstol", "maxiter", "requested_outputs"],
-        "timestepping": ["start_time", "final_time", "time_step"],
-        "transient": [
-            "isstressbalance", "ismasstransport", "isthermal",
-            "isgroundingline", "ismovingfront", "issmb",
-        ],
-        "cluster": ["np", "name", "login", "port"],
-        "verbose": ["solution", "module", "processor", "convergence", "control", "qmu"],
-        "smb": ["mass_balance"],
-        "basalforcings": ["groundedice_melting_rate", "floatingice_melting_rate"],
-        "initialization": ["vx", "vy", "vel", "pressure", "temperature"],
-        "masstransport": ["spcthickness", "requested_outputs"],
-        "thermal": ["spctemperature", "requested_outputs"],
-        "groundingline": ["migration"],
-        "flowequation": ["element_equation", "vertex_equation"],
-        "settings": ["results_on_nodes", "io_gather", "lowmem"],
-    }
-
-    fields = known.get(section, [])
-    return {
-        f: {
-            "label": f"{f}",
-            "type": "expr",
-            "default": f"md.{section}.{f}",
-        }
-        for f in fields
-    }
 
 def build_backend_check_cmd(backend: str, model: str, remote_base: str, remote_tag: str) -> str:
     root = f"{remote_base.rstrip('/')}/{remote_tag}"
@@ -574,67 +537,9 @@ def build_icesheets_ui():
             button_style="danger",
         )
 
-        ISSM_MD_SECTIONS = [
-            "mesh", "mask", "geometry", "constants", "smb", "basalforcings",
-            "materials", "damage", "friction", "flowequation", "timestepping",
-            "initialization", "rifts", "solidearth", "dsl", "debug", "verbose",
-            "settings", "toolkits", "cluster", "balancethickness",
-            "stressbalance", "groundingline", "hydrology", "debris",
-            "masstransport", "memmasstransport", "thermal", "steadystate",
-            "transient", "levelset", "calving", "frontalforcings", "esa",
-            "love", "sampling", "autodiff", "inversion", "qmu", "amr",
-            "outputdefinition", "results", "radaroverlay", "miscellaneous",
-            "stochasticforcing",
-        ]
-
-        ISSM_MD_FIELDS = {section: {} for section in ISSM_MD_SECTIONS}
-
-        md_config_enabled = W.Checkbox(
-            value=True,
-            description="Apply md configuration before solve",
-        )
-
-        md_section_dd = W.Dropdown(
-            options=ISSM_MD_SECTIONS,
-            value="stressbalance",
-            layout=W.Layout(width="100%"),
-        )
-
-        md_field_dd = W.Dropdown(
-            options=[],
-            layout=W.Layout(width="100%"),
-        )
-
-        md_value_text = W.Textarea(
-            value="",
-            placeholder="current/default value",
-            layout=W.Layout(width="100%", height="70px"),
-        )
-
-        md_value_type_hidden = W.Text(
-            value="string",
-            layout=W.Layout(display="none"),
-        )
-
-        md_help = W.HTML("")
-
-        add_md_override_btn = W.Button(
-            description="Add md override",
-            icon="plus",
-            button_style="info",
-        )
-
-        clear_md_overrides_btn = W.Button(
-            description="Clear overrides",
-            icon="trash",
-        )
-
-        md_overrides = {}
-        md_overrides_view = W.Textarea(
-            value="No md overrides added yet.",
-            disabled=True,
-            layout=W.Layout(width="100%", height="120px"),
-        )
+        # Basic-mode ISSM configuration: a curated, solver-aware, validated panel
+        # (replaces the old raw md.<section>.<field> editor).
+        md_panel = build_issm_md_panel()
 
         def current_cloud_bridge():
             selected_run = workspace_manager.selected_run()
@@ -732,7 +637,7 @@ def build_icesheets_ui():
                 },
 
                 "issm_md": (
-                    collect_md_config()
+                    md_panel.overrides()
                     if model_dd.value == "issm"
                     else {}
                 ),
@@ -907,35 +812,6 @@ def build_icesheets_ui():
                 relay_status.value = ""
                 with log_out:
                     print("[connector][ERROR]", type(e).__name__, e)
-
-        def refresh_md_field_dropdown(_=None):
-            section = md_section_dd.value
-            fields = ISSM_MD_FIELDS.get(section, {}) or build_default_md_fields(section)
-
-            if not fields:
-                md_field_dd.options = [("(custom field)", "__custom__")]
-                md_field_dd.value = "__custom__"
-                md_value_text.value = ""
-                md_value_type_hidden.value = "string"
-                md_help.value = "<div class='icesee-subtle'>No predefined fields yet. Use Advanced mode or add this section later.</div>"
-                return
-
-            opts = [(info["label"], name) for name, info in fields.items()]
-            md_field_dd.options = opts
-            md_field_dd.value = opts[0][1]
-            refresh_md_value_from_field()
-
-
-        def refresh_md_value_from_field(_=None):
-            section = md_section_dd.value
-            field = md_field_dd.value
-            info = ISSM_MD_FIELDS.get(section, {}).get(field, {})
-
-            md_value_text.value = str(info.get("default", ""))
-            md_value_type_hidden.value = info.get("type", "string")
-
-            label = info.get("label", field)
-            md_help.value = f"<div class='icesee-subtle'><b>{section}.{field}</b>: {label}</div>"
 
         # Cloud controls
         # -----------------------------
@@ -1125,6 +1001,8 @@ def build_icesheets_ui():
             auto_set_run_target()
 
             load_selected_file()
+            if model_dd.value == "issm":
+                md_panel.set_example(example_dir.value)
             update_summary()
 
         def build_model_command():
@@ -1474,9 +1352,6 @@ def build_icesheets_ui():
         file_picker.observe(load_selected_file, names="value")
         # run_target.observe(update_summary, names="value")
         file_picker.observe(maybe_seed_run_target_from_file, names="value")
-        md_section_dd.observe(refresh_md_field_dropdown, names="value")
-        md_field_dd.observe(refresh_md_value_from_field, names="value")
-        refresh_md_field_dropdown()
         access_mode_dd.observe(lambda change: create_or_refresh_connector_session() if change["new"] == "connector" else None, names="value")
         
 
@@ -1583,6 +1458,48 @@ def build_icesheets_ui():
                     print(f"[remote][ERROR] Example path does not exist locally: {local_example}")
                 return
 
+            # Basic-mode ISSM md overrides: validate, then stage a user-owned
+            # working copy with the override step injected before the first
+            # solve(...). The canonical example is never modified.
+            effective_example_dir = example_dir.value
+            md_run_provenance: dict = {}
+            if model_dd.value == "issm" and not test_mode:
+                _md_validation = md_panel.validate()
+                if not _md_validation.ok:
+                    status_chip.value = status_html("fail")
+                    with log_out:
+                        print("[md][ERROR] ISSM configuration is not valid:")
+                        for _err in _md_validation.errors:
+                            print("  -", _err)
+                    return
+                if _md_validation.normalized:
+                    try:
+                        _staged = workspace_manager.stage_example_for_md_overrides(
+                            source_example=example_dir.value,
+                            override_script=build_md_override_script(
+                                _md_validation.normalized
+                            ),
+                            overrides=_md_validation.normalized,
+                            entrypoint_transform=inject_override_step,
+                        )
+                    except Exception as _stage_err:
+                        status_chip.value = status_html("fail")
+                        with log_out:
+                            print("[md][ERROR] Could not stage a working copy:",
+                                  type(_stage_err).__name__, _stage_err)
+                        return
+                    effective_example_dir = str(_staged.path)
+                    md_run_provenance = {
+                        "md_overrides": _md_validation.normalized,
+                        "md_working_copy": str(_staged.path),
+                        "md_example_source": _staged.source,
+                        "md_working_copy_from_canonical": _staged.from_canonical,
+                    }
+                    with log_out:
+                        print(f"[md] staged working copy: {_staged.path}")
+                        print(f"[md] overrides: "
+                              f"{', '.join(sorted(_md_validation.normalized))}")
+
             # ICESEE-Spack scientific runs are blocked unless the live
             # environment probe reports Ready. Never install silently at Run.
             if backend_dd.value == "spack":
@@ -1687,7 +1604,7 @@ def build_icesheets_ui():
                         remote_tag=remote_tag.value,
                         backend=backend_dd.value,
                         model=model_dd.value,
-                        example_dir=example_dir.value,
+                        example_dir=effective_example_dir,
                         exec_dir=exec_dir.value,
                         image_uri=effective_image_uri(),
                         container_source=container_source.value,
@@ -1709,7 +1626,6 @@ def build_icesheets_ui():
                         slurm_mail=slurm_mail.value,
                         test_mode=test_mode,
                         run_file=selected_run_file(),
-                        md_config=collect_md_config(),
                         cluster_name=cluster_name_for_keys.value or "pace",
                         stack_log_line=stack_line,
                         stack_software=stack_provenance.get("software") or {},
@@ -1727,7 +1643,7 @@ def build_icesheets_ui():
                         remote_tag=remote_tag.value,
                         backend=backend_dd.value,
                         model=model_dd.value,
-                        example_dir=example_dir.value,
+                        example_dir=effective_example_dir,
                         exec_dir=exec_dir.value,
                         image_uri=effective_image_uri(),
                         container_source=container_source.value,
@@ -1749,7 +1665,6 @@ def build_icesheets_ui():
                         slurm_mail=slurm_mail.value,
                         test_mode=test_mode,
                         run_file=selected_run_file(),
-                        md_config=collect_md_config(),
                         stack_log_line=stack_line,
                         stack_software=stack_provenance.get("software") or {},
                         matlab_license=_matlab_license,
@@ -1785,6 +1700,7 @@ def build_icesheets_ui():
                         "port": int(cluster_port.value),
                         "access_mode": access_mode_dd.value,
                         "cluster_name": cluster_name_for_keys.value or "pace",
+                        **md_run_provenance,
                     },
                     container=stack_provenance.get("container") or {},
                     software=stack_provenance.get("software") or {},
@@ -1956,33 +1872,6 @@ def build_icesheets_ui():
             else:
                 workspace_manager.download_figures()
 
-        def refresh_md_overrides_view():
-            if not md_overrides:
-                md_overrides_view.value = "No md overrides added yet."
-                return
-
-            lines = []
-            for k, item in md_overrides.items():
-                lines.append(f"{k} = {item['value']}   ({item['type']})")
-            md_overrides_view.value = "\n".join(lines)
-
-        def add_md_override(_=None):
-            section = (md_section_dd.value or "").strip()
-            field = (md_field_dd.value or "").strip()
-            value = (md_value_text.value or "").strip()
-            vtype = md_value_type_hidden.value or "string"
-
-            if not section or not field or field == "__custom__":
-                md_overrides_view.value = "[ERROR] Select a valid md field."
-                return
-
-            key = f"{section}.{field}"
-            md_overrides[key] = {
-                "value": value,
-                "type": vtype,
-            }
-            refresh_md_overrides_view()
-
         def current_workspace_state() -> dict:
             return {
                 "model": model_dd.value,
@@ -2040,14 +1929,6 @@ def build_icesheets_ui():
                 },
             }
 
-        def clear_md_overrides(_=None):
-            md_overrides.clear()
-            refresh_md_overrides_view()
-
-        def collect_md_config() -> dict:
-            if model_dd.value != "issm" or not md_config_enabled.value:
-                return {}
-            return dict(md_overrides)
 
         run_btn.on_click(on_run)
         clear_btn.on_click(on_clear)
@@ -2067,8 +1948,6 @@ def build_icesheets_ui():
         results_download_btn.on_click(on_results_download)
         figures_download_btn.on_click(on_figures_download)
         preview_results_btn.on_click(on_results_preview)
-        add_md_override_btn.on_click(add_md_override)
-        clear_md_overrides_btn.on_click(clear_md_overrides)
         start_connector_session_btn.on_click(create_or_refresh_connector_session)
         bootstrap_btn.on_click(on_bootstrap_keys)
         check_backend_btn.on_click(on_check_backend)
@@ -2114,22 +1993,8 @@ def build_icesheets_ui():
         file_picker_row = form_row("Files:", file_picker)
         file_editor_row = form_row("Editor:", file_editor)
         run_target_row = form_row("Run target:", run_target)
-        md_config_inner = W.VBox([
-            md_config_enabled,
-            form_row("md section:", md_section_dd),
-            form_row("field:", md_field_dd),
-            md_help,
-            form_row("value:", md_value_text),
-            md_value_type_hidden,
-            W.HBox(
-                [add_md_override_btn, clear_md_overrides_btn],
-                layout=W.Layout(gap="10px", flex_wrap="wrap"),
-            ),
-            md_overrides_view,
-        ], layout=W.Layout(gap="8px"))
-
-        md_config_panel = W.Accordion(children=[md_config_inner])
-        md_config_panel.set_title(0, "⚙️ Editable ISSM md configuration")
+        md_config_panel = W.Accordion(children=[md_panel.container])
+        md_config_panel.set_title(0, "⚙️ ISSM configuration (Basic)")
         # md_config_panel.selected_index = 0  # open by default
         new_example_row = form_row("New name:", new_example_name)
         dataset_upload_row = form_row("Datasets:", dataset_upload)
