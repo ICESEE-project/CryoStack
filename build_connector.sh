@@ -1,84 +1,186 @@
 #!/usr/bin/env bash
+# =============================================================================
+# CryoStack Connector — build one platform artifact on the current host.
+#
+# This is a single-host PyInstaller build. It produces the artifact for the
+# machine it runs on:
+#
+#     linux-x86_64   ->  CryoStack-Connector-linux-x86_64.tar.gz
+#     macos-arm64    ->  CryoStack-Connector-macos-arm64.dmg
+#     macos-x86_64   ->  CryoStack-Connector-macos-x86_64.dmg
+#     windows-x86_64 ->  CryoStack-Connector-windows-x86_64.exe
+#
+# It cannot cross-build. To publish every platform, run this script once on a
+# Linux host, once on a Mac, and once on Windows, then collect the artifacts
+# into dist/packages/ before running build_deploy_connector.sh.
+# =============================================================================
 set -euo pipefail
 
-python3 -m pip install --upgrade pip
-python3 -m pip install pyinstaller websockets requests paramiko
+# ---- configuration ---------------------------------------------------------
+REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$REPO_ROOT"
 
-OS="$(uname -s)"
-ARCH="$(uname -m)"
+APP_BRAND="CryoStack Connector"          # human-readable application name
+APP_BASENAME="CryoStack-Connector"       # PyInstaller --name / artifact stem
+SRC_ENTRY="icesee_hpc_connector/connector_menubar_app.py"
+
+BUILD_DIR="$REPO_ROOT/build/connector"   # PyInstaller work + spec
+DIST_DIR="$REPO_ROOT/dist/connector"     # PyInstaller output (binary / .app)
+PKG_DIR="$REPO_ROOT/dist/packages"       # final distributable artifacts
+CHECKSUMS="$PKG_DIR/SHA256SUMS"
+MANIFEST="$PKG_DIR/manifest.json"
+
+# ---- host platform -------------------------------------------------------
+OS="${CRYOSTACK_BUILD_OS:-$(uname -s)}"
+ARCH="${CRYOSTACK_BUILD_ARCH:-$(uname -m)}"
 
 case "$OS" in
-  Darwin) OS_TAG="macOS" ;;
-  Linux)  OS_TAG="Linux" ;;
-  MINGW*|MSYS*|CYGWIN*) OS_TAG="Windows" ;;
-  *) OS_TAG="$OS" ;;
+  Darwin)               OS_TAG="macos" ;;
+  Linux)                OS_TAG="linux" ;;
+  MINGW*|MSYS*|CYGWIN*|Windows_NT) OS_TAG="windows" ;;
+  *) echo "ERROR: unsupported build OS: $OS" >&2; exit 2 ;;
 esac
 
 case "$ARCH" in
-  x86_64|amd64) ARCH_TAG="x86_64" ;;
-  arm64|aarch64) ARCH_TAG="arm64" ;;
-  *) ARCH_TAG="$ARCH" ;;
+  x86_64|amd64|AMD64)   ARCH_TAG="x86_64" ;;
+  arm64|aarch64)        ARCH_TAG="arm64" ;;
+  *) echo "ERROR: unsupported build architecture: $ARCH" >&2; exit 2 ;;
 esac
 
-APP_BASENAME="Cryolauncher_Connector"
-DIST_NAME="${APP_BASENAME}_${OS_TAG}_${ARCH_TAG}"
+PLATFORM="${OS_TAG}-${ARCH_TAG}"
 
-rm -rf build dist *.spec
-mkdir -p dist/packages
+case "$PLATFORM" in
+  linux-*)   ARTIFACT="${APP_BASENAME}-${PLATFORM}.tar.gz" ;;
+  macos-*)   ARTIFACT="${APP_BASENAME}-${PLATFORM}.dmg" ;;
+  windows-*) ARTIFACT="${APP_BASENAME}-${PLATFORM}.exe" ;;
+  *) echo "ERROR: no packaging rule for platform: $PLATFORM" >&2; exit 2 ;;
+esac
+ARTIFACT_PATH="$PKG_DIR/$ARTIFACT"
 
-COMMON_ARGS=(
+echo "=============================================================="
+echo " CryoStack Connector build"
+echo "   host platform : $PLATFORM"
+echo "   entrypoint    : $SRC_ENTRY"
+echo "   artifact      : dist/packages/$ARTIFACT"
+echo "=============================================================="
+
+# ---- dependencies -------------------------------------------------------
+python3 -m pip install --quiet --upgrade pip
+python3 -m pip install --quiet pyinstaller websockets requests paramiko
+
+# ---- clean --------------------------------------------------------------
+rm -rf "$BUILD_DIR" "$DIST_DIR"
+mkdir -p "$BUILD_DIR" "$DIST_DIR" "$PKG_DIR"
+rm -f "$ARTIFACT_PATH"
+
+PYI_ARGS=(
   --name "$APP_BASENAME"
   --onefile
   --windowed
   --clean
-  --paths "$PWD"
+  --noconfirm
+  --paths "$REPO_ROOT"
+  --workpath "$BUILD_DIR"
+  --specpath "$BUILD_DIR"
+  --distpath "$DIST_DIR"
   --collect-submodules icesee_hpc_connector
   --collect-all paramiko
   --hidden-import paramiko
 )
 
-if [[ "$OS" == "Darwin" ]]; then
-  python3 -m pip install rumps
+# ---- build per platform ----------------------------------------------
+if [[ "$OS_TAG" == "macos" ]]; then
+  python3 -m pip install --quiet rumps
+  PYTHONPATH="$REPO_ROOT" pyinstaller "${PYI_ARGS[@]}" \
+    --hidden-import rumps --hidden-import Foundation --hidden-import AppKit \
+    "$SRC_ENTRY"
 
-  PYTHONPATH="$PWD" pyinstaller \
-    "${COMMON_ARGS[@]}" \
-    --hidden-import rumps \
-    --hidden-import Foundation \
-    --hidden-import AppKit \
-    icesee_hpc_connector/connector_menubar_app.py
+  APP_BUNDLE="$DIST_DIR/${APP_BASENAME}.app"
+  [[ -d "$APP_BUNDLE" ]] || { echo "ERROR: PyInstaller did not produce $APP_BUNDLE" >&2; exit 1; }
 
   hdiutil create \
-    -volname "ICESEE Connector" \
-    -srcfolder "dist/${APP_BASENAME}.app" \
-    -ov \
-    -format UDZO \
-    "dist/packages/${DIST_NAME}.dmg"
+    -volname "$APP_BRAND" \
+    -srcfolder "$APP_BUNDLE" \
+    -ov -format UDZO \
+    "$ARTIFACT_PATH"
 
-elif [[ "$OS" == "Linux" ]]; then
-  python3 -m pip install pystray pillow
+elif [[ "$OS_TAG" == "linux" ]]; then
+  python3 -m pip install --quiet pystray pillow
+  PYTHONPATH="$REPO_ROOT" pyinstaller "${PYI_ARGS[@]}" \
+    --hidden-import pystray --hidden-import PIL \
+    "$SRC_ENTRY"
 
-  PYTHONPATH="$PWD" pyinstaller \
-    "${COMMON_ARGS[@]}" \
-    --hidden-import pystray \
-    --hidden-import PIL \
-    icesee_hpc_connector/connector_menubar_app.py
+  BIN="$DIST_DIR/${APP_BASENAME}"
+  [[ -f "$BIN" ]] || { echo "ERROR: PyInstaller did not produce $BIN" >&2; exit 1; }
+  chmod +x "$BIN"
+  tar -czf "$ARTIFACT_PATH" -C "$DIST_DIR" "${APP_BASENAME}"
 
-  tar -czf "dist/packages/${DIST_NAME}.tar.gz" \
-    -C dist "$APP_BASENAME"
+else  # windows
+  python3 -m pip install --quiet pystray pillow
+  PYTHONPATH="$REPO_ROOT" pyinstaller "${PYI_ARGS[@]}" \
+    --hidden-import pystray --hidden-import PIL \
+    "$SRC_ENTRY"
 
-else
-  python3 -m pip install pystray pillow
-
-  PYTHONPATH="$PWD" pyinstaller \
-    "${COMMON_ARGS[@]}" \
-    --hidden-import pystray \
-    --hidden-import PIL \
-    icesee_hpc_connector/connector_menubar_app.py
-
-  cp "dist/${APP_BASENAME}.exe" \
-     "dist/packages/${DIST_NAME}.exe"
+  EXE="$DIST_DIR/${APP_BASENAME}.exe"
+  [[ -f "$EXE" ]] || { echo "ERROR: PyInstaller did not produce $EXE" >&2; exit 1; }
+  cp "$EXE" "$ARTIFACT_PATH"
 fi
 
+# ---- verify -----------------------------------------------------------
+if [[ ! -s "$ARTIFACT_PATH" ]]; then
+  echo "ERROR: build reported success but the artifact is missing or empty:" >&2
+  echo "       $ARTIFACT_PATH" >&2
+  exit 1
+fi
+
+# ---- checksum + manifest -------------------------------------------
+if command -v sha256sum >/dev/null 2>&1; then
+  SHA="$(cd "$PKG_DIR" && sha256sum "$ARTIFACT" | awk '{print $1}')"
+else
+  SHA="$(cd "$PKG_DIR" && shasum -a 256 "$ARTIFACT" | awk '{print $1}')"
+fi
+SIZE_BYTES="$(wc -c < "$ARTIFACT_PATH" | tr -d ' ')"
+BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+# Rewrite this platform's line in SHA256SUMS.
+touch "$CHECKSUMS"
+grep -v " ${ARTIFACT}\$" "$CHECKSUMS" > "${CHECKSUMS}.tmp" 2>/dev/null || true
+mv "${CHECKSUMS}.tmp" "$CHECKSUMS"
+echo "${SHA}  ${ARTIFACT}" >> "$CHECKSUMS"
+sort -o "$CHECKSUMS" "$CHECKSUMS"
+
+python3 - "$MANIFEST" "$PLATFORM" "$ARTIFACT" "$SHA" "$SIZE_BYTES" "$BUILT_AT" <<'PY'
+import json, sys
+path, platform, filename, sha, size, built_at = sys.argv[1:7]
+try:
+    data = json.load(open(path))
+except Exception:
+    data = {}
+data.setdefault("schema", "cryostack.connector.manifest")
+data.setdefault("version", 1)
+data.setdefault("artifacts", {})
+data["artifacts"][platform] = {
+    "filename": filename, "sha256": sha,
+    "size_bytes": int(size), "built_at": built_at,
+}
+json.dump(data, open(path, "w"), indent=2, sort_keys=True)
+open(path, "a").write("\n")
+PY
+
+# ---- summary --------------------------------------------------------
+HUMAN_SIZE="$(du -h "$ARTIFACT_PATH" | awk '{print $1}')"
 echo
-echo "Built package(s):"
-ls -lh dist/packages
+echo "=============================================================="
+echo " Built for this host:"
+echo "   $ARTIFACT   (${HUMAN_SIZE}, ${SIZE_BYTES} bytes)"
+echo "   sha256: $SHA"
+echo
+echo " NOT built on this host (single-host build cannot cross-compile):"
+for p in linux-x86_64 macos-arm64 macos-x86_64 windows-x86_64; do
+  [[ "$p" == "$PLATFORM" ]] && continue
+  echo "   - $p  (run build_connector.sh on that platform)"
+done
+echo
+echo " Artifacts collected in: dist/packages/"
+ls -lh "$PKG_DIR"
+echo "=============================================================="

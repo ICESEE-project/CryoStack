@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 APP_VERSION = "0.1.0"
 
-app = FastAPI(title="ICESEE HPC Bridge Connector", version=APP_VERSION)
+app = FastAPI(title="CryoStack Connector", version=APP_VERSION)
 
 app.add_middleware(
     CORSMiddleware,
@@ -123,7 +123,7 @@ def status():
     return {
         "status": "ok",
         "version": APP_VERSION,
-        "name": "ICESEE HPC Bridge Connector",
+        "name": "CryoStack Connector",
         "message": "Connector is running",
     }
 

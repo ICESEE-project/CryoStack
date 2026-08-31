@@ -752,7 +752,7 @@ def build_icesheets_ui():
                         text-decoration:none;
                         font-weight:700;
                         margin:6px 0;">
-                    Open ICESEE Connector Setup
+                    Open CryoStack Connector Setup
                     </a>
                     """
 

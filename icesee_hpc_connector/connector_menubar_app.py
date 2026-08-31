@@ -10,7 +10,7 @@ from pathlib import Path
 from icesee_hpc_connector.connector_core import run_connector
 
 
-APP_NAME = "ICESEE Connector"
+APP_NAME = "CryoStack Connector"
 RELAY_URL = "https://cryostack.eas.gatech.edu"
 SETUP_URL = "https://cryostack.eas.gatech.edu/connect/"
 LOG_FILE = Path.home() / "icesee_connector.log"
@@ -56,9 +56,9 @@ def connector_worker(set_status=None):
 if sys.platform == "darwin":
     import rumps
 
-    class ICESEEConnectorApp(rumps.App):
+    class CryoStackConnectorApp(rumps.App):
         def __init__(self):
-            super().__init__("ICESEE", quit_button=None)
+            super().__init__("CryoStack", quit_button=None)
             self.thread = None
 
             self.menu = [
@@ -88,7 +88,7 @@ if sys.platform == "darwin":
             )
             self.thread.start()
 
-            rumps.notification(APP_NAME, "Started", "Waiting for an ICESEE connector session.")
+            rumps.notification(APP_NAME, "Started", "Waiting for a CryoStack connector session.")
 
         def open_setup(self, _):
             webbrowser.open(SETUP_URL)
@@ -100,19 +100,19 @@ if sys.platform == "darwin":
             rumps.quit_application()
 
     def main():
-        ICESEEConnectorApp().run()
+        CryoStackConnectorApp().run()
 
 
 else:
     import pystray
     from PIL import Image, ImageDraw
 
-    class ICESEEConnectorTray:
+    class CryoStackConnectorTray:
         def __init__(self):
             self.thread = None
             self.status = "Status: stopped"
             self.icon = pystray.Icon(
-                "ICESEE",
+                "CryoStack",
                 self.make_icon(),
                 APP_NAME,
                 menu=self.make_menu(),
@@ -167,7 +167,7 @@ else:
             self.icon.run()
 
     def main():
-        ICESEEConnectorTray().run()
+        CryoStackConnectorTray().run()
 
 
 if __name__ == "__main__":

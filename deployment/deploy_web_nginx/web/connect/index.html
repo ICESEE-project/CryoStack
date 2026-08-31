@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Cryolauncher HPC Bridge Connector</title>
+  <title>CryoStack Connector</title>
 
   <style>
     :root {
@@ -238,13 +238,13 @@
     </div>
 
     <h1>
-      Install Cryolauncher HPC Bridge Connector
+      Install CryoStack Connector
     </h1>
 
     <p class="lead">
-      Cryolauncher detected that you want to run a remote HPC workflow.
+      CryoStack detected that you want to run a remote HPC workflow.
       The connector lets your workstation act as the secure bridge
-      to VPN-protected clusters while the Cryolauncher web interface
+      to VPN-protected clusters while the CryoLauncher web interface
       remains simple and browser-based.
     </p>
 
@@ -275,22 +275,22 @@
           <div class="download-card">
             <div class="download-icon"></div>
             <h3>macOS</h3>
-            <a class="mini" href="/downloads/Cryolauncher_Connector_macOS_arm64.dmg">Apple Silicon</a>
-            <a class="mini" href="/downloads/Cryolauncher_Connector_macOS_x86_64.dmg">Intel</a>
+            <a class="mini" href="/downloads/connectors/CryoStack-Connector-macos-arm64.dmg">Apple Silicon</a>
+            <a class="mini" href="/downloads/connectors/CryoStack-Connector-macos-x86_64.dmg">Intel</a>
           </div>
 
           <div class="download-card">
             <div class="download-icon">🐧</div>
             <h3>Linux</h3>
-            <a class="mini" href="/downloads/Cryolauncher_Connector_Linux_x86_64.tar.gz">x86_64</a>
-            <a class="mini" href="/downloads/Cryolauncher_Connector_Linux_arm64.tar.gz">ARM64</a>
+            <a class="mini" href="/downloads/connectors/CryoStack-Connector-linux-x86_64.tar.gz">x86_64</a>
+            <a class="mini" href="/downloads/connectors/CryoStack-Connector-linux-arm64.tar.gz">ARM64</a>
           </div>
 
           <div class="download-card">
             <div class="download-icon">▦</div>
             <h3>Windows</h3>
-            <a class="mini" href="/downloads/Cryolauncher_Connector_Windows_x86_64.exe">x86_64</a>
-            <a class="mini" href="/downloads/Cryolauncher_Connector_Windows_arm64.exe">ARM64</a>
+            <a class="mini" href="/downloads/connectors/CryoStack-Connector-windows-x86_64.exe">x86_64</a>
+            <a class="mini" href="/downloads/connectors/CryoStack-Connector-windows-arm64.exe">ARM64</a>
           </div>
 
         </div>
@@ -319,7 +319,7 @@
 
           <p class="small">
             Once started, the connector automatically finds
-            the active Cryolauncher session and connects.
+            the active CryoStack session and connects.
           </p>
 
         </div>
@@ -336,7 +336,7 @@
 
           <b>What this connector does</b><br>
 
-          It allows Cryolauncher to submit, monitor, and retrieve
+          It allows CryoStack to submit, monitor, and retrieve
           remote HPC jobs through your local VPN-connected
           workstation without exposing your cluster directly
           to the public web.
@@ -348,7 +348,7 @@
     </div>
 
     <div class="footer">
-      Cryolauncher OnLine · HPC bridge setup · cryostack.eas.gatech.edu
+      CryoStack · HPC bridge setup · cryostack.eas.gatech.edu
     </div>
 
   </main>
@@ -435,12 +435,12 @@
     initPage();
 
     const urls = {
-      "macos-arm64": "/downloads/Cryolauncher_Connector_macOS_arm64.dmg",
-      "macos-x86_64": "/downloads/Cryolauncher_Connector_macOS_x86_64.dmg",
-      "windows-x86_64": "/downloads/Cryolauncher_Connector_Windows_x86_64.exe",
-      "windows-arm64": "/downloads/Cryolauncher_Connector_Windows_arm64.exe",
-      "linux-x86_64": "/downloads/Cryolauncher_Connector_Linux_x86_64.tar.gz",
-      "linux-arm64": "/downloads/Cryolauncher_Connector_Linux_arm64.tar.gz",
+      "macos-arm64": "/downloads/connectors/CryoStack-Connector-macos-arm64.dmg",
+      "macos-x86_64": "/downloads/connectors/CryoStack-Connector-macos-x86_64.dmg",
+      "windows-x86_64": "/downloads/connectors/CryoStack-Connector-windows-x86_64.exe",
+      "windows-arm64": "/downloads/connectors/CryoStack-Connector-windows-arm64.exe",
+      "linux-x86_64": "/downloads/connectors/CryoStack-Connector-linux-x86_64.tar.gz",
+      "linux-arm64": "/downloads/connectors/CryoStack-Connector-linux-arm64.tar.gz",
       unknown: "/downloads/"
     };
 
@@ -455,52 +455,52 @@
     };
 
     const sessionInstructions = {
-      "macos-arm64": "Download the connector, open the DMG, drag Cryolauncher_Connector.app to Applications, then double-click it.",
-      "macos-x86_64": "Download the connector, open the DMG, drag Cryolauncher_Connector.app to Applications, then double-click it.",
-      "windows-x86_64": "Download the connector installer, run Cryolauncher_Connector.exe, and allow it to start the local bridge.",
-      "windows-arm64": "Download the connector installer, run Cryolauncher_Connector.exe, and allow it to start the local bridge.",
+      "macos-arm64": "Download the connector, open the DMG, drag CryoStack-Connector.app to Applications, then double-click it.",
+      "macos-x86_64": "Download the connector, open the DMG, drag CryoStack-Connector.app to Applications, then double-click it.",
+      "windows-x86_64": "Download the connector installer, run CryoStack-Connector.exe, and allow it to start the local bridge.",
+      "windows-arm64": "Download the connector installer, run CryoStack-Connector.exe, and allow it to start the local bridge.",
       "linux-x86_64": "Download the Linux x86_64 tar.gz file, extract it, then run the connector binary.",
       "linux-arm64": "Download the Linux ARM64 tar.gz file, extract it, then run the connector binary.",
-      unknown: "Download the connector for your operating system, start it, and return to Cryolauncher."
+      unknown: "Download the connector for your operating system, start it, and return to CryoStack."
     };
 
     const afterSteps = {
       "macos-arm64": [
         "Turn on your university VPN.",
-        "Start Cryolauncher_Connector.app.",
-        "Return to Cryolauncher. The connector status should change to online automatically."
+        "Start CryoStack-Connector.app.",
+        "Return to CryoLauncher. The connector status should change to online automatically."
       ],
       "macos-x86_64": [
         "Turn on your university VPN.",
-        "Start Cryolauncher_Connector.app.",
-        "Return to Cryolauncher. The connector status should change to online automatically."
+        "Start CryoStack-Connector.app.",
+        "Return to CryoLauncher. The connector status should change to online automatically."
       ],
       "windows-x86_64": [
         "Turn on your university VPN.",
-        "Start Cryolauncher_Connector.exe.",
-        "Return to Cryolauncher. The connector status should change to online automatically."
+        "Start CryoStack-Connector.exe.",
+        "Return to CryoLauncher. The connector status should change to online automatically."
       ],
       "windows-arm64": [
         "Turn on your university VPN.",
-        "Start Cryolauncher_Connector.exe.",
-        "Return to Cryolauncher. The connector status should change to online automatically."
+        "Start CryoStack-Connector.exe.",
+        "Return to CryoLauncher. The connector status should change to online automatically."
       ],
       "linux-x86_64": [
         "Turn on your university VPN.",
         "Extract the tar.gz file.",
-        "Run ./Cryolauncher_Connector from the extracted folder.",
-        "Return to Cryolauncher. The connector status should change to online automatically."
+        "Run ./CryoStack-Connector from the extracted folder.",
+        "Return to CryoLauncher. The connector status should change to online automatically."
       ],
       "linux-arm64": [
         "Turn on your university VPN.",
         "Extract the tar.gz file.",
-        "Run ./Cryolauncher_Connector from the extracted folder.",
-        "Return to Cryolauncher. The connector status should change to online automatically."
+        "Run ./CryoStack-Connector from the extracted folder.",
+        "Return to CryoLauncher. The connector status should change to online automatically."
       ],
       unknown: [
         "Turn on your university VPN.",
-        "Start the Cryolauncher Connector.",
-        "Return to Cryolauncher. The connector status should change to online automatically."
+        "Start the CryoStack Connector.",
+        "Return to CryoLauncher. The connector status should change to online automatically."
       ]
     };
 

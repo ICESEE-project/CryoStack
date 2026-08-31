@@ -37,17 +37,21 @@ def detect_client_os() -> str:
     return "unknown"
 
 
+#: published CryoStack Connector distributables (see build_deploy_connector.sh).
+_CONNECTOR_BASE = "https://cryostack.eas.gatech.edu/downloads/connectors"
+
+CONNECTOR_INSTALLER_URLS = {
+    "macos": f"{_CONNECTOR_BASE}/CryoStack-Connector-macos-arm64.dmg",
+    "windows": f"{_CONNECTOR_BASE}/CryoStack-Connector-windows-x86_64.exe",
+    "linux": f"{_CONNECTOR_BASE}/CryoStack-Connector-linux-x86_64.tar.gz",
+    "unknown": f"{_CONNECTOR_BASE}/",
+}
+
+
 def connector_installer_url() -> str:
-    os_name = detect_client_os()
-
-    urls = {
-        "macos": "https://cryostack.eas.gatech.edu/downloads/ICESEE-Connector-macOS.pkg",
-        "windows": "https://cryostack.eas.gatech.edu/downloads/ICESEE-Connector-Windows.exe",
-        "linux": "https://cryostack.eas.gatech.edu/downloads/ICESEE-Connector-Linux.AppImage",
-        "unknown": "https://cryostack.eas.gatech.edu/downloads/",
-    }
-
-    return urls.get(os_name, urls["unknown"])
+    return CONNECTOR_INSTALLER_URLS.get(
+        detect_client_os(), CONNECTOR_INSTALLER_URLS["unknown"]
+    )
 
 
 def connector_required_for_mode(mode: str) -> bool:
@@ -66,7 +70,7 @@ def connector_required_for_mode(mode: str) -> bool:
 
 def check_local_connector(timeout: float = 1.5) -> ConnectorCheck:
     """
-    Checks whether the ICESEE Connector is running.
+    Checks whether the CryoStack Connector is running.
 
     MVP behavior:
       - Connector exposes http://127.0.0.1:8765/status
@@ -110,7 +114,7 @@ def connector_success_html(data: dict | None = None) -> str:
         line-height:1.5;
         margin:8px 0;
     ">
-      <b>ICESEE Connector detected.</b><br>
+      <b>CryoStack Connector detected.</b><br>
       Version: <b>{version}</b><br>
       Remote HPC bridge is available.
     </div>
@@ -135,7 +139,7 @@ def connector_prompt_html(error: str = "") -> str:
         line-height:1.55;
         margin:8px 0;
     ">
-      <b>ICESEE Connector is required for remote HPC runs.</b><br>
+      <b>CryoStack Connector is required for remote HPC runs.</b><br>
       Remote mode needs a local connector so the user's workstation can act as
       the bridge to VPN-protected clusters.
       <br><br>
@@ -150,7 +154,7 @@ def connector_prompt_html(error: str = "") -> str:
            border-radius:8px;
            text-decoration:none;
            font-weight:700;">
-        Set up ICESEE HPC Bridge Connector
+        Set up CryoStack Connector
       </a>
 
       <br><br>
