@@ -391,6 +391,188 @@ pre.cryostack-code-block {
     color: #e2e8f0;
 }
 
+
+/* =========================================================
+   CryoStack application — small-screen foundation
+   ---------------------------------------------------------
+   Shared responsive rules for the Voila application shell
+   (Run settings, accordions, Workspace tabs, Results panel,
+   file editor, logs). Keyed on the layout classes and the
+   ipywidgets DOM so every panel inherits the behaviour.
+   ========================================================= */
+
+/* Never let a widget or a long path widen the page. */
+.cryostack-application-page,
+.icesee-page,
+.icesee-grid,
+.cryostack-application-grid {
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
+.cryostack-application-page .jupyter-widgets,
+.icesee-page .jupyter-widgets {
+    min-width: 0;
+    max-width: 100%;
+}
+
+/* Two-column layout: stack sooner, and release the JS height-sync so the
+   right (Workspace) panel is not pinned to the tall left column. */
+@media (max-width: 1050px) {
+    .cryostack-right-workspace,
+    .icesee-right {
+        height: auto !important;
+        max-height: none !important;
+        min-height: 0 !important;
+        overflow: visible !important;
+    }
+}
+
+@media (max-width: 900px) {
+    .cryostack-application-grid,
+    .icesee-grid {
+        gap: 16px;
+    }
+}
+
+/* Label / control rows: stack the label above the control on narrow screens.
+   Covers form_pair() rows and the Results Solution/Field/Timestep rows. */
+@media (max-width: 600px) {
+    .cryostack-field-row.widget-hbox,
+    .cryostack-field-row {
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 4px !important;
+    }
+
+    .cryostack-field-row > .widget-html,
+    .cryostack-field-row > .jupyter-widgets:first-child {
+        width: auto !important;
+        min-width: 0 !important;
+    }
+
+    /* ipywidgets inline hbox pairs (label + input) */
+    .cryostack-application-page .widget-inline-hbox,
+    .icesee-page .widget-inline-hbox {
+        flex-wrap: wrap;
+    }
+
+    .cryostack-application-page .widget-inline-hbox .widget-label,
+    .icesee-page .widget-inline-hbox .widget-label {
+        min-width: 0 !important;
+        width: 100% !important;
+        text-align: left !important;
+        white-space: normal;
+    }
+}
+
+/* Inputs use the full available width on small screens. */
+@media (max-width: 700px) {
+    .cryostack-application-page .widget-text,
+    .cryostack-application-page .widget-textarea,
+    .cryostack-application-page .widget-dropdown,
+    .cryostack-application-page .widget-inttext,
+    .cryostack-application-page .widget-floattext,
+    .icesee-page .widget-text,
+    .icesee-page .widget-textarea,
+    .icesee-page .widget-dropdown,
+    .icesee-page .widget-inttext,
+    .icesee-page .widget-floattext {
+        width: 100% !important;
+    }
+
+    /* Button groups wrap instead of overflowing. */
+    .cryostack-application-page .widget-hbox,
+    .icesee-page .widget-hbox {
+        flex-wrap: wrap;
+    }
+}
+
+/* Tabs (Workspace / Results / Run log): keep the tab bar usable without
+   widening the page -- scroll the bar, never the page. */
+.cryostack-application-page .lm-TabBar-content,
+.cryostack-application-page .p-TabBar-content,
+.icesee-page .lm-TabBar-content,
+.icesee-page .p-TabBar-content {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+}
+
+.cryostack-application-page .lm-TabBar-tab,
+.cryostack-application-page .p-TabBar-tab,
+.icesee-page .lm-TabBar-tab,
+.icesee-page .p-TabBar-tab {
+    flex: 0 0 auto;
+}
+
+/* Logs and text output: scroll inside the panel, wrap long lines. */
+.cryostack-live-log,
+.cryostack-output-tab .jp-OutputArea,
+.cryostack-output-tab .widget-output {
+    max-width: 100%;
+    overflow: auto;
+}
+
+.cryostack-application-page .jp-OutputArea-output pre,
+.cryostack-application-page .widget-output pre,
+.icesee-page .jp-OutputArea-output pre,
+.icesee-log pre,
+.icesee-out pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+@media (max-width: 700px) {
+    .cryostack-live-log,
+    .cryostack-output-workspace {
+        max-height: 60vh;
+    }
+
+    /* File / code editor: full viewport width. */
+    .cryostack-application-page .widget-textarea textarea,
+    .icesee-page .widget-textarea textarea {
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+}
+
+/* Accordions: full width, no inner horizontal scroll. */
+.cryostack-application-page .widget-accordion,
+.icesee-page .widget-accordion,
+.cryostack-application-page .widget-accordion .widget-accordion-child,
+.icesee-page .widget-accordion .widget-accordion-child {
+    max-width: 100%;
+    min-width: 0;
+}
+
+@media (max-width: 430px) {
+    .cryostack-application-card,
+    .icesee-card {
+        padding: 12px;
+        border-radius: 12px;
+    }
+
+    .cryostack-application-title,
+    .icesee-title {
+        font-size: 16px;
+    }
+
+    .cryostack-section-heading,
+    .icesee-h {
+        font-size: 15px;
+    }
+
+    .cryostack-application-page pre,
+    .icesee-page pre,
+    pre.cryostack-code-block {
+        font-size: 12px;
+        padding: 10px;
+    }
+}
+
 </style>
 """
 

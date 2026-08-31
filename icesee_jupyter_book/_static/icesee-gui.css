@@ -104,10 +104,21 @@ article.bd-article {
   width: 100%;
 }
 
-/* Make ipywidgets breathe */
-.widget-label {
-  min-width: 140px !important;
-  white-space: nowrap;
+/* Make ipywidgets breathe (desktop only -- on small screens a 140px label
+   next to a full-width control forces horizontal overflow). */
+@media (min-width: 768px) {
+  .widget-label {
+    min-width: 140px !important;
+    white-space: nowrap;
+  }
+}
+@media (max-width: 767px) {
+  .widget-label {
+    min-width: 0 !important;
+    white-space: normal;
+  }
+  .jupyter-widgets.widget-inline-hbox { flex-wrap: wrap; }
+  .jupyter-widgets.widget-inline-hbox .widget-label { width: 100% !important; }
 }
 
 .jupyter-widgets.widget-box {

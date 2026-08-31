@@ -316,17 +316,20 @@ def build_visualization_panel(*, manager: WorkspaceManager, selected_run_id,
         return W.HTML(f"<div class='icesee-lbl'>{text}</div>",
                       layout=W.Layout(min_width="64px"))
 
+    def _field_row(label, control):
+        row = W.HBox([_lbl(label), control],
+                     layout=W.Layout(align_items="center", gap="6px", flex_wrap="wrap"))
+        row.add_class("cryostack-field-row")
+        return row
+
     container = W.VBox(
         [
             W.HTML("<div class='cryostack-section-label'>Field visualization</div>"),
             W.HBox([status, fetch_btn],
                    layout=W.Layout(align_items="center", gap="10px", flex_wrap="wrap")),
-            W.HBox([_lbl("Solution:"), solution_dd],
-                   layout=W.Layout(align_items="center", gap="6px", flex_wrap="wrap")),
-            W.HBox([_lbl("Field:"), field_dd],
-                   layout=W.Layout(align_items="center", gap="6px", flex_wrap="wrap")),
-            W.HBox([_lbl("Timestep:"), timestep_dd],
-                   layout=W.Layout(align_items="center", gap="6px", flex_wrap="wrap")),
+            _field_row("Solution:", solution_dd),
+            _field_row("Field:", field_dd),
+            _field_row("Timestep:", timestep_dd),
             W.HBox([render_btn], layout=W.Layout(gap="6px")),
             meta,
             plot_out,

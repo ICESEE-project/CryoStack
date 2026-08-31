@@ -149,6 +149,7 @@ html[data-theme="dark"] .cryostack-app-nav a:hover {
 /* Responsive application header */
 @media (max-width: 820px) {
     .cryostack-app-header {
+        flex-wrap: wrap;
         align-items: flex-start;
         gap: 10px;
     }
@@ -165,6 +166,25 @@ html[data-theme="dark"] .cryostack-app-nav a:hover {
     .cryostack-application-nav-actions {
         min-width: auto;
         padding-left: 6px;
+        margin-left: 0;
+    }
+}
+
+@media (max-width: 430px) {
+    .cryostack-app-header {
+        padding: 6px 0 10px;
+        margin-bottom: 14px;
+    }
+
+    .cryostack-app-home {
+        padding: 7px 12px;
+        font-size: 13px;
+    }
+
+    .cryostack-app-nav a {
+        min-height: 34px;
+        padding: 6px 9px;
+        font-size: 13px;
     }
 }
 </style>

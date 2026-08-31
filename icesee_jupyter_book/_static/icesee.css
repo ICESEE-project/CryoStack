@@ -3034,11 +3034,14 @@ nav.bd-links p.caption.icesee-caption:hover {
         border-radius: 50%;
     }
 
-    /* .cryostack-global-account-menu {
+    /* Keep the dropdown menu inside the viewport (it previously overflowed the
+       right edge via transform: translateX(10px) + a fixed 230px width). */
+    .cryostack-global-account-menu {
         right: 0;
-        top: calc(100% + 8px);
-        width: min(290px, calc(100vw - 2rem));
-    } */
+        transform: none;
+        width: min(290px, calc(100vw - 1.5rem));
+        max-width: calc(100vw - 1.5rem);
+    }
 }
 
 /* =========================================================

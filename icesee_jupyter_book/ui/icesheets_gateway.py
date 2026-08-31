@@ -942,7 +942,9 @@ def build_icesheets_ui():
         def form_pair(label: str, widget, label_width: str = "80px"):
             lbl = W.HTML(f"<div class='icesee-lbl'>{label}</div>")
             lbl.layout = W.Layout(width=label_width, min_width=label_width)
-            return W.HBox([lbl, widget], layout=W.Layout(gap="10px", width="100%"))
+            row = W.HBox([lbl, widget], layout=W.Layout(gap="10px", width="100%"))
+            row.add_class("cryostack-field-row")
+            return row
 
         def selected_text(dd: W.Dropdown) -> str:
             for label, value in dd.options:
@@ -2466,6 +2468,7 @@ def build_icesheets_ui():
             ],
             layout=W.Layout(width="100%"),
         )
+        page.add_class("cryostack-application-page")
 
         image_panel.set_model(model_dd.value)
         image_panel.set_profile(software_panel.profile())
