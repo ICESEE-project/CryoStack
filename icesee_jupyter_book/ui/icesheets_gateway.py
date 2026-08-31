@@ -1092,7 +1092,13 @@ def build_icesheets_ui():
         )
 
         # Deterministic Results visualization (model adapter supplies the
-        # renderer; this panel stays a model-neutral selector).
+        # renderer; this panel stays a model-neutral selector). ``fetch_results``
+        # is late-bound: it dispatches to the backend that produced the run
+        # (remote rsync / connector archive / cloud S3 sync) and lands outputs
+        # in the one backend-neutral local shape the ResultPackage reads.
+        def _visualization_fetch_results():
+            return sync_selected_run_results()
+
         visualization_panel = build_visualization_panel(
             manager=workspace_manager,
             selected_run_id=lambda: (
@@ -1100,6 +1106,7 @@ def build_icesheets_ui():
                 if workspace_manager.selected_run() else ""
             ),
             log_output=log_out,
+            fetch_results=_visualization_fetch_results,
         )
 
         def refresh_run_target_options(_=None):
@@ -1898,11 +1905,23 @@ def build_icesheets_ui():
             selected = workspace_manager.selected_run()
             return selected.execution_mode if selected else mode_dd.value
 
+        def sync_selected_run_results():
+            """Synchronise the selected run's outputs into its local run cache,
+            using whichever backend produced it. Returns the local outputs dir
+            (or None). Performs no rendering."""
+            if active_execution_mode() == "cloud":
+                return on_cloud_results()
+            return workspace_manager.refresh_results()
+
         def on_results_preview(_=None):
+            # 1. fetch/synchronise outputs, 2. print the run summary + existing
+            # figures, 3. refresh the structured visualization panel so its
+            # Solution/Field/Timestep selectors populate from the same package.
             if active_execution_mode() == "cloud":
                 on_cloud_results()
             else:
                 workspace_manager.preview_results()
+            visualization_panel.controller.refresh()
 
         def on_results_download(_=None):
             if active_execution_mode() == "cloud":

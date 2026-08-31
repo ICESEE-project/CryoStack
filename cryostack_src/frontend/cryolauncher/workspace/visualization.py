@@ -4,10 +4,17 @@ Model-neutral shell: the panel only knows *solution -> field -> timestep* and
 delegates every scientific decision to the model adapter's renderer
 (``cryostack_src.visualization``) via :class:`WorkspaceManager`. No AI.
 
-Legacy runs (``ResultPackage.status == "legacy"``) keep their existing PNGs and
-``md_final.mat`` listing; the structured selector is disabled with a clear note.
-Existing *Preview results* / *Download results* / *Download figures* controls are
-untouched and live elsewhere.
+The boundary is preserved:
+
+    execution backend fetches / synchronises   (refresh_results / sync_cloud_results)
+            -> <managed-run>/cache/outputs/     (one backend-neutral local shape)
+            -> ResultPackage reads local structured outputs   (no SSH/S3 here)
+            -> this controller populates Solution / Field / Timestep
+
+The controller never fetches by itself: it calls an injected ``fetch_results``
+callback (which the gateway wires to the right backend) and then re-reads the
+local package. Legacy runs (``status == "legacy"``) keep their existing PNGs and
+``md_final.mat``; the structured selector is disabled with a clear note.
 """
 from __future__ import annotations
 
@@ -24,10 +31,7 @@ _LEGACY_NOTE = (
     "Existing figures and model outputs are still available."
 )
 _NO_RUN_NOTE = "Select a run to visualize its results."
-_NO_RESULTS_NOTE = (
-    "No structured results for this run yet. Use <b>Preview results</b> to "
-    "fetch the run outputs."
-)
+_NOT_FETCHED_NOTE = "Results have not been fetched yet."
 
 
 @dataclass
@@ -40,7 +44,8 @@ class VisualizationController:
     def __init__(self, *, manager: WorkspaceManager, selected_run_id, log_output,
                  solution_dd: W.Dropdown, field_dd: W.Dropdown,
                  timestep_dd: W.Dropdown, render_btn: W.Button,
-                 status: W.HTML, meta: W.HTML, plot_out: W.Output) -> None:
+                 fetch_btn: W.Button, status: W.HTML, meta: W.HTML,
+                 plot_out: W.Output, fetch_results=None) -> None:
         self.manager = manager
         self._selected_run_id = selected_run_id
         self.log_output = log_output
@@ -48,15 +53,19 @@ class VisualizationController:
         self.field_dd = field_dd
         self.timestep_dd = timestep_dd
         self.render_btn = render_btn
+        self.fetch_btn = fetch_btn
         self.status = status
         self.meta = meta
         self.plot_out = plot_out
+        self._fetch_results = fetch_results
         self._pkg = None
         self._suppress = False
+        self._auto_rendered_run: str | None = None
 
         solution_dd.observe(self._on_solution, names="value")
         field_dd.observe(self._on_field, names="value")
         render_btn.on_click(lambda _=None: self.render())
+        fetch_btn.on_click(lambda _=None: self.fetch())
 
     # -- helpers ---------------------------------------------------------
     def _log(self, *parts):
@@ -74,6 +83,11 @@ class VisualizationController:
         self.timestep_dd.disabled = not enabled
         self.render_btn.disabled = not enabled
 
+    def _show_fetch(self, show: bool):
+        can_fetch = show and self._fetch_results is not None and bool(self._run_id())
+        self.fetch_btn.layout.display = "" if can_fetch else "none"
+        self.fetch_btn.disabled = not can_fetch
+
     def _field_info(self):
         sol, fld = self.solution_dd.value, self.field_dd.value
         if not self._pkg or not sol or not fld:
@@ -83,12 +97,30 @@ class VisualizationController:
         except Exception:  # noqa: BLE001 - metadata gaps must not break the UI
             return None
 
+    # -- fetch (delegated to the execution backend) -------------------
+    def fetch(self, _=None):
+        """Ask the backend to synchronise this run's outputs locally, then
+        re-read the package. The controller performs no SSH / S3 itself."""
+        if self._fetch_results is None or not self._run_id():
+            return
+        self.fetch_btn.disabled = True
+        self.status.value = "<span class='icesee-subtle'>Fetching results…</span>"
+        try:
+            self._fetch_results()
+        except Exception as err:  # noqa: BLE001 - surfaced, never raised into the UI
+            self._log("[viz][fetch]", type(err).__name__, err)
+        finally:
+            self.fetch_btn.disabled = False
+        self._auto_rendered_run = None            # a fresh package -> re-preview
+        self.refresh()
+
     # -- lifecycle -----------------------------------------------------
     def refresh(self, _=None):
         run_id = self._run_id()
         if not run_id:
             self._pkg = None
             self._set_enabled(False)
+            self._show_fetch(False)
             self.solution_dd.options = ()
             self.field_dd.options = ()
             self.status.value = f"<span class='icesee-subtle'>{_NO_RUN_NOTE}</span>"
@@ -102,6 +134,7 @@ class VisualizationController:
 
         if status == "legacy":
             self._set_enabled(False)
+            self._show_fetch(False)
             self.solution_dd.options = ()
             self.field_dd.options = ()
             arts = self._pkg.legacy_artifacts()
@@ -118,8 +151,12 @@ class VisualizationController:
             self._set_enabled(False)
             self.solution_dd.options = ()
             self.field_dd.options = ()
-            note = _NO_RESULTS_NOTE if status == "missing" else (
-                f"Results are not renderable (status: {html.escape(status)}).")
+            if status == "missing":
+                note = _NOT_FETCHED_NOTE
+                self._show_fetch(True)
+            else:
+                note = f"Results are not renderable (status: {html.escape(status)})."
+                self._show_fetch(True)         # a re-fetch may repair a partial sync
             self.status.value = f"<span class='icesee-subtle'>{note}</span>"
             self.meta.value = ""
             with self.plot_out:
@@ -128,15 +165,29 @@ class VisualizationController:
 
         solutions = self._pkg.available_solutions()
         self._set_enabled(bool(solutions))
+        self._show_fetch(True)                  # keep a re-fetch affordance
+        self.fetch_btn.description = "Re-fetch results"
         self._suppress = True
         self.solution_dd.options = solutions
         if solutions:
             self.solution_dd.value = solutions[0]
         self._suppress = False
+        n = len(solutions)
         self.status.value = (
-            f"<span class='icesee-subtle'>{len(solutions)} solution"
-            f"{'s' if len(solutions) != 1 else ''} in this run</span>")
+            f"<span class='icesee-subtle'>{n} solution{'s' if n != 1 else ''} "
+            "in this run</span>")
         self._populate_fields()
+        self._maybe_auto_preview(run_id)
+
+    def _maybe_auto_preview(self, run_id: str):
+        """Show something immediately: render the first recommended selection
+        once per run so the panel is never just empty dropdowns."""
+        if self._auto_rendered_run == run_id:
+            return
+        if not (self.solution_dd.value and self.field_dd.value):
+            return
+        self._auto_rendered_run = run_id
+        self.render()
 
     def _populate_fields(self):
         sol = self.solution_dd.value
@@ -220,13 +271,16 @@ class VisualizationController:
 
 
 def build_visualization_panel(*, manager: WorkspaceManager, selected_run_id,
-                              log_output) -> VisualizationPanel:
+                              log_output, fetch_results=None) -> VisualizationPanel:
     solution_dd = W.Dropdown(options=(), layout=W.Layout(width="auto"))
     field_dd = W.Dropdown(options=(), layout=W.Layout(width="auto"))
     timestep_dd = W.Dropdown(options=[("Final", None)],
                              layout=W.Layout(width="auto", display="none"))
     render_btn = W.Button(description="Render", icon="area-chart",
                           button_style="primary", layout=W.Layout(width="auto"))
+    fetch_btn = W.Button(description="Fetch results", icon="cloud-download",
+                         button_style="info",
+                         layout=W.Layout(width="auto", display="none"))
     status = W.HTML()
     meta = W.HTML()
     plot_out = W.Output()
@@ -234,7 +288,8 @@ def build_visualization_panel(*, manager: WorkspaceManager, selected_run_id,
     controller = VisualizationController(
         manager=manager, selected_run_id=selected_run_id, log_output=log_output,
         solution_dd=solution_dd, field_dd=field_dd, timestep_dd=timestep_dd,
-        render_btn=render_btn, status=status, meta=meta, plot_out=plot_out)
+        render_btn=render_btn, fetch_btn=fetch_btn, status=status, meta=meta,
+        plot_out=plot_out, fetch_results=fetch_results)
 
     def _lbl(text):
         return W.HTML(f"<div class='icesee-lbl'>{text}</div>",
@@ -243,7 +298,8 @@ def build_visualization_panel(*, manager: WorkspaceManager, selected_run_id,
     container = W.VBox(
         [
             W.HTML("<div class='cryostack-section-label'>Field visualization</div>"),
-            status,
+            W.HBox([status, fetch_btn],
+                   layout=W.Layout(align_items="center", gap="10px", flex_wrap="wrap")),
             W.HBox([_lbl("Solution:"), solution_dd],
                    layout=W.Layout(align_items="center", gap="6px", flex_wrap="wrap")),
             W.HBox([_lbl("Field:"), field_dd],

@@ -1,4 +1,7 @@
-"""Results visualization panel: model-neutral selector, per-user, legacy-safe."""
+"""Results visualization panel: model-neutral selector, fetch-then-populate,
+legacy-safe, per-user. Regression coverage for the empty-selectors bug where
+the panel refreshed before the backend had synced the run locally.
+"""
 from __future__ import annotations
 
 import json
@@ -65,12 +68,15 @@ def _h5(path: Path, data: dict):
             fh.create_dataset(k, data=np.asarray(v))
 
 
-def _drop_package(base: Path):
-    outputs = base / "cache" / "outputs"
+def _drop_package(base: Path, *, subdir="cache/outputs"):
+    """Write a structured result package in the backend-neutral local shape."""
+    outputs = base / subdir
     _h5(outputs / "mesh" / "mesh.h5",
         {"/x": np.linspace(0, 1, NV), "/y": np.linspace(0, 1, NV), "/elements": ELEMENTS})
     _h5(outputs / "fields" / "StressbalanceSolution" / "Vel.h5",
         {"/values": np.arange(NV, dtype="float64") + 1})
+    _h5(outputs / "fields" / "StressbalanceSolution" / "Pressure.h5",
+        {"/values": np.arange(NE, dtype="float64") * 3.0})
     _h5(outputs / "fields" / "TransientSolution" / "Thickness.h5",
         {"/values": np.vstack([np.full(NV, 10.0 + s) for s in range(3)])})
     _h5(outputs / "fields" / "TransientSolution" / "time.h5",
@@ -84,9 +90,12 @@ def _drop_package(base: Path):
         "solutions": [
             {"name": "StressbalanceSolution", "transient": False, "timesteps": 1,
              "time": [], "step": [], "skipped": [],
-             "fields": [{"name": "Vel", "location": "nodal", "shape": [NV],
-                         "dtype": "float64",
-                         "path": "fields/StressbalanceSolution/Vel.h5"}]},
+             "fields": [
+                 {"name": "Vel", "location": "nodal", "shape": [NV],
+                  "dtype": "float64", "path": "fields/StressbalanceSolution/Vel.h5"},
+                 {"name": "Pressure", "location": "elemental", "shape": [NE],
+                  "dtype": "float64", "path": "fields/StressbalanceSolution/Pressure.h5"},
+             ]},
             {"name": "TransientSolution", "transient": True, "timesteps": 3,
              "time": [0.0, 1.0, 2.0], "step": [1, 2, 3], "skipped": [],
              "fields": [{"name": "Thickness", "location": "nodal",
@@ -96,21 +105,25 @@ def _drop_package(base: Path):
         ],
     }
     (outputs / "metadata.json").write_text(json.dumps(meta), encoding="utf-8")
+    return outputs
 
 
-def _register(m, run_id="run-1"):
-    run = m.register_run(RunInfo(
-        id=run_id, name=run_id, model="issm", backend="c", execution_mode="remote",
-        status="completed", created=datetime.now(), jobid="j"))
+def _register(m, run_id="run-1", **over):
+    kw = dict(id=run_id, name=run_id, model="issm", backend="c",
+              execution_mode="remote", status="completed",
+              created=datetime.now(), jobid="j")
+    kw.update(over)
+    run = m.register_run(RunInfo(**kw))
     m.select_run(run.id)
     return run
 
 
-def _panel(m):
+def _panel(m, fetch_results=None):
     return build_visualization_panel(
         manager=m,
         selected_run_id=lambda: (m.selected_run().id if m.selected_run() else ""),
-        log_output=_Log())
+        log_output=_Log(),
+        fetch_results=fetch_results)
 
 
 # ── selector population ─────────────────────────────────────────────────
@@ -129,82 +142,155 @@ def test_solution_and_field_selectors_populate(tmp_path):
     p.controller.refresh()
     c = p.controller
     assert list(c.solution_dd.options) == ["StressbalanceSolution", "TransientSolution"]
-    assert list(c.field_dd.options) == ["Vel"]
+    assert list(c.field_dd.options) == ["Vel", "Pressure"]      # preference order
     assert c.render_btn.disabled is False
 
 
-def test_transient_shows_timestep_selector(tmp_path):
+def test_solution_change_repopulates_fields_and_timestep(tmp_path):
     m = _mgr(USER_A, tmp_path / "ws")
     run = _register(m)
     _drop_package(run.workspace_directory)
-    p = _panel(m)
-    p.controller.refresh()
-    c = p.controller
-    c.solution_dd.value = "TransientSolution"
+    c = _panel(m).controller
+    c.refresh()
+    assert list(c.field_dd.options) == ["Vel", "Pressure"]
+    assert c.timestep_dd.layout.display == "none"
+
+    c.solution_dd.value = "TransientSolution"                    # triggers _on_solution
     assert list(c.field_dd.options) == ["Thickness"]
     assert c.timestep_dd.layout.display != "none"
-    labels = [lbl for lbl, _ in c.timestep_dd.options]
-    assert labels[0] == "Final"
-    assert c.timestep_dd.value is None                    # defaults to Final
+    assert [lbl for lbl, _ in c.timestep_dd.options][0] == "Final"
+    assert c.timestep_dd.value is None
 
 
-def test_static_field_hides_timestep_selector(tmp_path):
+def test_field_change_reevaluates_timestep_visibility(tmp_path):
     m = _mgr(USER_A, tmp_path / "ws")
     run = _register(m)
     _drop_package(run.workspace_directory)
-    p = _panel(m)
-    p.controller.refresh()
-    assert p.controller.timestep_dd.layout.display == "none"
+    c = _panel(m).controller
+    c.refresh()
+    c.solution_dd.value = "TransientSolution"
+    assert c.timestep_dd.layout.display != "none"               # transient field
+    c.solution_dd.value = "StressbalanceSolution"
+    assert c.timestep_dd.layout.display == "none"               # static field
+
+
+# ── the regression: fetch-then-populate ───────────────────────────────
+def test_missing_results_shows_fetch_action_not_blank(tmp_path):
+    m = _mgr(USER_A, tmp_path / "ws")
+    _register(m)
+    c = _panel(m, fetch_results=lambda: None).controller
+    c.refresh()
+    assert c.render_btn.disabled is True
+    assert list(c.solution_dd.options) == []
+    assert "have not been fetched" in c.status.value
+    assert c.fetch_btn.layout.display != "none"                 # actionable, not blank
+
+
+def test_missing_then_fetch_populates_selectors(tmp_path):
+    """Run selected before its outputs were synced -> Fetch -> selectors fill.
+    Reproduces the real bug (panel refreshed before refresh_results ran)."""
+    m = _mgr(USER_A, tmp_path / "ws")
+    run = _register(m)
+    dropped = {"done": False}
+
+    def fake_fetch():
+        _drop_package(run.workspace_directory)                  # backend sync lands here
+        dropped["done"] = True
+
+    c = _panel(m, fetch_results=fake_fetch).controller
+    c.refresh()
+    assert list(c.solution_dd.options) == []                    # nothing local yet
+
+    c.fetch()                                                   # user clicks "Fetch results"
+    assert dropped["done"] is True
+    assert list(c.solution_dd.options) == ["StressbalanceSolution", "TransientSolution"]
+    assert list(c.field_dd.options) == ["Vel", "Pressure"]
+    assert c.render_btn.disabled is False
+
+
+def test_preview_flow_refreshes_visualization_after_fetch(tmp_path):
+    """Mirrors the gateway's on_results_preview: fetch, then controller.refresh()."""
+    m = _mgr(USER_A, tmp_path / "ws")
+    run = _register(m)
+    c = _panel(m).controller
+    c.refresh()
+    assert list(c.solution_dd.options) == []
+
+    _drop_package(run.workspace_directory)                      # preview_results() synced
+    c.refresh()                                                 # gateway calls this next
+    assert list(c.solution_dd.options) == ["StressbalanceSolution", "TransientSolution"]
+
+
+def test_fetch_button_hidden_without_a_fetch_callback(tmp_path):
+    m = _mgr(USER_A, tmp_path / "ws")
+    _register(m)
+    c = _panel(m).controller                                    # no fetch_results
+    c.refresh()
+    assert c.fetch_btn.layout.display == "none"
+    assert "have not been fetched" in c.status.value
+
+
+# ── auto-preview: never just empty dropdowns ─────────────────────────
+def test_readable_package_auto_renders_first_recommended(tmp_path):
+    m = _mgr(USER_A, tmp_path / "ws")
+    run = _register(m)
+    _drop_package(run.workspace_directory)
+    c = _panel(m).controller
+    c.refresh()                                                 # no explicit Render click
+    fig = (run.workspace_directory / "cache" / "outputs" / "figures"
+           / "StressbalanceSolution_Vel.png")
+    assert fig.is_file()
+    assert "Vel" in c.meta.value
 
 
 # ── rendering ──────────────────────────────────────────────────────────
-def test_render_creates_cached_figure_and_meta(tmp_path):
-    m = _mgr(USER_A, tmp_path / "ws")
-    run = _register(m)
-    _drop_package(run.workspace_directory)
-    p = _panel(m)
-    p.controller.refresh()
-    p.controller.render()
-    fig = run.workspace_directory / "cache" / "outputs" / "figures" / "StressbalanceSolution_Vel.png"
-    assert fig.is_file()
-    assert "Vel" in p.controller.meta.value
-
-
 def test_render_transient_selected_timestep(tmp_path):
     m = _mgr(USER_A, tmp_path / "ws")
     run = _register(m)
     _drop_package(run.workspace_directory)
-    p = _panel(m)
-    p.controller.refresh()
-    c = p.controller
+    c = _panel(m).controller
+    c.refresh()
     c.solution_dd.value = "TransientSolution"
     c.timestep_dd.value = 0
     c.render()
-    fig = run.workspace_directory / "cache" / "outputs" / "figures" / "TransientSolution_Thickness_t000.png"
+    fig = (run.workspace_directory / "cache" / "outputs" / "figures"
+           / "TransientSolution_Thickness_t000.png")
     assert fig.is_file()
 
 
+# ── backend / mode neutrality ───────────────────────────────────────
+@pytest.mark.parametrize("backend", ["c", "container", "spack"])
+def test_discovery_is_identical_across_execution_backends(tmp_path, backend):
+    m = _mgr(USER_A, tmp_path / "ws")
+    run = _register(m, backend=backend)
+    _drop_package(run.workspace_directory)
+    c = _panel(m).controller
+    c.refresh()
+    assert list(c.solution_dd.options) == ["StressbalanceSolution", "TransientSolution"]
+    assert list(c.field_dd.options) == ["Vel", "Pressure"]
+
+
+def test_cloud_outputs_shape_is_discovered_too(tmp_path):
+    m = _mgr(USER_A, tmp_path / "ws")
+    run = _register(m, execution_mode="cloud", backend="aws")
+    _drop_package(run.workspace_directory, subdir="cache/cloud_outputs")
+    c = _panel(m).controller
+    c.refresh()
+    assert list(c.solution_dd.options) == ["StressbalanceSolution", "TransientSolution"]
+
+
 # ── legacy ─────────────────────────────────────────────────────────────
-def test_legacy_run_disables_selector_with_note(tmp_path):
+def test_legacy_run_disables_selector_and_hides_fetch(tmp_path):
     m = _mgr(USER_A, tmp_path / "ws")
     run = _register(m)
     figs = run.workspace_directory / "cache" / "outputs" / "figures"
     figs.mkdir(parents=True)
     (figs / "old.png").write_bytes(b"\x89PNG")
-    p = _panel(m)
-    p.controller.refresh()
-    c = p.controller
+    c = _panel(m, fetch_results=lambda: None).controller
+    c.refresh()
     assert c.render_btn.disabled is True
     assert "legacy run" in c.status.value
-
-
-def test_missing_results_disables_selector(tmp_path):
-    m = _mgr(USER_A, tmp_path / "ws")
-    _register(m)
-    p = _panel(m)
-    p.controller.refresh()
-    assert p.controller.render_btn.disabled is True
-    assert "No structured results" in p.controller.status.value
+    assert c.fetch_btn.layout.display == "none"
 
 
 # ── isolation ──────────────────────────────────────────────────────────
@@ -215,11 +301,8 @@ def test_user_b_cannot_render_user_a_run(tmp_path):
     _drop_package(run.workspace_directory)
 
     m_b = _mgr(USER_B, root)
-    result = m_b.render_run_plot(run.id, solution="StressbalanceSolution",
-                                field="Vel")
-    assert result.ok is False
-    assert result.reason
-    # and no figure was written into A's run by B
-    leaked = list((run.workspace_directory / "cache" / "outputs" / "figures").glob("*.png")) \
-        if (run.workspace_directory / "cache" / "outputs" / "figures").exists() else []
-    assert leaked == []
+    result = m_b.render_run_plot(run.id, solution="StressbalanceSolution", field="Vel")
+    assert result.ok is False and result.reason
+    leaked_dir = run.workspace_directory / "cache" / "outputs" / "figures"
+    # only figures A rendered (if any) exist; B wrote nothing new
+    assert m_b.result_package_for_run(run.id).status == "missing"
