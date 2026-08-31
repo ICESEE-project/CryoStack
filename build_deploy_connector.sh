@@ -20,6 +20,15 @@ cd "$REPO_ROOT"
 
 APP_BASENAME="CryoStack-Connector"
 PKG_DIR="$REPO_ROOT/dist/packages"
+MANIFEST_TOOL="$REPO_ROOT/deployment/connector_manifest.py"
+
+# The only artifact filenames CryoStack publishes (one per supported platform).
+CANONICAL_ARTIFACTS=(
+  "${APP_BASENAME}-linux-x86_64.tar.gz"
+  "${APP_BASENAME}-macos-arm64.dmg"
+  "${APP_BASENAME}-macos-x86_64.dmg"
+  "${APP_BASENAME}-windows-x86_64.exe"
+)
 
 # Web root nginx serves /downloads/ from (see deployment/deploy_web_nginx/nginx).
 WEB_ROOT="${CRYOSTACK_WEB_ROOT:-/var/www/cryolauncher}"
@@ -42,78 +51,90 @@ else
   echo "[deploy] CRYOSTACK_SKIP_BUILD=1 -> deploying existing artifacts only"
 fi
 
-# ---- collect artifacts ------------------------------------------------
-shopt -s nullglob
-ARTIFACTS=( "$PKG_DIR/${APP_BASENAME}"-*.dmg
-            "$PKG_DIR/${APP_BASENAME}"-*.tar.gz
-            "$PKG_DIR/${APP_BASENAME}"-*.exe )
-shopt -u nullglob
+# ---- collect the canonical artifact set actually present ---------------
+ARTIFACTS=()
+for name in "${CANONICAL_ARTIFACTS[@]}"; do
+  f="$PKG_DIR/$name"
+  if [[ -f "$f" ]]; then
+    [[ -s "$f" ]] || { echo "[deploy] ERROR: artifact is zero bytes: $f" >&2; exit 1; }
+    ARTIFACTS+=( "$f" )
+  fi
+done
 
 if [[ ${#ARTIFACTS[@]} -eq 0 ]]; then
-  echo "[deploy] ERROR: no CryoStack-Connector-* artifacts in $PKG_DIR" >&2
+  echo "[deploy] ERROR: no canonical ${APP_BASENAME}-* artifacts in $PKG_DIR" >&2
+  echo "[deploy] expected one or more of:" >&2
+  printf '  %s\n' "${CANONICAL_ARTIFACTS[@]}" >&2
   exit 1
 fi
 
-for a in "${ARTIFACTS[@]}"; do
-  [[ -s "$a" ]] || { echo "[deploy] ERROR: artifact is empty: $a" >&2; exit 1; }
-done
-
-# Regenerate SHA256SUMS from what we are actually shipping.
-( cd "$PKG_DIR"
-  : > SHA256SUMS
-  for a in "${ARTIFACTS[@]}"; do
-    b="$(basename "$a")"
-    if command -v sha256sum >/dev/null 2>&1; then
-      sha256sum "$b" >> SHA256SUMS
-    else
-      shasum -a 256 "$b" >> SHA256SUMS
-    fi
-  done
-  sort -o SHA256SUMS SHA256SUMS )
+# ---- deployment is the authoritative manifest step -------------------
+# Regenerate manifest.json + SHA256SUMS from the exact set above, then verify
+# they agree with the files. A stale single-host manifest is replaced here.
+echo "[deploy] regenerating manifest.json + SHA256SUMS from $PKG_DIR ..."
+python3 "$MANIFEST_TOOL" generate "$PKG_DIR"
+python3 "$MANIFEST_TOOL" verify "$PKG_DIR"
 
 echo "[deploy] artifacts to publish:"
 printf '  %s\n' "${ARTIFACTS[@]##*/}"
 
+STAGE=( "${ARTIFACTS[@]}" "$PKG_DIR/manifest.json" "$PKG_DIR/SHA256SUMS" )
+# Carry the build-metadata sidecars so a later re-deploy keeps the real
+# build_at even without rebuilding.
+shopt -s nullglob
+STAGE+=( "$PKG_DIR"/*.build.json )
+shopt -u nullglob
+
 # ---- deploy -------------------------------------------------------------
+# Order: copy -> fix permissions -> verify integrity + readability -> reload
+# nginx. nginx is reloaded only after the artifacts are proven good.
 publish_local() {
-  command -v nginx >/dev/null 2>&1 || echo "[deploy] warning: nginx not found on PATH"
   local sudo=""
-  [[ -w "$WEB_ROOT" ]] || sudo="sudo"
+  [[ -w "$WEB_ROOT" || -w "$(dirname "$WEB_ROOT")" ]] || sudo="sudo"
 
   $sudo mkdir -p "$CONNECTORS_DIR"
-  for a in "${ARTIFACTS[@]}"; do
-    $sudo cp -f "$a" "$CONNECTORS_DIR/"
-  done
-  $sudo cp -f "$PKG_DIR/SHA256SUMS" "$CONNECTORS_DIR/SHA256SUMS"
-  [[ -f "$PKG_DIR/manifest.json" ]] && $sudo cp -f "$PKG_DIR/manifest.json" "$CONNECTORS_DIR/manifest.json"
+  $sudo cp -f "${STAGE[@]}" "$CONNECTORS_DIR/"
+
+  # Public-static permissions: dirs 0755, files 0644, along the served path.
+  $sudo chmod 0755 "$WEB_ROOT" "$DOWNLOADS_DIR" "$CONNECTORS_DIR"
+  $sudo find "$CONNECTORS_DIR" -type d -exec chmod 0755 {} +
+  $sudo find "$CONNECTORS_DIR" -type f -exec chmod 0644 {} +
+
+  echo "[deploy] verifying deployed artifacts + permissions ..."
+  python3 "$MANIFEST_TOOL" verify "$CONNECTORS_DIR"
+  python3 "$MANIFEST_TOOL" check-perms "$CONNECTORS_DIR"
 
   if command -v nginx >/dev/null 2>&1; then
     $sudo nginx -t && $sudo systemctl reload nginx
+  else
+    echo "[deploy] note: nginx not on PATH — reload it manually."
   fi
 }
 
 publish_remote() {
   local user_host="$DEPLOY_HOST"
   ssh "$user_host" "sudo mkdir -p '$CONNECTORS_DIR'"
-  rsync -avz --rsync-path="sudo rsync" "${ARTIFACTS[@]}" \
-        "$PKG_DIR/SHA256SUMS" \
-        "$user_host:$CONNECTORS_DIR/"
-  [[ -f "$PKG_DIR/manifest.json" ]] && \
-    rsync -avz --rsync-path="sudo rsync" "$PKG_DIR/manifest.json" "$user_host:$CONNECTORS_DIR/"
-  ssh "$user_host" "sudo nginx -t && sudo systemctl reload nginx"
+  rsync -az --rsync-path="sudo rsync" "${STAGE[@]}" "$user_host:$CONNECTORS_DIR/"
+  scp "$MANIFEST_TOOL" "$user_host:/tmp/cryostack_connector_manifest.py"
+  ssh "$user_host" "\
+    sudo chmod 0755 '$WEB_ROOT' '$DOWNLOADS_DIR' '$CONNECTORS_DIR' && \
+    sudo find '$CONNECTORS_DIR' -type d -exec chmod 0755 {} + && \
+    sudo find '$CONNECTORS_DIR' -type f -exec chmod 0644 {} + && \
+    python3 /tmp/cryostack_connector_manifest.py verify '$CONNECTORS_DIR' && \
+    python3 /tmp/cryostack_connector_manifest.py check-perms '$CONNECTORS_DIR' && \
+    sudo nginx -t && sudo systemctl reload nginx && \
+    rm -f /tmp/cryostack_connector_manifest.py"
 }
 
 if [[ -n "$DEPLOY_HOST" ]]; then
   echo "[deploy] publishing to remote host: $DEPLOY_HOST"
   publish_remote
-  VERIFY_HOST="$DEPLOY_HOST"
 else
   echo "[deploy] publishing locally to: $CONNECTORS_DIR"
   publish_local
-  VERIFY_HOST="(local)"
 fi
 
-# ---- verify ---------------------------------------------------------
+# ---- summary --------------------------------------------------------
 echo
 echo "=============================================================="
 echo " Published CryoStack Connector artifacts"
@@ -121,16 +142,15 @@ echo "   deploy dir : $CONNECTORS_DIR"
 echo "   public base: $PUBLIC_BASE/downloads/connectors/"
 echo
 for a in "${ARTIFACTS[@]}"; do
-  b="$(basename "$a")"
-  echo "   $PUBLIC_BASE/downloads/connectors/$b"
+  echo "   $PUBLIC_BASE/downloads/connectors/$(basename "$a")"
 done
 echo
-echo " SHA256SUMS:"
-sed 's/^/   /' "$PKG_DIR/SHA256SUMS"
+echo " manifest.json:"
+sed 's/^/   /' "$PKG_DIR/manifest.json"
 echo
-echo " Verify from the web host, e.g.:"
+echo " Verify over HTTP, e.g.:"
 for a in "${ARTIFACTS[@]}"; do
-  b="$(basename "$a")"
-  echo "   curl -sSIL '$PUBLIC_BASE/downloads/connectors/$b' | grep -Ei 'HTTP/|content-(type|length|disposition)'"
+  echo "   curl -sSIL '$PUBLIC_BASE/downloads/connectors/$(basename "$a")' | grep -Ei 'HTTP/|content-(type|length|disposition)'"
 done
+echo "   curl -sSL  '$PUBLIC_BASE/downloads/connectors/SHA256SUMS'"
 echo "=============================================================="

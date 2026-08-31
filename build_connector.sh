@@ -27,8 +27,6 @@ SRC_ENTRY="icesee_hpc_connector/connector_menubar_app.py"
 BUILD_DIR="$REPO_ROOT/build/connector"   # PyInstaller work + spec
 DIST_DIR="$REPO_ROOT/dist/connector"     # PyInstaller output (binary / .app)
 PKG_DIR="$REPO_ROOT/dist/packages"       # final distributable artifacts
-CHECKSUMS="$PKG_DIR/SHA256SUMS"
-MANIFEST="$PKG_DIR/manifest.json"
 
 # ---- host platform -------------------------------------------------------
 OS="${CRYOSTACK_BUILD_OS:-$(uname -s)}"
@@ -133,7 +131,7 @@ if [[ ! -s "$ARTIFACT_PATH" ]]; then
   exit 1
 fi
 
-# ---- checksum + manifest -------------------------------------------
+# ---- build-metadata sidecar (authoritative build time, survives host copy) --
 if command -v sha256sum >/dev/null 2>&1; then
   SHA="$(cd "$PKG_DIR" && sha256sum "$ARTIFACT" | awk '{print $1}')"
 else
@@ -142,30 +140,20 @@ fi
 SIZE_BYTES="$(wc -c < "$ARTIFACT_PATH" | tr -d ' ')"
 BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-# Rewrite this platform's line in SHA256SUMS.
-touch "$CHECKSUMS"
-grep -v " ${ARTIFACT}\$" "$CHECKSUMS" > "${CHECKSUMS}.tmp" 2>/dev/null || true
-mv "${CHECKSUMS}.tmp" "$CHECKSUMS"
-echo "${SHA}  ${ARTIFACT}" >> "$CHECKSUMS"
-sort -o "$CHECKSUMS" "$CHECKSUMS"
-
-python3 - "$MANIFEST" "$PLATFORM" "$ARTIFACT" "$SHA" "$SIZE_BYTES" "$BUILT_AT" <<'PY'
-import json, sys
-path, platform, filename, sha, size, built_at = sys.argv[1:7]
-try:
-    data = json.load(open(path))
-except Exception:
-    data = {}
-data.setdefault("schema", "cryostack.connector.manifest")
-data.setdefault("version", 1)
-data.setdefault("artifacts", {})
-data["artifacts"][platform] = {
-    "filename": filename, "sha256": sha,
-    "size_bytes": int(size), "built_at": built_at,
+cat > "${ARTIFACT_PATH}.build.json" <<JSON
+{
+  "platform": "${PLATFORM}",
+  "filename": "${ARTIFACT}",
+  "sha256": "${SHA}",
+  "size_bytes": ${SIZE_BYTES},
+  "built_at": "${BUILT_AT}"
 }
-json.dump(data, open(path, "w"), indent=2, sort_keys=True)
-open(path, "a").write("\n")
-PY
+JSON
+
+# ---- manifest.json + SHA256SUMS -----------------------------------------
+# Deployment regenerates these from the full published set; here we keep them
+# consistent with whatever this host has built so far.
+python3 "$REPO_ROOT/deployment/connector_manifest.py" generate "$PKG_DIR"
 
 # ---- summary --------------------------------------------------------
 HUMAN_SIZE="$(du -h "$ARTIFACT_PATH" | awk '{print $1}')"
