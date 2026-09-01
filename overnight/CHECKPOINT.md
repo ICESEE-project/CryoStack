@@ -20,13 +20,18 @@ then Phase C — ICESEE toward the IceSheets platform standard.
 `AGENT_TRAIL.md` §A. Two morning checkpoints (PACE password-auth/Duo; relay
 deploy freshness) — connector cannot be published tonight regardless.
 
-**Phase B: IN PROGRESS.** Subagent `aa66a8ef02d414872` ("ISSM vs Icepack parity
-audit", read-only) is running. On its return: build the Before→After→Remaining
-matrix, then implement the "safe to generalize now" subset in small commits
-(discovery/metadata, structured-results scaffolding, run-history, docs, tests),
-stopping before any scientific decision. If interrupted before the subagent
-returns: re-spawn the same audit prompt (in AGENT_TRAIL §B.delegation) — do not
-hand-do the audit.
+**Phase B: SAFE SUBSET COMPLETE** (`132b8b1`, `a234078`, `1513267`, `e4cf471`).
+Icepack now produces a structured `outputs/` package on every remote run, the
+Results tab shows its figures honestly, 34 new tests, accurate docs. Everything
+further needs a scientific decision → morning checkpoints (see
+`AGENT_TRAIL.md` §B.discoveries + `AUDIT_icepack_parity.md`). Deferred P2: the
+gateway `if model=="issm"` UI-toggle cleanup.
+
+**Phase C: IN PROGRESS.** Audit ICESEE vs the IceSheets platform standard,
+adopt the reusable non-DA pieces (workspace isolation, run history, structured
+results, downloads) in small commits. Do NOT touch DA semantics
+(`params.yaml`, `cloud_runner.py`, filter algorithms). If interrupted: the
+ICESEE audit prompt is in `AGENT_TRAIL.md` §C.delegation.
 
 ## Recoverability rule
 
@@ -52,7 +57,14 @@ audits.
 |------|---------|
 | `d4d5603` | overnight agent-trail + checkpoint scaffolding |
 | `416da3d` | Phase A: connector bootstrap end-to-end namespace test + pairing-prompt paste |
-| `b5eb565` | overnight: Phase A results + Phase B plan in trail |
+| `b5eb565` | overnight: trail — Phase A results + Phase B plan |
+| `c369ada` | overnight: checkpoint before Phase B audit |
+| `0281194` | overnight: trail — Phase B coordinating notes |
+| `132b8b1` | Phase B: icepack structured result package + honest output collector |
+| `a234078` | Phase B: run the icepack output collector after a remote run |
+| `3466e20` | overnight: trail — Phase B audit report |
+| `1513267` | Phase B: accurate Icepack docs |
+| `e4cf471` | Phase B: icepack adapter test coverage + Python-first run-target order |
 
 (Earlier this session, before the overnight brief: `a930cfd` first-use SSH-key
 registration UX; `52d8edb` bootstrap visible state + structured reasons + macOS

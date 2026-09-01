@@ -266,7 +266,19 @@ and implement the safe subset.
   `ResultPackage` — ICESEE still writes `params.yaml` + uses the legacy
   `icesee_jupyter_book/core/cloud_runner.py`.
 
-### B.anticipated commit sequence (subject to B-1's findings)
+### B.status: SAFE SUBSET COMPLETE
+Commits `132b8b1`, `a234078`, `1513267`, `e4cf471` (+ execution.py run-target
+order). Icepack now: produces a structured `outputs/` package on every remote
+run; the Results tab shows its figures/artifacts honestly; has a dedicated
+adapter+results+postprocess+submission test suite (34 new tests); accurate
+docs. Everything beyond this needs a scientific decision (see §B.discoveries
+"Needs a scientific decision") and is left as a morning checkpoint. Deferred
+low-risk-but-low-parity-value item: the gateway `if model=="issm"` UI toggle
+cleanup (P2, exact line numbers in `AUDIT_icepack_parity.md`).
+
+### B.next_action → Phase C.
+
+### B.anticipated commit sequence (historical — superseded by B.status)
 1. `models/icepack`: real `postprocess.py` + `EXAMPLE_ENTRYPOINTS`/discovery
    metadata parity with ISSM where model-neutral (no science invented).
 2. `cryostack.results` dispatch: `discover_results` / result-package factory
@@ -280,3 +292,38 @@ and implement the safe subset.
    tests.
 5. docs + capability matrix: an honest Icepack section (what works, what is
    ISSM-only and why).
+
+---
+
+## Phase C — ICESEE toward the IceSheets platform standard
+
+### C.objective
+Audit ICESEE (`icesee_jupyter_book/ui/icesee_gateway.py`, the data-assimilation
+app) against the now-mature IceSheets shell and adopt the reusable pieces
+(WorkspaceManager isolation, run history, structured results, downloads,
+validation) WITHOUT disturbing ICESEE's DA science (`params.yaml`,
+`cloud_runner.py`, filter algorithms). Small green commits; stop before any DA
+semantics change.
+
+### C.known from coordinating-agent recon (pre-audit)
+- ICESEE ALREADY uses: `build_icesee_app_menu()` (shared header, `a20ffd2`),
+  `build_remote_connection_panel`, `build_slurm_resources_panel`,
+  `shared_validation.validate_slurm_resources`, `shared_observer_guard
+  .UIRefreshCoordinator`, `shared_ssh_widgets`, `shared_app_styles`. So B4 UI +
+  B1–B3 access UX are already adopted.
+- ICESEE does NOT use: `WorkspaceManager` (no per-user workspace isolation, no
+  `_owner_root`), run history / `RunInfo` / manifest, `ResultPackage`,
+  deterministic visualization, the download helpers. It writes `params.yaml`
+  into a run dir and shells `cloud_runner.py`.
+- ICESEE B2 (authenticated user × resource persistence) IS present
+  (`resolve_workspace_user`, per-user settings at `icesee_gateway.py:1009`).
+
+### C.delegation
+- **Agent C-1** (`general-purpose`, read-only): audit ICESEE's execution /
+  results / persistence path in depth and produce a "safe to adopt now" vs
+  "needs DA-science care" split, mirroring the B-1 format.
+
+### C.next_action
+Spawn Agent C-1. While it runs, coordinating agent reviews
+`icesee_jupyter_book/core/cloud_runner.py` + `local_runner.py` (ICESEE-owned,
+not in B-1's scope) to understand the DA run contract.
