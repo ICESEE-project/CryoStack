@@ -132,8 +132,10 @@ def submit_cloud_example(
     job_queue: str,
     job_definition: str,
     job_name: str,
+    run_dir_base: "Path | str | None" = None,
+    run_dir_name: str | None = None,
 ) -> CloudSubmitResult:
-    rd = run_dir()
+    rd = run_dir(run_dir_base, run_dir_name)
     dump_yaml(config, rd / "params.yaml")
 
     cfg = AWSBatchConfig(
