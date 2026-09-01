@@ -54,7 +54,7 @@ def build_remote_runtime_callbacks(
                     print("--- direct stderr ---")
                     print((result.get("stderr") or "").strip())
                 status_widget.value = status_html("fail")
-                return
+                return result
             else:
                 _render_connection(
                     "[auto] Direct SSH failed. Used connector fallback.",
@@ -62,6 +62,7 @@ def build_remote_runtime_callbacks(
                     show_ok=True,
                 )
             status_widget.value = status_html("done" if result.get("ok") else "fail")
+            return result
         except Exception as error:
             status_widget.value = status_html("fail")
             with log_output:
@@ -70,6 +71,7 @@ def build_remote_runtime_callbacks(
                     print("Create/start a connector session first.")
                 else:
                     print("[remote][ERROR]", type(error).__name__, error)
+            return None
 
     def on_status(_=None):
         log_output.clear_output()

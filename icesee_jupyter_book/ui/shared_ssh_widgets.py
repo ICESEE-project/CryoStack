@@ -13,7 +13,7 @@ from icesee_jupyter_book.core.ssh_key_manager import (
     cluster_setup_summary,
 )
 
-def build_ssh_key_manager(cluster_name_widget, host_widget, user_widget):
+def build_ssh_key_manager(cluster_name_widget, host_widget, user_widget, *, defer_probe=False):
     output = W.Output(layout=W.Layout(
         border="1px solid rgba(0,0,0,.10)",
         padding="10px",
@@ -40,7 +40,10 @@ def build_ssh_key_manager(cluster_name_widget, host_widget, user_widget):
             alias=alias,
         )
 
+    _probe_done = {"ran": False}
+
     def print_summary():
+        _probe_done["ran"] = True
         output.clear_output()
         info = current_info()
         summary = cluster_setup_summary(
@@ -167,5 +170,19 @@ def build_ssh_key_manager(cluster_name_widget, host_widget, user_widget):
         output,
     ], layout=W.Layout(gap="10px"))
 
-    print_summary()
+    def probe_if_needed(_=None):
+        """Run the ssh-agent / key inspection once, on demand. This spawns
+        `ssh-add` subprocesses, so it is kept off the gateway-construction
+        path -- the caller invokes it when the panel is first opened."""
+        if not _probe_done["ran"]:
+            print_summary()
+
+    if defer_probe:
+        with output:
+            print("[ssh] Open this panel or click Refresh to inspect keys and the ssh-agent.")
+    else:
+        print_summary()
+
+    # let the gateway trigger the deferred probe (e.g. on first accordion open)
+    controls._cryostack_probe = probe_if_needed  # type: ignore[attr-defined]
     return controls

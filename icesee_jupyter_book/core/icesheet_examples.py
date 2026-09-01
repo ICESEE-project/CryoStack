@@ -133,17 +133,68 @@ def discover_all_icesheet_examples(
     }
 
 
+# --- canonical (read-only) example scan cache -------------------------------
+# The canonical model example trees are a read-only checkout: their *set* of
+# examples does not change during a Voila session. Repeated picker refreshes
+# (model switch, resource switch, workspace edits) would otherwise re-walk the
+# filesystem and re-run the adapter's runnable check every time. Cache the raw
+# canonical scan, keyed by (model, resolved root, root mtime). User-owned
+# examples are never cached here -- merged_examples_for_model always takes them
+# fresh from the WorkspaceManager.
+_CANONICAL_SCAN_CACHE: dict[str, tuple[tuple, list[IcesheetExample]]] = {}
+
+
+def _canonical_scan_signature(root: Path | None) -> tuple:
+    if root is None:
+        return ("none",)
+    sig = [str(root)]
+    for sub in (root, root / "examples", root / "notebooks"):
+        try:
+            sig.append(sub.stat().st_mtime_ns)
+        except OSError:
+            sig.append(-1)
+    return tuple(sig)
+
+
+def invalidate_example_cache(model_name: str | None = None) -> None:
+    """Drop the cached canonical example scan for one model (or all)."""
+    key = (model_name or "").strip().lower()
+    if key:
+        _CANONICAL_SCAN_CACHE.pop(key, None)
+    else:
+        _CANONICAL_SCAN_CACHE.clear()
+
+
 def discover_examples_for_model(
     model_name: str,
     issm_root: str | Path | None = None,
     icepack_root: str | Path | None = None,
+    *,
+    use_cache: bool = True,
 ) -> list[IcesheetExample]:
     model = (model_name or "").strip().lower()
     if model == "issm":
-        return discover_issm_examples(issm_root=issm_root)
-    if model == "icepack":
-        return discover_icepack_examples(icepack_root=icepack_root)
-    return []
+        root = resolve_issm_root(issm_root)
+        scan = discover_issm_examples
+        arg = {"issm_root": issm_root}
+    elif model == "icepack":
+        root = resolve_icepack_root(icepack_root)
+        scan = discover_icepack_examples
+        arg = {"icepack_root": icepack_root}
+    else:
+        return []
+
+    if not use_cache:
+        return scan(**arg)
+
+    signature = _canonical_scan_signature(root)
+    cached = _CANONICAL_SCAN_CACHE.get(model)
+    if cached is not None and cached[0] == signature:
+        return list(cached[1])
+
+    result = scan(**arg)
+    _CANONICAL_SCAN_CACHE[model] = (signature, list(result))
+    return list(result)
 
 
 def enabled_icesheet_example_labels(

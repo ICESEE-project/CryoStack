@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import time as _time
 import yaml
 import subprocess
 from pathlib import Path
@@ -28,7 +29,12 @@ from icesee_jupyter_book.core.example_registry import EXAMPLES, enabled_names
 from cryostack_src.workspace import resolve_workspace_user
 from cryostack_src.resources.profiles import get_compute_profile, initial_remote_fields
 from cryostack_src.remote import RemoteBridge
-from cryostack_src.remote.access_state import enforce_remote_access, verify_remote_identity
+from cryostack_src.remote.access_state import (
+    enforce_remote_access,
+    verify_remote_identity,
+    identity_result_from_output,
+    can_reuse_connectivity_identity,
+)
 from icesee_jupyter_book.core.config_io import load_yaml, dump_yaml
 from icesee_jupyter_book.core.example_discovery import (
     find_run_script,
@@ -84,6 +90,8 @@ from icesee_jupyter_book.ui.shared_slurm_resources_panel import (
     build_slurm_resources_panel,
 )
 from icesee_jupyter_book.ui.shared_validation import validate_slurm_resources
+from icesee_jupyter_book.ui.shared_observer_guard import UIRefreshCoordinator
+from cryostack_src import perf
 
 from icesee_jupyter_book.ui.application_menus import (
     build_icesee_app_menu,
@@ -312,6 +320,7 @@ shared_styles = shared_application_styles()
 # UI builder (single entry point)
 # ============================================================
 def build_icesee_ui():
+    _perf_t0 = _time.perf_counter()
     try:
         load_cryostack_account_assets()
         load_experiment_bridge()
@@ -561,7 +570,11 @@ def build_icesee_ui():
         _INITIAL_CLUSTER = "pace"
         _rf = initial_remote_fields(_INITIAL_CLUSTER)
 
-        cluster_name_for_keys = W.Text(value=_INITIAL_CLUSTER, placeholder="e.g. pace, ub-ccr, frontera", layout=W.Layout(width="320px"))
+        cluster_name_for_keys = W.Text(
+            value=_INITIAL_CLUSTER, placeholder="e.g. pace, ub-ccr, frontera",
+            continuous_update=False,   # resource switch on commit, not per keystroke
+            layout=W.Layout(width="320px"),
+        )
         cluster_host = W.Text(value=_rf["login_host"], placeholder="resource login host", layout=W.Layout(width="320px"))
         cluster_user = W.Text(value=_rf["hpc_username"], placeholder=_rf["username_hint"], layout=W.Layout(width="320px"))
         cluster_port = W.IntText(value=_rf["ssh_port"], layout=W.Layout(width="120px"))
@@ -903,7 +916,7 @@ def build_icesee_ui():
 
             try:
                 if SESSION.get("id"):
-                    prior = relay_check_status(SESSION["id"])
+                    prior = relay_check_status(SESSION["id"], force=True)
                     if prior.get("state") in {"unknown", "expired", "superseded"}:
                         SESSION.clear()
 
@@ -1025,9 +1038,15 @@ def build_icesee_ui():
             service_username=(os.environ.get("USER") or getpass.getuser() or ""),
         )
 
+        # shared observer-suppression primitive: a resource switch / B2
+        # hydration is one batch of programmatic .value = ... assignments, not
+        # a dozen independent observer fan-outs.
+        ui_refresh = UIRefreshCoordinator()
+
         def _on_resource_changed(change):
-            resource_state.switch_resource(change.get("old"), change.get("new"))
-            _sync_resource_facts()
+            with ui_refresh.batch():
+                resource_state.switch_resource(change.get("old"), change.get("new"))
+                _sync_resource_facts()
 
         cluster_name_for_keys.observe(_on_resource_changed, names="value")
         _toggle_remote_backend()
@@ -1338,7 +1357,7 @@ def build_icesee_ui():
                     if not SESSION.get("id"):
                         create_or_refresh_connector_session()
 
-                    st = relay_check_status(SESSION["id"])
+                    st = relay_check_status(SESSION["id"], force=True)
                     if not st.get("online"):
                         set_status("fail")
                         with log_out:
@@ -1642,16 +1661,27 @@ def build_icesee_ui():
                     print("[remote][ERROR] Provide Host + User first.")
                 return
 
-            def _report_identity(resolved_mode: str) -> None:
+            def _report_identity(resolved_mode: str, precheck_stdout: str = "") -> None:
                 try:
-                    _v = verify_remote_identity(
-                        RemoteBridge(mode=resolved_mode, host=host, user=user, port=port,
-                                     session_id=SESSION.get("id"),
-                                     cluster_name=cluster_name_for_keys.value or "pace"),
-                        verification_command=get_compute_profile(
-                            cluster_name_for_keys.value or "pace").verification_command,
-                        expected_username=user,
-                    )
+                    _vcmd = get_compute_profile(
+                        cluster_name_for_keys.value or "pace").verification_command
+                    # The Test SSH probe just ran `hostname && whoami && pwd &&
+                    # date`. When identity is just `whoami`, reuse that instead
+                    # of a second remote round trip. (The Run gate re-verifies
+                    # fresh regardless.)
+                    _lines = [ln.strip() for ln in (precheck_stdout or "").splitlines() if ln.strip()]
+                    if len(_lines) >= 2 and can_reuse_connectivity_identity(_vcmd):
+                        _v = identity_result_from_output(
+                            whoami_line=_lines[1], expected_username=user
+                        )
+                    else:
+                        _v = verify_remote_identity(
+                            RemoteBridge(mode=resolved_mode, host=host, user=user, port=port,
+                                         session_id=SESSION.get("id"),
+                                         cluster_name=cluster_name_for_keys.value or "pace"),
+                            verification_command=_vcmd,
+                            expected_username=user,
+                        )
                     with log_out:
                         if _v.ok:
                             print(f"[identity] verified — remote '{_v.remote_identity}' "
@@ -1712,7 +1742,7 @@ def build_icesee_ui():
                             print(payload["stderr"].strip())
 
                     if payload.get("ok"):
-                        _report_identity("connector")
+                        _report_identity("connector", payload.get("stdout") or "")
                     set_status("done" if payload.get("ok") else "fail")
                     return
                 result = remote_test_connection(host, user, port)
@@ -1754,7 +1784,7 @@ def build_icesee_ui():
                             print("Check the cluster hostname.")
 
                 if result["ok"]:
-                    _report_identity("direct")
+                    _report_identity("direct", result.get("stdout") or "")
                 set_status("done" if result["ok"] else "fail")
 
             except subprocess.TimeoutExpired:
@@ -2344,10 +2374,10 @@ def build_icesee_ui():
         cloud_logs_btn.on_click(lambda b: run_example_cloud_logs_hint())
         
         start_connector_session_btn.on_click(create_or_refresh_connector_session)
-        access_mode_dd.observe(
-            lambda change: create_or_refresh_connector_session() if change["new"] == "connector" else None,
-            names="value",
-        )
+        # (removed: auto connector-session creation on access-mode change --
+        #  the session is created lazily at Check SSH / Run / the explicit
+        #  "Open Connector Setup" button, keeping the relay off the
+        #  initial-load and resource-switch paths.)
         preview_results_btn.on_click(preview_remote_results)
         results_download_btn.on_click(download_results_bundle)
 
@@ -2424,6 +2454,7 @@ def build_icesee_ui():
             cluster_name_widget=cluster_name_for_keys,
             host_widget=cluster_host,
             user_widget=cluster_user,
+            defer_probe=True,   # ssh-add subprocesses off the construction path
             )
         exec_backend_row = W.HBox(
             [W.HTML("<div class='icesee-lbl'>Exec backend:</div>"), exec_backend_choice],
@@ -2591,6 +2622,13 @@ def build_icesee_ui():
         ssh_key_manager_box.set_title(0, "🔐 Server-side SSH Key Manager")
         ssh_key_manager_box.selected_index = None
 
+        def _probe_ssh_key_manager(change):
+            if change.get("new") is not None:
+                probe = getattr(ssh_key_manager, "_cryostack_probe", None)
+                if probe is not None:
+                    probe()
+        ssh_key_manager_box.observe(_probe_ssh_key_manager, names="selected_index")
+
         # ssh_key_manager_box = W.Accordion(children=[ssh_key_manager])
         # # ssh_key_manager_box.set_title(0, "🔐 SSH Key Manager")
         # ssh_key_manager_box.set_title(0, "🔐 Server-side SSH Key Manager")
@@ -2742,14 +2780,17 @@ def build_icesee_ui():
 
         # B2: restore this user's saved per-resource settings, last of all.
         try:
-            for _w in resource_state.hydrate():
+            with perf.span("workspace hydrate"), ui_refresh.batch():
+                _b2_warnings = resource_state.hydrate()
+                _sync_resource_facts()
+            for _w in _b2_warnings:
                 with log_out:
                     print("[settings]", _w)
-            _sync_resource_facts()
         except Exception as _b2_err:
             with log_out:
                 print("[settings] restore skipped:", type(_b2_err).__name__, _b2_err)
 
+        perf.mark("gateway total (icesee)", _time.perf_counter() - _perf_t0)
         return page
         # sidebar = build_sidebar()
         # main_area = W.VBox([page], layout=W.Layout(width="100%"))

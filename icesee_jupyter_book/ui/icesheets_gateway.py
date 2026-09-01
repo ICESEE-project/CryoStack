@@ -4,6 +4,7 @@ import os
 import io
 import html
 import json
+import time as _time
 import yaml
 import subprocess
 from pathlib import Path
@@ -61,6 +62,8 @@ from icesee_jupyter_book.ui.shared_slurm_resources_panel import (
 from icesee_jupyter_book.ui.shared_validation import (
     validate_slurm_resources,
 )
+from icesee_jupyter_book.ui.shared_observer_guard import UIRefreshCoordinator
+from cryostack_src import perf
 
 from icesee_jupyter_book.ui.experiment_bridge import (
     ExperimentBridge,
@@ -107,7 +110,12 @@ from cryostack_src.frontend.cryolauncher.remote_runtime import (
     build_remote_runtime_callbacks,
 )
 from cryostack_src.remote import RemoteBridge, expand_remote_home, normalize_remote_path
-from cryostack_src.remote.access_state import enforce_remote_access, verify_remote_identity
+from cryostack_src.remote.access_state import (
+    enforce_remote_access,
+    verify_remote_identity,
+    identity_result_from_output,
+    can_reuse_connectivity_identity,
+)
 from cryostack_src.remote.spack_env import SetupSlurmOpts
 from cryostack_src.frontend.cryolauncher.spack_runtime import build_spack_runtime_callbacks
 from cryostack_src.models import get_model_adapter
@@ -359,6 +367,7 @@ def build_backend_check_cmd(backend: str, model: str, remote_base: str, remote_t
     )
 
 def build_icesheets_ui():
+    _perf_t0 = _time.perf_counter()
     try:
         load_cryostack_account_assets()
         load_experiment_bridge()
@@ -499,7 +508,11 @@ def build_icesheets_ui():
         _INITIAL_CLUSTER = "pace"
         _rf = initial_remote_fields(_INITIAL_CLUSTER)
 
-        cluster_name_for_keys = W.Text(value=_INITIAL_CLUSTER, placeholder="e.g. pace, ub-ccr, frontera", layout=W.Layout(width="320px"))
+        cluster_name_for_keys = W.Text(
+            value=_INITIAL_CLUSTER, placeholder="e.g. pace, ub-ccr, frontera",
+            continuous_update=False,   # resource switch on commit, not per keystroke
+            layout=W.Layout(width="320px"),
+        )
         cluster_host = W.Text(value=_rf["login_host"], placeholder="resource login host", layout=W.Layout(width="320px"))
         cluster_user = W.Text(value=_rf["hpc_username"], placeholder=_rf["username_hint"], layout=W.Layout(width="320px"))
         cluster_port = W.IntText(value=_rf["ssh_port"], layout=W.Layout(width="120px"))
@@ -779,7 +792,7 @@ def build_icesheets_ui():
                 # A relay-side session that is gone/expired/superseded must be
                 # recreated, not reused -- otherwise commands fail closed later.
                 if SESSION.get("id"):
-                    prior = relay_check_status(SESSION["id"])
+                    prior = relay_check_status(SESSION["id"], force=True)
                     if prior.get("state") in {"unknown", "expired", "superseded"}:
                         SESSION.clear()
 
@@ -1088,6 +1101,8 @@ def build_icesheets_ui():
                 ntasks=slurm_ntasks.value,
             )
         
+        _ws_span = perf.span("workspace manager")
+        _ws_span.__enter__()
         workspace_manager = WorkspaceManager(
             owner=resolve_workspace_user(require_authenticated=True),
             status=STATUS,
@@ -1110,6 +1125,7 @@ def build_icesheets_ui():
             ssh_run=ssh_run,
             cluster_name=cluster_name_for_keys,
         )
+        _ws_span.__exit__(None, None, None)
         workspace_bridge.attach_manager(workspace_manager)
 
         def list_editable_files(example_path: str) -> list[tuple[str, str]]:
@@ -1297,8 +1313,11 @@ def build_icesheets_ui():
 
             md_config_panel.layout.display = "" if model_dd.value == "issm" else "none"
 
-            if is_remote and access_mode_dd.value == "connector" and SESSION.get("id") is None:
-                create_or_refresh_connector_session()
+            # A connector session is created lazily -- on the "Open Connector
+            # Setup" button, and at Check SSH / Run when connector mode is
+            # active -- never during page construction or a mode toggle. That
+            # removes a relay HTTP round trip from the initial-load and
+            # resource-switch paths (perf pass).
 
             if is_remote:
                 log_runtime_controls.children = (
@@ -1421,21 +1440,27 @@ def build_icesheets_ui():
                 return
             _editor_ctx["last_model"] = change["new"]
 
+        # One coalescing point for the Run Plan / summary refresh: a batch of
+        # programmatic .value = ... assignments (resource switch, B2 hydration)
+        # rebuilds the summary once at the end instead of once per assignment.
+        ui_refresh = UIRefreshCoordinator(on_settle=update_summary)
+        _summary = ui_refresh.guard(update_summary)
+
         backend_dd.observe(update_visibility, names="value")
         model_dd.observe(_guard_model_switch, names="value")   # must precede the reloaders
         model_dd.observe(refresh_example_picker, names="value")
-        model_dd.observe(update_summary, names="value")
+        model_dd.observe(_summary, names="value")
         model_dd.observe(lambda _c: software_panel.set_model(model_dd.value), names="value")
         model_dd.observe(lambda _c: image_panel.set_model(model_dd.value), names="value")
         software_panel.observe_profile(lambda profile: image_panel.set_profile(profile))
         image_panel.on_change(update_summary)
         mode_dd.observe(update_visibility, names="value")
         ui_mode_dd.observe(update_visibility, names="value")
-        container_source.observe(update_summary, names="value")
-        image_uri.observe(update_summary, names="value")
-        example_dir.observe(update_summary, names="value")
-        exec_dir.observe(update_summary, names="value")
-        slurm_ntasks.observe(update_summary, names="value")
+        container_source.observe(_summary, names="value")
+        image_uri.observe(_summary, names="value")
+        example_dir.observe(_summary, names="value")
+        exec_dir.observe(_summary, names="value")
+        slurm_ntasks.observe(_summary, names="value")
 
         def _sync_resource_facts(_=None):
             # RESOURCE facts follow the selected resource. Personal fields
@@ -1489,13 +1514,17 @@ def build_icesheets_ui():
         )
 
         def _on_resource_changed(change):
-            resource_state.switch_resource(change.get("old"), change.get("new"))
-            _sync_resource_facts()
+            with ui_refresh.batch():
+                resource_state.switch_resource(change.get("old"), change.get("new"))
+                _sync_resource_facts()
+            ui_refresh.request_refresh()
 
         cluster_name_for_keys.observe(_on_resource_changed, names="value")
         example_picker.observe(apply_selected_example, names="value")
-        access_mode_dd.observe(lambda change: create_or_refresh_connector_session() if change["new"] == "connector" else None, names="value")
-        
+        # (removed: auto connector-session creation on access-mode change --
+        #  the session is created lazily at Check SSH / Run / the explicit
+        #  "Open Connector Setup" button.)
+
 
         # =========================================================
         # Actions
@@ -1565,7 +1594,7 @@ def build_icesheets_ui():
             if mode == "remote" and access_mode_dd.value == "connector":
                 create_or_refresh_connector_session()
 
-                st = relay_check_status(SESSION["id"])
+                st = relay_check_status(SESSION["id"], force=True)
                 if not st.get("online"):
                     status_chip.value = status_html("fail")
                     with log_out:
@@ -1995,18 +2024,42 @@ def build_icesheets_ui():
                 remote_conn_panel.set_status("checking")
             except NameError:
                 pass
-            _remote_check(_)
+            _check_result = _remote_check(_)
             if mode_dd.value != "remote":
                 return
             try:
                 _resolved = "connector" if should_use_connector() else "direct"
-                _v = verify_remote_identity(
-                    current_remote_bridge(mode=_resolved),
-                    verification_command=get_compute_profile(
-                        cluster_name_for_keys.value or "pace"
-                    ).verification_command,
-                    expected_username=cluster_user.value.strip(),
-                )
+                _vcmd = get_compute_profile(
+                    cluster_name_for_keys.value or "pace"
+                ).verification_command
+                # The connectivity probe above already ran `hostname && whoami
+                # && pwd` in one command. When the resource's identity check is
+                # just `whoami`, reuse that output instead of a second remote
+                # round trip. (The Run gate still re-verifies fresh.)
+                _reuse_line = ""
+                if (
+                    _check_result
+                    and _check_result.get("ok")
+                    and can_reuse_connectivity_identity(_vcmd)
+                ):
+                    _lines = [
+                        ln.strip()
+                        for ln in (_check_result.get("stdout") or "").splitlines()
+                        if ln.strip()
+                    ]
+                    if len(_lines) >= 2:
+                        _reuse_line = _lines[1]   # hostname, whoami, pwd
+                if _reuse_line:
+                    _v = identity_result_from_output(
+                        whoami_line=_reuse_line,
+                        expected_username=cluster_user.value.strip(),
+                    )
+                else:
+                    _v = verify_remote_identity(
+                        current_remote_bridge(mode=_resolved),
+                        verification_command=_vcmd,
+                        expected_username=cluster_user.value.strip(),
+                    )
                 with log_out:
                     if _v.ok:
                         print(f"[identity] verified — remote whoami '{_v.remote_identity}' "
@@ -2239,6 +2292,7 @@ def build_icesheets_ui():
             cluster_name_widget=cluster_name_for_keys,
             host_widget=cluster_host,
             user_widget=cluster_user,
+            defer_probe=True,   # ssh-add subprocesses off the construction path
         )
         server_key_note = W.HTML("""
         <div class='icesee-subtle' style='line-height:1.5; margin-bottom:8px;'>
@@ -2258,6 +2312,15 @@ def build_icesheets_ui():
 
         ssh_key_manager_box.set_title(0, "🔐 Server-side SSH Key Manager")
         ssh_key_manager_box.selected_index = None
+
+        # run the (subprocess-spawning) ssh-agent inspection only when the user
+        # actually opens the key-manager panel
+        def _probe_ssh_key_manager(change):
+            if change.get("new") is not None:
+                probe = getattr(ssh_key_manager, "_cryostack_probe", None)
+                if probe is not None:
+                    probe()
+        ssh_key_manager_box.observe(_probe_ssh_key_manager, names="selected_index")
 
         # ssh_key_manager_box = W.Accordion(children=[ssh_key_manager])
         # # ssh_key_manager_box.set_title(0, "🔐 SSH Key Manager")
@@ -2577,10 +2640,12 @@ def build_icesheets_ui():
         remote_actions = remote_log_controls
         cloud_actions = cloud_log_controls
 
-        workspace_history_panel = build_workspace_history_panel(
-            manager=workspace_manager,
-            on_run_selected=lambda _run_id: visualization_panel.controller.refresh(),
-        )
+        with perf.span("history panel"):
+            workspace_history_panel = build_workspace_history_panel(
+                manager=workspace_manager,
+                on_run_selected=lambda _run_id: visualization_panel.controller.refresh(),
+                defer_initial_load=True,   # list runs now; inspect on selection
+            )
 
         output_workspace = build_run_details(
             log_output=log_out,
@@ -2611,15 +2676,17 @@ def build_icesheets_ui():
         auth_mode.observe(_toggle_auth_widgets, names="value")
 
         _toggle_auth_widgets()
-        refresh_example_picker()
-        apply_selected_example()
+        with perf.span("example discovery"):
+            refresh_example_picker()
+            apply_selected_example()
 
         # B2: restore this user's saved per-resource settings. Runs last, after
         # every widget + observer exists; the controller guards persistence so a
         # blank build state can never overwrite stored settings during restore.
         try:
-            _b2_warnings = resource_state.hydrate()
-            _sync_resource_facts()
+            with perf.span("workspace hydrate"), ui_refresh.batch():
+                _b2_warnings = resource_state.hydrate()
+                _sync_resource_facts()
             for _w in _b2_warnings:
                 with log_out:
                     print("[settings]", _w)
@@ -2654,6 +2721,7 @@ def build_icesheets_ui():
         update_visibility()
         update_summary()
 
+        perf.mark("gateway total (icesheets)", _time.perf_counter() - _perf_t0)
         return page
 
     except Exception as e:

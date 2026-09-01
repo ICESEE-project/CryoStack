@@ -157,6 +157,11 @@ class WorkspaceManager:
         self._selected_run_id: str | None = None
         self._tail_handler = None
         self._status_resolver = None
+        #: per-run ResultPackage cache -- run_id -> (signature, package). This
+        #: manager instance belongs to exactly one authenticated user, so the
+        #: cache is inherently user-isolated. Keyed by the resolved outputs
+        #: path + its metadata.json mtime so a re-fetched run is re-read.
+        self._result_pkg_cache: dict[str, tuple] = {}
 
     def _owns(self, path: Path | None) -> bool:
         """True when ``path`` resolves inside this user's managed run root."""
@@ -816,6 +821,7 @@ class WorkspaceManager:
             return False
         shutil.rmtree(workspace)
         self._runs.pop(run_id, None)
+        self.invalidate_result_package_cache(run_id)
         if self._selected_run_id == run_id:
             self._selected_run_id = None
         return True
@@ -854,12 +860,38 @@ class WorkspaceManager:
             base / "outputs",
             base,
         ]
+        chosen = next((c for c in candidates if c.exists()), base)
+
+        # cheap freshness signature: which dir + its metadata.json mtime. A
+        # re-fetch rewrites metadata.json, so a stale package is never served.
+        meta = chosen / "outputs" / "metadata.json"
+        if not meta.is_file():
+            meta = chosen / "metadata.json"
+        try:
+            sig = (str(chosen), meta.stat().st_mtime_ns if meta.is_file() else 0)
+        except OSError:
+            sig = (str(chosen), -1)
+
+        cached = self._result_pkg_cache.get(run_id)
+        if cached is not None and cached[0] == sig:
+            return cached[1]
+
         for candidate in candidates:
             if candidate.exists():
                 package = discover_results(candidate)
                 if package.outputs is not None:
+                    self._result_pkg_cache[run_id] = (sig, package)
                     return package
-        return discover_results(base)
+        package = discover_results(base)
+        self._result_pkg_cache[run_id] = (sig, package)
+        return package
+
+    def invalidate_result_package_cache(self, run_id: str | None = None) -> None:
+        """Drop the cached ResultPackage for one run (or all runs)."""
+        if run_id is None:
+            self._result_pkg_cache.clear()
+        else:
+            self._result_pkg_cache.pop(run_id, None)
 
     def recommended_plots_for_run(self, run_id: str) -> list[dict]:
         """Metadata-driven plot descriptions for a run (renders nothing)."""
@@ -942,6 +974,7 @@ class WorkspaceManager:
         region: str | None = None,
         profile: str | None = None,
     ) -> Path:
+        self.invalidate_result_package_cache(self._selected_run_id)
         outputs_dir = self.local_run_cache_dir() / "cloud_outputs"
         if outputs_dir.exists():
             self.delete(outputs_dir)
@@ -967,6 +1000,8 @@ class WorkspaceManager:
         return f"{remote_dir}/outputs"
 
     def refresh_results(self) -> Path | None:
+        # a fetch is about to overwrite this run's local outputs
+        self.invalidate_result_package_cache(self._selected_run_id)
         remote_dir = self.normalize_remote_path(self.status.get("remote_dir") or "")
         if not remote_dir:
             with self.results_output:
@@ -1058,6 +1093,8 @@ class WorkspaceManager:
         if isinstance(_, str) and not self.select_run(_):
             return
         self.results_output.clear_output()
+        with self.results_output:
+            print("Fetching results…")
         outputs_dir = self.refresh_results()
         if outputs_dir is None:
             return
@@ -1080,6 +1117,8 @@ class WorkspaceManager:
         if isinstance(_, str) and not self.select_run(_):
             return
         self.results_output.clear_output()
+        with self.results_output:
+            print("Fetching figures…")
         outputs_dir = self.refresh_results()
         if outputs_dir is None:
             return

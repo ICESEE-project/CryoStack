@@ -106,6 +106,36 @@ def _first_line(text: str) -> str:
     return ""
 
 
+def identity_result_from_output(
+    *, whoami_line: str, expected_username: str
+) -> VerificationResult:
+    """Compare an *already captured* remote identity line to the configured HPC
+    username -- no extra round trip.
+
+    Used by the Check SSH button, whose connectivity probe already runs
+    ``hostname && whoami && ...`` in one command: when the resource's
+    verification command is just ``whoami`` there is no reason to invoke a
+    second remote command. The Run gate never uses this -- it always
+    re-verifies fresh via :func:`verify_remote_identity`.
+    """
+    expected = (expected_username or "").strip()
+    remote = _first_line(whoami_line or "")
+    if not expected:
+        return VerificationResult(ok=False, expected="", error="no HPC username configured")
+    if not remote:
+        return VerificationResult(ok=False, expected=expected, error="no identity in connectivity output")
+    if remote.lower() != expected.lower():
+        return VerificationResult(ok=False, expected=expected, remote_identity=remote, mismatch=True)
+    return VerificationResult(ok=True, expected=expected, remote_identity=remote)
+
+
+def can_reuse_connectivity_identity(verification_command: str) -> bool:
+    """True when the Check SSH connectivity probe (``hostname && whoami && …``)
+    already yields what the resource's identity check needs, so a second remote
+    invocation can be skipped."""
+    return (verification_command or "whoami").strip().lower() in ("", "whoami")
+
+
 def verify_remote_identity(bridge, *, verification_command: str, expected_username: str) -> VerificationResult:
     """Run ``verification_command`` over the active transport and compare its
     output to ``expected_username``. ``bridge`` is a ``RemoteBridge`` (duck: it

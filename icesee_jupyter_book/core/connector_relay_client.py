@@ -14,6 +14,7 @@ unauthenticated request.
 from __future__ import annotations
 
 import threading
+import time
 
 import requests
 
@@ -23,6 +24,13 @@ RELAY_URL = "https://cryostack.eas.gatech.edu"
 
 _LOCK = threading.Lock()
 _BINDING: dict[str, str] = {}
+
+#: short read-through cache for the coarse, unauthenticated session status so a
+#: burst of UI changes does not fan out into one relay HTTP call each. The
+#: cached value is only ``{session_id, online, state}`` -- never a secret.
+STATUS_CACHE_TTL_SECONDS = 2.0
+_STATUS_CACHE: dict[str, tuple[float, dict]] = {}
+_STATUS_LOCK = threading.Lock()
 
 
 class RelayAuthError(RuntimeError):
@@ -45,6 +53,7 @@ def bind_session(session_id: str, control_secret: str, owner_user_id: str) -> No
 def clear_binding() -> None:
     with _LOCK:
         _BINDING.clear()
+    invalidate_status_cache()
 
 
 def current_binding() -> dict[str, str]:
@@ -86,13 +95,52 @@ def create_session(owner_user_id: str) -> dict:
     r.raise_for_status()
     data = r.json()
     bind_session(data["session_id"], data["control_secret"], owner)
+    invalidate_status_cache(data["session_id"])
     return data
 
 
-def check_status(session_id: str) -> dict:
-    """Coarse, unauthenticated session state: ``{session_id, online, state}``."""
-    r = requests.get(f"{RELAY_URL}/connector/status/{session_id}", timeout=15)
-    return r.json()
+def check_status(session_id: str, *, force: bool = False) -> dict:
+    """Coarse, unauthenticated session state: ``{session_id, online, state}``.
+
+    Served from a short (``STATUS_CACHE_TTL_SECONDS``) per-session cache so
+    rapid UI changes do not each hit the relay. Pass ``force=True`` when
+    freshness matters (Check SSH, the Run gate). A ``superseded`` / ``expired``
+    / ``unknown`` state is never cached, so a dead session is re-checked
+    immediately next time.
+    """
+    key = str(session_id or "")
+    if not force:
+        with _STATUS_LOCK:
+            hit = _STATUS_CACHE.get(key)
+        if hit and (time.monotonic() - hit[0]) < STATUS_CACHE_TTL_SECONDS:
+            return dict(hit[1])
+
+    r = requests.get(f"{RELAY_URL}/connector/status/{key}", timeout=15)
+    data = r.json()
+
+    coarse = {
+        "session_id": data.get("session_id", key),
+        "online": bool(data.get("online")),
+        "state": data.get("state", "unknown"),
+    }
+    if coarse["state"] not in {"superseded", "expired", "unknown"}:
+        with _STATUS_LOCK:
+            _STATUS_CACHE[key] = (time.monotonic(), dict(coarse))
+    else:
+        with _STATUS_LOCK:
+            _STATUS_CACHE.pop(key, None)
+    # return the full relay payload (callers read extra fields) but merge the
+    # normalised coarse view so cached and uncached results agree.
+    return {**data, **coarse}
+
+
+def invalidate_status_cache(session_id: str | None = None) -> None:
+    """Drop the cached status for one session (or all sessions)."""
+    with _STATUS_LOCK:
+        if session_id is None:
+            _STATUS_CACHE.clear()
+        else:
+            _STATUS_CACHE.pop(str(session_id), None)
 
 
 def send_command(session_id: str, command_type: str, payload: dict) -> dict:

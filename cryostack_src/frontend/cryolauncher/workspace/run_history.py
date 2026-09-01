@@ -15,7 +15,9 @@ class WorkspaceHistoryPanel:
     run_cards: W.VBox
 
 
-def build_workspace_history_panel(*, manager, on_run_selected=None) -> WorkspaceHistoryPanel:
+def build_workspace_history_panel(
+    *, manager, on_run_selected=None, defer_initial_load=False
+) -> WorkspaceHistoryPanel:
     refresh_button = W.Button(description="Refresh", icon="refresh", layout=W.Layout(width="100px"))
     runs = W.Select(layout=W.Layout(display="none"))
     run_cards = W.VBox(layout=W.Layout(width="100%", gap="2px"))
@@ -91,7 +93,7 @@ def build_workspace_history_panel(*, manager, on_run_selected=None) -> Workspace
             W.HTML("<div class='icesee-subtle cryostack-runs-empty'>No previous runs found.</div>"),
         )
 
-    def refresh(_=None):
+    def refresh(_=None, *, auto_select=True):
         nonlocal suppress_selection_reconcile
         previously_selected = manager.selected_run() if hasattr(manager, "selected_run") else None
         discovered = manager.refresh()
@@ -102,14 +104,25 @@ def build_workspace_history_panel(*, manager, on_run_selected=None) -> Workspace
         run_ids = {run.id for run in discovered}
         suppress_selection_reconcile = True
         try:
-            if discovered:
+            if discovered and auto_select:
                 runs.value = previously_selected.id if previously_selected and previously_selected.id in run_ids else discovered[0].id
-            else:
+            elif not discovered:
                 runs.value = ""
         finally:
             suppress_selection_reconcile = False
         render_cards(discovered)
-        show_selection()
+        if auto_select:
+            # per-run inspection (reconcile, workspace file tree, viz render) is
+            # only done for an explicitly selected run -- not on every gateway
+            # build. Deferring it keeps the run list instant while a run with a
+            # large workspace no longer stalls page load.
+            show_selection()
+        elif discovered:
+            selected.value = (
+                "<div class='icesee-subtle'>"
+                f"{len(discovered)} previous run(s). Select one to inspect its "
+                "workspace and results.</div>"
+            )
 
     def show_selection(change=None):
         run = manager.select_run(runs.value or "")
@@ -183,7 +196,7 @@ def build_workspace_history_panel(*, manager, on_run_selected=None) -> Workspace
         [files],
         layout=W.Layout(width="100%", height="100%", min_height="0", overflow_y="auto"),
     )
-    refresh()
+    refresh(auto_select=not defer_initial_load)
     return WorkspaceHistoryPanel(
         runs_panel=runs_panel,
         files_panel=files_panel,
