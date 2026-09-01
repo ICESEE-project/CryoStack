@@ -76,6 +76,14 @@ from icesee_jupyter_book.ui.application_menus import (
 from icesee_jupyter_book.ui.shared_app_styles import (
     shared_application_styles,
 )
+from icesee_jupyter_book.ui.shared_application_header import build_application_header
+from icesee_jupyter_book.ui.shared_remote_connection_panel import (
+    build_remote_connection_panel,
+)
+from icesee_jupyter_book.ui.shared_slurm_resources_panel import (
+    build_slurm_resources_panel,
+)
+from icesee_jupyter_book.ui.shared_validation import validate_slurm_resources
 
 from icesee_jupyter_book.ui.application_menus import (
     build_icesee_app_menu,
@@ -975,6 +983,13 @@ def build_icesee_ui():
             cluster_user.placeholder = rf["username_hint"]
             slurm_part.value = rf["partition"]
             slurm_time.value = rf["wall_time"]
+            # B4: resource-aware auth options + manual key-registration checklist.
+            try:
+                remote_conn_panel.apply_profile(
+                    get_compute_profile(cluster_name_for_keys.value or "")
+                )
+            except NameError:
+                pass
 
         # --- B2: authenticated user x resource personal-settings persistence ---
         def _b2_read_personal() -> dict:
@@ -994,8 +1009,9 @@ def build_icesee_ui():
             slurm_mail.value = s.get("email", "") or ""
             if s.get("access_mode") in {"auto", "direct", "connector"}:
                 access_mode_dd.value = s["access_mode"]
-            if s.get("auth_mode") in {"key", "bootstrap"}:
-                auth_mode.value = s["auth_mode"]
+            _saved_auth = s.get("auth_mode")
+            if _saved_auth in {t for _, t in auth_mode.options}:
+                auth_mode.value = _saved_auth
 
         _b2_load, _b2_save = make_state_io(
             workspace_bridge, "icesee",
@@ -1351,11 +1367,36 @@ def build_icesee_ui():
                 for _w in _gate.warnings:
                     with log_out:
                         print(_w)
+                try:
+                    remote_conn_panel.set_status_from_access(_gate.state)
+                except NameError:
+                    pass
                 if not _gate.ok:
                     set_status("fail")
                     with log_out:
                         for _m in _gate.messages:
                             print(_m)
+                    return
+
+                # B4: pre-submit Slurm resource validation (internal consistency
+                # + syntax only; no invented site limits).
+                _slurm_errors = validate_slurm_resources(
+                    nodes=slurm_nodes.value,
+                    tasks=slurm_ntasks.value,
+                    tasks_per_node=slurm_tpn.value,
+                    wall_time=slurm_time.value,
+                    memory=slurm_mem.value,
+                    account=slurm_account.value,
+                    account_required=get_compute_profile(
+                        cluster_name_for_keys.value or "pace"
+                    ).account_required,
+                )
+                if _slurm_errors:
+                    set_status("fail")
+                    with log_out:
+                        print("[slurm][ERROR] Fix the job resource request:")
+                        for _m in _slurm_errors:
+                            print("  -", _m)
                     return
 
                 example_cfg = EXAMPLES[example_dd.value]
@@ -1578,6 +1619,10 @@ def build_icesee_ui():
         def run_example_remote_test():
             log_out.clear_output()
             set_status("running")
+            try:
+                remote_conn_panel.set_status("checking")
+            except NameError:
+                pass
 
             host = cluster_host.value.strip()
             user = cluster_user.value.strip()
@@ -1616,9 +1661,19 @@ def build_icesee_ui():
                                   f"configured '{_v.expected}'. Run is blocked until this matches.")
                         else:
                             print(f"[identity] could not verify remote identity: {_v.error}")
+                    try:
+                        remote_conn_panel.set_status(
+                            "verified" if _v.ok else "mismatch" if _v.mismatch else "failed"
+                        )
+                    except NameError:
+                        pass
                 except Exception as _e:
                     with log_out:
                         print("[identity] verification skipped:", type(_e).__name__, _e)
+                    try:
+                        remote_conn_panel.set_status("failed")
+                    except NameError:
+                        pass
 
             try:
 
@@ -2418,24 +2473,10 @@ def build_icesee_ui():
         spack_pmix_dir_row = W.HBox([W.HTML("<div class='icesee-lbl'>PMIX_DIR:</div>"), spack_pmix_dir], layout=W.Layout(gap="12px"))
         spack_existing_sbatch_row = W.Box([spack_use_existing_sbatch], layout=W.Layout(margin="0 0 0 120px"))
 
-        remote_controls_row = W.HBox([connect_btn, status_btn, tail_btn, terminate_btn], layout=W.Layout(gap="10px"))
-        slurm_section_title = W.HTML("<div class='icesee-subtle' style='margin-top:8px'>Slurm resources</div>")
-        job_time_row = W.HBox(
-            [form_pair("Job:", slurm_job_name), form_pair("Time:", slurm_time)],
-            layout=W.Layout(gap="8px", width="100%"),
-        )
-        nodes_tasks_tpn_row = W.HBox(
-            [form_pair("Nodes:", slurm_nodes), form_pair("Tasks:", slurm_ntasks), form_pair("TPN:", slurm_tpn)],
-            layout=W.Layout(gap="8px", width="100%"),
-        )
-        part_mem_row = W.HBox(
-            [form_pair("Part:", slurm_part), form_pair("Mem:", slurm_mem)],
-            layout=W.Layout(gap="8px", width="100%"),
-        )
-        acct_mail_row = W.HBox(
-            [form_pair("Acct:", slurm_account), form_pair("Mail:", slurm_mail)],
-            layout=W.Layout(gap="8px", width="100%"),
-        )
+        remote_controls_row = W.HBox([status_btn, tail_btn, terminate_btn], layout=W.Layout(gap="10px"))
+        # B4: Job settings / Compute resources / Allocation are arranged by
+        # build_slurm_resources_panel; only ICESEE's MPI + module/export rows
+        # are laid out here and handed to the panel as extra_children.
         mpi_model_row = W.HBox(
             [form_pair("MPI np:", cluster_mpi_np), form_pair("Model nprocs:", cluster_model_nprocs, label_width="120px")],
             layout=W.Layout(gap="8px", width="100%"),
@@ -2443,11 +2484,7 @@ def build_icesee_ui():
 
         modules_title = W.HTML("<div class='icesee-subtle' style='margin-top:10px'>Modules</div>")
         exports_title = W.HTML("<div class='icesee-subtle' style='margin-top:10px'>Exports</div>")
-        auth_title = W.HTML("<div class='icesee-subtle' style='margin-top:10px'>Auth</div>")
-        auth_row = W.HBox([W.HTML("<div class='icesee-lbl'>Method:</div>"), auth_mode], layout=W.Layout(gap="12px"))
         ssh_key_title = W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>SSH key manager</div>")
-        cluster_password_row = W.Box([cluster_password], layout=W.Layout(margin="0 0 0 120px"))
-        bootstrap_btn_row = W.Box([bootstrap_btn], layout=W.Layout(margin="0 0 0 120px"))
 
         download_buttons_row = W.HBox(
             [preview_results_btn, results_download_btn],
@@ -2461,24 +2498,32 @@ def build_icesee_ui():
         )
 
 
-        cluster_name_row = form_pair("Cluster:", cluster_name_for_keys, "90px")
+        # B4: user-workflow-oriented Remote Connection panel (Compute resource /
+        # Your HPC identity / Access / Status), connector + session internals
+        # behind Diagnostics. Transport, B3 AccessState, identity verification
+        # and the Run gate are unchanged.
+        connect_btn.description = "Check SSH Access"
+        start_connector_session_btn.description = "Open Connector Setup"
+        start_connector_session_btn.icon = "external-link"
 
-        remote_conn_inner = W.VBox([
-            cluster_name_row,
-            W.HBox([W.HTML("<div class='icesee-lbl'>Host:</div>"), cluster_host], layout=W.Layout(gap="12px")),
-            W.HBox([
-                form_pair("User:", cluster_user),
-                form_pair("Port:", cluster_port, label_width="56px"),
-            ], layout=W.Layout(gap="16px", width="100%")),
-            W.HBox([W.HTML("<div class='icesee-lbl'>Access:</div>"), access_mode_dd], layout=W.Layout(gap="12px")),
-            W.HBox([
-                form_pair("Remote dir:", remote_base_dir, label_width="90px"),
-                form_pair("Tag:", remote_tag, label_width="56px"),
-            ], layout=W.Layout(gap="16px", width="100%")),
-            relay_status,
-            W.HBox([start_connector_session_btn], layout=W.Layout(gap="10px")),
-            connector_setup_link,
-        ], layout=W.Layout(gap="8px"))
+        remote_tag_row = form_pair("Tag:", remote_tag, label_width="56px")
+        remote_conn_panel = build_remote_connection_panel(
+            resource=cluster_name_for_keys,
+            host=cluster_host,
+            port=cluster_port,
+            hpc_username=cluster_user,
+            remote_directory=remote_base_dir,
+            connection_method=access_mode_dd,
+            auth_method=auth_mode,
+            check_ssh_button=connect_btn,
+            open_connector_button=start_connector_session_btn,
+            connector_card=relay_status,
+            connector_setup_link=connector_setup_link,
+            profile=get_compute_profile(cluster_name_for_keys.value or "pace"),
+            auth_extra_children=[cluster_password, bootstrap_btn],
+            advanced_children=[remote_tag_row],
+        )
+        remote_conn_inner = remote_conn_panel.container
 
 
         exec_backend_inner = W.VBox([
@@ -2496,24 +2541,24 @@ def build_icesee_ui():
         ], layout=W.Layout(gap="8px"))
 
 
-        slurm_inner = W.VBox([
-            job_time_row,
-            nodes_tasks_tpn_row,
-            part_mem_row,
-            acct_mail_row,
-            mpi_model_row,
-            modules_title,
-            remote_module_lines,
-            exports_title,
-            remote_export_lines,
-        ], layout=W.Layout(gap="8px"))
-
-
-        auth_inner = W.VBox([
-            auth_row,
-            cluster_password_row,
-            bootstrap_btn_row,
-        ], layout=W.Layout(gap="8px"))
+        slurm_inner = build_slurm_resources_panel(
+            job_name=slurm_job_name,
+            wall_time=slurm_time,
+            nodes=slurm_nodes,
+            tasks=slurm_ntasks,
+            tasks_per_node=slurm_tpn,
+            partition=slurm_part,
+            memory=slurm_mem,
+            account=slurm_account,
+            email=slurm_mail,
+            extra_children=[
+                mpi_model_row,
+                modules_title,
+                remote_module_lines,
+                exports_title,
+                remote_export_lines,
+            ],
+        ).container
 
         remote_conn_box = W.Accordion(children=[remote_conn_inner])
         remote_conn_box.set_title(0, "🔌 Remote connection")
@@ -2526,10 +2571,6 @@ def build_icesee_ui():
         slurm_box = W.Accordion(children=[slurm_inner])
         slurm_box.set_title(0, "📊 Slurm resources")
         slurm_box.selected_index = None
-
-        auth_box = W.Accordion(children=[auth_inner])
-        auth_box.set_title(0, "🔒 Authentication")
-        auth_box.selected_index = None
 
         server_key_note = W.HTML("""
         <div class='icesee-subtle' style='line-height:1.5; margin-bottom:8px;'>
@@ -2555,18 +2596,18 @@ def build_icesee_ui():
         # ssh_key_manager_box.set_title(0, "🔐 Server-side SSH Key Manager")
         # ssh_key_manager_box.selected_index = None
 
-        # Remote panel
+        # Remote panel. Authentication + the connector card + "Open Connector
+        # Setup" now live inside the Remote connection panel (B4). "Check SSH
+        # Access" is the panel's primary action; job-control buttons stay here.
         remote_box = W.VBox(
             [
                 W.HTML("<div class='icesee-h'>Remote</div>"),
                 remote_conn_box,
                 exec_backend_box,
                 slurm_box,
-                auth_box,
-                # server_key_note,
                 ssh_key_manager_box,
                 W.HBox(
-                    [connect_btn, status_btn, tail_btn, terminate_btn],
+                    [status_btn, tail_btn, terminate_btn],
                     layout=W.Layout(gap="10px", flex_wrap="wrap"),
                 ),
                 # W.HBox(
@@ -2684,6 +2725,7 @@ def build_icesee_ui():
                 workspace_bridge.widget(),
 
                 app_menu,
+                build_application_header("ICESEE"),
                 header,
                 row,
                 actions_card,

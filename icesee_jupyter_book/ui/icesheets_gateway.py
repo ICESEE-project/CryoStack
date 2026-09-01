@@ -51,6 +51,16 @@ from icesee_jupyter_book.ui.application_menus import (
 from icesee_jupyter_book.ui.shared_app_styles import (
     shared_application_styles,
 )
+from icesee_jupyter_book.ui.shared_application_header import build_application_header
+from icesee_jupyter_book.ui.shared_remote_connection_panel import (
+    build_remote_connection_panel,
+)
+from icesee_jupyter_book.ui.shared_slurm_resources_panel import (
+    build_slurm_resources_panel,
+)
+from icesee_jupyter_book.ui.shared_validation import (
+    validate_slurm_resources,
+)
 
 from icesee_jupyter_book.ui.experiment_bridge import (
     ExperimentBridge,
@@ -1436,6 +1446,13 @@ def build_icesheets_ui():
             cluster_user.placeholder = rf["username_hint"]
             slurm_part.value = rf["partition"]
             slurm_time.value = rf["wall_time"]
+            # B4: resource-aware auth options + manual key-registration checklist.
+            try:
+                remote_conn_panel.apply_profile(
+                    get_compute_profile(cluster_name_for_keys.value or "")
+                )
+            except NameError:
+                pass
 
         # --- B2: authenticated user x resource personal-settings persistence ---
         def _b2_read_personal() -> dict:
@@ -1455,8 +1472,9 @@ def build_icesheets_ui():
             slurm_mail.value = s.get("email", "") or ""
             if s.get("access_mode") in {"auto", "direct", "connector"}:
                 access_mode_dd.value = s["access_mode"]
-            if s.get("auth_mode") in {"key", "bootstrap"}:
-                auth_mode.value = s["auth_mode"]
+            _saved_auth = s.get("auth_mode")
+            if _saved_auth in {t for _, t in auth_mode.options}:
+                auth_mode.value = _saved_auth
 
         _b2_load, _b2_save = make_state_io(
             workspace_bridge, "cryolauncher",
@@ -1585,11 +1603,36 @@ def build_icesheets_ui():
                 for _w in _gate.warnings:
                     with log_out:
                         print(_w)
+                try:
+                    remote_conn_panel.set_status_from_access(_gate.state)
+                except NameError:
+                    pass
                 if not _gate.ok:
                     status_chip.value = status_html("fail")
                     with log_out:
                         for _m in _gate.messages:
                             print(_m)
+                    return
+
+                # B4: pre-submit Slurm resource validation (internal consistency
+                # + syntax only; no invented site limits).
+                _slurm_errors = validate_slurm_resources(
+                    nodes=slurm_nodes.value,
+                    tasks=slurm_ntasks.value,
+                    tasks_per_node=slurm_tpn.value,
+                    wall_time=slurm_time.value,
+                    memory=slurm_mem.value,
+                    account=slurm_account.value,
+                    account_required=get_compute_profile(
+                        cluster_name_for_keys.value or "pace"
+                    ).account_required,
+                )
+                if _slurm_errors:
+                    status_chip.value = status_html("fail")
+                    with log_out:
+                        print("[slurm][ERROR] Fix the job resource request:")
+                        for _m in _slurm_errors:
+                            print("  -", _m)
                     return
 
             if not example_dir.value.strip():
@@ -1948,6 +1991,10 @@ def build_icesheets_ui():
         _remote_check = remote_runtime.check
 
         def on_test_remote(_=None):
+            try:
+                remote_conn_panel.set_status("checking")
+            except NameError:
+                pass
             _remote_check(_)
             if mode_dd.value != "remote":
                 return
@@ -1970,9 +2017,22 @@ def build_icesheets_ui():
                               "until this matches.")
                     else:
                         print(f"[identity] could not verify remote identity: {_v.error}")
+                try:
+                    if _v.ok:
+                        remote_conn_panel.set_status("verified")
+                    elif _v.mismatch:
+                        remote_conn_panel.set_status("mismatch")
+                    else:
+                        remote_conn_panel.set_status("failed")
+                except NameError:
+                    pass
             except Exception as _e:
                 with log_out:
                     print("[identity] verification skipped:", type(_e).__name__, _e)
+                try:
+                    remote_conn_panel.set_status("failed")
+                except NameError:
+                    pass
 
         on_status = remote_runtime.status
         on_terminate = remote_runtime.terminate
@@ -2169,21 +2229,11 @@ def build_icesheets_ui():
         container_source_row = form_row("Source:", container_source)
         image_uri_row = form_row("Image:", image_uri)
 
-        cluster_host_row = form_pair("Host:", cluster_host, "90px")
-        cluster_user_row = form_pair("User:", cluster_user, "90px")
-        cluster_port_row = form_pair("Port:", cluster_port, "90px")
-        remote_base_dir_row = form_pair("Remote dir:", remote_base_dir, "90px")
+        # B4: the Remote connection and Slurm resources widgets are now arranged
+        # by the shared panels (build_remote_connection_panel /
+        # build_slurm_resources_panel). Only the "Tag" row is still laid out
+        # here -- it goes into the panel's Diagnostics section.
         remote_tag_row = form_pair("Tag:", remote_tag, "90px")
-
-        slurm_job_name_row = form_pair("Job:", slurm_job_name, "90px")
-        slurm_time_row = form_pair("Time:", slurm_time, "90px")
-        slurm_nodes_row = form_pair("Nodes:", slurm_nodes, "90px")
-        slurm_ntasks_row = form_pair("Tasks:", slurm_ntasks, "90px")
-        slurm_tpn_row = form_pair("TPN:", slurm_tpn, "90px")
-        slurm_part_row = form_pair("Part:", slurm_part, "90px")
-        slurm_mem_row = form_pair("Mem:", slurm_mem, "90px")
-        slurm_account_row = form_pair("Acct:", slurm_account, "90px")
-        slurm_mail_row = form_pair("Mail:", slurm_mail, "90px")
 
         ssh_key_manager = build_ssh_key_manager(
             cluster_name_widget=cluster_name_for_keys,
@@ -2228,40 +2278,49 @@ def build_icesheets_ui():
             margin="10px 0 0 0",
         )
 
-        cluster_name_row = form_pair("Cluster:", cluster_name_for_keys, "90px")
-        remote_conn_inner = W.VBox([
-            cluster_name_row,
-            form_pair("Access:", access_mode_dd, "90px"),
-            cluster_host_row,
-            W.HBox([cluster_user_row, cluster_port_row], layout=W.Layout(gap="12px", width="100%")),
-            W.HBox([remote_base_dir_row, remote_tag_row], layout=W.Layout(gap="12px", width="100%")),
-        ])
-        remote_conn_box = W.Accordion(children=[remote_conn_inner])
-        remote_conn_box.set_title(0, "🔌 Remote connection")
-        # remote_conn_box.selected_index = 0  # open by default
+        # B4: user-workflow-oriented Remote Connection panel. Reorganises the
+        # existing widgets (Compute resource / Your HPC identity / Access /
+        # Status) and hides the connector/session internals behind Diagnostics.
+        # Transport behaviour, the B3 AccessState machine, identity verification
+        # and the Run gate are unchanged.
+        connect_btn.description = "Check SSH Access"
+        start_connector_session_btn.description = "Open Connector Setup"
+        start_connector_session_btn.icon = "external-link"
 
-        slurm_inner = W.VBox([
-            W.HBox([slurm_job_name_row, slurm_time_row], layout=W.Layout(gap="12px", width="100%")),
-            W.HBox([slurm_nodes_row, slurm_ntasks_row, slurm_tpn_row], layout=W.Layout(gap="12px", width="100%")),
-            W.HBox([slurm_part_row, slurm_mem_row], layout=W.Layout(gap="12px", width="100%")),
-            W.HBox([slurm_account_row, slurm_mail_row], layout=W.Layout(gap="12px", width="100%")),
-        ])
+        remote_conn_panel = build_remote_connection_panel(
+            resource=cluster_name_for_keys,
+            host=cluster_host,
+            port=cluster_port,
+            hpc_username=cluster_user,
+            remote_directory=remote_base_dir,
+            connection_method=access_mode_dd,
+            auth_method=auth_mode,
+            check_ssh_button=connect_btn,
+            open_connector_button=start_connector_session_btn,
+            connector_card=relay_status,
+            connector_setup_link=connector_setup_link,
+            profile=get_compute_profile(cluster_name_for_keys.value or "pace"),
+            auth_extra_children=[cluster_password, bootstrap_btn],
+            advanced_children=[remote_tag_row],
+        )
+        remote_conn_box = W.Accordion(children=[remote_conn_panel.container])
+        remote_conn_box.set_title(0, "🔌 Remote connection")
+
+        slurm_inner = build_slurm_resources_panel(
+            job_name=slurm_job_name,
+            wall_time=slurm_time,
+            nodes=slurm_nodes,
+            tasks=slurm_ntasks,
+            tasks_per_node=slurm_tpn,
+            partition=slurm_part,
+            memory=slurm_mem,
+            account=slurm_account,
+            email=slurm_mail,
+        ).container
 
         slurm_box = W.Accordion(children=[slurm_inner])
         slurm_box.set_title(0, "📊 Slurm resources")
         slurm_box.selected_index = None
-
-        auth_inner = W.VBox([
-            W.HBox(
-                [W.HTML("<div class='icesee-lbl'>Method:</div>"), auth_mode],
-                layout=W.Layout(gap="10px")
-            ),
-            cluster_password,
-            bootstrap_btn,
-        ])
-
-        auth_box = W.Accordion(children=[auth_inner])
-        auth_box.set_title(0, "🔒 Authentication")
 
         exec_backend_choice = W.Dropdown(
             options=[("ICESEE-Spack", "spack"), ("ICESEE-Container", "container")],
@@ -2443,14 +2502,10 @@ def build_icesheets_ui():
         remote_box = W.VBox([
             remote_conn_box,
             exec_backend_box,
-            auth_box,
-            # server_key_note,
+            # Authentication, the connector card and the "Open Connector Setup"
+            # action now live inside the Remote connection panel (B4).
             ssh_key_manager_box,
             slurm_box,
-            relay_status,
-            start_connector_session_btn,
-            connector_setup_link,
-            # connector_panel,
         ], layout=W.Layout(gap="10px"))
 
         run_plan = build_run_plan_panel(
@@ -2583,6 +2638,7 @@ def build_icesheets_ui():
                 workspace_bridge.widget(),
 
                 app_menu,
+                build_application_header("IceSheets"),
                 header,
                 row,
                 workspace_height_sync,

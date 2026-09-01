@@ -7,7 +7,8 @@ Outputs (regenerated, safe to re-run):
     icesee_hpc_connector/assets/cryostack-connector-512.png   tray / window icon (Linux)
     icesee_hpc_connector/assets/cryostack-connector.icns      macOS .app / Dock icon
     icesee_hpc_connector/assets/cryostack-connector.ico       Windows .exe icon
-    deployment/deploy_web_nginx/web/connect/cryostack-logo.png  /connect/ page + app header
+    deployment/deploy_web_nginx/web/connect/cryostack-logo.png  /connect/ page
+    icesee_jupyter_book/ui/assets/cryostack-mark-96.png       shared Voila app header mark
 
 Usage:  python3 scripts/build_brand_assets.py
 """
@@ -21,6 +22,7 @@ CANONICAL = REPO / "icesee_jupyter_book" / "cryostack.png"
 
 CONNECTOR_ASSETS = REPO / "icesee_hpc_connector" / "assets"
 CONNECT_WEB = REPO / "deployment" / "deploy_web_nginx" / "web" / "connect"
+APP_HEADER_ASSETS = REPO / "icesee_jupyter_book" / "ui" / "assets"
 
 
 def _square(im):
@@ -68,12 +70,18 @@ def main() -> int:
     h = round(src.height * (w / src.width))
     src.convert("RGBA").resize((w, h), Image.LANCZOS).save(CONNECT_WEB / "cryostack-logo.png")
 
+    # Shared Voila application header: a small square mark, base64-embedded by
+    # icesee_jupyter_book/ui/shared_application_header.py. Same canonical source.
+    APP_HEADER_ASSETS.mkdir(parents=True, exist_ok=True)
+    sq.resize((96, 96), Image.LANCZOS).save(APP_HEADER_ASSETS / "cryostack-mark-96.png")
+
     print("brand assets regenerated from", CANONICAL.relative_to(REPO))
     for p in (
         CONNECTOR_ASSETS / "cryostack-connector-512.png",
         CONNECTOR_ASSETS / "cryostack-connector.icns",
         CONNECTOR_ASSETS / "cryostack-connector.ico",
         CONNECT_WEB / "cryostack-logo.png",
+        APP_HEADER_ASSETS / "cryostack-mark-96.png",
     ):
         print("  ", p.relative_to(REPO), f"({p.stat().st_size} bytes)")
     return 0

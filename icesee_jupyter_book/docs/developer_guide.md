@@ -93,6 +93,41 @@ Every packaging icon is derived from **one** canonical image,
 re-run. macOS/`.app` and Windows/`.exe` get the icon via `--icon`; the Linux
 tray loads the 512px PNG; the displayed name is always **CryoStack Connector**.
 
+`build_brand_assets.py` also derives `icesee_jupyter_book/ui/assets/cryostack-mark-96.png`,
+the small mark base64-embedded by the shared Voila application header
+(`shared_application_header.py`). Same canonical source — do not hand-edit it.
+
+### Shared application UI (B4)
+
+The Voila gateways (IceSheets, ICESEE, future Icepack) share generic,
+model-neutral UI building blocks in `icesee_jupyter_book/ui/`:
+
+* `shared_application_header.build_application_header(app_name)` — compact shell
+  header: CryoStack wordmark + a distinct, prominent application name.
+* `shared_remote_connection_panel.build_remote_connection_panel(...)` —
+  reorganises the existing remote widgets into *Compute resource* / *Your HPC
+  identity* / *Access* / *Status*, with a status chip (Not checked / Verified /
+  Mismatch / Failed driven by the B3 AccessState), the connector card, and the
+  session id / websocket path / relay + raw state hidden behind a **Diagnostics**
+  accordion. `apply_profile(profile)` refreshes the resource-aware auth options
+  and the manual key-registration checklist.
+* `shared_slurm_resources_panel.build_slurm_resources_panel(...)` — groups the
+  existing Slurm widgets into *Job settings* / *Compute resources* /
+  *Allocation & notifications* with full-word labels and help text. Serializer
+  keys and submission kwargs are unchanged.
+* `shared_auth_ux` — auth methods come from `ComputeProfile.auth_modes` /
+  `ssh_agent_supported`; certificates / token auth / portal provisioning are
+  never advertised. Manual registration shows a fixed six-step checklist and
+  never asks for the institutional web-portal password.
+* `shared_validation` — pure pre-submit checks (nodes/tasks/tasks-per-node
+  floors and consistency, wall-time and memory syntax, account required only
+  when the profile says so). No invented site limits.
+
+These panels arrange the gateway's **existing** widget instances — they do not
+own transport, the B3 Run gate, identity verification, or model logic.
+Responsive rules for every shared class live only in
+`shared_app_styles.py`.
+
 ### SSH credential namespace (B3)
 
 Both the server-side "SSH Key Manager" and the workstation Connector now

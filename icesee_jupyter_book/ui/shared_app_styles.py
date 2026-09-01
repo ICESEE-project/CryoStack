@@ -573,6 +573,298 @@ pre.cryostack-code-block {
     }
 }
 
+
+/* =========================================================
+   B4 -- shared application header
+   ========================================================= */
+
+.cryostack-app-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    padding: 10px 14px;
+    margin: 0 0 14px;
+
+    border: 1px solid rgba(15, 23, 42, 0.08);
+    border-radius: 14px;
+
+    background:
+        linear-gradient(
+            to right,
+            rgba(37, 99, 235, 0.06),
+            rgba(15, 23, 42, 0.02)
+        );
+}
+
+.cryostack-app-header__mark {
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+    border-radius: 9px;
+}
+
+.cryostack-app-header__mark--fallback {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    line-height: 1;
+    color: #1d4ed8;
+}
+
+.cryostack-app-header__text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.2;
+}
+
+.cryostack-app-header__brand {
+    color: rgba(15, 23, 42, 0.62);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.cryostack-app-header__app {
+    color: #111827;
+    font-size: 19px;
+    font-weight: 800;
+}
+
+
+/* =========================================================
+   B4 -- grouped form panels (Remote Connection, Slurm resources)
+   ========================================================= */
+
+.cryostack-group-title {
+    margin: 2px 0 6px;
+
+    color: rgba(15, 23, 42, 0.82);
+
+    font-size: 13px;
+    font-weight: 750;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.cryostack-field-label {
+    margin-bottom: 2px;
+    color: rgba(15, 23, 42, 0.80);
+    font-size: 13px;
+    font-weight: 650;
+}
+
+.cryostack-help {
+    margin-top: 2px;
+    color: rgba(15, 23, 42, 0.52);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.cryostack-field {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.cryostack-field-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 14px;
+    width: 100%;
+}
+
+/* Slurm 3-up numeric grid: 3 -> 2 -> 1 as width drops. */
+.cryostack-slurm-numeric-grid {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    width: 100%;
+}
+
+@media (max-width: 768px) {
+    .cryostack-slurm-numeric-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 430px) {
+    .cryostack-slurm-numeric-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+
+/* =========================================================
+   B4 -- Remote Connection status chip
+   ========================================================= */
+
+.cryostack-conn-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+
+    padding: 6px 12px;
+
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 999px;
+
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.cryostack-conn-status__dot { font-size: 11px; line-height: 1; }
+
+.cryostack-conn-status.is-unchecked { background: rgba(15, 23, 42, 0.04); color: #475569; }
+.cryostack-conn-status.is-unchecked .cryostack-conn-status__dot { color: #94a3b8; }
+
+.cryostack-conn-status.is-checking { background: rgba(37, 99, 235, 0.10); color: #1d4ed8; }
+.cryostack-conn-status.is-checking .cryostack-conn-status__dot { color: #2563eb; }
+
+.cryostack-conn-status.is-verified { background: rgba(22, 163, 74, 0.14); color: #15803d; }
+.cryostack-conn-status.is-verified .cryostack-conn-status__dot { color: #16a34a; }
+
+.cryostack-conn-status.is-mismatch { background: rgba(217, 119, 6, 0.16); color: #b45309; }
+.cryostack-conn-status.is-mismatch .cryostack-conn-status__dot { color: #d97706; }
+
+.cryostack-conn-status.is-failed { background: rgba(220, 38, 38, 0.14); color: #b91c1c; }
+.cryostack-conn-status.is-failed .cryostack-conn-status__dot { color: #dc2626; }
+
+
+/* =========================================================
+   B4 -- connector card, diagnostics, manual key registration
+   ========================================================= */
+
+.cryostack-connector-card {
+    padding: 12px 14px;
+    border: 1px solid rgba(37, 99, 235, 0.16);
+    border-radius: 12px;
+    background: rgba(37, 99, 235, 0.04);
+}
+
+.cryostack-diag {
+    font-size: 12px;
+    line-height: 1.7;
+    color: rgba(15, 23, 42, 0.62);
+    word-break: break-all;
+}
+
+.cryostack-diag__k { font-weight: 700; color: rgba(15, 23, 42, 0.78); }
+
+.cryostack-reg-steps {
+    margin: 6px 0 8px;
+    padding-left: 20px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: rgba(15, 23, 42, 0.78);
+}
+
+.cryostack-portal-link,
+a.cryostack-portal-link {
+    display: inline-block;
+    margin-top: 4px;
+    padding: 7px 12px;
+    border-radius: 8px;
+    background: #2563eb;
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 13px;
+    text-decoration: none;
+}
+
+
+/* =========================================================
+   B4 -- narrow-width behaviour for the grouped panels
+   ========================================================= */
+
+@media (max-width: 768px) {
+    .cryostack-field-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+
+    .cryostack-remote-connection-panel .cryostack-field,
+    .cryostack-slurm-resources-panel .cryostack-field {
+        width: 100%;
+        flex: 1 1 auto;
+    }
+
+    .cryostack-conn-actions {
+        flex-wrap: wrap;
+    }
+
+    .cryostack-conn-actions .widget-button {
+        width: 100%;
+    }
+
+    .cryostack-remote-connection-panel .widget-text,
+    .cryostack-remote-connection-panel .widget-dropdown,
+    .cryostack-remote-connection-panel .widget-inttext,
+    .cryostack-remote-connection-panel .widget-togglebuttons {
+        width: 100% !important;
+    }
+
+    .cryostack-diagnostics-accordion,
+    .cryostack-diagnostics-accordion .widget-accordion-child {
+        width: 100%;
+        max-width: 100%;
+    }
+}
+
+@media (max-width: 430px) {
+    .cryostack-app-header {
+        gap: 10px;
+        padding: 9px 11px;
+    }
+
+    .cryostack-app-header__mark { width: 34px; height: 34px; }
+    .cryostack-app-header__app { font-size: 17px; }
+    .cryostack-group-title { font-size: 12px; }
+}
+
+@media (max-width: 390px) {
+    .cryostack-app-header__app { font-size: 16px; }
+    .cryostack-app-header__brand { font-size: 11px; }
+}
+
+@media (max-width: 360px) {
+    .cryostack-app-header { flex-wrap: wrap; }
+    .cryostack-conn-status { width: 100%; justify-content: center; }
+}
+
+
+/* =========================================================
+   B4 -- dark theme for the new components
+   ========================================================= */
+
+html[data-theme="dark"] .cryostack-app-header {
+    border-color: rgba(226, 232, 240, 0.12);
+    background:
+        linear-gradient(
+            to right,
+            rgba(37, 99, 235, 0.16),
+            rgba(15, 23, 42, 0.20)
+        );
+}
+
+html[data-theme="dark"] .cryostack-app-header__brand { color: #94a3b8; }
+html[data-theme="dark"] .cryostack-app-header__app { color: #f8fafc; }
+html[data-theme="dark"] .cryostack-group-title,
+html[data-theme="dark"] .cryostack-field-label { color: #e2e8f0; }
+html[data-theme="dark"] .cryostack-help,
+html[data-theme="dark"] .cryostack-diag { color: #94a3b8; }
+html[data-theme="dark"] .cryostack-diag__k { color: #cbd5e1; }
+html[data-theme="dark"] .cryostack-connector-card {
+    border-color: rgba(37, 99, 235, 0.30);
+    background: rgba(37, 99, 235, 0.12);
+}
+html[data-theme="dark"] .cryostack-reg-steps { color: #cbd5e1; }
+
 </style>
 """
 
