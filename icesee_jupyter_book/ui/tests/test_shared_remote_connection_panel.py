@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import ipywidgets as W
+import pytest
 
 _REPO = Path(__file__).resolve().parents[3]
 if str(_REPO) not in sys.path:
@@ -15,6 +16,7 @@ from cryostack_src.resources.profiles import ComputeProfile, get_compute_profile
 from icesee_jupyter_book.ui.shared_remote_connection_panel import (
     access_state_to_status_kind,
     build_remote_connection_panel,
+    classify_bootstrap_result,
 )
 
 
@@ -117,6 +119,44 @@ def test_key_unregistered_uses_the_manual_checklist_for_portal_resources():
     html = _all_html(panel.registration_box)
     assert "Example Portal" in html
     assert "Password bootstrap" not in html
+
+
+def test_bootstrap_state_gives_immediate_and_final_feedback():
+    panel = _panel(profile=get_compute_profile("pace"))
+
+    panel.set_bootstrap_state("registering")
+    assert "Registering SSH key" in panel.status_chip.value
+
+    panel.set_bootstrap_state("verifying")
+    assert "verifying access" in panel.status_chip.value
+
+    panel.set_bootstrap_state("password_failed")
+    assert "is-key-unregistered" in panel.status_chip.value
+    assert "Password authentication failed" in _all_html(panel.registration_box)
+
+    panel.set_bootstrap_state("timed_out")
+    assert "is-failed" in panel.status_chip.value
+    assert "Timed out" in _all_html(panel.registration_box)
+
+    panel.set_bootstrap_state("connector_failed", "Connector dropped.")
+    html = _all_html(panel.registration_box)
+    assert "could not run the bootstrap command" in html
+    assert "Connector dropped." in html
+
+
+@pytest.mark.parametrize("result,expected", [
+    ({"ok": True, "reason": "ok", "key_installed": True}, "installed"),
+    ({"ok": False, "reason": "verify_failed", "key_installed": True}, "installed"),
+    ({"ok": False, "reason": "password_auth_failed"}, "password_failed"),
+    ({"ok": False, "reason": "paramiko_missing"}, "not_permitted"),
+    ({"ok": False, "reason": "connect_failed"}, "timed_out"),
+    ({"ok": False, "reason": "install_failed"}, "connector_failed"),
+    ({"detail": "Connector command timed out."}, "timed_out"),
+    ({"weird": 1}, "connector_failed"),
+    ("not a dict", "connector_failed"),
+])
+def test_classify_bootstrap_result(result, expected):
+    assert classify_bootstrap_result(result) == expected
 
 
 def test_verified_status_clears_any_registration_guidance():

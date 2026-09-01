@@ -593,125 +593,140 @@ def ensure_local_ssh_key(cluster_name="pace", key_type="ed25519", *, hpc_user=""
 
     return str(priv), str(pub)
 
-async def bootstrap_passwordless_ssh_local(payload):
+#: machine-readable outcomes of a password-bootstrap attempt. The gateway maps
+#: these to explicit UI states -- a bare exception string must never be the only
+#: thing the user gets back.
+BOOTSTRAP_OK = "ok"
+BOOTSTRAP_PARAMIKO_MISSING = "paramiko_missing"
+BOOTSTRAP_PASSWORD_AUTH_FAILED = "password_auth_failed"
+BOOTSTRAP_CONNECT_FAILED = "connect_failed"
+BOOTSTRAP_INSTALL_FAILED = "install_failed"
+BOOTSTRAP_VERIFY_FAILED = "verify_failed"
+
+
+def _bootstrap_passwordless_ssh_sync(host, user, port, password, cluster_name):
+    """Blocking password-bootstrap. Returns a dict that always carries a
+    ``reason`` (one of the ``BOOTSTRAP_*`` constants). Only the PUBLIC key ever
+    leaves this machine; the private key stays on the workstation.
+    """
+    priv, pub = ensure_local_ssh_key(cluster_name=cluster_name, hpc_user=user, host=host)
+    try:
+        pubkey_text = open(pub, "r", encoding="utf-8").read().strip()
+    except Exception as e:  # pragma: no cover - unreadable key file
+        return {"ok": False, "reason": BOOTSTRAP_INSTALL_FAILED,
+                "error": f"could not read public key: {e}",
+                "private_key": priv, "public_key": pub}
+
     try:
         import paramiko
-        import subprocess
-
-        host = payload["host"]
-        user = payload["user"]
-        port = int(payload.get("port", 22))
-        password = payload["password"]
-        cluster_name = payload.get("cluster_name", "pace")
-
-        priv, pub = ensure_local_ssh_key(cluster_name=cluster_name, hpc_user=user, host=host)
-        pubkey_text = open(pub, "r", encoding="utf-8").read().strip()
-
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(
-            hostname=host,
-            port=port,
-            username=user,
-            password=password,
-            look_for_keys=False,
-            allow_agent=False,
-            timeout=15,
-            banner_timeout=15,
-            auth_timeout=15,
-        )
-
-        quoted_key = shlex.quote(pubkey_text)
-
-        cmd = f"""
-    set -e
-    mkdir -p ~/.ssh
-    chmod 700 ~/.ssh
-    touch ~/.ssh/authorized_keys
-    chmod 600 ~/.ssh/authorized_keys
-    grep -Fqx {quoted_key} ~/.ssh/authorized_keys || echo {quoted_key} >> ~/.ssh/authorized_keys
-    echo OK
-    """
-        stdin, stdout, stderr = client.exec_command(cmd)
-        out = stdout.read().decode()
-        err = stderr.read().decode()
-        rc = stdout.channel.recv_exit_status()
-        client.close()
-
-        if rc != 0:
-            return {"ok": False, "stdout": out, "stderr": err, "private_key": priv, "public_key": pub}
-
-        test = subprocess.run(
-            [
-                "ssh",
-                "-i", priv,
-                "-p", str(port),
-                "-o", "BatchMode=yes",
-                "-o", "IdentitiesOnly=yes",
-                "-o", "StrictHostKeyChecking=accept-new",
-                f"{user}@{host}",
-                "hostname && whoami && date",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=20,
-        )
-
-        return {
-            "ok": test.returncode == 0,
-            "returncode": test.returncode,
-            "stdout": test.stdout,
-            "stderr": test.stderr,
-            "private_key": priv,
-            "public_key": pub,
-            "messages": [
-                "[auth] Connector bootstrap selected.",
-                "[auth] Creating/installing SSH key on the local connector machine.",
-                f"[auth] private key: {priv}",
-                f"[auth] public key : {pub}",
-                "[auth] Testing passwordless SSH through connector.",
-            ],
-        }
     except Exception as e:
-        cluster_name = payload.get("cluster_name", "pace")
-
-        priv, pub = ensure_local_ssh_key(
-            cluster_name=cluster_name,
-            hpc_user=payload.get("user", ""),
-            host=payload.get("host", ""),
-        )
-
-        pub_text = ""
-
-        try:
-            with open(pub, "r", encoding="utf-8") as f:
-                pub_text = f.read().strip()
-
-        except Exception:
-            pub_text = ""
-
-        messages = [
-            "[ssh] Automatic key installation did not complete.",
-            "[ssh] Some clusters require SSH keys to be added through a web portal.",
-            "",
-            "[ssh] Step 1: Copy the public key below.",
-            pub_text or f"[ssh][ERROR] Could not read public key file: {pub}",
-            "",
-            "[ssh] Step 2: Open your cluster SSH key portal.",
-            "[ssh] Step 3: Paste and save the key.",
-            "[ssh] Step 4: Return here and click Test SSH.",
-            "[ssh] Step 5: Continue using Key-only mode.",
-        ]
-
         return {
             "ok": False,
-            "stage": "bootstrap_exception",
+            "reason": BOOTSTRAP_PARAMIKO_MISSING,
             "error": f"{type(e).__name__}: {e}",
-            "private_key": str(priv),
-            "public_key": str(pub),
-            "public_key_text": pub_text,
-            "messages": messages,
+            "private_key": priv, "public_key": pub, "public_key_text": pubkey_text,
+            "messages": [
+                "[auth] This Connector build cannot do password bootstrap "
+                "(the SSH library is missing).",
+                "[auth] Register the public key below with your resource, then "
+                "Check SSH Access.",
+                pubkey_text,
+            ],
         }
+
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        client.connect(
+            hostname=host, port=int(port), username=user, password=password,
+            look_for_keys=False, allow_agent=False,
+            timeout=15, banner_timeout=15, auth_timeout=20,
+        )
+    except paramiko.AuthenticationException as e:
+        return {"ok": False, "reason": BOOTSTRAP_PASSWORD_AUTH_FAILED,
+                "error": f"{type(e).__name__}: {e}",
+                "private_key": priv, "public_key": pub}
+    except Exception as e:   # socket timeout, SSHException, DNS, refused, ...
+        return {"ok": False, "reason": BOOTSTRAP_CONNECT_FAILED,
+                "error": f"{type(e).__name__}: {e}",
+                "private_key": priv, "public_key": pub}
+
+    quoted_key = shlex.quote(pubkey_text)
+    cmd = (
+        "set -e\n"
+        "mkdir -p ~/.ssh && chmod 700 ~/.ssh\n"
+        "touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys\n"
+        f"grep -Fqx {quoted_key} ~/.ssh/authorized_keys || echo {quoted_key} >> ~/.ssh/authorized_keys\n"
+        "echo OK\n"
+    )
+    try:
+        _stdin, stdout, stderr = client.exec_command(cmd, timeout=30)
+        out = stdout.read().decode("utf-8", errors="replace")
+        err = stderr.read().decode("utf-8", errors="replace")
+        rc = stdout.channel.recv_exit_status()
+    except Exception as e:
+        client.close()
+        return {"ok": False, "reason": BOOTSTRAP_INSTALL_FAILED,
+                "error": f"{type(e).__name__}: {e}",
+                "private_key": priv, "public_key": pub}
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+
+    if rc != 0:
+        return {"ok": False, "reason": BOOTSTRAP_INSTALL_FAILED,
+                "stdout": out, "stderr": err,
+                "private_key": priv, "public_key": pub}
+
+    try:
+        test = subprocess.run(
+            ["ssh", "-i", priv, "-p", str(int(port)),
+             "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes",
+             "-o", "StrictHostKeyChecking=accept-new",
+             f"{user}@{host}", "hostname && whoami && date"],
+            capture_output=True, text=True, timeout=25,
+        )
+    except subprocess.TimeoutExpired as e:
+        return {"ok": False, "reason": BOOTSTRAP_VERIFY_FAILED,
+                "stdout": e.stdout or "", "stderr": e.stderr or "verify timed out",
+                "private_key": priv, "public_key": pub, "key_installed": True}
+
+    return {
+        "ok": test.returncode == 0,
+        "reason": BOOTSTRAP_OK if test.returncode == 0 else BOOTSTRAP_VERIFY_FAILED,
+        "returncode": test.returncode,
+        "stdout": test.stdout,
+        "stderr": test.stderr,
+        "private_key": priv,
+        "public_key": pub,
+        "key_installed": True,
+        "messages": [
+            "[auth] Connector bootstrap: public key installed on the resource.",
+            f"[auth] public key : {pub}",
+        ],
+    }
+
+
+async def bootstrap_passwordless_ssh_local(payload):
+    host = payload.get("host", "")
+    user = payload.get("user", "")
+    port = int(payload.get("port", 22))
+    password = payload.get("password", "")
+    cluster_name = payload.get("cluster_name", "pace")
+
+    if not host or not user or not password:
+        return {"ok": False, "reason": BOOTSTRAP_CONNECT_FAILED,
+                "error": "host, user and password are all required for bootstrap"}
+
+    try:
+        return await asyncio.to_thread(
+            _bootstrap_passwordless_ssh_sync, host, user, port, password, cluster_name
+        )
+    except Exception as e:  # pragma: no cover - defensive
+        return {"ok": False, "reason": BOOTSTRAP_CONNECT_FAILED,
+                "error": f"{type(e).__name__}: {e}"}
 
 def main_auto():
     """Entry point for the packaged connector: pair from CRYOSTACK_PAIRING_CODE."""

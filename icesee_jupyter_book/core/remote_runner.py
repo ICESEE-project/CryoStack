@@ -1065,11 +1065,13 @@ def bootstrap_passwordless_ssh(
             {
                 "host": host,
                 "user": user,
+                "hpc_user": user,
                 "port": int(port),
                 "password": password,
                 "cluster_name": cluster_name,
-                "timeout": 300,
+                "timeout": 180,
             },
+            timeout=200,
         )
 
         return res.get("result", res)

@@ -143,8 +143,13 @@ def invalidate_status_cache(session_id: str | None = None) -> None:
             _STATUS_CACHE.pop(str(session_id), None)
 
 
-def send_command(session_id: str, command_type: str, payload: dict) -> dict:
-    """Issue a command to the bound session's connector. Fails closed."""
+def send_command(session_id: str, command_type: str, payload: dict, *, timeout: float = 120) -> dict:
+    """Issue a command to the bound session's connector. Fails closed.
+
+    ``timeout`` is the HTTP read timeout for this call; pass a larger value for
+    commands whose connector-side work legitimately runs longer than the
+    default (e.g. password bootstrap: SSH connect + key install + verify).
+    """
     headers, owner_user_id = _control_headers_for(session_id)
     r = requests.post(
         f"{RELAY_URL}/connector/command/{session_id}",
@@ -154,6 +159,6 @@ def send_command(session_id: str, command_type: str, payload: dict) -> dict:
             "payload": payload,
         },
         headers=headers,
-        timeout=120,
+        timeout=timeout,
     )
     return r.json()

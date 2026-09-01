@@ -104,6 +104,23 @@ def test_app_installs_a_standard_edit_menu_for_clipboard_shortcuts():
     assert "setMainMenu_(main)" in darwin
     # guarded against installing twice
     assert 'title() == "Edit"' in darwin
+    # re-installed after the run loop starts (rumps builds NSApp late)
+    assert "_edit_menu_ready" in darwin
+
+
+def test_window_has_an_explicit_paste_button_that_does_not_autosubmit():
+    src = _WINDOW.read_text()
+    assert "NSPasteboard.generalPasteboard()" in src
+    assert '"onPaste:"' in src
+    assert "_paste_from_clipboard" in src
+    # the paste helper populates the field and never calls the submit path
+    helper = src.split("def _paste_from_clipboard")[1].split("\n    def ")[0]
+    assert "setStringValue_" in helper
+    assert "_on_action" not in helper and "_fire(" not in helper
+    # normalised: strip() before it lands in the field
+    assert ".strip()" in helper
+    # the Paste button is shown/hidden with the code field
+    assert '_paste_btn.setHidden_(not view["show_code_field"])' in src
 
 
 def test_first_launch_is_dock_visible_and_shows_the_window():

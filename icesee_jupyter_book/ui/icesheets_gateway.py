@@ -60,6 +60,7 @@ from icesee_jupyter_book.ui.shared_app_styles import (
 )
 from icesee_jupyter_book.ui.shared_remote_connection_panel import (
     build_remote_connection_panel,
+    classify_bootstrap_result,
 )
 from icesee_jupyter_book.ui.shared_slurm_resources_panel import (
     build_slurm_resources_panel,
@@ -842,6 +843,12 @@ def build_icesheets_ui():
 
             return result
 
+        def _bootstrap_panel(state, detail=""):
+            try:
+                remote_conn_panel.set_bootstrap_state(state, detail)
+            except (NameError, AttributeError):
+                pass
+
         def on_bootstrap_keys(_=None):
             log_out.clear_output()
             status_chip.value = status_html("running")
@@ -853,15 +860,21 @@ def build_icesheets_ui():
 
             if not host or not user:
                 status_chip.value = status_html("fail")
+                _bootstrap_panel("connector_failed", "Provide Host + HPC username first.")
                 with log_out:
                     print("[auth][ERROR] Provide Host + User first.")
                 return
 
             if not password:
                 status_chip.value = status_html("fail")
+                _bootstrap_panel("password_failed", "Enter your HPC password (used once, never stored).")
                 with log_out:
                     print("[auth][ERROR] Enter your password. It is used once and not stored.")
                 return
+
+            # Immediate feedback: the button must never look inert.
+            bootstrap_btn.disabled = True
+            _bootstrap_panel("registering")
 
             try:
                 use_connector = should_use_connector()
@@ -870,12 +883,14 @@ def build_icesheets_ui():
                     if not SESSION.get("id"):
                         create_or_refresh_connector_session()
 
-                    st = relay_check_status(SESSION["id"])
+                    st = relay_check_status(SESSION["id"], force=True)
                     if not st.get("online"):
                         status_chip.value = status_html("fail")
+                        _bootstrap_panel("connector_failed",
+                                         "The CryoStack Connector is not connected. "
+                                         "Pair it, then try again.")
                         with log_out:
                             print("[connector][ERROR] Connector session is not online.")
-                            print("Open the connector setup page and start the local connector first.")
                         return
 
                 result = bootstrap_passwordless_ssh(
@@ -883,51 +898,53 @@ def build_icesheets_ui():
                     user=user,
                     port=port,
                     password=password,
-                    access_mode="connector" if access_mode_dd.value == "connector" else "direct",
+                    access_mode="connector" if use_connector else "direct",
                     session_id=SESSION.get("id"),
                     cluster_name=cluster_name_for_keys.value or "pace",
                 )
 
+                # scrub the password from the widget the moment the call returns
+                cluster_password.value = ""
+
                 with log_out:
                     for msg in result.get("messages", []):
                         print(msg)
-
                     if (result.get("stdout") or "").strip():
-                        print("--- stdout ---")
-                        print(result["stdout"].strip())
-
+                        print("--- stdout ---"); print(result["stdout"].strip())
                     if (result.get("stderr") or "").strip():
-                        print("--- stderr ---")
-                        print(result["stderr"].strip())
+                        print("--- stderr ---"); print(result["stderr"].strip())
 
-                if result.get("ok"):
+                verdict = classify_bootstrap_result(result)
+                if verdict == "installed":
                     status_chip.value = status_html("done")
                     auth_mode.value = "key"
-                    cluster_password.value = ""     # never persisted/logged
+                    _bootstrap_panel("verifying")
                     with log_out:
-                        print("[auth] ✅ Passwordless SSH is working.")
-                    # The new B3 namespaced key is now registered — re-run Check
-                    # SSH so the panel moves to Verified without a second click.
+                        print("[auth] Public key installed on the resource — verifying access…")
+                    # The real B3 identity check decides Verified / mismatch / failed.
                     try:
                         on_test_remote(None)
                     except Exception as _e:
+                        _bootstrap_panel("connector_failed")
                         with log_out:
                             print("[auth] re-check skipped:", type(_e).__name__, _e)
                 else:
                     status_chip.value = status_html("fail")
-
-                    if should_use_connector():
-                        show_connector_public_key_help()
-                    else:
-                        with log_out:
-                            print()
-                            print("[ssh] Direct/server-side bootstrap failed.")
-                            print("[ssh] Use the SSH Key Manager below only for direct SSH from this server.")
+                    _bootstrap_panel(verdict)
+                    with log_out:
+                        print(f"[auth] bootstrap did not complete (reason: "
+                              f"{result.get('reason') or verdict}).")
 
             except Exception as e:
+                cluster_password.value = ""
                 status_chip.value = status_html("fail")
+                _bootstrap_panel("timed_out" if "timeout" in type(e).__name__.lower()
+                                 else "connector_failed")
                 with log_out:
                     print("[auth][ERROR]", type(e).__name__, e)
+            finally:
+                bootstrap_btn.disabled = False
+                cluster_password.value = ""     # never persisted/logged
 
         def create_or_refresh_connector_session(_=None):
             log_out.clear_output()

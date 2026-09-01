@@ -86,6 +86,7 @@ from icesee_jupyter_book.ui.shared_app_styles import (
 )
 from icesee_jupyter_book.ui.shared_remote_connection_panel import (
     build_remote_connection_panel,
+    classify_bootstrap_result,
 )
 from icesee_jupyter_book.ui.shared_slurm_resources_panel import (
     build_slurm_resources_panel,
@@ -1192,6 +1193,12 @@ def build_icesee_ui():
 
             return result
 
+        def _bootstrap_panel(state, detail=""):
+            try:
+                remote_conn_panel.set_bootstrap_state(state, detail)
+            except (NameError, AttributeError):
+                pass
+
         def on_bootstrap_keys(_=None):
             log_out.clear_output()
             set_status("running")
@@ -1201,14 +1208,29 @@ def build_icesee_ui():
             port = int(cluster_port.value)
             password = cluster_password.value
 
+            if not host or not user:
+                set_status("fail")
+                _bootstrap_panel("connector_failed", "Provide Host + HPC username first.")
+                return
+            if not password:
+                set_status("fail")
+                _bootstrap_panel("password_failed", "Enter your HPC password (used once, never stored).")
+                return
+
+            bootstrap_btn.disabled = True
+            _bootstrap_panel("registering")
+
             try:
-                if access_mode_dd.value == "connector":
+                use_connector = should_use_connector()
+                if use_connector:
                     if not SESSION.get("id"):
                         create_or_refresh_connector_session()
-
-                    st = relay_check_status(SESSION["id"])
+                    st = relay_check_status(SESSION["id"], force=True)
                     if not st.get("online"):
                         set_status("fail")
+                        _bootstrap_panel("connector_failed",
+                                         "The CryoStack Connector is not connected. "
+                                         "Pair it, then try again.")
                         with log_out:
                             print("[connector][ERROR] Connector session is not online.")
                         return
@@ -1218,54 +1240,50 @@ def build_icesee_ui():
                     user=user,
                     port=port,
                     password=password,
-                    access_mode="connector" if access_mode_dd.value == "connector" else "direct",
+                    access_mode="connector" if use_connector else "direct",
                     session_id=SESSION.get("id"),
                     cluster_name=cluster_name_for_keys.value or "pace",
                 )
+                cluster_password.value = ""
 
                 with log_out:
                     for msg in result.get("messages", []):
                         print(msg)
+                    if (result.get("stdout") or "").strip():
+                        print("--- stdout ---"); print(result["stdout"].strip())
+                    if (result.get("stderr") or "").strip():
+                        print("--- stderr ---"); print(result["stderr"].strip())
 
-                    if result.get("stdout"):
-                        print("--- stdout ---")
-                        print(result["stdout"].strip())
-
-                    if result.get("stderr"):
-                        print("--- stderr ---")
-                        print(result["stderr"].strip())
-
-                if result.get("ok"):
+                verdict = classify_bootstrap_result(result)
+                if verdict == "installed":
                     set_status("done")
                     auth_mode.value = "key"
-                    cluster_password.value = ""     # never persisted/logged
+                    _bootstrap_panel("verifying")
                     with log_out:
-                        print("[auth] ✅ Passwordless SSH is working.")
-                    # The new B3 namespaced key is now registered — re-run the
-                    # SSH check so the panel reaches Verified without a 2nd click.
+                        print("[auth] Public key installed on the resource — verifying access…")
                     try:
                         run_example_remote_test()
                     except Exception as _e:
+                        _bootstrap_panel("connector_failed")
                         with log_out:
                             print("[auth] re-check skipped:", type(_e).__name__, _e)
                 else:
                     set_status("fail")
-                    # with log_out:
-                    #     print("[auth][ERROR] Bootstrap failed.")
-
-                    # status_chip.value = status_html("fail")
-                    if should_use_connector():
-                        show_connector_public_key_help()
-                    else:
-                        with log_out:
-                            print()
-                            print("[ssh] Direct/server-side bootstrap failed.")
-                            print("[ssh] Use the SSH Key Manager below only for direct SSH from this server.")
+                    _bootstrap_panel(verdict)
+                    with log_out:
+                        print(f"[auth] bootstrap did not complete (reason: "
+                              f"{result.get('reason') or verdict}).")
 
             except Exception as e:
+                cluster_password.value = ""
                 set_status("fail")
+                _bootstrap_panel("timed_out" if "timeout" in type(e).__name__.lower()
+                                 else "connector_failed")
                 with log_out:
                     print("[auth][ERROR]", type(e).__name__, e)
+            finally:
+                bootstrap_btn.disabled = False
+                cluster_password.value = ""     # never persisted/logged
 
         # =========================================================
         # Cloud panel widgets (AWS Batch)

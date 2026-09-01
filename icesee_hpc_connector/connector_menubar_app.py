@@ -145,6 +145,16 @@ if sys.platform == "darwin":
 
         # -- main-thread status pump ------------------------------------
         def _tick(self, _timer):
+            # rumps builds the real NSApplication in run(); the app main menu is
+            # only reliably present after the loop starts, so (re)install the
+            # Edit menu here once. _install_edit_menu is idempotent.
+            if not getattr(self, "_edit_menu_ready", False):
+                try:
+                    import AppKit
+                    self._install_edit_menu(AppKit)
+                    self._edit_menu_ready = True
+                except Exception:
+                    pass
             state = self.controller.status()
             self._status_item.title = self.controller.status_label()
             if self.window is not None:

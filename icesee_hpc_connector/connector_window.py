@@ -130,32 +130,64 @@ class _AppKitConnectorWindow:  # pragma: no cover - requires a macOS GUI session
 
         self._headline = self._label(AppKit, (24, 210, 372, 24), 17, bold=True)
         self._body = self._label(AppKit, (24, 120, 372, 84), 13)
-        self._field = AppKit.NSTextField.alloc().initWithFrame_(AppKit.NSMakeRect(24, 84, 280, 24))
+        self._field = AppKit.NSTextField.alloc().initWithFrame_(AppKit.NSMakeRect(24, 84, 210, 24))
         self._field.setPlaceholderString_("pairing code")
         # Behave like a normal text field: editable, selectable, single line so
-        # Cmd+C/V/X/A and the AppKit context menu work (the standard Edit menu
-        # installed by the app supplies the key equivalents).
+        # Cmd+C/V/X/A and the AppKit context menu work. The explicit Paste
+        # button below is a guaranteed fallback if the app menu's paste: does
+        # not reach the field editor under rumps.
         self._field.setEditable_(True)
         self._field.setSelectable_(True)
         self._field.setUsesSingleLineMode_(True)
+        self._field.setAllowsEditingTextAttributes_(False)
         cell = self._field.cell()
         if cell is not None:
             cell.setUsesSingleLineMode_(True)
             cell.setScrollable_(True)
+        self._win.setInitialFirstResponder_(self._field)
+
+        target = self._make_target(objc)
+
+        # explicit "Paste" -- populates the field only, never auto-submits
+        self._paste_btn = AppKit.NSButton.alloc().initWithFrame_(AppKit.NSMakeRect(240, 82, 64, 28))
+        self._paste_btn.setBezelStyle_(AppKit.NSBezelStyleRounded)
+        self._paste_btn.setTitle_("Paste")
+        self._paste_btn.setToolTip_("Paste the pairing code from the clipboard")
+        self._paste_btn.setTarget_(target)
+        self._paste_btn.setAction_("onPaste:")
+
         self._button = AppKit.NSButton.alloc().initWithFrame_(AppKit.NSMakeRect(312, 82, 84, 28))
         self._button.setBezelStyle_(AppKit.NSBezelStyleRounded)
-        self._button.setTarget_(self._make_target(objc))
+        self._button.setTarget_(target)
         self._button.setAction_("onButton:")
+        self._button.setKeyEquivalent_("\r")   # Return triggers the primary button
         self._button2 = AppKit.NSButton.alloc().initWithFrame_(AppKit.NSMakeRect(220, 82, 84, 28))
         self._button2.setBezelStyle_(AppKit.NSBezelStyleRounded)
-        self._button2.setTarget_(self._button.target())
+        self._button2.setTarget_(target)
         self._button2.setAction_("onButton2:")
         self._foot = self._label(AppKit, (24, 24, 372, 40), 11)
 
-        for v in (self._headline, self._body, self._field, self._button, self._button2, self._foot):
+        for v in (self._headline, self._body, self._field, self._paste_btn,
+                  self._button, self._button2, self._foot):
             content.addSubview_(v)
 
         self.refresh(self._state)
+
+    # -- clipboard fallback -------------------------------------------
+    def _paste_from_clipboard(self):
+        AppKit = self._AppKit
+        pb = AppKit.NSPasteboard.generalPasteboard()
+        text = pb.stringForType_(AppKit.NSPasteboardTypeString)
+        if text is None:
+            try:
+                text = pb.stringForType_("public.utf8-plain-text")
+            except Exception:
+                text = None
+        if not text:
+            return
+        # normalise here too; _fire already strips before submit
+        self._field.setStringValue_(str(text).strip())
+        self._win.makeFirstResponder_(self._field)
 
     # -- helpers --------------------------------------------------------
     def _label(self, AppKit, frame, size, bold=False):
@@ -179,6 +211,9 @@ class _AppKitConnectorWindow:  # pragma: no cover - requires a macOS GUI session
             def onButton2_(self, _sender):
                 outer._fire(1)
 
+            def onPaste_(self, _sender):
+                outer._paste_from_clipboard()
+
         self._target = _Target.alloc().init()
         return self._target
 
@@ -199,6 +234,7 @@ class _AppKitConnectorWindow:  # pragma: no cover - requires a macOS GUI session
         self._body.setStringValue_(view["body"])
         self._foot.setStringValue_(view.get("footnote", ""))
         self._field.setHidden_(not view["show_code_field"])
+        self._paste_btn.setHidden_(not view["show_code_field"])
         if not view["show_code_field"]:
             # never keep a pairing code around after we leave the entry state
             self._field.setStringValue_("")

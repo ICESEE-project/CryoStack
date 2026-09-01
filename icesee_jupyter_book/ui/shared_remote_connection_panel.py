@@ -39,6 +39,33 @@ _STATUS = {
     "mismatch": ("is-mismatch", "●", "Mismatch"),
     "failed": ("is-failed", "●", "Failed"),
     "key_unregistered": ("is-key-unregistered", "●", "SSH key not registered"),
+    "registering": ("is-checking", "●", "Registering SSH key…"),
+    "verifying": ("is-checking", "●", "SSH key registered — verifying access…"),
+}
+
+#: password-bootstrap outcome -> (status-chip kind, registration-box message).
+#: An empty message keeps whatever guidance is already shown.
+_BOOTSTRAP_UI = {
+    "registering":      ("registering", ""),
+    "verifying":        ("verifying", ""),
+    "verified":         ("verified", ""),
+    "password_failed":  ("key_unregistered",
+                         "Password authentication failed. Check the password you "
+                         "entered. Some resources also require an active VPN or a "
+                         "second factor (2FA/Duo) that a one-time password "
+                         "bootstrap cannot satisfy."),
+    "connector_failed": ("failed",
+                         "The CryoStack Connector could not run the bootstrap "
+                         "command. Make sure the Connector is still connected, "
+                         "then try again."),
+    "not_permitted":    ("key_unregistered",
+                         "This resource does not permit one-time password "
+                         "bootstrap. Register the CryoStack public key with the "
+                         "resource, then Check SSH Access."),
+    "timed_out":        ("failed",
+                         "Timed out while registering the SSH key. The resource "
+                         "did not respond in time — check VPN / network and try "
+                         "again."),
 }
 
 # B3 AccessState value -> status-chip kind (AccessState is a str enum, compared
@@ -54,6 +81,34 @@ _ACCESS_STATE_KIND = {
 def access_state_to_status_kind(state) -> str:
     """Map a B3 AccessState (or its value) to a Status-chip kind."""
     return _ACCESS_STATE_KIND.get(getattr(state, "value", state), "unchecked")
+
+
+def classify_bootstrap_result(result) -> str:
+    """Map a password-bootstrap result (connector reason codes, or a relay
+    error envelope) to a :meth:`RemoteConnectionPanel.set_bootstrap_state`
+    state. ``"installed"`` means the public key is on the resource and the
+    caller should now run the real B3 identity check.
+    """
+    if not isinstance(result, dict):
+        return "connector_failed"
+    if result.get("ok") or result.get("reason") == "ok" or result.get("key_installed"):
+        return "installed"
+
+    reason = (result.get("reason") or "").strip()
+    mapped = {
+        "password_auth_failed": "password_failed",
+        "paramiko_missing": "not_permitted",
+        "connect_failed": "timed_out",
+        "install_failed": "connector_failed",
+        "verify_failed": "connector_failed",
+    }.get(reason)
+    if mapped:
+        return mapped
+
+    blob = f"{result.get('detail', '')} {result.get('error', '')}".lower()
+    if "tim" in blob and "out" in blob:
+        return "timed_out"
+    return "connector_failed"
 
 
 def _status_html(kind: str) -> str:
@@ -105,6 +160,29 @@ class RemoteConnectionPanel:
 
     def set_status_from_access(self, state) -> None:
         self.set_status(access_state_to_status_kind(state))
+
+    def set_bootstrap_state(self, state: str, detail: str = "") -> None:
+        """Drive the panel through a password-bootstrap attempt so the user is
+        never left with a button that appears to do nothing.
+
+        ``state`` is one of: ``registering``, ``verifying``, ``verified``,
+        ``password_failed``, ``connector_failed``, ``not_permitted``,
+        ``timed_out``.
+        """
+        kind, message = _BOOTSTRAP_UI.get(state, ("failed", ""))
+        self.set_status(kind)
+        if kind in ("registering", "verifying", "verified"):
+            return
+        body = message
+        if detail:
+            body += f"<div class='cryostack-help'>{detail}</div>"
+        self.registration_box.children = (
+            W.HTML(
+                "<div class='cryostack-group-title'>SSH key registration</div>"
+                f"<div class='cryostack-help'>{body}</div>"
+            ),
+        )
+        self.registration_box.layout.display = "flex"
 
     def set_key_unregistered(self, profile=None) -> None:
         """The Connector reached the resource but the server rejected the
