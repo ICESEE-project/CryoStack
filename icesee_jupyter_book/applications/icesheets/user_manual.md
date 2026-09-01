@@ -87,9 +87,32 @@ The interface has two areas:
 </p>
 <p>
   <b>Icepack</b> <span class="cryostack-status dev">Experimental</span><br>
-  Selectable in the interface, but curated configuration, result
-  interpretation, and visualization are not yet at ISSM parity. Treat Icepack
-  runs as exploratory.
+  Selectable in the interface. Example discovery, per-user workspace
+  editing/cloning, dataset staging, tested-container selection, Slurm
+  configuration and validation, remote/HPC submission, run history, provenance,
+  and Results/Figures downloads all work the same way they do for ISSM. After a
+  run, CryoLauncher collects the figures and native output files the example
+  produced into the standard results package, and the Results tab shows them.
+</p>
+<p>
+  What is <b>not</b> yet at ISSM parity, because it depends on model-specific
+  science decisions still in review:
+</p>
+<ul>
+  <li><b>Basic-mode curated configuration.</b> ISSM Basic mode edits the
+  <code>md</code> model struct; Icepack configuration is Python
+  (Firedrake <code>Function</code>s, solver options), which needs its own
+  curated parameter set. Use Advanced mode (edit the notebook/script directly)
+  for Icepack today.</li>
+  <li><b>Structured field visualization.</b> The Results tab shows collected
+  figures and output files but not an interactive field/timestep viewer —
+  Firedrake results are function-space DOF vectors, not the ISSM
+  solution/field/timestep structure the viewer is built on.</li>
+  <li><b>Cloud (AWS Batch) execution.</b> ISSM only for now.</li>
+</ul>
+<p>
+  These are tracked as explicit science checkpoints, not left vague. Treat
+  Icepack runs as exploratory.
 </p>
 :::
 

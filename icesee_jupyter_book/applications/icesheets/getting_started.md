@@ -49,8 +49,12 @@ resource, follow it in a run log, and then explore the results — figures,
 fields, and downloadable output packages.
 
 **ISSM is the mature CryoLauncher path today.** Icepack is available in the
-interface but is still experimental and is not at ISSM feature parity. Cloud
-execution is in development and is not yet accepted for real runs; use
+interface and shares the same discovery, workspace, staging, remote-submission,
+run-history and downloads workflow; after a run its figures and output files are
+collected into the results package. Icepack does **not** yet have curated
+Basic-mode configuration or an interactive field viewer (edit the
+notebook/script in Advanced mode), and Cloud execution is ISSM-only. Cloud
+execution generally is in development and is not yet accepted for real runs; use
 **Remote** execution.
 
 ## Before you begin
