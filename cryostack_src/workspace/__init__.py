@@ -5,6 +5,7 @@ from .logs import WorkspaceLogs, build_workspace_logs
 from .manager import WorkspaceManager
 from .manifest import MANIFEST_NAME, SCHEMA, VERSION, read_manifest, write_manifest
 from .models import RunInfo
+from .roots import owner_root, resolve_workspace_root, user_run_root
 
 __all__ = [
     "WorkspaceBridge",
@@ -21,4 +22,7 @@ __all__ = [
     "VERSION",
     "read_manifest",
     "write_manifest",
+    "resolve_workspace_root",
+    "owner_root",
+    "user_run_root",
 ]

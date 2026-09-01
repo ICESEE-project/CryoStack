@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import os
 import time as _time
+import uuid
 import yaml
 import subprocess
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlencode
 import ipywidgets as W
@@ -26,7 +28,7 @@ from icesee_jupyter_book.core.connector_relay_client import (
 
 from icesee_jupyter_book.core import ssh_key_manager
 from icesee_jupyter_book.core.example_registry import EXAMPLES, enabled_names
-from cryostack_src.workspace import resolve_workspace_user
+from cryostack_src.workspace import resolve_workspace_user, user_run_root
 from cryostack_src.resources.profiles import get_compute_profile, initial_remote_fields
 from cryostack_src.remote import RemoteBridge
 from cryostack_src.remote.access_state import (
@@ -680,8 +682,21 @@ def build_icesee_ui():
         cluster_mpi_np = W.IntText(value=40, layout=W.Layout(width="100%"))
         cluster_model_nprocs = W.IntText(value=4, layout=W.Layout(width="100%"))
 
+        def _icesee_run_dir_base() -> Path:
+            """Per-user, per-app run root -- two authenticated CryoStack users
+            never share a run directory (the process-global BOOK/icesee_runs/
+            did). Falls back to the default location for an unauthenticated
+            session."""
+            try:
+                return user_run_root(app="icesee")
+            except Exception:
+                return None   # local_runner.run_dir() then uses its default
+
+        def _new_icesee_run_id() -> str:
+            return datetime.now().strftime("%Y%m%d_%H%M%S") + "-" + uuid.uuid4().hex[:6]
+
         def local_remote_cache_dir() -> Path:
-            rd = run_dir()
+            rd = run_dir(_icesee_run_dir_base(), _new_icesee_run_id())
             return rd / "_remote_fetch"
 
 
@@ -1084,7 +1099,7 @@ def build_icesee_ui():
             sync_quick_into_widgets()
             cfg_yaml = build_config_from_widgets()
 
-            rd = run_dir()
+            rd = run_dir(_icesee_run_dir_base(), _new_icesee_run_id())
             dump_yaml(cfg_yaml, rd / "params.yaml")
 
             # write slurm script locally so user can upload via OnDemand Files
@@ -1318,6 +1333,8 @@ def build_icesee_ui():
                     config=cfg,
                     output_label=output_label_dd.value,
                     generate_report=gen_report.value,
+                    run_dir_base=_icesee_run_dir_base(),
+                    run_dir_name=_new_icesee_run_id(),
                 )
 
                 with log_out:
@@ -2062,6 +2079,8 @@ def build_icesee_ui():
                     job_queue=batch_job_queue.value.strip(),
                     job_definition=batch_job_def.value.strip(),
                     job_name=(batch_job_name.value.strip() or "icesee"),
+                    run_dir_base=_icesee_run_dir_base(),
+                    run_dir_name=_new_icesee_run_id(),
                 )
 
                 STATUS["batch_job_id"] = result.batch_job_id

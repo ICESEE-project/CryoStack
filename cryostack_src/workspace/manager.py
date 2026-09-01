@@ -21,11 +21,10 @@ from .files import EDITABLE_SUFFIXES, list_editable_files
 from .identity import WorkspaceUser, resolve_workspace_user
 from .manifest import MANIFEST_NAME, read_manifest, write_manifest
 from .models import RunInfo
+from .roots import WORKSPACE_ROOT_ENV  # noqa: F401 -- re-exported for callers
 
 _SAFE_RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 _SAFE_EXAMPLE_NAME = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
-#: optional deploy-time pin for the workspace root, independent of process cwd
-WORKSPACE_ROOT_ENV = "CRYOSTACK_WORKSPACE_ROOT"
 
 
 class WorkspacePermissionError(RuntimeError):
