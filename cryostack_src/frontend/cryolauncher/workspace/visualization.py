@@ -32,6 +32,13 @@ _LEGACY_NOTE = (
 )
 _NO_RUN_NOTE = "Select a run to visualize its results."
 _NOT_FETCHED_NOTE = "Results have not been fetched yet."
+_ARTIFACTS_NOTE = (
+    "Structured field visualization is not yet available for this model. "
+    "The figures and native output files this run produced are shown below."
+)
+_EMPTY_NOTE = (
+    "This run completed but produced no figures or output files to collect."
+)
 
 
 @dataclass
@@ -153,17 +160,24 @@ class VisualizationController:
         self._pkg = self.manager.result_package_for_run(run_id)
         status = self._pkg.status
 
-        if status == "legacy":
+        # "legacy"   -- a run that predates the neutral package
+        # "artifacts"-- a run whose model has no structured field reader yet
+        #               (Icepack today): figures + native output files only
+        if status in ("legacy", "artifacts", "empty"):
             self._set_enabled(False)
-            self._show_fetch(False)
+            self._show_fetch(status != "legacy")   # a re-fetch can still help
             self.solution_dd.options = ()
             self.field_dd.options = ()
             arts = self._pkg.legacy_artifacts()
-            extra = ""
-            if arts.get("model_mat"):
-                extra = " &nbsp;·&nbsp; model: <code>md_final.mat</code>"
-            self.status.value = (
-                f"<span class='icesee-subtle'>{_LEGACY_NOTE}{extra}</span>")
+            if status == "artifacts":
+                note = _ARTIFACTS_NOTE
+            elif status == "empty":
+                note = _EMPTY_NOTE
+            else:
+                note = _LEGACY_NOTE
+                if arts.get("model_mat"):
+                    note += " &nbsp;·&nbsp; model: <code>md_final.mat</code>"
+            self.status.value = f"<span class='icesee-subtle'>{note}</span>"
             self.meta.value = ""
             self._show_legacy_figures(arts)
             return

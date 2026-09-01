@@ -402,6 +402,40 @@ def test_legacy_run_disables_selector_and_hides_fetch(tmp_path):
     assert c.fetch_btn.layout.display == "none"
 
 
+# ── model with no structured reader yet (Icepack) ──────────────────────
+def test_icepack_run_shows_collected_figures_not_a_dead_end(tmp_path):
+    m = _mgr(USER_A, tmp_path / "ws")
+    run = _register(m, run_id="ip-1", model="icepack")
+    out = run.workspace_directory / "cache" / "outputs"
+    (out / "figures").mkdir(parents=True)
+    (out / "figures" / "velocity.png").write_bytes(b"\x89PNG")
+    (out / "metadata.json").write_text(json.dumps({
+        "schema": "cryostack.icepack.results", "status": "artifacts",
+        "model": "icepack", "solutions": [], "fields": [],
+        "figures": ["velocity.png"], "model_files": [],
+    }))
+    c = _panel(m, fetch_results=lambda: None).controller
+    c.refresh()
+    assert c.render_btn.disabled is True
+    assert c.solution_dd.options == ()
+    assert "not yet available for this model" in c.status.value
+    assert "have not been fetched" not in c.status.value
+
+
+def test_icepack_empty_run_is_reported_as_such(tmp_path):
+    m = _mgr(USER_A, tmp_path / "ws")
+    run = _register(m, run_id="ip-2", model="icepack")
+    out = run.workspace_directory / "cache" / "outputs"
+    (out / "model").mkdir(parents=True)
+    (out / "metadata.json").write_text(json.dumps({
+        "schema": "cryostack.icepack.results", "status": "empty",
+        "figures": [], "model_files": [],
+    }))
+    c = _panel(m, fetch_results=lambda: None).controller
+    c.refresh()
+    assert "produced no figures or output files" in c.status.value
+
+
 # ── isolation ──────────────────────────────────────────────────────────
 def test_user_b_cannot_render_user_a_run(tmp_path):
     root = tmp_path / "ws"
