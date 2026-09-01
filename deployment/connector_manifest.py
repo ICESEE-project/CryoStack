@@ -55,18 +55,26 @@ def _iso_utc(ts: float) -> str:
     return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def sidecar_dict(artifact: Path) -> dict:
+    """Parsed ``<artifact>.build.json`` sidecar, or ``{}``."""
+    sidecar = artifact.with_name(artifact.name + ".build.json")
+    if sidecar.is_file():
+        try:
+            data = json.loads(sidecar.read_text())
+            if isinstance(data, dict):
+                return data
+        except (OSError, ValueError):
+            pass
+    return {}
+
+
 def _built_at(artifact: Path) -> str:
     """Build timestamp: a ``<artifact>.build.json`` sidecar written by
     build_connector.sh is authoritative (survives copying between hosts);
     otherwise fall back to the file's modification time. Never fabricated."""
-    sidecar = artifact.with_name(artifact.name + ".build.json")
-    if sidecar.is_file():
-        try:
-            value = json.loads(sidecar.read_text()).get("built_at")
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-        except (OSError, ValueError):
-            pass
+    value = sidecar_dict(artifact).get("built_at")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
     return _iso_utc(artifact.stat().st_mtime)
 
 
@@ -90,12 +98,20 @@ def build_manifest(pkg_dir: str | Path) -> dict:
             f"no canonical CryoStack-Connector artifacts in {pkg_dir}")
     entries = {}
     for platform, path in sorted(artifacts.items()):
-        entries[platform] = {
+        entry = {
             "filename": path.name,
             "sha256": sha256_file(path),
             "size_bytes": path.stat().st_size,
             "built_at": _built_at(path),
         }
+        # Carry build provenance through to the public manifest so /connect/
+        # can flag an outdated connector (pre-ea0a70d pairing protocol).
+        side = sidecar_dict(path)
+        for extra in ("pairing_protocol", "connector_build_revision"):
+            value = side.get(extra)
+            if isinstance(value, str) and value.strip():
+                entry[extra] = value.strip()
+        entries[platform] = entry
     return {
         "schema": MANIFEST_SCHEMA,
         "version": MANIFEST_VERSION,

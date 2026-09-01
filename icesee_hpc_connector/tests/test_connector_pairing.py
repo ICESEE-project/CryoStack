@@ -70,8 +70,19 @@ def test_run_connector_bad_code_stops_without_connecting(monkeypatch, capsys):
 
 def test_connector_core_has_no_latest_endpoint_reference():
     src = Path(cc.__file__).read_text()
-    assert "/connector/latest" not in src
+    # no functional call to the removed global-discovery endpoint
+    assert "/connector/latest" not in _strip_comments(src)
     assert "watch_for_newer_session" not in src
+
+
+def _strip_comments(src: str) -> str:
+    out = []
+    for line in src.splitlines():
+        s = line.lstrip()
+        if s.startswith("#"):
+            continue
+        out.append(line.split("  #")[0] if "  #" in line else line)
+    return "\n".join(out)
 
 
 def test_terminal_close_codes_stop_the_reconnect_loop(monkeypatch):

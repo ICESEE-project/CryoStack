@@ -14,6 +14,13 @@ import websockets
 # DEFAULT_RELAY = "https://cryolauncher.com"
 DEFAULT_RELAY = "https://cryostack.eas.gatech.edu"
 
+# Connector <-> relay pairing protocol. Bumped when the wire protocol changes in
+# a way that makes an older connector unable to pair (e.g. ea0a70d: capability
+# secrets + one-time pairing code replaced global /connector/latest discovery).
+# build_connector.sh stamps this into every artifact's .build.json so the
+# release pipeline never publishes an incompatible binary as current.
+PAIRING_PROTOCOL = "v2"
+
 async def run_shell(payload: dict):
     command = payload.get("command", "")
     timeout = int(payload.get("timeout", 60))

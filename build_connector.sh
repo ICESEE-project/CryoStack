@@ -103,6 +103,8 @@ if [[ "$OS_TAG" == "macos" ]]; then
     "$ARTIFACT_PATH"
 
 elif [[ "$OS_TAG" == "linux" ]]; then
+  # On a headless build host, pystray's X backend import can fail during
+  # PyInstaller analysis; run under xvfb:  xvfb-run bash build_connector.sh
   python3 -m pip install --quiet pystray pillow
   PYTHONPATH="$REPO_ROOT" pyinstaller "${PYI_ARGS[@]}" \
     --hidden-import pystray --hidden-import PIL \
@@ -142,20 +144,35 @@ fi
 SIZE_BYTES="$(wc -c < "$ARTIFACT_PATH" | tr -d ' ')"
 BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
+# Pairing protocol this connector speaks (from the source it was built from) and
+# the exact source revision, so the release pipeline can refuse to publish an
+# incompatible binary as current even when the filename matches.
+PAIRING_PROTOCOL="$(
+  PYTHONPATH="$REPO_ROOT" python3 -c \
+    'from icesee_hpc_connector.connector_core import PAIRING_PROTOCOL; print(PAIRING_PROTOCOL)'
+)"
+BUILD_REV="$(git -C "$REPO_ROOT" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
+if ! git -C "$REPO_ROOT" diff --quiet HEAD -- icesee_hpc_connector 2>/dev/null; then
+  BUILD_REV="${BUILD_REV}-dirty"
+fi
+
 cat > "${ARTIFACT_PATH}.build.json" <<JSON
 {
   "platform": "${PLATFORM}",
   "filename": "${ARTIFACT}",
   "sha256": "${SHA}",
   "size_bytes": ${SIZE_BYTES},
-  "built_at": "${BUILT_AT}"
+  "built_at": "${BUILT_AT}",
+  "pairing_protocol": "${PAIRING_PROTOCOL}",
+  "connector_build_revision": "${BUILD_REV}"
 }
 JSON
 
-# ---- manifest.json + SHA256SUMS -----------------------------------------
-# Deployment regenerates these from the full published set; here we keep them
-# consistent with whatever this host has built so far.
-python3 "$REPO_ROOT/deployment/connector_manifest.py" generate "$PKG_DIR"
+echo "[build] pairing protocol: ${PAIRING_PROTOCOL}   source revision: ${BUILD_REV}"
+
+# Next steps (do NOT publish straight from dist/packages):
+#   bash publish_connector_artifact.sh     # register this artifact into the store
+#   bash release_connector.sh              # regenerate + promote the public release
 
 # ---- summary --------------------------------------------------------
 HUMAN_SIZE="$(du -h "$ARTIFACT_PATH" | awk '{print $1}')"
