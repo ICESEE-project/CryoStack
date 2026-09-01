@@ -1,8 +1,12 @@
 # Overnight autonomous session — morning report
 
-Session: 2026-09-01 21:25Z → (in progress). Branch `gatech_vm_backend`.
-Start HEAD `52d8edb` → current see `git log`. All work committed in small green
-checkpoints; nothing uncommitted. Agent trail: `overnight/AGENT_TRAIL.md`.
+Session: 2026-09-01 21:25Z → 2026-09-02. Branch `gatech_vm_backend`.
+Start HEAD `52d8edb` → end `d06baca` (see table §5). The safe subset of all
+three requested phases is complete, tested, and committed in small green
+checkpoints; nothing uncommitted (the two ` M external/*` submodule rows are
+pre-existing untracked build artefacts, not this session's). Everything beyond
+the safe subset is a P1 science/design checkpoint that needs your input, or a
+P2 deferred for blast-radius — see §8. Agent trail: `overnight/AGENT_TRAIL.md`.
 Audits: `overnight/AUDIT_icepack_parity.md`, `overnight/AUDIT_icesee_platform.md`.
 
 ---
@@ -94,21 +98,40 @@ ISSM `COMPILED`/`OVERRIDE_NONE` vs Icepack `gated_by=firedrake`.
   statuses render like `legacy` with a model-appropriate note.
 - Connector: `bootstrap_passwordless_ssh_local` off-loop + structured reasons;
   `connector_window` pairing helpers; `send_command(timeout=)`.
+- `cryostack_src/workspace/roots.py` (new) — `resolve_workspace_root` /
+  `owner_root` / `user_run_root`: the per-user `<root>/users/<safe-id>/…`
+  convention usable without constructing a full `WorkspaceManager`.
+  `manager.py` re-exports `WORKSPACE_ROOT_ENV` from here (one source of truth).
+- `WorkspaceManager` — `model` may now be a fixed string (inert `_FixedChoice`
+  adapter) not only a selector widget; ISSM/Icepack widget path untouched.
+- `icesee_jupyter_book/core/local_runner.py` — `run_dir(base, name)`
+  parameterised; `run_local_example` / `submit_cloud_example` gained matching
+  pass-through kwargs.
+- `icesee_jupyter_book/ui/icesee_gateway.py` — every `run_dir()` call site now
+  goes through `user_run_root(app="icesee")` + a `timestamp+uuid` run id.
 
 ## 4. Agent / subagent activity
 
 | Agent | Type | Task | Outcome |
 |---|---|---|---|
-| main (coordinating) | — | architecture, all commits, connector work | — |
-| `aa66a8ef…` (B-1) | general-purpose, read-only | ISSM↔Icepack 15-area parity audit | `AUDIT_icepack_parity.md`; drove D-B1..D-B4 |
-| `a65c945f…` (C-1) | general-purpose, read-only | ICESEE vs IceSheets platform audit | (in progress) |
+| main (coordinating) | — | architecture, all commits, connector work, all implementation | — |
+| `aa66a8ef…` (B-1) | general-purpose, read-only | ISSM↔Icepack 15-area parity audit | `AUDIT_icepack_parity.md` (186k tok, 71 tool calls); drove D-B1..D-B4 |
+| `a65c945f…` (C-1) | general-purpose, read-only | ICESEE vs IceSheets platform audit | `AUDIT_icesee_platform.md` (153k tok, 33 tool calls); drove D-C1..D-C3 |
 
-Decisions (full rationale in `AGENT_TRAIL.md`): D-A1 keep connector-local
-namespaced key (not the old server-key `install-pubkey`); D-A2 treat
-key-installed-but-verify-failed as success, let the real Check-SSH decide;
-D-B1 dedicated `cryostack.icepack.results` schema, honest reader, no invented
-fields; D-B2 collector = plumbing not science; D-B3 single guarded injection
-point in `submission.py`.
+Two subagents, both bounded read-only audits, both returned a file:line-grounded
+matrix that the coordinating agent reviewed and turned into decisions +
+commits. No subagent wrote code. Decisions (full rationale in `AGENT_TRAIL.md`):
+- **D-A1** keep the connector-local namespaced key (not the pre-`98e0a45`
+  server-key `install-pubkey` design); **D-A2** treat key-installed-but-
+  verify-failed as success and let the authoritative relay Check-SSH decide.
+- **D-B1** dedicated `cryostack.icepack.results` schema + honest reader
+  (`is_readable()` = False), no invented fields; **D-B2** the collector is
+  plumbing (gather the example's own artefacts) not science; **D-B3** one
+  guarded non-fatal injection point in `submission.py`; **D-B4** capability
+  queries over `if model == "issm"` (deferred as P2).
+- **D-C1** `run_dir(base, name)` param; **D-C2** `WorkspaceManager`
+  `model: str | widget`; **D-C3** close the security gap only tonight
+  (`user_run_root`), defer full run-history adoption pending operator decisions.
 
 ## 5. Commits (chronological)
 
@@ -132,6 +155,10 @@ See `overnight/CHECKPOINT.md` for the running table.
 | `3a7705f` | C | parameterize `run_dir()` for per-user isolation |
 | `1e68ae8` | C | `WorkspaceManager` accepts a fixed model name |
 | `c342f4f` | C | ICESEE per-user run directories + `workspace/roots.py` |
+| `d06baca` | — | trail: Phase C results + ICESEE audit; report updated |
+
+17 commits this session (10 code, 7 trail/report). No commit bundled unrelated
+changes; each code commit was green before landing.
 
 ## 6. Tests / build
 
