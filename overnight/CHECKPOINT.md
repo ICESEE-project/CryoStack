@@ -16,8 +16,17 @@ then Phase C — ICESEE toward the IceSheets platform standard.
 
 ## Exact next action
 
-(updated as work proceeds — see AGENT_TRAIL.md "next autonomous action" of the
-latest phase)
+**Phase A: COMPLETE** (`52d8edb`, `416da3d`). Root cause + fix documented in
+`AGENT_TRAIL.md` §A. Two morning checkpoints (PACE password-auth/Duo; relay
+deploy freshness) — connector cannot be published tonight regardless.
+
+**Phase B: IN PROGRESS.** Subagent `aa66a8ef02d414872` ("ISSM vs Icepack parity
+audit", read-only) is running. On its return: build the Before→After→Remaining
+matrix, then implement the "safe to generalize now" subset in small commits
+(discovery/metadata, structured-results scaffolding, run-history, docs, tests),
+stopping before any scientific decision. If interrupted before the subagent
+returns: re-spawn the same audit prompt (in AGENT_TRAIL §B.delegation) — do not
+hand-do the audit.
 
 ## Recoverability rule
 
@@ -41,4 +50,10 @@ audits.
 
 | hash | purpose |
 |------|---------|
-| (pending) | |
+| `d4d5603` | overnight agent-trail + checkpoint scaffolding |
+| `416da3d` | Phase A: connector bootstrap end-to-end namespace test + pairing-prompt paste |
+| `b5eb565` | overnight: Phase A results + Phase B plan in trail |
+
+(Earlier this session, before the overnight brief: `a930cfd` first-use SSH-key
+registration UX; `52d8edb` bootstrap visible state + structured reasons + macOS
+Paste button.)
