@@ -97,6 +97,7 @@ from cryostack_src.frontend.cryolauncher.remote_runtime import (
     build_remote_runtime_callbacks,
 )
 from cryostack_src.remote import RemoteBridge, expand_remote_home, normalize_remote_path
+from cryostack_src.remote.access_state import enforce_remote_access, verify_remote_identity
 from cryostack_src.remote.spack_env import SetupSlurmOpts
 from cryostack_src.frontend.cryolauncher.spack_runtime import build_spack_runtime_callbacks
 from cryostack_src.models import get_model_adapter
@@ -1561,7 +1562,34 @@ def build_icesheets_ui():
                 with log_out:
                     print("[remote][ERROR] Host and User are required.")
                 return
-            
+
+            # B3: remote-access identity gate. Verifies the real remote identity
+            # (fresh whoami) against the configured HPC username and blocks Run
+            # on mismatch / unverified access / missing prerequisites.
+            if mode == "remote":
+                _resolved = "connector" if should_use_connector() else "direct"
+                _gate = enforce_remote_access(
+                    current_remote_bridge(mode=_resolved),
+                    profile=get_compute_profile(cluster_name_for_keys.value or "pace"),
+                    access_mode=access_mode_dd.value,
+                    resolved_mode=_resolved,
+                    hpc_username=user,
+                    remote_directory=remote_base_dir.value.strip(),
+                    connector_online=(
+                        relay_check_status(SESSION["id"]).get("online")
+                        if _resolved == "connector" and SESSION.get("id") else None
+                    ),
+                )
+                for _w in _gate.warnings:
+                    with log_out:
+                        print(_w)
+                if not _gate.ok:
+                    status_chip.value = status_html("fail")
+                    with log_out:
+                        for _m in _gate.messages:
+                            print(_m)
+                    return
+
             if not example_dir.value.strip():
 
                 status_chip.value = status_html("fail")
@@ -1915,7 +1943,35 @@ def build_icesheets_ui():
             experiment_update_from_job_status=experiment_update_from_job_status,
             on_status_result=workspace_manager.update_run_status_by_job,
         )
-        on_test_remote = remote_runtime.check
+        _remote_check = remote_runtime.check
+
+        def on_test_remote(_=None):
+            _remote_check(_)
+            if mode_dd.value != "remote":
+                return
+            try:
+                _resolved = "connector" if should_use_connector() else "direct"
+                _v = verify_remote_identity(
+                    current_remote_bridge(mode=_resolved),
+                    verification_command=get_compute_profile(
+                        cluster_name_for_keys.value or "pace"
+                    ).verification_command,
+                    expected_username=cluster_user.value.strip(),
+                )
+                with log_out:
+                    if _v.ok:
+                        print(f"[identity] verified — remote whoami '{_v.remote_identity}' "
+                              "matches the configured HPC username.")
+                    elif _v.mismatch:
+                        print(f"[identity][MISMATCH] remote whoami '{_v.remote_identity}' "
+                              f"!= configured HPC username '{_v.expected}'. Run is blocked "
+                              "until this matches.")
+                    else:
+                        print(f"[identity] could not verify remote identity: {_v.error}")
+            except Exception as _e:
+                with log_out:
+                    print("[identity] verification skipped:", type(_e).__name__, _e)
+
         on_status = remote_runtime.status
         on_terminate = remote_runtime.terminate
 

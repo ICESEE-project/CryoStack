@@ -76,6 +76,11 @@ class ComputeProfile:
     ssh_agent_supported: bool = False
     supported_access_modes: tuple[str, ...] = ("connector",)
     auth_modes: tuple[str, ...] = ("ssh_key",)
+    #: "shared" -> Direct SSH from the CryoStack server uses one shared
+    #: service-account identity (the normal multi-user path is the Connector);
+    #: "single_tenant" -> the deployment declares the server is single-user, so
+    #: server-side credentials are acceptable.
+    direct_ssh_trust: str = "shared"
     key_registration_method: str = "manual"
     portal_url: str = ""
     portal_name: str = ""
@@ -99,6 +104,8 @@ class ComputeProfile:
             raise ValueError(
                 f"key_registration_method must be one of {KEY_REGISTRATION_METHODS}"
             )
+        if self.direct_ssh_trust not in ("shared", "single_tenant"):
+            raise ValueError("direct_ssh_trust must be 'shared' or 'single_tenant'")
         if int(self.ssh_port) <= 0:
             raise ValueError(f"ssh_port must be positive: {self.ssh_port!r}")
 

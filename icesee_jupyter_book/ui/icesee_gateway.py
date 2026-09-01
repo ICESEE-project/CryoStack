@@ -26,7 +26,9 @@ from icesee_jupyter_book.core.connector_relay_client import (
 from icesee_jupyter_book.core import ssh_key_manager
 from icesee_jupyter_book.core.example_registry import EXAMPLES, enabled_names
 from cryostack_src.workspace import resolve_workspace_user
-from cryostack_src.resources.profiles import initial_remote_fields
+from cryostack_src.resources.profiles import get_compute_profile, initial_remote_fields
+from cryostack_src.remote import RemoteBridge
+from cryostack_src.remote.access_state import enforce_remote_access, verify_remote_identity
 from icesee_jupyter_book.core.config_io import load_yaml, dump_yaml
 from icesee_jupyter_book.core.example_discovery import (
     find_run_script,
@@ -1324,7 +1326,36 @@ def build_icesee_ui():
                         with log_out:
                             print("[connector][ERROR] Connector session is not online.")
                         return
-    
+
+                # B3: remote-access identity gate -- verify the real remote
+                # identity vs the configured HPC username; block Run on mismatch.
+                _resolved = "connector" if use_connector else "direct"
+                _gate = enforce_remote_access(
+                    RemoteBridge(
+                        mode=_resolved, host=host, user=user, port=port,
+                        session_id=SESSION.get("id"),
+                        cluster_name=cluster_name_for_keys.value or "pace",
+                    ),
+                    profile=get_compute_profile(cluster_name_for_keys.value or "pace"),
+                    access_mode=access_mode_dd.value,
+                    resolved_mode=_resolved,
+                    hpc_username=user,
+                    remote_directory=remote_base_dir.value.strip(),
+                    connector_online=(
+                        relay_check_status(SESSION["id"]).get("online")
+                        if _resolved == "connector" and SESSION.get("id") else None
+                    ),
+                )
+                for _w in _gate.warnings:
+                    with log_out:
+                        print(_w)
+                if not _gate.ok:
+                    set_status("fail")
+                    with log_out:
+                        for _m in _gate.messages:
+                            print(_m)
+                    return
+
                 example_cfg = EXAMPLES[example_dd.value]
 
                 sync_quick_into_widgets()
@@ -1564,6 +1595,29 @@ def build_icesee_ui():
                     print("[remote][ERROR] Provide Host + User first.")
                 return
 
+            def _report_identity(resolved_mode: str) -> None:
+                try:
+                    _v = verify_remote_identity(
+                        RemoteBridge(mode=resolved_mode, host=host, user=user, port=port,
+                                     session_id=SESSION.get("id"),
+                                     cluster_name=cluster_name_for_keys.value or "pace"),
+                        verification_command=get_compute_profile(
+                            cluster_name_for_keys.value or "pace").verification_command,
+                        expected_username=user,
+                    )
+                    with log_out:
+                        if _v.ok:
+                            print(f"[identity] verified — remote '{_v.remote_identity}' "
+                                  "matches the configured HPC username.")
+                        elif _v.mismatch:
+                            print(f"[identity][MISMATCH] remote '{_v.remote_identity}' != "
+                                  f"configured '{_v.expected}'. Run is blocked until this matches.")
+                        else:
+                            print(f"[identity] could not verify remote identity: {_v.error}")
+                except Exception as _e:
+                    with log_out:
+                        print("[identity] verification skipped:", type(_e).__name__, _e)
+
             try:
 
                 if access_mode_dd.value == "connector":
@@ -1600,6 +1654,8 @@ def build_icesee_ui():
                             print("--- stderr ---")
                             print(payload["stderr"].strip())
 
+                    if payload.get("ok"):
+                        _report_identity("connector")
                     set_status("done" if payload.get("ok") else "fail")
                     return
                 result = remote_test_connection(host, user, port)
@@ -1640,6 +1696,8 @@ def build_icesee_ui():
                             print("⚠ Hostname not reachable.")
                             print("Check the cluster hostname.")
 
+                if result["ok"]:
+                    _report_identity("direct")
                 set_status("done" if result["ok"] else "fail")
 
             except subprocess.TimeoutExpired:
