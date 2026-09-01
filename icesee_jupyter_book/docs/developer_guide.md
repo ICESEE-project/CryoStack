@@ -171,13 +171,30 @@ bash release_connector.sh --print-config
 
 ### 5. Verify the public release
 
+A connector release is only operational when **both** the setup page and the
+downloads respond:
+
 ```bash
-curl -sSL https://cryostack.eas.gatech.edu/downloads/connectors/manifest.json
+curl -sSIL https://cryostack.eas.gatech.edu/connect/
+curl -sSL  https://cryostack.eas.gatech.edu/downloads/connectors/manifest.json
+```
 
-curl -sSL https://cryostack.eas.gatech.edu/downloads/connectors/SHA256SUMS
+`/connect/` must return `HTTP/2 200` (not `403`). A `403` there is almost always
+DAC permissions: `deploy_web.sh` re-hardens the web tree to `0755` dirs / `0644`
+files after `rsync -a` (which otherwise preserves the repo's `0770/0660`), and
+runs `restorecon` when SELinux is active. If it still 403s:
 
-curl -sSIL \
-  https://cryostack.eas.gatech.edu/downloads/connectors/<artifact> \
+```bash
+sudo namei -l /var/www/cryolauncher/connect/index.html
+sudo tail -n 50 /var/log/nginx/error.log
+getenforce; ls -Zd /var/www/cryolauncher/connect
+```
+
+Then the download checks:
+
+```bash
+curl -sSL  https://cryostack.eas.gatech.edu/downloads/connectors/SHA256SUMS
+curl -sSIL https://cryostack.eas.gatech.edu/downloads/connectors/<artifact> \
   | grep -Ei 'HTTP/|content-(type|length|disposition)'
 ```
 
@@ -187,6 +204,9 @@ application/octet-stream`, `Content-Disposition: attachment`, and a
 
 **Always check the live `manifest.json` before assuming a release succeeded** —
 it lists exactly the platforms currently published and their `pairing_protocol`.
+`deploy_web.sh` runs the `/connect/` smoke check itself after every deploy
+(override the host with `CRYOSTACK_PUBLIC_BASE`, skip with
+`CRYOSTACK_SKIP_SMOKE=1`).
 
 ### 6. Audit nginx
 

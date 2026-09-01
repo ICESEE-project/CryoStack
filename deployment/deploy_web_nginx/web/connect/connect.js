@@ -449,6 +449,11 @@ export async function initConnectPage() {
   if (!isBrowser()) return;
 
   const params = new URLSearchParams(window.location.search);
+  // The "session" query parameter (v2) is the NON-SECRET session identifier.
+  // Used here only for live status polling (GET /connector/status/<id>) and as
+  // a diagnostic reference. The pairing capability is the one-time pairing code
+  // shown in the CryoLauncher / ICESEE UI -- never in a URL -- and there is no
+  // global "newest session" discovery.
   const session = params.get("session");
   const returnTarget = resolveReturnTarget(params.get("app"));
 
