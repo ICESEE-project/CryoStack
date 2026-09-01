@@ -5,6 +5,8 @@ from __future__ import annotations
 import ipywidgets as W
 from IPython.display import Javascript, display
 
+from icesee_jupyter_book.ui.shared_application_header import cryostack_mark_img
+
 
 _SHARED_MENU_CSS = """
 <style>
@@ -35,6 +37,31 @@ _SHARED_MENU_CSS = """
     min-width: 0;
     align-items: center;
     gap: 10px;
+}
+
+/* Canonical CryoStack mark + application name -- kept together on one line. */
+.cryostack-app-identity {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 10px;
+}
+
+.cryostack-app-mark {
+    flex: 0 0 auto;
+    width: 30px;
+    height: 30px;
+    object-fit: contain;
+    border-radius: 7px;
+}
+
+.cryostack-app-mark--fallback {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    line-height: 1;
+    color: #1565c0;
 }
 
 .cryostack-app-home {
@@ -201,6 +228,8 @@ def _build_application_menu(
 
     documentation_root = documentation_root.rstrip("/")
 
+    cryostack_mark = cryostack_mark_img()
+
     widget = W.HTML(
         value=f"""
 {_SHARED_MENU_CSS}
@@ -209,12 +238,15 @@ def _build_application_menu(
 
     <div class="cryostack-app-header-left">
 
-        <a
-            class="cryostack-app-home"
-            href="{application_href}"
-        >
-            {application_name}
-        </a>
+        <div class="cryostack-app-identity">
+            {cryostack_mark}
+            <a
+                class="cryostack-app-home"
+                href="{application_href}"
+            >
+                {application_name}
+            </a>
+        </div>
 
         <nav
             class="cryostack-app-nav"

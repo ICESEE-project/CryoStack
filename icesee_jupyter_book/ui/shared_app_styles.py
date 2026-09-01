@@ -575,68 +575,6 @@ pre.cryostack-code-block {
 
 
 /* =========================================================
-   B4 -- shared application header
-   ========================================================= */
-
-.cryostack-app-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-
-    padding: 10px 14px;
-    margin: 0 0 14px;
-
-    border: 1px solid rgba(15, 23, 42, 0.08);
-    border-radius: 14px;
-
-    background:
-        linear-gradient(
-            to right,
-            rgba(37, 99, 235, 0.06),
-            rgba(15, 23, 42, 0.02)
-        );
-}
-
-.cryostack-app-header__mark {
-    flex: 0 0 auto;
-    width: 40px;
-    height: 40px;
-    object-fit: contain;
-    border-radius: 9px;
-}
-
-.cryostack-app-header__mark--fallback {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 24px;
-    line-height: 1;
-    color: #1d4ed8;
-}
-
-.cryostack-app-header__text {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    line-height: 1.2;
-}
-
-.cryostack-app-header__brand {
-    color: rgba(15, 23, 42, 0.62);
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-}
-
-.cryostack-app-header__app {
-    color: #111827;
-    font-size: 19px;
-    font-weight: 800;
-}
-
-
-/* =========================================================
    B4 -- grouped form panels (Remote Connection, Slurm resources)
    ========================================================= */
 
@@ -817,23 +755,10 @@ a.cryostack-portal-link {
 }
 
 @media (max-width: 430px) {
-    .cryostack-app-header {
-        gap: 10px;
-        padding: 9px 11px;
-    }
-
-    .cryostack-app-header__mark { width: 34px; height: 34px; }
-    .cryostack-app-header__app { font-size: 17px; }
     .cryostack-group-title { font-size: 12px; }
 }
 
-@media (max-width: 390px) {
-    .cryostack-app-header__app { font-size: 16px; }
-    .cryostack-app-header__brand { font-size: 11px; }
-}
-
 @media (max-width: 360px) {
-    .cryostack-app-header { flex-wrap: wrap; }
     .cryostack-conn-status { width: 100%; justify-content: center; }
 }
 
@@ -842,18 +767,6 @@ a.cryostack-portal-link {
    B4 -- dark theme for the new components
    ========================================================= */
 
-html[data-theme="dark"] .cryostack-app-header {
-    border-color: rgba(226, 232, 240, 0.12);
-    background:
-        linear-gradient(
-            to right,
-            rgba(37, 99, 235, 0.16),
-            rgba(15, 23, 42, 0.20)
-        );
-}
-
-html[data-theme="dark"] .cryostack-app-header__brand { color: #94a3b8; }
-html[data-theme="dark"] .cryostack-app-header__app { color: #f8fafc; }
 html[data-theme="dark"] .cryostack-group-title,
 html[data-theme="dark"] .cryostack-field-label { color: #e2e8f0; }
 html[data-theme="dark"] .cryostack-help,

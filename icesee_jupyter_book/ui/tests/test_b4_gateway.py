@@ -21,12 +21,13 @@ _GATEWAYS = (_ICESHEETS, _ICESEE)
 
 # ── shared, generic components ──────────────────────────────────────────
 @pytest.mark.parametrize("path", _GATEWAYS)
-def test_gateway_uses_the_shared_header_and_panels(path):
+def test_gateway_uses_the_shared_panels(path):
     src = path.read_text()
-    assert "from icesee_jupyter_book.ui.shared_application_header import" in src
-    assert "build_application_header(" in src
     assert "build_remote_connection_panel(" in src
     assert "build_slurm_resources_panel(" in src
+    # the single application-shell header is the app-menu nav bar; the gateway
+    # must NOT stamp a second header strip.
+    assert "build_application_header(" not in src
 
 
 @pytest.mark.parametrize("path", _GATEWAYS)
@@ -80,25 +81,21 @@ def test_no_personal_or_developer_defaults(path):
 # ── shared responsive CSS lives in the shared stylesheet ───────────────
 def test_shared_css_carries_the_b4_responsive_classes():
     css = _SHARED_CSS.read_text()
-    for cls in ("cryostack-app-header", "cryostack-group-title",
+    for cls in ("cryostack-group-title",
                 "cryostack-slurm-numeric-grid", "cryostack-conn-status",
                 "cryostack-remote-connection-panel", "cryostack-diagnostics-accordion",
                 "cryostack-help"):
         assert cls in css
-    for bp in ("max-width: 768px", "max-width: 430px",
-               "max-width: 390px", "max-width: 360px"):
+    for bp in ("max-width: 768px", "max-width: 430px", "max-width: 360px"):
         assert bp in css
     # the numeric grid actually steps down 3 -> 2 -> 1
     assert "repeat(3, minmax(0, 1fr))" in css
     assert "repeat(2, minmax(0, 1fr))" in css
 
 
-# ── the built pages actually render the header + panels ─────────────────
-@pytest.mark.parametrize(
-    "builder_name,app_label",
-    [("build_icesheets_ui", "IceSheets"), ("build_icesee_ui", "ICESEE")],
-)
-def test_built_page_contains_header_and_grouped_panels(builder_name, app_label, monkeypatch):
+# ── the built pages actually render the grouped panels ─────────────────
+@pytest.mark.parametrize("builder_name", ["build_icesheets_ui", "build_icesee_ui"])
+def test_built_page_contains_the_grouped_panels(builder_name, monkeypatch):
     monkeypatch.setenv("CRYOSTACK_WORKSPACE_USER", "b4-test-user")
     monkeypatch.setenv("USER", "b4-service-user")
     monkeypatch.setenv("LOGNAME", "b4-service-user")
@@ -120,8 +117,6 @@ def test_built_page_contains_header_and_grouped_panels(builder_name, app_label, 
 
     walk(page)
     blob = "\n".join(html)
-    assert "cryostack-app-header" in blob
-    assert app_label in blob
     assert "Compute resource" in blob and "Your HPC identity" in blob
     assert "cryostack-slurm-resources-panel" in blob
     # connector/session internals are behind Diagnostics, not loose in the panel

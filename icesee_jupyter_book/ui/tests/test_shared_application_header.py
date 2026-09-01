@@ -1,4 +1,4 @@
-"""B4: shared CryoStack application header -- single-source branding."""
+"""The canonical CryoStack mark (single-source branding for the one app header)."""
 from __future__ import annotations
 
 import sys
@@ -9,44 +9,30 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
 from icesee_jupyter_book.ui.shared_application_header import (
-    application_header_html,
-    build_application_header,
+    cryostack_mark_data_uri,
+    cryostack_mark_img,
 )
 
 _CANONICAL = _REPO / "icesee_jupyter_book" / "cryostack.png"
 _MARK = _REPO / "icesee_jupyter_book" / "ui" / "assets" / "cryostack-mark-96.png"
 
 
-def test_header_shows_cryostack_wordmark_and_a_distinct_app_name():
-    html = application_header_html("IceSheets")
-    assert "CryoStack" in html
-    assert "IceSheets" in html
-    # the app name is its own, prominent line -- not glued onto "CryoStack"
-    assert "cryostack-app-header__app" in html
-    assert "cryostack-app-header__brand" in html
-
-
-def test_both_application_names_render():
-    for name in ("IceSheets", "ICESEE", "Icepack"):
-        assert name in application_header_html(name)
-
-
-def test_mark_is_the_derived_asset_from_the_one_canonical_logo():
-    # the derived mark exists and is small enough to embed
+def test_mark_is_the_one_derived_asset_from_the_canonical_logo():
     assert _MARK.is_file()
     assert _MARK.stat().st_size < 60_000
-    # and it is embedded as a data URI (no external <img src> to a file path)
-    html = application_header_html("ICESEE")
-    assert "data:image/png;base64," in html
-    assert "cryostack.png" not in html  # never links the 1MB canonical
-
-
-def test_no_second_canonical_logo_file_was_introduced():
-    # exactly one canonical source; everything else is script-derived
+    uri = cryostack_mark_data_uri()
+    assert uri.startswith("data:image/png;base64,")
+    # exactly one canonical source under icesee_jupyter_book/
     pngs = {p.name for p in _REPO.glob("icesee_jupyter_book/*.png")}
     assert "cryostack.png" in pngs
 
 
-def test_build_returns_a_widget():
-    w = build_application_header("IceSheets")
-    assert hasattr(w, "value") and "IceSheets" in w.value
+def test_mark_img_embeds_the_data_uri_and_never_links_the_1mb_canonical():
+    html = cryostack_mark_img()
+    assert "<img" in html and "data:image/png;base64," in html
+    assert "cryostack.png" not in html
+
+
+def test_mark_img_has_a_fallback_class_hook():
+    # same class on the <img> and the fallback span so CSS sizes both
+    assert 'class="cryostack-app-mark"' in cryostack_mark_img()

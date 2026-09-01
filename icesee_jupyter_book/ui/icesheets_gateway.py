@@ -52,7 +52,6 @@ from icesee_jupyter_book.ui.application_menus import (
 from icesee_jupyter_book.ui.shared_app_styles import (
     shared_application_styles,
 )
-from icesee_jupyter_book.ui.shared_application_header import build_application_header
 from icesee_jupyter_book.ui.shared_remote_connection_panel import (
     build_remote_connection_panel,
 )
@@ -2715,7 +2714,6 @@ def build_icesheets_ui():
                 workspace_bridge.widget(),
 
                 app_menu,
-                build_application_header("IceSheets"),
                 header,
                 row,
                 workspace_height_sync,
