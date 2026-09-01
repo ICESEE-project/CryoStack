@@ -162,6 +162,9 @@ class WorkspaceManager:
         #: cache is inherently user-isolated. Keyed by the resolved outputs
         #: path + its metadata.json mtime so a re-fetched run is re-read.
         self._result_pkg_cache: dict[str, tuple] = {}
+        #: run keys with an in-flight results transfer -- prevents duplicate
+        #: concurrent rsync / connector pulls for the same run.
+        self._fetch_in_flight: set[str] = set()
 
     def _owns(self, path: Path | None) -> bool:
         """True when ``path`` resolves inside this user's managed run root."""
@@ -1000,6 +1003,21 @@ class WorkspaceManager:
         return f"{remote_dir}/outputs"
 
     def refresh_results(self) -> Path | None:
+        # One transfer at a time per run: a user clicking Preview / Download
+        # repeatedly must not launch several concurrent rsync / connector
+        # pulls for the same outputs.
+        run_key = self._selected_run_id or "_current"
+        if run_key in self._fetch_in_flight:
+            with self.results_output:
+                print("[results] A fetch for this run is already in progress…")
+            return None
+        self._fetch_in_flight.add(run_key)
+        try:
+            return self._refresh_results_locked()
+        finally:
+            self._fetch_in_flight.discard(run_key)
+
+    def _refresh_results_locked(self) -> Path | None:
         # a fetch is about to overwrite this run's local outputs
         self.invalidate_result_package_cache(self._selected_run_id)
         remote_dir = self.normalize_remote_path(self.status.get("remote_dir") or "")

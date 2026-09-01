@@ -2020,10 +2020,20 @@ def build_icesheets_ui():
         _remote_check = remote_runtime.check
 
         def on_test_remote(_=None):
+            # Immediate feedback before any blocking SSH/relay work: disable the
+            # button and show "Checking…" so a repeat click can't re-enter and
+            # the user sees the check is running.
+            connect_btn.disabled = True
             try:
                 remote_conn_panel.set_status("checking")
             except NameError:
                 pass
+            try:
+                _on_test_remote_impl(_)
+            finally:
+                connect_btn.disabled = False
+
+        def _on_test_remote_impl(_=None):
             _check_result = _remote_check(_)
             if mode_dd.value != "remote":
                 return

@@ -2363,7 +2363,19 @@ def build_icesee_ui():
         action_btn.on_click(on_action_click)
         clear_btn.on_click(lambda b: (log_out.clear_output(), results_out.clear_output(), set_status("idle")))
 
-        connect_btn.on_click(lambda b: run_example_remote_test())
+        def _on_check_ssh(_b=None):
+            # immediate feedback + no re-entry while the check runs
+            connect_btn.disabled = True
+            try:
+                remote_conn_panel.set_status("checking")
+            except NameError:
+                pass
+            try:
+                run_example_remote_test()
+            finally:
+                connect_btn.disabled = False
+
+        connect_btn.on_click(_on_check_ssh)
         submit_btn.on_click(lambda b: run_example_remote_submit())
         status_btn.on_click(lambda b: run_example_remote_status())
         tail_btn.on_click(lambda b: run_example_remote_tail())
