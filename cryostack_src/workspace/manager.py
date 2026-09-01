@@ -32,6 +32,23 @@ class WorkspacePermissionError(RuntimeError):
     """A file operation was attempted outside the caller's managed workspace."""
 
 
+class _FixedChoice:
+    """Adapts a fixed model *string* to the ``value`` / ``options`` / ``observe``
+    shape :class:`WorkspaceManager` expects from a model-selector widget.
+
+    IceSheets passes a real dropdown (the user picks ISSM / Icepack). An app
+    with a single model (ICESEE) passes the model name as a plain string and
+    this stands in -- no dropdown, nothing to observe.
+    """
+
+    def __init__(self, value: str) -> None:
+        self.value = value
+        self.options = ((value, value),)
+
+    def observe(self, *_a, **_k) -> None:  # pragma: no cover - inert
+        pass
+
+
 # ── model-adapter dispatch for result reading / visualization ──────────────
 # The generic workspace layer never imports a model directly: it asks the
 # adapter for its result reader / visualizer. Models that have not implemented
@@ -108,7 +125,9 @@ class WorkspaceManager:
         self.status = status
         self.session = session
         self.example_dir = example_dir
-        self.model = model
+        #: ``model`` may be a selector widget (IceSheets) or a fixed model name
+        #: string (single-model apps like ICESEE).
+        self.model = _FixedChoice(model) if isinstance(model, str) else model
         self.backend = backend
         self.file_picker = file_picker
         self.file_editor = file_editor
