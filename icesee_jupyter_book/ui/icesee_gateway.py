@@ -89,9 +89,16 @@ from icesee_jupyter_book.ui.experiment_bridge import (
     load_experiment_bridge,
 )
 
+import getpass
+
 from icesee_jupyter_book.ui.workspace_bridge import (
     WorkspaceBridge,
     load_workspace_bridge,
+)
+from icesee_jupyter_book.ui.workspace_persistence import make_state_io
+from cryostack_src.workspace.resource_state import (
+    ResourceStateController,
+    strip_secrets,
 )
 
 from icesee_jupyter_book.core.experiment_status import (
@@ -967,7 +974,44 @@ def build_icesee_ui():
             slurm_part.value = rf["partition"]
             slurm_time.value = rf["wall_time"]
 
-        cluster_name_for_keys.observe(_sync_resource_facts, names="value")
+        # --- B2: authenticated user x resource personal-settings persistence ---
+        def _b2_read_personal() -> dict:
+            return {
+                "hpc_username": cluster_user.value,
+                "remote_directory": remote_base_dir.value,
+                "account": slurm_account.value,
+                "email": slurm_mail.value,
+                "access_mode": access_mode_dd.value,
+                "auth_mode": auth_mode.value,
+            }
+
+        def _b2_apply_personal(s: dict) -> None:
+            cluster_user.value = s.get("hpc_username", "") or ""
+            remote_base_dir.value = s.get("remote_directory", "") or ""
+            slurm_account.value = s.get("account", "") or ""
+            slurm_mail.value = s.get("email", "") or ""
+            if s.get("access_mode") in {"auto", "direct", "connector"}:
+                access_mode_dd.value = s["access_mode"]
+            if s.get("auth_mode") in {"key", "bootstrap"}:
+                auth_mode.value = s["auth_mode"]
+
+        _b2_load, _b2_save = make_state_io(
+            workspace_bridge, "icesee",
+            resolve_workspace_user(require_authenticated=False).user_id,
+        )
+        resource_state = ResourceStateController(
+            load_state=_b2_load, save_state=_b2_save,
+            read_personal=_b2_read_personal, apply_personal=_b2_apply_personal,
+            resource_name=lambda: cluster_name_for_keys.value,
+            set_resource_name=lambda n: setattr(cluster_name_for_keys, "value", n),
+            service_username=(os.environ.get("USER") or getpass.getuser() or ""),
+        )
+
+        def _on_resource_changed(change):
+            resource_state.switch_resource(change.get("old"), change.get("new"))
+            _sync_resource_facts()
+
+        cluster_name_for_keys.observe(_on_resource_changed, names="value")
         _toggle_remote_backend()
         W.HBox([W.HTML("<div class='icesee-lbl'>Backend:</div>"), remote_backend], layout=W.Layout(gap="12px")),
         ssh_box,
@@ -2152,7 +2196,11 @@ def build_icesee_ui():
                     ),
                 }
 
-            return state
+            # B2: fold in the authenticated user x resource personal settings
+            # (v2 shape). RESOURCE facts are NOT persisted; nothing secret.
+            merged = resource_state.capture()
+            merged["run"] = state
+            return strip_secrets(merged)
 
         # master run
         def run_example():
@@ -2589,7 +2637,17 @@ def build_icesee_ui():
 
         set_status("idle")
         rebuild_for_example()
-        # print("STEP 2: widgets created")
+
+        # B2: restore this user's saved per-resource settings, last of all.
+        try:
+            for _w in resource_state.hydrate():
+                with log_out:
+                    print("[settings]", _w)
+            _sync_resource_facts()
+        except Exception as _b2_err:
+            with log_out:
+                print("[settings] restore skipped:", type(_b2_err).__name__, _b2_err)
+
         return page
         # sidebar = build_sidebar()
         # main_area = W.VBox([page], layout=W.Layout(width="100%"))

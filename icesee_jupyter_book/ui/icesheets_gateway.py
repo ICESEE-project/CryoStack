@@ -57,16 +57,23 @@ from icesee_jupyter_book.ui.experiment_bridge import (
     load_experiment_bridge,
 )
 
+import getpass
+
 from icesee_jupyter_book.ui.workspace_bridge import (
     WorkspaceBridge as WorkspacePersistenceBridge,
     load_workspace_bridge,
 )
+from icesee_jupyter_book.ui.workspace_persistence import make_state_io
 
 from cryostack_src.workspace import (
     WorkspaceBridge,
     WorkspaceManager,
     build_workspace_logs,
     resolve_workspace_user,
+)
+from cryostack_src.workspace.resource_state import (
+    ResourceStateController,
+    strip_secrets,
 )
 
 from icesee_jupyter_book.core.experiment_status import (
@@ -1427,7 +1434,44 @@ def build_icesheets_ui():
             slurm_part.value = rf["partition"]
             slurm_time.value = rf["wall_time"]
 
-        cluster_name_for_keys.observe(_sync_resource_facts, names="value")
+        # --- B2: authenticated user x resource personal-settings persistence ---
+        def _b2_read_personal() -> dict:
+            return {
+                "hpc_username": cluster_user.value,
+                "remote_directory": remote_base_dir.value,
+                "account": slurm_account.value,
+                "email": slurm_mail.value,
+                "access_mode": access_mode_dd.value,
+                "auth_mode": auth_mode.value,
+            }
+
+        def _b2_apply_personal(s: dict) -> None:
+            cluster_user.value = s.get("hpc_username", "") or ""
+            remote_base_dir.value = s.get("remote_directory", "") or ""
+            slurm_account.value = s.get("account", "") or ""
+            slurm_mail.value = s.get("email", "") or ""
+            if s.get("access_mode") in {"auto", "direct", "connector"}:
+                access_mode_dd.value = s["access_mode"]
+            if s.get("auth_mode") in {"key", "bootstrap"}:
+                auth_mode.value = s["auth_mode"]
+
+        _b2_load, _b2_save = make_state_io(
+            workspace_bridge, "cryolauncher",
+            resolve_workspace_user(require_authenticated=False).user_id,
+        )
+        resource_state = ResourceStateController(
+            load_state=_b2_load, save_state=_b2_save,
+            read_personal=_b2_read_personal, apply_personal=_b2_apply_personal,
+            resource_name=lambda: cluster_name_for_keys.value,
+            set_resource_name=lambda n: setattr(cluster_name_for_keys, "value", n),
+            service_username=(os.environ.get("USER") or getpass.getuser() or ""),
+        )
+
+        def _on_resource_changed(change):
+            resource_state.switch_resource(change.get("old"), change.get("new"))
+            _sync_resource_facts()
+
+        cluster_name_for_keys.observe(_on_resource_changed, names="value")
         example_picker.observe(apply_selected_example, names="value")
         access_mode_dd.observe(lambda change: create_or_refresh_connector_session() if change["new"] == "connector" else None, names="value")
         
@@ -1975,61 +2019,32 @@ def build_icesheets_ui():
                 workspace_manager.download_figures()
 
         def current_workspace_state() -> dict:
-            return {
+            # v2 shape: RESOURCE facts are NOT persisted (they live in
+            # ComputeProfile); personal settings are folded per-resource by the
+            # controller; run settings go under "run"; nothing secret.
+            state = resource_state.capture()
+            state["run"] = {
                 "model": model_dd.value,
                 "backend": backend_dd.value,
                 "execution_mode": mode_dd.value,
                 "user_mode": ui_mode_dd.value,
-
-                "example": (
-                    example_picker.value or ""
-                ),
-
-                "example_directory": (
-                    example_dir.value.strip()
-                ),
-
-                "run_target": (
-                    run_target.value or ""
-                ),
-
-                "access_mode": (
-                    access_mode_dd.value
-                ),
-
-                "cluster": {
-                    "name": (
-                        cluster_name_for_keys.value
-                        or ""
-                    ),
-                    "host": (
-                        cluster_host.value.strip()
-                    ),
-                    "port": int(
-                        cluster_port.value
-                    ),
-                },
-
-                "slurm": {
-                    "job_name": slurm_job_name.value,
-                    "time": slurm_time.value,
-                    "nodes": slurm_nodes.value,
-                    "tasks": slurm_ntasks.value,
-                    "tasks_per_node": slurm_tpn.value,
-                    "partition": slurm_part.value,
-                    "memory": slurm_mem.value,
-                },
-
-                "job": {
-                    "job_id": STATUS.get("jobid"),
-                    "remote_directory": (
-                        STATUS.get("remote_dir")
-                    ),
-                    "log_file": (
-                        STATUS.get("log_file")
-                    ),
-                },
+                "example": example_picker.value or "",
+                "example_directory": example_dir.value.strip(),
+                "run_target": run_target.value or "",
+                "job_name": slurm_job_name.value,
+                "nodes": slurm_nodes.value,
+                "tasks": slurm_ntasks.value,
+                "tasks_per_node": slurm_tpn.value,
+                "memory": slurm_mem.value,
+                "wall_time_override": slurm_time.value,
+                "partition_override": slurm_part.value,
             }
+            state["job"] = {
+                "job_id": STATUS.get("jobid"),
+                "remote_directory": STATUS.get("remote_dir"),
+                "log_file": STATUS.get("log_file"),
+            }
+            return strip_secrets(state)
 
 
         run_btn.on_click(on_run)
@@ -2485,6 +2500,19 @@ def build_icesheets_ui():
         _toggle_auth_widgets()
         refresh_example_picker()
         apply_selected_example()
+
+        # B2: restore this user's saved per-resource settings. Runs last, after
+        # every widget + observer exists; the controller guards persistence so a
+        # blank build state can never overwrite stored settings during restore.
+        try:
+            _b2_warnings = resource_state.hydrate()
+            _sync_resource_facts()
+            for _w in _b2_warnings:
+                with log_out:
+                    print("[settings]", _w)
+        except Exception as _b2_err:  # never block the gateway on restore
+            with log_out:
+                print("[settings] restore skipped:", type(_b2_err).__name__, _b2_err)
 
         page = W.VBox(
             [
