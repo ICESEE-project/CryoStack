@@ -83,6 +83,52 @@ outdated binary can never be published as current merely because its filename
 matches. Override deliberately (e.g. to stage a compatibility build) with
 `--allow-protocol-mismatch`.
 
+### Branding
+
+Every packaging icon is derived from **one** canonical image,
+`icesee_jupyter_book/cryostack.png`. `build_connector.sh` runs
+`scripts/build_brand_assets.py` first, which regenerates
+`icesee_hpc_connector/assets/cryostack-connector.{icns,ico,-512.png}` and the
+`/connect/` logo. Do not hand-edit those outputs — change the canonical file and
+re-run. macOS/`.app` and Windows/`.exe` get the icon via `--icon`; the Linux
+tray loads the 512px PNG; the displayed name is always **CryoStack Connector**.
+
+### macOS `.app` responsiveness acceptance test
+
+The macOS connector must be tested **as the packaged `.app`**, not only from
+Python source, before any release. It uses a strict threading split — the Cocoa
+main thread does UI only (menu, `rumps.Timer` status poll, native pairing
+dialog), while one background worker owns the HTTP pairing exchange, the
+WebSocket connect/reconnect, and every SSH operation. `--onedir` (not
+`--onefile`) is used for the bundle so a stale extraction directory from a
+crashed instance cannot hang the next launch.
+
+Run this on an Apple Silicon Mac after mounting the DMG and copying the app to
+`/Applications`:
+
+1. Launch; leave it **unpaired for 60 s** — the menu bar stays responsive, the
+   menu opens instantly.
+2. **Pair with CryoStack…** → **Cancel** — UI still responsive.
+3. Reopen, enter a valid pairing code (from the CryoLauncher/ICESEE UI) → status
+   goes `pairing… → connected ✓`.
+4. Stay connected several minutes, opening menus throughout.
+5. Drop the network / relay, then restore it → status cycles
+   `reconnecting… → connected ✓`; UI never freezes.
+6. **Quit** → `ps aux | grep -i 'CryoStack Connector'` shows no process.
+7. Relaunch immediately — **no machine restart required**; a second launch shows
+   *"CryoStack Connector is already running"* and exits cleanly.
+
+If the app ever reaches macOS's hung state, capture the main-thread stack before
+force-quitting:
+
+```bash
+sample "$(pgrep -f 'CryoStack Connector' | head -1)" 5 -file /tmp/cryostack-connector-sample.txt
+```
+
+Lifecycle events are written to `~/icesee_connector.log` as
+`[lifecycle] <ts> <event>` (fixed names only — never a pairing code, secret, or
+SSH argument).
+
 ### 2. Register into the canonical store
 
 **Same machine builds and serves** (the common single-host case):

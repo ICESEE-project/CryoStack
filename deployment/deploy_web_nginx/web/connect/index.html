@@ -37,6 +37,14 @@
       padding: 56px 22px 72px;
     }
 
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .brand img { height: 44px; width: auto; }
     .badge {
       display: inline-block;
       background: var(--soft-blue);
@@ -46,7 +54,6 @@
       letter-spacing: .02em;
       padding: 6px 12px;
       border-radius: 999px;
-      margin-bottom: 16px;
     }
 
     h1 {
@@ -280,7 +287,10 @@
 
 <body>
   <main class="page">
-    <div class="badge">CryoStack Connector</div>
+    <div class="brand">
+      <img src="cryostack-logo.png" alt="CryoStack" width="120" height="80" decoding="async">
+      <span class="badge">CryoStack Connector</span>
+    </div>
     <h1>Connect CryoStack to your compute resource</h1>
     <p class="lead">
       The CryoStack Connector runs on your own computer and acts as a secure

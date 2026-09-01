@@ -1,37 +1,41 @@
 from __future__ import annotations
 
-import argparse
 import asyncio
 import json
 import shlex
-# from jupyter_server_terminals import msg
-from click import command
-import requests
 import subprocess
 
+import requests
 import websockets
+
+
+def _noop(*_a, **_k) -> None:
+    """Default lifecycle-event sink."""
 
 # DEFAULT_RELAY = "https://cryolauncher.com"
 DEFAULT_RELAY = "https://cryostack.eas.gatech.edu"
 
 # Connector <-> relay pairing protocol. Bumped when the wire protocol changes in
 # a way that makes an older connector unable to pair (e.g. ea0a70d: capability
-# secrets + one-time pairing code replaced global /connector/latest discovery).
-# build_connector.sh stamps this into every artifact's .build.json so the
-# release pipeline never publishes an incompatible binary as current.
+# secrets + a one-time pairing code replaced the old global "newest session"
+# discovery). build_connector.sh stamps this into every artifact's .build.json
+# so the release pipeline never publishes an incompatible binary as current.
 PAIRING_PROTOCOL = "v2"
+
+async def _run(cmd, *, timeout: int):
+    """Run a blocking subprocess off the event loop (keeps the worker's async
+    loop -- and any stop-watcher -- responsive during long SSH operations)."""
+    return await asyncio.to_thread(
+        subprocess.run, cmd, capture_output=True, text=True, timeout=timeout
+    )
+
 
 async def run_shell(payload: dict):
     command = payload.get("command", "")
     timeout = int(payload.get("timeout", 60))
 
     try:
-        result = subprocess.run(
-            ["bash", "-lc", command],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
+        result = await _run(["bash", "-lc", command], timeout=timeout)
 
         return {
             "ok": result.returncode == 0,
@@ -52,12 +56,7 @@ async def run_shell(payload: dict):
 
 async def run_subprocess(cmd: list[str], timeout: int = 300):
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
+        result = await _run(cmd, timeout=timeout)
         return {
             "ok": result.returncode == 0,
             "returncode": result.returncode,
@@ -99,12 +98,7 @@ async def run_ssh(payload: dict):
     ]
 
     try:
-        result = subprocess.run(
-            ssh_cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
+        result = await _run(ssh_cmd, timeout=timeout)
 
         return {
             "ok": result.returncode == 0,
@@ -183,26 +177,49 @@ class PairingRejected(RuntimeError):
 _TERMINAL_WS_CODES = {4401, 4404, 4409}
 
 
-async def main(ws_url: str, session_secret: str, poll_seconds: int = 5):
+_SSH_COMMANDS = {
+    "ssh-run", "rsync-upload", "rsync-download", "slurm-submit",
+    "stage-archive", "fetch-archive", "bootstrap-passwordless-ssh",
+}
+
+
+async def main(ws_url: str, session_secret: str, poll_seconds: int = 5,
+               *, stop_event=None, on_event=_noop):
     print(f"[connector] connecting to {ws_url}")
 
-    async with websockets.connect(ws_url) as ws:
-        # Prove possession of this session's secret before anything else.
+    # Bounded connect: a stalled TLS/WS handshake must not hang the worker.
+    ws = await asyncio.wait_for(
+        websockets.connect(ws_url, open_timeout=20, close_timeout=5, ping_interval=20),
+        timeout=25,
+    )
+
+    # Close the socket promptly when asked to stop, so the reconnect loop and
+    # Quit do not have to wait for a network timeout.
+    async def _watch_stop():
+        while stop_event is not None and not stop_event.is_set():
+            await asyncio.sleep(0.25)
+        try:
+            await ws.close(code=1001)
+        except Exception:
+            pass
+
+    watcher = asyncio.create_task(_watch_stop()) if stop_event is not None else None
+    try:
         await ws.send(json.dumps({"type": "auth", "secret": session_secret}))
         try:
             hello = json.loads(await asyncio.wait_for(ws.recv(), timeout=15))
         except (asyncio.TimeoutError, ValueError) as e:
             raise PairingRejected(f"no auth acknowledgement from relay ({e})")
-
         if hello.get("type") != "auth_ok":
             raise PairingRejected(hello.get("type") or "relay rejected the session secret")
 
         print("[connector] authenticated to session", hello.get("session_id"))
+        on_event("websocket-connected")
 
         async for raw in ws:
+            if stop_event is not None and stop_event.is_set():
+                break
             msg = json.loads(raw)
-
-            # Ignore any stray non-command frames (e.g. a repeated auth_ok).
             if "command_id" not in msg and "command_type" not in msg:
                 continue
 
@@ -210,13 +227,28 @@ async def main(ws_url: str, session_secret: str, poll_seconds: int = 5):
             command_type = msg.get("command_type")
             payload = msg.get("payload", {})
 
-            result = await handle_command(command_type, payload)
+            is_ssh = command_type in _SSH_COMMANDS
+            if is_ssh:
+                on_event("ssh-command-start")
+            try:
+                result = await handle_command(command_type, payload)
+            finally:
+                if is_ssh:
+                    on_event("ssh-command-complete")
 
             await ws.send(json.dumps({
                 "command_id": command_id,
                 "command_type": command_type,
                 "result": result,
             }))
+    finally:
+        if watcher is not None:
+            watcher.cancel()
+        try:
+            await ws.close()
+        except Exception:
+            pass
+        on_event("websocket-disconnected")
 
 async def run_rsync_upload(payload: dict):
     local_path = payload["local_path"]
@@ -436,14 +468,28 @@ def run_connector(
     ws_url: str | None = None,
     poll: bool = True,
     poll_seconds: int = 5,
+    *,
+    stop_event=None,
+    on_event=None,
 ):
+    """Blocking pair + connect + reconnect loop. Meant to run on a background
+    thread. ``stop_event`` (a ``threading.Event``) interrupts every wait and
+    closes the socket. ``on_event(name)`` receives non-secret lifecycle names.
+    """
     import time
+
+    on_event = on_event or _noop
+
+    def _stopped() -> bool:
+        return stop_event is not None and stop_event.is_set()
 
     # Resolve the session + secret exactly once. A connector reaches a session
     # only by holding that session's pairing capability -- never by asking the
     # relay for "the latest session".
     if not session_secret and pairing_code:
+        on_event("pairing-request-start")
         paired = pair_session(relay, pairing_code)
+        on_event("pairing-request-complete")
         if not paired:
             print("[connector] Pairing failed: the pairing code is invalid or expired.")
             print("[connector] Open the Connector Setup page for a fresh code.")
@@ -460,9 +506,13 @@ def run_connector(
     target = ws_url or resolve_ws_url(relay=relay, session=session)
     print("[connector] session:", session)
 
-    while True:
+    while not _stopped():
+        on_event("websocket-thread-start")
         try:
-            asyncio.run(main(target, session_secret=session_secret, poll_seconds=poll_seconds))
+            asyncio.run(main(
+                target, session_secret=session_secret, poll_seconds=poll_seconds,
+                stop_event=stop_event, on_event=on_event,
+            ))
         except KeyboardInterrupt:
             print("[connector] stopped")
             return
@@ -477,11 +527,14 @@ def run_connector(
                 return
             print("[connector] disconnected:", type(e).__name__, e)
 
-        if not poll:
+        if not poll or _stopped():
             return
 
         print(f"[connector] reconnecting in {poll_seconds}s")
-        time.sleep(poll_seconds)
+        if stop_event is not None:
+            stop_event.wait(poll_seconds)          # interruptible
+        else:
+            time.sleep(poll_seconds)
 
 def ensure_local_ssh_key(cluster_name="pace", key_type="ed25519"):
     from pathlib import Path

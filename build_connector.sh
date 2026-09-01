@@ -64,16 +64,24 @@ echo "=============================================================="
 
 # ---- dependencies -------------------------------------------------------
 python3 -m pip install --quiet --upgrade pip
-python3 -m pip install --quiet pyinstaller websockets requests paramiko
+python3 -m pip install --quiet pyinstaller websockets requests paramiko pillow
+
+# ---- branding: derive every icon from the ONE canonical CryoStack logo ---
+python3 "$REPO_ROOT/scripts/build_brand_assets.py"
+ASSETS_DIR="$REPO_ROOT/icesee_hpc_connector/assets"
+ICON_ICNS="$ASSETS_DIR/cryostack-connector.icns"
+ICON_ICO="$ASSETS_DIR/cryostack-connector.ico"
 
 # ---- clean --------------------------------------------------------------
 rm -rf "$BUILD_DIR" "$DIST_DIR"
 mkdir -p "$BUILD_DIR" "$DIST_DIR" "$PKG_DIR"
 rm -f "$ARTIFACT_PATH"
 
+# --add-data separator is ':' on posix, ';' on windows
+DATA_SEP=":"; [[ "$OS_TAG" == "windows" ]] && DATA_SEP=";"
+
 PYI_ARGS=(
   --name "$APP_BASENAME"
-  --onefile
   --windowed
   --clean
   --noconfirm
@@ -84,29 +92,44 @@ PYI_ARGS=(
   --collect-submodules icesee_hpc_connector
   --collect-all paramiko
   --hidden-import paramiko
+  --add-data "${ASSETS_DIR}${DATA_SEP}icesee_hpc_connector/assets"
 )
 
 # ---- build per platform ----------------------------------------------
 if [[ "$OS_TAG" == "macos" ]]; then
   python3 -m pip install --quiet rumps
+  # --onedir (NOT --onefile) for the .app: a --onefile macOS app re-extracts to
+  # $TMPDIR/_MEIxxxx on every launch; a stale/locked dir from a previously
+  # crashed instance can make the next launch hang ("Application Not Responding").
   PYTHONPATH="$REPO_ROOT" pyinstaller "${PYI_ARGS[@]}" \
+    --onedir \
+    --icon "$ICON_ICNS" \
+    --osx-bundle-identifier "edu.gatech.cryostack.connector" \
     --hidden-import rumps --hidden-import Foundation --hidden-import AppKit \
     "$SRC_ENTRY"
 
   APP_BUNDLE="$DIST_DIR/${APP_BASENAME}.app"
   [[ -d "$APP_BUNDLE" ]] || { echo "ERROR: PyInstaller did not produce $APP_BUNDLE" >&2; exit 1; }
 
+  # Stage a drag-to-install DMG: the .app + an /Applications alias + volume icon.
+  DMG_STAGE="$BUILD_DIR/dmg"
+  rm -rf "$DMG_STAGE"; mkdir -p "$DMG_STAGE"
+  cp -R "$APP_BUNDLE" "$DMG_STAGE/"
+  ln -s /Applications "$DMG_STAGE/Applications"
+  cp "$ICON_ICNS" "$DMG_STAGE/.VolumeIcon.icns" 2>/dev/null || true
+
   hdiutil create \
     -volname "$APP_BRAND" \
-    -srcfolder "$APP_BUNDLE" \
+    -srcfolder "$DMG_STAGE" \
     -ov -format UDZO \
     "$ARTIFACT_PATH"
 
 elif [[ "$OS_TAG" == "linux" ]]; then
   # On a headless build host, pystray's X backend import can fail during
   # PyInstaller analysis; run under xvfb:  xvfb-run bash build_connector.sh
-  python3 -m pip install --quiet pystray pillow
+  python3 -m pip install --quiet pystray
   PYTHONPATH="$REPO_ROOT" pyinstaller "${PYI_ARGS[@]}" \
+    --onefile \
     --hidden-import pystray --hidden-import PIL \
     --hidden-import tkinter --hidden-import tkinter.simpledialog \
     "$SRC_ENTRY"
@@ -117,8 +140,10 @@ elif [[ "$OS_TAG" == "linux" ]]; then
   tar -czf "$ARTIFACT_PATH" -C "$DIST_DIR" "${APP_BASENAME}"
 
 else  # windows
-  python3 -m pip install --quiet pystray pillow
+  python3 -m pip install --quiet pystray
   PYTHONPATH="$REPO_ROOT" pyinstaller "${PYI_ARGS[@]}" \
+    --onefile \
+    --icon "$ICON_ICO" \
     --hidden-import pystray --hidden-import PIL \
     --hidden-import tkinter --hidden-import tkinter.simpledialog \
     "$SRC_ENTRY"

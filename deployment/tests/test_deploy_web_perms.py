@@ -142,8 +142,8 @@ def test_query_strings_do_not_create_files_and_smoke_check_hits_them(deploy_repo
     assert "http://smoke.test/connect/" in hits
     assert "http://smoke.test/connect/?app=icesheets" in hits
     # a query string is never a filesystem path
-    assert {p.name for p in (served / "connect").iterdir()} == {
-        "index.html", "connect.js", "package.json"
+    assert {"index.html", "connect.js", "package.json"} <= {
+        p.name for p in (served / "connect").iterdir()
     }
     assert not any("?" in p.name for p in served.rglob("*"))
 
