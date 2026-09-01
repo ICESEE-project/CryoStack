@@ -141,20 +141,29 @@ bash release_connector.sh
 `release_connector.sh` manages the privilege boundary itself:
 
 1. it resolves the canonical store from the **release owner's** home — never
-   `/root`, even if the script is invoked under `sudo`;
-2. it builds a **candidate** web tree from the store and fully verifies it
+   `/root`, even if the whole script is invoked under `sudo`;
+2. it inspects the store, builds a **candidate** web tree and fully verifies it
    (manifest, `SHA256SUMS`, permissions) — all **unprivileged**;
-3. only the final **atomic promotion** into `downloads/connectors/` is
-   privileged, and that escalation is scoped to the connectors directory.
+3. only the final **atomic promotion** into the (root-owned)
+   `downloads/connectors/`, and the nginx reload, run through `sudo` — which may
+   trigger the site's sudo / Duo prompt the first time. That is expected.
 
 If candidate verification fails, the currently served release is left
-**byte-for-byte unchanged**. Re-running with the same store re-publishes the
-same release (idempotent). After promotion the script enforces `0755`
-directories / `0644` files and re-verifies the **live** tree before reporting
-success.
+**byte-for-byte unchanged**; a failed directory swap rolls the previous live
+release back. Re-running with the same store re-publishes the same release
+(idempotent). After promotion the script enforces `0755` directories / `0644`
+files and re-verifies the **live** tree before reporting success.
 
-> Do **not** run `sudo bash release_connector.sh` as a workaround. It is not
-> required, and the script handles escalation for the one step that needs it.
+Check what it will do first, without touching anything:
+
+```bash
+bash release_connector.sh --print-config
+```
+
+> `sudo bash release_connector.sh` is also supported (the release owner and the
+> canonical store still resolve to the **invoking** user via `SUDO_USER`, not to
+> `root`), but it is not the normal workflow — you do not need to prefix the
+> whole command with `sudo`.
 
 `build_deploy_connector.sh` chains all three stages for the single-host case
 (`CRYOSTACK_SKIP_BUILD=1` to skip the build and register/release an existing
@@ -209,8 +218,9 @@ another platform. `unpublish` is the intentional removal mechanism.
 | Symptom | Cause / fix |
 |---|---|
 | `/Users/...` path appears on the Linux release host | An old `publish_connector_artifact.sh` expanded the default store with the builder's `$HOME`. Fixed: the remote store resolves on the release host. Set `CRYOSTACK_RELEASE_STORE` only for a non-default location. |
-| `list` shows an empty store / `build-candidate` fails with "no registered platforms" under sudo | The store was resolved from `/root/.cryostack/...`. Run `release_connector.sh` **without** sudo; it escalates only for promotion and reads the store from the release owner's home. |
-| `Permission denied` writing under `/var/www/...` | Previous deployments left root-owned files. `release_connector.sh` promotes with a scoped `sudo` and a full directory swap; it never `chmod`s unrelated `/var/www` content. |
+| `list` shows an empty store / `build-candidate` fails with "no registered platforms" | Nothing is registered on this host yet — run `publish_connector_artifact.sh` first. `release_connector.sh --print-config` shows the resolved store path. |
+| Store resolved to `/root/.cryostack/...` | An older `release_connector.sh`. The current one resolves the store from the invoking user's home even under `sudo` (via `SUDO_USER`). `--print-config` confirms `canonical_store`. |
+| `Permission denied` writing under `/var/www/...` when run without sudo | Expected on a normal deployment — the script detects the root-owned web root and escalates the **promotion** step with `sudo` on its own (watch for the Duo prompt). It never `chmod`s unrelated `/var/www` content. |
 | `pairing_protocol ... != expected` on register | The connector was built from source older than the current pairing protocol and cannot pair. Rebuild from current source, or `--allow-protocol-mismatch` if you deliberately need a compatibility build. |
 | `zero bytes` / `sidecar sha256 does not match` on register | Truncated or corrupted build output. Rebuild; do not hand-edit the sidecar. |
 | A platform is missing from `manifest.json` | Either never registered on this release host, or explicitly `unpublish`ed. `connector_store.py list` shows what the store actually holds. |

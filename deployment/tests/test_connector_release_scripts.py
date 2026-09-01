@@ -136,3 +136,154 @@ def test_publish_remote_forwards_only_an_explicit_store(fake_repo, fake_bin):
     assert register
     assert "--store /srv/cryostack/store" in register[0]
     assert "/Users/alice" not in "\n".join(calls.splitlines())
+
+
+# ── release_connector.sh: the shell privilege boundary ─────────────────────
+import hashlib
+
+_SS = _DEPLOYMENT / "connector_store.py"
+sys.path.insert(0, str(_DEPLOYMENT))
+import connector_store as cs  # noqa: E402
+
+
+def _seed_store(store: Path, build_dir: Path, name: str, payload: bytes):
+    art = build_dir / name
+    art.write_bytes(payload)
+    plat = name.replace("CryoStack-Connector-", "").rsplit(".tar", 1)[0].rsplit(".", 1)[0]
+    (build_dir / (name + ".build.json")).write_text(json.dumps({
+        "platform": plat, "filename": name, "sha256": hashlib.sha256(payload).hexdigest(),
+        "size_bytes": len(payload), "built_at": "2026-09-01T00:00:00Z",
+        "pairing_protocol": "v2", "connector_build_revision": "abcdef012345",
+    }))
+    cs.register(store, art, art.with_name(art.name + ".build.json"))
+
+
+@pytest.fixture
+def release_repo(tmp_path):
+    root = tmp_path / "repo"
+    (root / "deployment").mkdir(parents=True)
+    shutil.copy(_REPO / "release_connector.sh", root / "release_connector.sh")
+    for f in ("connector_store.py", "connector_manifest.py", "release_env.sh"):
+        shutil.copy(_DEPLOYMENT / f, root / "deployment" / f)
+    return root
+
+
+@pytest.fixture
+def fake_priv_bin(tmp_path):
+    """A fake `sudo` that records argv, emulates root's write power over the
+    test web root, then execs through; plus stub nginx/systemctl."""
+    b = tmp_path / "privbin"
+    b.mkdir()
+    log = tmp_path / "sudo.log"
+    (b / "sudo").write_text(
+        "#!/bin/sh\n"
+        f'printf "SUDO %s\\n" "$*" >> "{log}"\n'
+        '[ "$1" = "-u" ] && shift 2\n'
+        '[ "$1" = "--" ] && shift\n'
+        '[ -n "$CRYOSTACK_WEB_ROOT" ] && chmod -R u+rwX "$CRYOSTACK_WEB_ROOT" 2>/dev/null\n'
+        'exec "$@"\n'
+    )
+    (b / "nginx").write_text('#!/bin/sh\nexit 0\n')
+    (b / "systemctl").write_text('#!/bin/sh\nexit 0\n')
+    for f in ("sudo", "nginx", "systemctl"):
+        (b / f).chmod(0o755)
+    return b, log
+
+
+def _seed_two_platform_store(tmp_path):
+    store = tmp_path / "store"
+    build_dir = tmp_path / "dist"
+    build_dir.mkdir()
+    _seed_store(store, build_dir, LINUX, b"linux-release-payload")
+    _seed_store(store, build_dir, MAC_ARM, b"macos-release-payload")
+    return store
+
+
+def test_release_runs_candidate_unprivileged_and_promotes_through_sudo(
+    release_repo, fake_priv_bin, tmp_path
+):
+    b, sudo_log = fake_priv_bin
+    store = _seed_two_platform_store(tmp_path)
+
+    web_root = tmp_path / "web"
+    connectors = web_root / "downloads" / "connectors"
+    connectors.mkdir(parents=True)
+    (connectors / "oldjunk.txt").write_text("stale from a previous deploy")
+    # a root-owned web root: the operator cannot write the parent
+    os.chmod(web_root / "downloads", 0o555)
+
+    env = {
+        "PATH": f"{b}:{os.environ['PATH']}",
+        "CRYOSTACK_CONNECTOR_STORE": str(store),
+        "CRYOSTACK_WEB_ROOT": str(web_root),
+    }
+    r = _bash(f'bash "{release_repo}/release_connector.sh"', env=env)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+    calls = sudo_log.read_text() if sudo_log.exists() else ""
+    assert "promote" in calls, f"promotion must go through sudo:\n{calls}"
+    assert "build-candidate" not in calls, "candidate build must stay unprivileged"
+    assert "connector_store.py --store" not in calls, "store inspection must stay unprivileged"
+
+    os.chmod(web_root / "downloads", 0o755)
+    assert not (connectors / "oldjunk.txt").exists()          # full replace
+    served = {p.name for p in connectors.iterdir()}
+    assert served == {LINUX, MAC_ARM, "manifest.json", "SHA256SUMS"}
+    cs.cm.verify(connectors)
+
+
+def test_release_stays_unprivileged_when_the_web_root_is_writable(
+    release_repo, fake_priv_bin, tmp_path
+):
+    b, sudo_log = fake_priv_bin
+    store = _seed_two_platform_store(tmp_path)
+    web_root = tmp_path / "web"
+    (web_root / "downloads").mkdir(parents=True)          # owned + writable by us
+
+    r = _bash(f'bash "{release_repo}/release_connector.sh"', env={
+        "PATH": f"{b}:{os.environ['PATH']}",
+        "CRYOSTACK_CONNECTOR_STORE": str(store),
+        "CRYOSTACK_WEB_ROOT": str(web_root),
+    })
+    assert r.returncode == 0, r.stdout + r.stderr
+    calls = sudo_log.read_text() if sudo_log.exists() else ""
+    assert "promote" not in calls                          # no escalation needed
+    cs.cm.verify(web_root / "downloads" / "connectors")
+
+
+def test_print_config_reports_when_promotion_needs_root(release_repo, tmp_path):
+    web = tmp_path / "web"
+    (web / "downloads").mkdir(parents=True)
+
+    def cfg(env):
+        r = subprocess.run(
+            ["bash", f"{release_repo}/release_connector.sh", "--print-config"],
+            capture_output=True, text=True,
+            env={**{k: v for k, v in os.environ.items() if k != "CRYOSTACK_CONNECTOR_STORE"}, **env},
+        )
+        assert r.returncode == 0, r.stdout + r.stderr
+        return dict(l.split("=", 1) for l in r.stdout.splitlines() if "=" in l)
+
+    assert cfg({"CRYOSTACK_WEB_ROOT": str(web)})["privileged_promotion"] == "no"
+    os.chmod(web / "downloads", 0o555)
+    assert cfg({"CRYOSTACK_WEB_ROOT": str(web)})["privileged_promotion"] == "yes"
+    os.chmod(web / "downloads", 0o755)
+
+
+def test_release_under_whole_script_sudo_keeps_store_off_root(release_repo):
+    me = subprocess.run(["id", "-un"], capture_output=True, text=True).stdout.strip()
+    real_home = subprocess.run(
+        ["getent", "passwd", me], capture_output=True, text=True
+    ).stdout.strip().split(":")[5]
+
+    r = subprocess.run(
+        ["bash", f"{release_repo}/release_connector.sh", "--print-config"],
+        capture_output=True, text=True,
+        env={**{k: v for k, v in os.environ.items() if k != "CRYOSTACK_CONNECTOR_STORE"},
+             "SUDO_USER": me, "HOME": "/root"},
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    cfg = dict(line.split("=", 1) for line in r.stdout.splitlines() if "=" in line)
+    assert cfg["release_owner"] == me
+    assert cfg["canonical_store"] == f"{real_home}/.cryostack/connector-artifacts"
+    assert "/root/.cryostack" not in r.stdout
