@@ -113,10 +113,24 @@ commits this session. Subagents begin at Phase B.
   (pre-fill from the clipboard) and normalise in the tkinter path.
 
 ### A.tests_added
-(pending — this phase)
+- `icesee_hpc_connector/tests/test_bootstrap_end_to_end.py` (2) — full offline
+  chain; password reaches paramiko unmodified; the appended public key is the
+  exact key `ssh_identity_args()` would use with `-i`; namespaced dir, never the
+  legacy key; only the public key crosses the wire; relay HTTP timeout > the
+  connector-side op budget; gateway connector-branch payload carries
+  `host/user/hpc_user/cluster_name/password`.
+- `test_connector_window.py` (+3) — `normalize_pairing_code` trims transfer
+  noise; `looks_like_pairing_code` matches only the `XXXXX-XXXXX` shape over the
+  unambiguous alphabet; every pairing entry point pre-fills only a code-shaped
+  clipboard.
 
 ### A.results
-(pending)
+- `52d8edb` (prior) + `416da3d` (this phase). Full suite **928 passed, 1
+  skipped** (+15 this phase). `node --test` 18/18. jupyter-book clean.
+- Root cause: **not** the B3 namespace (bootstrap and Check-SSH resolve the same
+  key). The workflow stopped because of 4 layered machinery regressions around
+  it — see A.reasoning items 1–4 — plus a diagnosability gap (item 5). All are
+  fixed; `416da3d` adds the end-to-end proof and pairing-paste hardening.
 
 ### A.open_questions
 - Does `login-phoenix-rh9.pace.gatech.edu` still accept password auth without an
@@ -128,9 +142,41 @@ commits this session. Subagents begin at Phase B.
   tonight anyway.)
 
 ### A.next_action
-Add `icesee_hpc_connector/tests/test_bootstrap_end_to_end.py` (offline, mocked
-paramiko + subprocess + a fake relay envelope) proving gateway payload →
-connector append of the **namespaced** key → structured `ok` → gateway would
-re-run Check-SSH. Harden the `rumps.Window` + tkinter pairing prompts. Run the
-connector + core + ui suites, `node --test`, jupyter-book. Commit as
-"connector bootstrap: end-to-end namespace-consistency test + pairing-prompt paste".
+DONE (`416da3d`). Phase A complete. Proceed to Phase B.
+
+---
+
+## Phase B — Icepack ↔ ISSM parity in CryoLauncher / IceSheets
+
+### B.objective
+Bring Icepack to the same user-facing + architectural level as ISSM across the
+15-area workflow, reusing the shared CryoStack components, generalising the ISSM
+abstraction rather than forking a parallel Icepack stack. Never fabricate an
+Icepack field / parameter / solver option / output / visualization to fake
+parity. Small green commits.
+
+### B.plan
+1. **Audit first (delegate).** One `general-purpose` subagent produces the
+   ISSM↔Icepack parity matrix from the actual code: for every area, what ISSM
+   has, what Icepack has, what the shared layer offers, and where the models
+   genuinely differ scientifically. Coordinating agent reviews for
+   architectural consistency and turns it into a Before→After→Remaining matrix.
+2. Implement the highest-value, lowest-risk, scientifically-safe items in small
+   commits (discovery/metadata, structured-results wiring, run-history, docs/
+   tests) — stopping before anything needing a scientific decision (new solver
+   options, field semantics, Local-exec support claims).
+3. Everything requiring a scientific/design call → morning checkpoint.
+
+### B.files_inspected
+(subagent report pending)
+
+### B.delegation
+- **Agent B-1** (`general-purpose`): "ISSM vs Icepack parity audit" — read-only,
+  produces the 15-area matrix + a list of shared abstractions that already
+  generalise vs. those hard-coded to ISSM. Prompt scoped to inspection only,
+  no edits.
+
+### B.next_action
+Spawn Agent B-1 with the bounded audit prompt below; while it runs, the
+coordinating agent independently reads the ISSM model adapter + shared model
+registry to be able to review B-1's findings.
