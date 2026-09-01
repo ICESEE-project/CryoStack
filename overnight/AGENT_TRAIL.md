@@ -168,7 +168,61 @@ parity. Small green commits.
 3. Everything requiring a scientific/design call → morning checkpoint.
 
 ### B.files_inspected
-(subagent report pending)
+Coordinating agent (post-audit implementation reads): `cryostack_src/models/
+issm/results.py` (full), `workspace/manager.py` (`_result_reader_for`,
+`_visualizer_for`, `result_package_for_run`), `frontend/cryolauncher/workspace/
+visualization.py`, `models/submission.py` (both submit functions, run-block
+assembly, sbatch template), `models/tests/test_container_source_modes.py`
+(render harness). Subagent B-1 report: see `overnight/AUDIT_icepack_parity.md`
+(saved below) — 15-area matrix with file:line evidence.
+
+### B.discoveries (from Agent B-1, condensed)
+- **At parity already (no work):** advanced editor/clone, dataset staging,
+  Slurm config+validation, downloads, provenance/run-history. The shared layer
+  (`workspace/*`, `stack/*`, `remote/spack_env.py`, `execution/*`,
+  `shared_validation`, `shared_slurm_resources_panel`) is genuinely
+  model-neutral and already Icepack-aware.
+- **Real user-facing gap:** an Icepack run produced **no `outputs/` at all**
+  (`submission.py` wrote a postprocess only for ISSM) → Results tab stuck on
+  "not fetched" forever. `_visualizer_for("icepack")` → `None`.
+- **Genuine scientific differences (preserve):** `md` struct vs Firedrake
+  functions; MATLAB+license vs pure Python; ISSM solution families vs
+  Icepack diagnostic/prognostic; ISSM triangular mesh + `md_final.mat` vs
+  Firedrake mesh + `CheckpointFile`; notebook examples vs `runme.m`; ISSM
+  `COMPILED`/`OVERRIDE_NONE` vs Icepack `gated_by=firedrake`.
+- **Needs a scientific decision (→ morning checkpoints):** Icepack Basic-mode
+  parameter set + injection mechanism; "local execution" meaning for Firedrake;
+  Icepack release/solver-option policy; the neutral Firedrake field-export
+  format; the Icepack `FieldInfo.location` taxonomy; `recommended_plots`
+  ordering; Cloud enablement (`SUPPORTED_CLOUD_MODELS=("issm",)`).
+- **Cloud:** Icepack deliberately blocked at C3 preflight; infra provisioning
+  is Icepack-ready but opt-in (`prepare_batch(include_icepack=False)`). Leave.
+
+### B.decisions
+- **D-B1:** Do NOT reskin `cryostack.issm.results` for Icepack. New neutral
+  primitives (`models/results_common.py`) + a dedicated
+  `cryostack.icepack.results` schema whose reader is HONEST: `is_readable()`
+  is `False`, `available_solutions()` is `[]`, no invented fields.
+- **D-B2:** The Icepack postprocess collects *artifacts the example emitted*
+  (figures + native files) into the standard `outputs/` shape. That is pure
+  plumbing, not science. A model-aware Firedrake field exporter is deferred.
+- **D-B3:** Wire the collector into `submission.py` at the single shared point
+  after `body` assembly (one guarded line per function), non-fatal, backend-
+  agnostic. ISSM path untouched (test-asserted).
+- **D-B4:** Gateway `if model == "issm"` UI toggles → adapter capability
+  queries (declarative), so a future Icepack Basic-mode panel is a drop-in.
+
+### B.tests_added
+- `models/tests/test_icepack_results.py` (7), `test_icepack_postprocess.py` (5),
+  `test_icepack_submission.py` (3), `frontend/.../test_visualization_controller.py`
+  (+2 Icepack cases).
+
+### B.results
+- `132b8b1` — icepack structured result package + honest collector + neutral
+  `results_common.py` + Results-panel `artifacts`/`empty` handling.
+- `a234078` — collector wired into both remote-submit paths, non-fatal.
+- Full suite 943 passed / 1 skipped (+15 across B). Node 18. Book clean. ISSM
+  results + submission paths byte-identical (guarded by existing tests).
 
 ### B.delegation
 - **Agent B-1** (`general-purpose`): "ISSM vs Icepack parity audit" — read-only,
