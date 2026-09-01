@@ -27,11 +27,17 @@ further needs a scientific decision → morning checkpoints (see
 `AGENT_TRAIL.md` §B.discoveries + `AUDIT_icepack_parity.md`). Deferred P2: the
 gateway `if model=="issm"` UI-toggle cleanup.
 
-**Phase C: IN PROGRESS.** Audit ICESEE vs the IceSheets platform standard,
-adopt the reusable non-DA pieces (workspace isolation, run history, structured
-results, downloads) in small commits. Do NOT touch DA semantics
-(`params.yaml`, `cloud_runner.py`, filter algorithms). If interrupted: the
-ICESEE audit prompt is in `AGENT_TRAIL.md` §C.delegation.
+**Phase C: SAFE SUBSET COMPLETE** (`3a7705f`, `1e68ae8`, `c342f4f`). ICESEE's
+B2-class gap closed: local/cloud/remote-fetch runs are now per-authenticated-
+user (`user_run_root(app="icesee")`), not a shared process-global dir. Full
+`WorkspaceManager`/run-history/structured-results adoption is DEFERRED — gated
+on two operator decisions (what is a DA run; the DA `outputs/` schema) and too
+much gateway surface for autonomous work. See `AUDIT_icesee_platform.md`.
+
+**All three phases' safe subsets are done.** Remaining work is P1 science/design
+checkpoints (need the operator) + P2 (documented, risk-deferred). Next
+autonomous action if resumed: polish `MORNING_REPORT.md`; otherwise idle —
+do not start P1/P2 without the operator.
 
 ## Recoverability rule
 
@@ -65,6 +71,12 @@ audits.
 | `3466e20` | overnight: trail — Phase B audit report |
 | `1513267` | Phase B: accurate Icepack docs |
 | `e4cf471` | Phase B: icepack adapter test coverage + Python-first run-target order |
+| `5d00d0e` | overnight: Phase B complete / Phase C plan |
+| `f23a040` | overnight: draft morning report |
+| `3fb5cb1` | Phase B: offline Icepack pipeline integration test |
+| `3a7705f` | Phase C-1: parameterize run_dir() |
+| `1e68ae8` | Phase C-2: WorkspaceManager accepts a fixed model name |
+| `c342f4f` | Phase C-3: ICESEE per-user run directories + workspace/roots.py |
 
 (Earlier this session, before the overnight brief: `a930cfd` first-use SSH-key
 registration UX; `52d8edb` bootstrap visible state + structured reasons + macOS

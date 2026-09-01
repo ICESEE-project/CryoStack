@@ -112,20 +112,68 @@ point in `submission.py`.
 
 ## 5. Commits (chronological)
 
-See `overnight/CHECKPOINT.md` for the running table. Session commits:
-`d4d5603` → `416da3d` → `b5eb565` → `c369ada` → `0281194` → `132b8b1` →
-`a234078` → `3466e20` → `1513267` → `e4cf471` → `5d00d0e` → …
-(Earlier, before the overnight brief: `a930cfd`, `52d8edb`.)
+See `overnight/CHECKPOINT.md` for the running table.
+
+| hash | phase | purpose |
+|---|---|---|
+| `a930cfd` | (pre) | first-use SSH-key registration UX |
+| `52d8edb` | (pre) | bootstrap visible state + structured reasons + macOS Paste button |
+| `d4d5603` | — | overnight agent-trail + checkpoint scaffolding |
+| `416da3d` | A | connector bootstrap end-to-end namespace test + pairing-prompt paste |
+| `b5eb565`,`c369ada`,`0281194` | — | trail/checkpoint updates |
+| `132b8b1` | B | icepack structured result package + honest output collector |
+| `a234078` | B | run the icepack output collector after a remote run |
+| `3466e20` | — | trail: Phase B audit report |
+| `1513267` | B | accurate Icepack docs |
+| `e4cf471` | B | icepack adapter test coverage + Python-first run-target order |
+| `5d00d0e` | — | trail: Phase B complete / Phase C plan |
+| `f23a040` | — | draft morning report |
+| `3fb5cb1` | B | offline Icepack pipeline integration test |
+| `3a7705f` | C | parameterize `run_dir()` for per-user isolation |
+| `1e68ae8` | C | `WorkspaceManager` accepts a fixed model name |
+| `c342f4f` | C | ICESEE per-user run directories + `workspace/roots.py` |
 
 ## 6. Tests / build
 
-Full suite grew 928 → **962 passed, 1 skipped** (+34 Icepack, +5 connector).
-`node --test deployment/tests/*.test.mjs` 18/18. `jupyter-book build` +
-`bin/build_application_docs.sh` clean. Every commit was green before landing.
+Full suite grew 928 → **980 passed, 1 skipped** (+~52: connector, Icepack, and
+ICESEE-isolation tests). `node --test deployment/tests/*.test.mjs` 18/18.
+`jupyter-book build` + `bin/build_application_docs.sh` clean. Every commit was
+green before landing.
 
-## 7. ICESEE improvements
+## 7. ICESEE improvements (Phase C)
 
-(Phase C — see §8 and `AUDIT_icesee_platform.md` once C-1 returns.)
+Audit: `overnight/AUDIT_icesee_platform.md`. ICESEE had already adopted B1–B5
+UI + B2 settings persistence. The audit's headline finding: **ICESEE had no
+per-user isolation for run artifacts** — local/cloud/remote-fetch runs all
+landed in a process-global `BOOK/icesee_runs/<second-timestamp>` with
+`mkdir(exist_ok=True)`, so two authenticated users in the same second **shared
+the directory and could read / overwrite / delete each other's `params.yaml`
+and results**. A B2-class isolation gap.
+
+Done this session:
+- `3a7705f` — `run_dir(base, name)` parameterised (default unchanged).
+- `1e68ae8` — `WorkspaceManager` now accepts a fixed `model` string (ICESEE has
+  no model dropdown), so a DA run can get full isolation + run history +
+  provenance with no schema change (`RunInfo`/manifest already accept
+  `model="icesee"` + a stackless run).
+- `c342f4f` — new lightweight `cryostack_src/workspace/roots.py`
+  (`user_run_root(app="icesee")` = the same `<root>/users/<safe-id>/.cryostack/
+  icesee_runs` location `WorkspaceManager` uses); ICESEE's gateway routes every
+  `run_dir()` through it + a `timestamp+uuid` run id. **Two authenticated
+  ICESEE users can no longer collide or read each other's local runs.**
+
+No DA semantics touched (`params.yaml` content, the `-F` run-script invocation,
+filter selection, `ensure_report_h5`'s canonical-base fallback all unchanged).
+
+**Deferred to a reviewed follow-up** (P1): full `WorkspaceManager` +
+`WorkspaceBridge.start_run` + `build_workspace_history_panel` adoption so ICESEE
+runs get local run history / re-selection / a structured results package. This
+is gated on two operator decisions — "what is a DA run" (one ensemble = one
+`RunInfo`?) and the canonical ICESEE `outputs/` schema — and would touch the
+2877-line gateway more than is safe autonomously. The remote-submit path (6
+bespoke `submit_remote_example*` variants writing to a user-typed
+`remote_base_dir`) is also platform-unenforced; the B3 identity gate limits the
+blast radius.
 
 ## 8. Remaining P0 / P1 / P2
 
@@ -133,7 +181,7 @@ Full suite grew 928 → **962 passed, 1 skipped** (+34 Icepack, +5 connector).
 - C-BOOT-1 PACE password-auth/Duo confirmation.
 - C-BOOT-2 relay + `icesee_app.py` redeploy; connector rebuild from HEAD.
 
-**P1 (science checkpoints — decide with you, then I implement):**
+**P1 (science / design checkpoints — decide with you, then I implement):**
 - Icepack Basic-mode curated parameter set + config-injection mechanism.
 - Icepack neutral Firedrake field-export format (`CheckpointFile` vs per-field
   HDF5 + DOF/coordinate layout; transient representation).
@@ -141,12 +189,21 @@ Full suite grew 928 → **962 passed, 1 skipped** (+34 Icepack, +5 connector).
   taxonomy for function spaces + `recommended_plots` ordering.
 - "Local execution" for IceSheets (Icepack-first: `apptainer exec with-icepack
   python` on the workstation, no MATLAB/license).
+- **ICESEE:** what is a "DA run" (one ensemble = one `RunInfo`?) and the
+  canonical ICESEE `outputs/` schema — both block full ICESEE run-history +
+  structured-results adoption.
+- **ICESEE:** `cryostack-icesee` Batch image + job def vs keeping the
+  user-supplied-image `cloud_runner.py` contract.
 
 **P2 (safe, deferred for risk/scope):**
 - Gateway `if model == "issm"` UI-toggle cleanup → adapter capability queries
   (exact line numbers in `AUDIT_icepack_parity.md`).
 - Refactor ISSM `results.py` onto `results_common.py`.
 - Icepack cloud enablement (`SUPPORTED_CLOUD_MODELS`, ECR image, runner cmd).
+- Full ICESEE `WorkspaceManager`/`WorkspaceBridge`/history-panel adoption
+  (after the two P1 decisions above).
+- ICESEE remote-submit per-user path enforcement (6 `submit_remote_example*`
+  variants).
 
 ## 9. Exact manual acceptance tests to run together
 
@@ -168,3 +225,9 @@ Full suite grew 928 → **962 passed, 1 skipped** (+34 Icepack, +5 connector).
 4. **ISSM regression sanity.** Run one ISSM example end-to-end; confirm the
    structured field viewer, timestep selector, and figure downloads are
    unchanged.
+5. **ICESEE per-user isolation.** As two different authenticated CryoStack
+   users, run a local DA example each within the same minute. Confirm each
+   run's `params.yaml` + `results/` land under
+   `<workspace-root>/users/<that-user>/.cryostack/icesee_runs/<id>/` and neither
+   user's run directory is visible/writable to the other. (Before this session
+   they shared `icesee_jupyter_book/icesee_runs/<same-second>/`.)

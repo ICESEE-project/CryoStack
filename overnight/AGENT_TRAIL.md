@@ -140,6 +140,14 @@ commits this session. Subagents begin at Phase B.
   `bootstrap-passwordless-ssh` and honour a 180 s command timeout? (Deployment
   audit flagged the running services as stale; not connector-publishable
   tonight anyway.)
+- **P2 robustness (noted, not fixed):** the connector's verify step and
+  `run_ssh` invoke the workstation's system `ssh` with `-o IdentitiesOnly=yes
+  -i <newkey>` but do NOT pass `-F none` / `-o IdentityAgent=none`. A user
+  `~/.ssh/config` with an `IdentityFile` for the PACE host (e.g. still pointing
+  at the legacy key) would be added to the identity list and could satisfy auth
+  via the legacy key, masking whether the new key itself works. Changing the
+  connector's ssh flags risks breaking working setups — leave for a reviewed
+  connector change, not an autonomous one.
 
 ### A.next_action
 DONE (`416da3d`). Phase A complete. Proceed to Phase B.
@@ -323,7 +331,58 @@ semantics change.
   results / persistence path in depth and produce a "safe to adopt now" vs
   "needs DA-science care" split, mirroring the B-1 format.
 
-### C.next_action
-Spawn Agent C-1. While it runs, coordinating agent reviews
-`icesee_jupyter_book/core/cloud_runner.py` + `local_runner.py` (ICESEE-owned,
-not in B-1's scope) to understand the DA run contract.
+### C.discoveries (Agent C-1, condensed — full report `AUDIT_icesee_platform.md`)
+- **Already shared:** B4 UI panels, B1–B3 access UX, B2 settings persistence,
+  remote transport / connector / identity gate / SSH-key mgr.
+- **Biggest gap = B2-class:** ICESEE has **no per-user isolation for run
+  artifacts**. `local_runner.run_dir()` → process-global
+  `BOOK/icesee_runs/<second-ts>` + `mkdir(exist_ok=True)`. Two authenticated
+  users in the same second **share the dir and overwrite each other**, and can
+  read/delete each other's local runs. Remote-fetch cache is the same tree.
+- **`RunInfo` / manifest / `RunHistory` accept `model="icesee"` + a stackless
+  run with ZERO changes** (schema v2, `container`/`software` default `{}`,
+  `manifest.py` comment already anticipates the ICESEE-Spack backend).
+- **`WorkspaceManager` needs a ~5-line shim** — its `model` arg was expected to
+  be a widget; ICESEE has no model dropdown.
+- **Needs a design decision (agent must NOT decide):** what a "run" is for DA
+  (one ensemble = one RunInfo?); the canonical ICESEE `outputs/` schema
+  (forecast/analysis ensembles, mean/spread, RMSE/rank-histogram — nothing like
+  the ISSM `ResultPackage`); whether local runs may keep writing into the
+  canonical example `base`; a `cryostack-icesee` Batch image vs the
+  user-supplied-image contract; EnKF params validation UI.
+- **Genuinely ICESEE-specific (keep separate):** filter algorithm / `Nens` /
+  seed / `params.yaml` auto-form / `run_da_*.py -F` / papermill report / the
+  legacy `cloud_runner.py` user-image contract.
+
+### C.decisions
+- **D-C1:** `run_dir(base, name)` — parameterise, default unchanged.
+- **D-C2:** `WorkspaceManager` `model: str | widget` via inert `_FixedChoice`.
+- **D-C3:** Close the **security gap only** tonight — route ICESEE's
+  `run_dir()` through `user_run_root(app="icesee")` (a new lightweight
+  `workspace/roots.py`, no full manager). The full `WorkspaceManager` +
+  `WorkspaceBridge.start_run` + `build_workspace_history_panel` adoption is a
+  **reviewed follow-up** (needs the "what is a DA run" decision + touches the
+  2877-line gateway too much for autonomous overnight work).
+
+### C.tests_added
+- `icesee_jupyter_book/core/tests/test_icesee_run_dir_isolation.py` (5)
+- `cryostack_src/workspace/tests/test_manager_fixed_model.py` (4)
+- `cryostack_src/workspace/tests/test_roots.py` (5)
+- `icesee_jupyter_book/ui/tests/test_icesee_run_isolation.py` (3)
+
+### C.results
+- `3a7705f` (C-1 run_dir param), `1e68ae8` (C-2 fixed model), `c342f4f` (C-3
+  per-user run dirs + `workspace/roots.py`).
+- Full suite 980 passed / 1 skipped (+17 across C). Node 18. Book clean.
+- ICESEE local/cloud/remote-fetch runs are now per-authenticated-user; two
+  users can no longer collide or read each other's local runs.
+
+### C.open_questions / next_action
+- Full run-history adoption for ICESEE is the next reviewed step — needs the
+  operator's call on "what is a DA run" and a defined DA `outputs/` schema.
+- The remote-submit path (`submit_remote_example*`, 6 variants) still writes to
+  a user-typed `remote_base_dir` — platform-unenforced. The B3 identity gate
+  limits the blast radius (SSH login must match the configured HPC username)
+  but two CryoStack users on one HPC account can still collide. Documented, not
+  changed (touching 6 bespoke submit variants autonomously is out of risk
+  budget).
