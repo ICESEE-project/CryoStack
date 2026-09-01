@@ -109,7 +109,7 @@ from cryostack_src.models.submission import (
     submit_remote_icesheets,
     submit_remote_icesheets_via_connector,
 )
-from cryostack_src.resources.profiles import get_compute_profile
+from cryostack_src.resources.profiles import get_compute_profile, initial_remote_fields
 from cryostack_src.frontend.cryolauncher.software_stack import build_software_stack_panel
 from cryostack_src.frontend.cryolauncher.container_image import build_container_image_panel
 from cryostack_src.frontend.cryolauncher.issm_md_panel import build_issm_md_panel
@@ -467,14 +467,26 @@ def build_icesheets_ui():
 
         # -----------------------------
         # Remote controls
+        #
+        # Ownership:
+        #   RESOURCE (from ComputeProfile) : login host, ssh port, partition,
+        #                                    wall time -- follow the resource.
+        #   USER x RESOURCE / USER         : HPC username, remote directory,
+        #                                    Slurm account, notification email --
+        #                                    BLANK until B2 persistence. Never
+        #                                    inferred from the server $USER.
+        #   RUN                            : job name, nodes, tasks, tasks/node,
+        #                                    memory, per-run overrides.
         # -----------------------------
-        cluster_host = W.Text(value="login-phoenix-rh9.pace.gatech.edu", layout=W.Layout(width="320px"))
-        cluster_user = W.Text(value=os.environ.get("USER", ""), placeholder="username", layout=W.Layout(width="320px"))
-        cluster_port = W.IntText(value=22, layout=W.Layout(width="120px"))
-        # cluster_name_for_keys = W.Text(value="pace" , layout=W.Layout(width="320px"))
-        cluster_name_for_keys = W.Text(value="pace", placeholder="e.g. pace, ub-ccr, frontera", layout=W.Layout(width="320px"))
+        _INITIAL_CLUSTER = "pace"
+        _rf = initial_remote_fields(_INITIAL_CLUSTER)
 
-        remote_base_dir = W.Text(value="~/r-arobel3-0", layout=W.Layout(width="320px"))
+        cluster_name_for_keys = W.Text(value=_INITIAL_CLUSTER, placeholder="e.g. pace, ub-ccr, frontera", layout=W.Layout(width="320px"))
+        cluster_host = W.Text(value=_rf["login_host"], placeholder="resource login host", layout=W.Layout(width="320px"))
+        cluster_user = W.Text(value=_rf["hpc_username"], placeholder=_rf["username_hint"], layout=W.Layout(width="320px"))
+        cluster_port = W.IntText(value=_rf["ssh_port"], layout=W.Layout(width="120px"))
+
+        remote_base_dir = W.Text(value=_rf["remote_directory"], placeholder="your remote working directory (required)", layout=W.Layout(width="320px"))
         remote_tag = W.Text(value="icesheets", layout=W.Layout(width="220px"))
 
         auth_mode = W.ToggleButtons(
@@ -501,15 +513,24 @@ def build_icesheets_ui():
             button_style="info",
         )
 
-        slurm_job_name = W.Text(value="ICESHEETS", layout=W.Layout(width="100%"))
-        slurm_time = W.Text(value="04:00:00", layout=W.Layout(width="100%"))
-        slurm_nodes = W.IntText(value=1, layout=W.Layout(width="100%"))
-        slurm_ntasks = W.IntText(value=8, layout=W.Layout(width="100%"))
-        slurm_tpn = W.IntText(value=8, layout=W.Layout(width="100%"))
-        slurm_part = W.Text(value="cpu-large", layout=W.Layout(width="100%"))
-        slurm_mem = W.Text(value="64G", layout=W.Layout(width="100%"))
-        slurm_account = W.Text(value="gts-arobel3-atlas", layout=W.Layout(width="100%"))
-        slurm_mail = W.Text(value="bankyanjo@gmail.com", layout=W.Layout(width="100%"))
+        slurm_job_name = W.Text(value="ICESHEETS", layout=W.Layout(width="100%"))          # RUN
+        slurm_time = W.Text(value=_rf["wall_time"], layout=W.Layout(width="100%"))          # RESOURCE default
+        slurm_nodes = W.IntText(value=1, layout=W.Layout(width="100%"))                     # RUN
+        slurm_ntasks = W.IntText(value=8, layout=W.Layout(width="100%"))                    # RUN
+        slurm_tpn = W.IntText(value=8, layout=W.Layout(width="100%"))                       # RUN
+        slurm_part = W.Text(value=_rf["partition"], layout=W.Layout(width="100%"))          # RESOURCE default
+        slurm_mem = W.Text(value="64G", layout=W.Layout(width="100%"))                      # RUN
+        slurm_account = W.Text(                                                             # USER x RESOURCE -- blank
+            value=_rf["slurm_account"],
+            placeholder=("Slurm allocation (required for this resource)"
+                         if _rf["account_required"] else "Slurm allocation"),
+            layout=W.Layout(width="100%"),
+        )
+        slurm_mail = W.Text(                                                                # USER -- blank
+            value=_rf["notification_email"],
+            placeholder="notification email (optional)",
+            layout=W.Layout(width="100%"),
+        )
 
         connect_btn = W.Button(description="Test SSH", icon="terminal", button_style="info")
         status_btn = W.Button(description="Check status", icon="tasks")
@@ -1395,6 +1416,18 @@ def build_icesheets_ui():
         example_dir.observe(update_summary, names="value")
         exec_dir.observe(update_summary, names="value")
         slurm_ntasks.observe(update_summary, names="value")
+
+        def _sync_resource_facts(_=None):
+            # RESOURCE facts follow the selected resource. Personal fields
+            # (username, remote dir, account, email) are never touched here.
+            rf = initial_remote_fields(cluster_name_for_keys.value)
+            cluster_host.value = rf["login_host"]
+            cluster_port.value = rf["ssh_port"]
+            cluster_user.placeholder = rf["username_hint"]
+            slurm_part.value = rf["partition"]
+            slurm_time.value = rf["wall_time"]
+
+        cluster_name_for_keys.observe(_sync_resource_facts, names="value")
         example_picker.observe(apply_selected_example, names="value")
         access_mode_dd.observe(lambda change: create_or_refresh_connector_session() if change["new"] == "connector" else None, names="value")
         
@@ -1565,7 +1598,7 @@ def build_icesheets_ui():
                         mode="connector" if should_use_connector() else "direct"
                     ).environment_status(
                         model=model_dd.value,
-                        remote_base=remote_base_dir.value.strip() or "~/r-arobel3-0",
+                        remote_base=remote_base_dir.value.strip(),
                         spack_dirname=spack_dirname.value.strip() or "ICESEE-Spack",
                     )
                 except Exception as _env_err:
@@ -2317,7 +2350,7 @@ def build_icesheets_ui():
             setup_job_label=spack_env_setup_label,
             view_log_button=spack_setup_log_btn,
             model_value=lambda: model_dd.value,
-            remote_base_value=lambda: remote_base_dir.value.strip() or "~/r-arobel3-0",
+            remote_base_value=lambda: remote_base_dir.value.strip(),
             spack_dirname_value=lambda: spack_dirname.value.strip() or "ICESEE-Spack",
             spack_repo_value=lambda: (
                 spack_repo_url.value.strip()

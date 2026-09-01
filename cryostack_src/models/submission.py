@@ -25,7 +25,7 @@ from cryostack_src.models.stack import (
     checkout_setup_block,
     component_checkout_plan,
 )
-from cryostack_src.remote.runtime import expand_remote_home
+from cryostack_src.remote.runtime import expand_remote_home, require_remote_base_dir
 
 
 def _issm_container_launcher_shim(*, run_dir: str) -> str:
@@ -318,7 +318,7 @@ def submit_remote_icesheets_via_connector(
     )
 
     # Resolve remote base through connector.
-    remote_base_input = (remote_base_dir or "").strip() or "~/r-arobel3-0"
+    remote_base_input = require_remote_base_dir(remote_base_dir)
 
     resolve_cmd = f'python3 -c "import os; print(os.path.abspath(os.path.expanduser({remote_base_input!r})))"'
     rbase = connector_ssh(session_id, host, user, port, resolve_cmd, timeout=300, cluster_name=cluster_name)
@@ -699,7 +699,7 @@ def submit_remote_icesheets(
     # ---------------------------------------------------------
     # Remote base/run paths
     # ---------------------------------------------------------
-    remote_base_input = (remote_base_dir or "").strip() or "~/r-arobel3-0"
+    remote_base_input = require_remote_base_dir(remote_base_dir)
     remote_base_shell = expand_remote_home(remote_base_input)
     remote_base_abs = resolve_remote_abs_path(host, user, port, remote_base_shell)
 

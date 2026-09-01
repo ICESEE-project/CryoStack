@@ -8,6 +8,7 @@ from collections.abc import Callable
 import cryostack_src.remote.spack_env as spack_env
 from cryostack_src.execution.backend import ExecutionResult, ExecutionStatus
 from cryostack_src.execution.remote import RemoteBackend
+from cryostack_src.remote.runtime import require_remote_base_dir
 from cryostack_src.remote.spack_env import EnvReport, EnvStatus, SetupSlurmOpts
 from icesee_jupyter_book.core.connector_relay_client import send_command
 from icesee_jupyter_book.core.remote_runner import (
@@ -167,6 +168,7 @@ class RemoteBridge:
 
     def resolve_remote_base(self, path: str) -> str:
         """Expand ~ and resolve to an absolute remote path (both transports)."""
+        path = require_remote_base_dir(path)   # fail closed: no developer default
         expr = f"import os,sys; print(os.path.abspath(os.path.expanduser({path!r})))"
         res = self._run_script(f"python3 -c {shlex.quote(expr)}", timeout=60)
         out = (res.get("stdout") or "").strip().splitlines()

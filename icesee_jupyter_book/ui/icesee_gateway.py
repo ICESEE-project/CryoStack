@@ -26,6 +26,7 @@ from icesee_jupyter_book.core.connector_relay_client import (
 from icesee_jupyter_book.core import ssh_key_manager
 from icesee_jupyter_book.core.example_registry import EXAMPLES, enabled_names
 from cryostack_src.workspace import resolve_workspace_user
+from cryostack_src.resources.profiles import initial_remote_fields
 from icesee_jupyter_book.core.config_io import load_yaml, dump_yaml
 from icesee_jupyter_book.core.example_discovery import (
     find_run_script,
@@ -534,13 +535,20 @@ def build_icesee_ui():
 
         # =========================================================
         # Remote panel widgets
+        #
+        # Ownership: RESOURCE facts (host, port, partition, wall time) come from
+        # the ComputeProfile; USER x RESOURCE / USER fields (HPC username, remote
+        # directory, Slurm account, notification email) are BLANK until B2 and
+        # are never taken from the Voila service account's environment.
         # =========================================================
-        cluster_host = W.Text(value="login-phoenix-rh9.pace.gatech.edu", layout=W.Layout(width="320px"))
-        cluster_user = W.Text(value=os.environ.get("USER", ""), placeholder="username", layout=W.Layout(width="320px"))
-        cluster_port = W.IntText(value=22, layout=W.Layout(width="120px"))
-        # cluster_name_for_keys = W.Text(value="pace" , layout=W.Layout(width="320px"))
-        cluster_name_for_keys = W.Text(value="pace", placeholder="e.g. pace, ub-ccr, frontera", layout=W.Layout(width="320px"))
-        
+        _INITIAL_CLUSTER = "pace"
+        _rf = initial_remote_fields(_INITIAL_CLUSTER)
+
+        cluster_name_for_keys = W.Text(value=_INITIAL_CLUSTER, placeholder="e.g. pace, ub-ccr, frontera", layout=W.Layout(width="320px"))
+        cluster_host = W.Text(value=_rf["login_host"], placeholder="resource login host", layout=W.Layout(width="320px"))
+        cluster_user = W.Text(value=_rf["hpc_username"], placeholder=_rf["username_hint"], layout=W.Layout(width="320px"))
+        cluster_port = W.IntText(value=_rf["ssh_port"], layout=W.Layout(width="120px"))
+
         auth_mode = W.ToggleButtons(
         options=[("Key-only", "key"), ("Bootstrap with password (one-time)", "bootstrap")],
         value="key",
@@ -559,7 +567,7 @@ def build_icesee_ui():
             button_style="warning"
         )
 
-        remote_base_dir = W.Text(value="~/r-arobel3-0", layout=W.Layout(width="320px"))
+        remote_base_dir = W.Text(value=_rf["remote_directory"], placeholder="your remote working directory (required)", layout=W.Layout(width="320px"))
         remote_tag = W.Text(value="icesee", layout=W.Layout(width="220px"))
 
         exec_backend_choice = W.Dropdown(
@@ -616,17 +624,26 @@ def build_icesee_ui():
             button_style="success",
         )
 
-        slurm_job_name = W.Text(value="ICESEE", layout=W.Layout(width="100%"))
-        slurm_time = W.Text(value="50:00:00", layout=W.Layout(width="100%"))
+        slurm_job_name = W.Text(value="ICESEE", layout=W.Layout(width="100%"))              # RUN
+        slurm_time = W.Text(value=_rf["wall_time"], layout=W.Layout(width="100%"))           # RESOURCE default
 
-        slurm_nodes = W.IntText(value=2, layout=W.Layout(width="100%"))
-        slurm_ntasks = W.IntText(value=24, layout=W.Layout(width="100%"))
-        slurm_tpn = W.IntText(value=24, layout=W.Layout(width="100%"))
+        slurm_nodes = W.IntText(value=2, layout=W.Layout(width="100%"))                      # RUN
+        slurm_ntasks = W.IntText(value=24, layout=W.Layout(width="100%"))                    # RUN
+        slurm_tpn = W.IntText(value=24, layout=W.Layout(width="100%"))                       # RUN
 
-        slurm_part = W.Text(value="cpu-large", layout=W.Layout(width="100%"))
-        slurm_mem = W.Text(value="256G", layout=W.Layout(width="100%"))
-        slurm_account = W.Text(value="gts-arobel3-atlas", layout=W.Layout(width="100%"))
-        slurm_mail = W.Text(value="bankyanjo@gmail.com", layout=W.Layout(width="100%"))
+        slurm_part = W.Text(value=_rf["partition"], layout=W.Layout(width="100%"))           # RESOURCE default
+        slurm_mem = W.Text(value="256G", layout=W.Layout(width="100%"))                             # RUN
+        slurm_account = W.Text(                                                                     # USER x RESOURCE -- blank
+            value=_rf["slurm_account"],
+            placeholder=("Slurm allocation (required for this resource)"
+                         if _rf["account_required"] else "Slurm allocation"),
+            layout=W.Layout(width="100%"),
+        )
+        slurm_mail = W.Text(                                                                        # USER -- blank
+            value=_rf["notification_email"],
+            placeholder="notification email (optional)",
+            layout=W.Layout(width="100%"),
+        )
 
         cluster_mpi_np = W.IntText(value=40, layout=W.Layout(width="100%"))
         cluster_model_nprocs = W.IntText(value=4, layout=W.Layout(width="100%"))
@@ -939,6 +956,18 @@ def build_icesee_ui():
             ondemand_box.layout.display = "none" if is_ssh else "block"
 
         remote_backend.observe(_toggle_remote_backend, names="value")
+
+        def _sync_resource_facts(_=None):
+            # RESOURCE facts follow the selected resource; personal fields
+            # (username, remote dir, account, email) are never touched here.
+            rf = initial_remote_fields(cluster_name_for_keys.value)
+            cluster_host.value = rf["login_host"]
+            cluster_port.value = rf["ssh_port"]
+            cluster_user.placeholder = rf["username_hint"]
+            slurm_part.value = rf["partition"]
+            slurm_time.value = rf["wall_time"]
+
+        cluster_name_for_keys.observe(_sync_resource_facts, names="value")
         _toggle_remote_backend()
         W.HBox([W.HTML("<div class='icesee-lbl'>Backend:</div>"), remote_backend], layout=W.Layout(gap="12px")),
         ssh_box,
