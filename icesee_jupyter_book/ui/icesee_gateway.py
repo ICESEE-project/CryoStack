@@ -1138,6 +1138,8 @@ def build_icesee_ui():
             result = connector_get_public_key(
                 SESSION["id"],
                 cluster_name=cluster_name_for_keys.value or "pace",
+                hpc_username=cluster_user.value.strip(),
+                host=cluster_host.value.strip(),
             )
 
             with log_out:

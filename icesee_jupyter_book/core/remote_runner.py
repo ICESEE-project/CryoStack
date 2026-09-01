@@ -1789,7 +1789,12 @@ def connector_stage_archive(
 def connector_get_public_key(
     session_id: str,
     cluster_name: str = "pace",
+    *,
+    hpc_username: str = "",
+    host: str = "",
 ):
+    # B3: the connector namespaces the key by resource + HPC identity, so the
+    # public key shown here must be requested with that same identity.
     from icesee_jupyter_book.core.connector_relay_client import send_command
 
     res = send_command(
@@ -1797,6 +1802,8 @@ def connector_get_public_key(
         "get-public-key",
         {
             "cluster_name": cluster_name,
+            "user": hpc_username,
+            "host": host,
             "timeout": 300,
         },
     )

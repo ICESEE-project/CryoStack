@@ -61,6 +61,10 @@ def build_ssh_key_manager(cluster_name_widget, host_widget, user_widget):
             print("[ssh] Cluster key loaded:", summary["cluster_key_loaded"])
             print("[ssh] Private key exists:", summary["private_key_exists"])
             print("[ssh] Public key exists :", summary["public_key_exists"])
+            if summary.get("legacy_shared_key_exists"):
+                print("[ssh] Note: an older, cluster-only shared key also exists at")
+                print("      ", summary["legacy_shared_key_path"])
+                print("      (not used -- this resource now uses a key scoped to your identity)")
 
     def on_generate(_=None):
         info = current_info()

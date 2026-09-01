@@ -93,6 +93,18 @@ Every packaging icon is derived from **one** canonical image,
 re-run. macOS/`.app` and Windows/`.exe` get the icon via `--icon`; the Linux
 tray loads the 512px PNG; the displayed name is always **CryoStack Connector**.
 
+### SSH credential namespace (B3)
+
+Both the server-side "SSH Key Manager" and the workstation Connector now
+namespace the generated SSH key by **resource + HPC username** (and, server-side,
+the authenticated CryoStack user) instead of cluster name alone — the old
+scheme (`~/.ssh/id_ed25519_icesee_<cluster>`) let two different people
+configuring the same resource collide on one key. New keys live under
+`~/.ssh/cryostack/id_ed25519_<namespace>`. The old key is **never read or
+adopted automatically**; if present it is simply orphaned and reported (not
+deleted) so an operator can clean it up once its replacement is confirmed
+working. Existing users re-register/re-bootstrap the new key once.
+
 ### macOS connector — architecture & acceptance test
 
 The macOS connector uses a strict split: the Cocoa main thread does **UI only**

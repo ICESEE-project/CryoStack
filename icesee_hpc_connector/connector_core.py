@@ -73,8 +73,14 @@ async def run_subprocess(cmd: list[str], timeout: int = 300):
             "command": " ".join(shlex.quote(x) for x in cmd),
         }
     
-def ssh_identity_args(cluster_name="pace"):
-    priv, _ = ensure_local_ssh_key(cluster_name=cluster_name)
+def ssh_identity_args(payload):
+    """``payload`` is the command payload (cluster_name/user/host) so the key
+    is namespaced by resource + HPC identity, not cluster name alone."""
+    priv, _ = ensure_local_ssh_key(
+        cluster_name=payload.get("cluster_name", "pace"),
+        hpc_user=payload.get("user", ""),
+        host=payload.get("host", ""),
+    )
     return ["-i", priv]
     
 async def run_ssh(payload: dict):
@@ -84,11 +90,9 @@ async def run_ssh(payload: dict):
     command = payload["command"]
     timeout = int(payload.get("timeout", 60))
 
-    cluster_name = payload.get("cluster_name", "pace")
-
     ssh_cmd = [
         "ssh",
-        *ssh_identity_args(cluster_name),
+        *ssh_identity_args(payload),
         "-p", str(port),
         "-o", "BatchMode=yes",
         "-o", "IdentitiesOnly=yes",
@@ -126,7 +130,7 @@ async def run_rsync_download(payload: dict):
 
     cmd = [
         "rsync", "-az",
-        "-e", f"ssh -i {shlex.quote(ensure_local_ssh_key(payload.get('cluster_name', 'pace'))[0])} "
+        "-e", f"ssh -i {shlex.quote(ensure_local_ssh_key(payload.get('cluster_name', 'pace'), hpc_user=payload.get('user', ''), host=payload.get('host', ''))[0])} "
         f"-p {port} -o BatchMode=yes -o IdentitiesOnly=yes "
         f"-o StrictHostKeyChecking=accept-new",
         f"{user}@{host}:{remote_path}",
@@ -260,7 +264,7 @@ async def run_rsync_upload(payload: dict):
 
     cmd = [
         "rsync", "-az",
-        "-e", f"ssh -i {shlex.quote(ensure_local_ssh_key(payload.get('cluster_name', 'pace'))[0])} "
+        "-e", f"ssh -i {shlex.quote(ensure_local_ssh_key(payload.get('cluster_name', 'pace'), hpc_user=payload.get('user', ''), host=payload.get('host', ''))[0])} "
         f"-p {port} -o BatchMode=yes -o IdentitiesOnly=yes "
         f"-o StrictHostKeyChecking=accept-new",
         local_path,
@@ -331,7 +335,7 @@ async def run_stage_archive(payload: dict):
                     "rsync",
                     "-az",
                     "-e",
-                    f"ssh -i {shlex.quote(ensure_local_ssh_key(payload.get('cluster_name', 'pace'))[0])} "
+                    f"ssh -i {shlex.quote(ensure_local_ssh_key(payload.get('cluster_name', 'pace'), hpc_user=payload.get('user', ''), host=payload.get('host', ''))[0])} "
                     f"-p {port} -o BatchMode=yes -o IdentitiesOnly=yes "
                     f"-o StrictHostKeyChecking=accept-new",
                     str(archive_path),
@@ -383,7 +387,7 @@ async def run_fetch_archive(payload: dict):
                     "rsync",
                     "-az",
                     "-e",
-                    f"ssh -i {shlex.quote(ensure_local_ssh_key(payload.get('cluster_name', 'pace'))[0])} "
+                    f"ssh -i {shlex.quote(ensure_local_ssh_key(payload.get('cluster_name', 'pace'), hpc_user=payload.get('user', ''), host=payload.get('host', ''))[0])} "
                     f"-p {port} -o BatchMode=yes -o IdentitiesOnly=yes "
                     f"-o StrictHostKeyChecking=accept-new",
                     f"{user}@{host}:{remote_path}",
@@ -536,15 +540,39 @@ def run_connector(
         else:
             time.sleep(poll_seconds)
 
-def ensure_local_ssh_key(cluster_name="pace", key_type="ed25519"):
+def _credential_namespace(cluster_name: str, hpc_user: str = "", host: str = "") -> str:
+    """B3: fold (resource, HPC username[, host]) into one safe, deterministic
+    key name. Deliberately self-contained (no cryostack_src import) -- the
+    connector is packaged and distributed standalone."""
+    import hashlib
+    import re
+
+    parts = [p.strip() for p in (cluster_name, hpc_user, host) if p and p.strip()]
+    if not parts:
+        return "unscoped"
+    joined = "|".join(p.lower() for p in parts)
+    digest = hashlib.sha256(joined.encode("utf-8")).hexdigest()[:12]
+    slug = re.sub(r"[^a-z0-9]+", "-", parts[0].lower()).strip("-")[:24] or "resource"
+    return f"{slug}-{digest}"
+
+
+def ensure_local_ssh_key(cluster_name="pace", key_type="ed25519", *, hpc_user="", host=""):
+    """The credential is namespaced by resource + HPC identity, not cluster
+    name alone -- two people using this workstation for different HPC
+    accounts never share a key. The OLD cluster-only key
+    (``~/.ssh/id_<type>_icesee_<cluster>``) is never read or adopted here; if
+    present it is simply orphaned, and a fresh, correctly-scoped key is
+    generated (the user re-registers/re-bootstraps it)."""
     from pathlib import Path
     import subprocess, os, getpass
 
-    ssh_dir = Path.home() / ".ssh"
+    namespace = _credential_namespace(cluster_name, hpc_user, host)
+
+    ssh_dir = Path.home() / ".ssh" / "cryostack"
     ssh_dir.mkdir(parents=True, exist_ok=True)
     os.chmod(ssh_dir, 0o700)
 
-    priv = ssh_dir / f"id_{key_type}_icesee_{cluster_name}"
+    priv = ssh_dir / f"id_{key_type}_{namespace}"
     pub = Path(str(priv) + ".pub")
 
     if not priv.exists() or not pub.exists():
@@ -554,7 +582,7 @@ def ensure_local_ssh_key(cluster_name="pace", key_type="ed25519"):
                 "-t", key_type,
                 "-f", str(priv),
                 "-N", "",
-                "-C", f"icesee-{cluster_name}-{getpass.getuser()}",
+                "-C", f"cryostack-{namespace}-{getpass.getuser()}",
             ],
             check=True,
             capture_output=True,
@@ -576,7 +604,7 @@ async def bootstrap_passwordless_ssh_local(payload):
         password = payload["password"]
         cluster_name = payload.get("cluster_name", "pace")
 
-        priv, pub = ensure_local_ssh_key(cluster_name=cluster_name)
+        priv, pub = ensure_local_ssh_key(cluster_name=cluster_name, hpc_user=user, host=host)
         pubkey_text = open(pub, "r", encoding="utf-8").read().strip()
 
         client = paramiko.SSHClient()
@@ -648,7 +676,9 @@ async def bootstrap_passwordless_ssh_local(payload):
         cluster_name = payload.get("cluster_name", "pace")
 
         priv, pub = ensure_local_ssh_key(
-            cluster_name=cluster_name
+            cluster_name=cluster_name,
+            hpc_user=payload.get("user", ""),
+            host=payload.get("host", ""),
         )
 
         pub_text = ""
@@ -692,7 +722,11 @@ def main_auto():
 
 async def get_public_key_local(payload: dict):
     cluster_name = payload.get("cluster_name", "pace")
-    priv, pub = ensure_local_ssh_key(cluster_name=cluster_name)
+    priv, pub = ensure_local_ssh_key(
+        cluster_name=cluster_name,
+        hpc_user=payload.get("user", ""),
+        host=payload.get("host", ""),
+    )
 
     return {
         "ok": True,
