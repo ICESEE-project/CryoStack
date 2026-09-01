@@ -6,6 +6,7 @@ validation never reaches the served directory; removal is explicit only.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -222,6 +223,58 @@ def test_partial_store_entry_is_not_released(store, build_dir, tmp_path):
     assert set(cs.list_registered(store)) == {"linux-x86_64"}
     m = cs.build_candidate(store, tmp_path / "cand")
     assert set(m["artifacts"]) == {"linux-x86_64"}
+
+
+# ── promote re-enforces permissions on the live tree ───────────────────
+def test_promote_enforces_perms_and_clears_prior_junk(store, build_dir, tmp_path):
+    a, b = _make_build(build_dir, LINUX, b"linux-perm-test")
+    cs.register(store, a, b)
+    served = tmp_path / "served"
+
+    # a messy prior deployment: wrong modes + a stray file
+    served.mkdir()
+    junk = served / "leftover-from-old-deploy.txt"
+    junk.write_text("stale")
+    os.chmod(junk, 0o600)
+    (served / "manifest.json").write_text("{}")
+    os.chmod(served / "manifest.json", 0o640)
+    os.chmod(served, 0o770)
+
+    cs.release(store, served)
+
+    assert not junk.exists()                                  # full replace
+    assert (os.stat(served).st_mode & 0o777) == 0o755
+    for f in served.iterdir():
+        assert (os.stat(f).st_mode & 0o777) == 0o644
+    cm.verify(served)
+
+
+def test_promote_clears_stale_release_scratch_dirs(store, build_dir, tmp_path):
+    a, b = _make_build(build_dir, LINUX, b"linux-scratch")
+    cs.register(store, a, b)
+    served = tmp_path / "served"
+    cs.release(store, served)
+
+    # interrupted release leftovers
+    (served.with_name(served.name + ".release-new")).mkdir()
+    (served.with_name(served.name + ".release-new") / "half").write_text("x")
+    (served.with_name(served.name + ".release-old")).mkdir()
+
+    cs.release(store, served)
+    assert not (served.with_name(served.name + ".release-new")).exists()
+    assert not (served.with_name(served.name + ".release-old")).exists()
+    cm.verify(served)
+
+
+def test_multi_platform_promotion_serves_every_registered_platform(store, build_dir, tmp_path):
+    for name, payload in ((LINUX, b"l-data"), (MAC_ARM, b"m-data"), (WIN, b"w-data")):
+        a, b = _make_build(build_dir, name, payload)
+        cs.register(store, a, b)
+    served = tmp_path / "served"
+    cs.release(store, served)
+    served_files = {p.name for p in served.iterdir()}
+    assert served_files == {LINUX, MAC_ARM, WIN, "manifest.json", "SHA256SUMS"}
+    assert set(cm.verify(served)["artifacts"]) == {"linux-x86_64", "macos-arm64", "windows-x86_64"}
 
 
 # ── SHA256SUMS and manifest agree in a real candidate ──────────────────

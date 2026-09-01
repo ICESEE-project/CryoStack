@@ -5,3 +5,4 @@ chapters:
   - file: documentation
   - file: resources
   - file: about
+  - file: docs/developer_guide

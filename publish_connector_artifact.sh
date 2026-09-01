@@ -39,8 +39,17 @@ CANONICAL=(
 RELEASE_HOST="${CRYOSTACK_RELEASE_HOST:-}"
 RELEASE_USER="${CRYOSTACK_RELEASE_USER:-}"
 LOCAL_STORE="${CRYOSTACK_CONNECTOR_STORE:-$HOME/.cryostack/connector-artifacts}"
-REMOTE_STORE="${CRYOSTACK_RELEASE_STORE:-$LOCAL_STORE}"
 ALLOW_MISMATCH="${CRYOSTACK_ALLOW_PROTOCOL_MISMATCH:+--allow-protocol-mismatch}"
+
+# The remote store path is resolved ON THE RELEASE HOST. Only forward an
+# explicit CRYOSTACK_RELEASE_STORE; when it is unset the remote
+# connector_store.py resolves its own default ($HOME/.cryostack/... on the
+# release host) -- the builder's $HOME (e.g. /Users/... on a Mac) must never
+# leak across.
+REMOTE_STORE_OPT=()
+if [[ -n "${CRYOSTACK_RELEASE_STORE:-}" ]]; then
+  REMOTE_STORE_OPT=(--store "${CRYOSTACK_RELEASE_STORE}")
+fi
 
 # ---- find this host's freshly built artifact ---------------------------
 ARTIFACT=""
@@ -72,15 +81,22 @@ if [[ -z "$RELEASE_HOST" ]]; then
   python3 "$STORE_TOOL" --store "$LOCAL_STORE" list
 else
   SSH_TARGET="${RELEASE_USER:+$RELEASE_USER@}$RELEASE_HOST"
-  echo "[publish] sending to release host: $SSH_TARGET  (store: $REMOTE_STORE)"
+  if [[ ${#REMOTE_STORE_OPT[@]} -gt 0 ]]; then
+    echo "[publish] sending to release host: $SSH_TARGET  (store: ${CRYOSTACK_RELEASE_STORE})"
+  else
+    echo "[publish] sending to release host: $SSH_TARGET  (store: release-host default)"
+  fi
   REMOTE_TMP="$(ssh "$SSH_TARGET" 'mktemp -d')"
   # shellcheck disable=SC2064
   trap "ssh '$SSH_TARGET' 'rm -rf \"$REMOTE_TMP\"'" EXIT
   scp "$ARTIFACT" "$SIDECAR" "$SSH_TARGET:$REMOTE_TMP/"
   scp "$STORE_TOOL" "$REPO_ROOT/deployment/connector_manifest.py" "$SSH_TARGET:$REMOTE_TMP/"
-  ssh "$SSH_TARGET" "python3 '$REMOTE_TMP/connector_store.py' --store '$REMOTE_STORE' \
+
+  REMOTE_STORE_STR=""
+  [[ ${#REMOTE_STORE_OPT[@]} -gt 0 ]] && REMOTE_STORE_STR="--store $(printf '%q' "${CRYOSTACK_RELEASE_STORE}")"
+  ssh "$SSH_TARGET" "python3 '$REMOTE_TMP/connector_store.py' ${REMOTE_STORE_STR} \
       register '$REMOTE_TMP/$(basename "$ARTIFACT")' '$REMOTE_TMP/$(basename "$SIDECAR")' $ALLOW_MISMATCH \
-    && python3 '$REMOTE_TMP/connector_store.py' --store '$REMOTE_STORE' list"
+    && python3 '$REMOTE_TMP/connector_store.py' ${REMOTE_STORE_STR} list"
 fi
 
 echo

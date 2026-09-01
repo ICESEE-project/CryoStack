@@ -270,22 +270,32 @@ def promote(candidate_dir: str | Path, served_dir: str | Path) -> dict:
     served = Path(served_dir).resolve()
     served.parent.mkdir(parents=True, exist_ok=True)
 
+    # Clear any stale scratch dirs left by an interrupted release.
     staging = served.with_name(served.name + ".release-new")
-    if staging.exists():
-        shutil.rmtree(staging)
+    backup = served.with_name(served.name + ".release-old")
+    for scratch in (staging, backup):
+        if scratch.exists():
+            shutil.rmtree(scratch)
+
     shutil.copytree(candidate, staging)
     cm.enforce_permissions(staging)
     cm.verify(staging)                         # validated copy, still not live
 
-    backup = served.with_name(served.name + ".release-old")
-    if backup.exists():
-        shutil.rmtree(backup)
+    # Atomic swap. If the second rename fails, put the old release back so a
+    # failure never leaves the served path missing.
     if served.exists():
         os.rename(served, backup)
-    os.rename(staging, served)
+    try:
+        os.rename(staging, served)
+    except OSError:
+        if backup.exists() and not served.exists():
+            os.rename(backup, served)
+        raise
     if backup.exists():
         shutil.rmtree(backup)
 
+    # Enforce + verify on the LIVE tree before declaring success.
+    cm.enforce_permissions(served)
     manifest = cm.verify(served)
     problems = cm.permission_problems(served)
     if problems:
@@ -345,10 +355,11 @@ def _main(argv: list[str]) -> int:
             return 0
         if args.cmd == "list":
             reg = list_registered(store)
+            print(f"[store] {store}")
             if not reg:
-                print(f"[store] {store}: empty")
+                print("[store]   (no registered platforms)")
             for platform, e in sorted(reg.items()):
-                print(f"[store] {platform:14s} {e['filename']:42s} "
+                print(f"[store]   {platform:14s} {e['filename']:42s} "
                       f"{e['size_bytes']:>12d}  {e['pairing_protocol']}  {e['connector_build_revision']}")
             return 0
         if args.cmd == "build-candidate":

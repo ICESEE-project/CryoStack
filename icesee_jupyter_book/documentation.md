@@ -347,11 +347,14 @@
       </div>
 
       <div>
-        <h3>CryoStack Developer Guide &amp; Contributing
-          <span class="cryostack-status planned">Planned</span></h3>
+        <h3>CryoStack Developer Guide
+          <span class="cryostack-status dev">In progress</span></h3>
         <p>
-          A consolidated architecture and contribution guide for the platform
-          layer is planned. Until then, use the repository README and issues.
+          The <a href="docs/developer_guide.html">Developer Guide</a> covers
+          building, publishing and releasing the CryoStack Connector
+          (native builds &rarr; canonical store &rarr; public downloads),
+          plus release verification and the nginx audit. A consolidated
+          platform-architecture and contribution guide is still being written.
         </p>
       </div>
 
