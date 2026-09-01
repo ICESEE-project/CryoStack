@@ -104,3 +104,33 @@ if skipped:
 def build_postprocess() -> str:
     """The stdlib-only Python collector script (see module docstring)."""
     return _SCRIPT
+
+
+_COLLECTOR_FILENAME = "cryostack_icepack_postprocess.py"
+
+
+def build_collection_shell_block(*, run_dir: str, example_dir: str) -> str:
+    """A shell block appended to an Icepack run's sbatch body: write the stdlib
+    collector next to the run and execute it with the compute node's ``python3``
+    (stdlib only -- no container / icepack import needed). Non-fatal: a
+    collection failure warns but never fails the scientific run, which has
+    already completed by this point.
+
+    Expects ``CRYOSTACK_RUN_STARTED`` (epoch seconds) to have been exported
+    earlier in the script so pre-existing example inputs are not swept in.
+    """
+    script_path = f"{run_dir}/{_COLLECTOR_FILENAME}"
+    heredoc = f"cat > {script_path!r} <<'CRYOSTACK_ICEPACK_PP_EOF'\n{_SCRIPT}\nCRYOSTACK_ICEPACK_PP_EOF"
+    return f'''
+# --- CryoStack Icepack output collection (non-fatal) -------------------
+{heredoc}
+if command -v python3 >/dev/null 2>&1; then
+    CRYOSTACK_RUN_DIR={run_dir!r} \\
+    CRYOSTACK_EXAMPLE_DIR={example_dir!r} \\
+    CRYOSTACK_RUN_STARTED="${{CRYOSTACK_RUN_STARTED:-0}}" \\
+    python3 {script_path!r} \\
+      || echo "[cryostack][warn] Icepack output collection failed (the run itself completed)"
+else
+    echo "[cryostack][warn] python3 not on the compute node; skipping Icepack output collection"
+fi
+'''

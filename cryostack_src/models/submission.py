@@ -20,6 +20,9 @@ import cryostack_src.remote.spack_env as spack_env
 from cryostack_src.models.issm.postprocess import (
     build_postprocess as build_issm_postprocess_script,
 )
+from cryostack_src.models.icepack.postprocess import (
+    build_collection_shell_block as build_icepack_collection_block,
+)
 from cryostack_src.models.stack import (
     checkout_bind_suffix,
     checkout_setup_block,
@@ -557,6 +560,13 @@ apptainer exec "{sif_path}" with-icepack python -c "import icepack; print('Icepa
 '''
         body = container_setup + "\n" + run_block
 
+    # Icepack has no MATLAB neutral-export; instead collect the figures / native
+    # files the run produced into outputs/ (see icepack.postprocess). Non-fatal.
+    if model == "icepack" and not test_mode:
+        body = body + "\n" + build_icepack_collection_block(
+            run_dir=remote_run_dir, example_dir=remote_example_dir,
+        )
+
     outfile = f"{remote_run_dir}/icesheets-%j.out"
 
     # one immutable, human-readable execution record of the resolved stack;
@@ -579,6 +589,7 @@ set -euo pipefail
 
 cd "{remote_run_dir}"
 mkdir -p outputs/model outputs/figures
+export CRYOSTACK_RUN_STARTED="$(date +%s)"
 
 echo "[icesheets] Host: $(hostname)"
 echo "[icesheets] Date: $(date)"
@@ -967,6 +978,13 @@ apptainer exec "{sif_path}" with-icepack python -c "import icepack; print('Icepa
 
         body = container_setup + "\n" + run_block
 
+    # Icepack has no MATLAB neutral-export; instead collect the figures / native
+    # files the run produced into outputs/ (see icepack.postprocess). Non-fatal.
+    if model == "icepack" and not test_mode:
+        body = body + "\n" + build_icepack_collection_block(
+            run_dir=remote_run_dir, example_dir=remote_example_dir,
+        )
+
     # ---------------------------------------------------------
     # Render sbatch
     # ---------------------------------------------------------
@@ -991,7 +1009,8 @@ apptainer exec "{sif_path}" with-icepack python -c "import icepack; print('Icepa
 set -euo pipefail
 
 cd "{remote_run_dir}"
-mkdir -p outputs/model outputs/figures # create expected output dirs
+mkdir -p outputs/model outputs/figures  # create expected output dirs
+export CRYOSTACK_RUN_STARTED="$(date +%s)"
 
 echo "[icesheets] Host: $(hostname)"
 echo "[icesheets] Date: $(date)"
