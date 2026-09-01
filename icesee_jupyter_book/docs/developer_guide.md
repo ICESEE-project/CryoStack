@@ -146,6 +146,24 @@ sample "$(pgrep -f 'CryoStack Connector' | head -1)" 5 -file /tmp/cryostack-conn
 Lifecycle events are in `~/icesee_connector.log` as `[lifecycle] <ts> <event>`
 (fixed names only — never a pairing code, secret, or SSH argument).
 
+#### Known macOS issues (accepted for the current release)
+
+Connector **v2 pairing, direct launch, the menu bar, and the visible
+pairing/status window all work**. Two macOS issues are deferred:
+
+1. **`/Applications` copy can become unresponsive** while a direct launch (from
+   the DMG or elsewhere) works. Suspected cause: Gatekeeper App Translocation of
+   the ad-hoc-signed (not Developer-ID-notarized) bundle. **Workaround:**
+   `xattr -dr com.apple.quarantine "/Applications/CryoStack Connector.app"` then
+   relaunch, or run from a non-`/Applications` location; `bash
+   scripts/diagnose_connector_macos.sh` confirms translocation. Real fix =
+   Developer-ID signing + notarization (future).
+2. **Copy/paste into the pairing-code field does not work reliably** in the
+   native window / `rumps.Window`. **Workaround:** type the code, or export
+   `CRYOSTACK_PAIRING_CODE` before launch.
+
+Do not regress the working direct-launch path while addressing these.
+
 ### 2. Register into the canonical store
 
 **Same machine builds and serves** (the common single-host case):
