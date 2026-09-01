@@ -120,6 +120,8 @@ from cryostack_src.remote.access_state import (
     verify_remote_identity,
     identity_result_from_output,
     can_reuse_connectivity_identity,
+    classify_ssh_failure,
+    SSH_KEY_NOT_AUTHORIZED,
 )
 from cryostack_src.remote.spack_env import SetupSlurmOpts
 from cryostack_src.frontend.cryolauncher.spack_runtime import build_spack_runtime_callbacks
@@ -528,7 +530,7 @@ def build_icesheets_ui():
         auth_mode = W.ToggleButtons(
             options=[("Key-only", "key"), ("Bootstrap with password (one-time)", "bootstrap")],
             value="key",
-            layout=W.Layout(width="420px"),
+            layout=W.Layout(width="auto", max_width="100%"),
         )
 
         cluster_password = W.Password(
@@ -901,9 +903,16 @@ def build_icesheets_ui():
                 if result.get("ok"):
                     status_chip.value = status_html("done")
                     auth_mode.value = "key"
-                    cluster_password.value = ""
+                    cluster_password.value = ""     # never persisted/logged
                     with log_out:
                         print("[auth] ✅ Passwordless SSH is working.")
+                    # The new B3 namespaced key is now registered — re-run Check
+                    # SSH so the panel moves to Verified without a second click.
+                    try:
+                        on_test_remote(None)
+                    except Exception as _e:
+                        with log_out:
+                            print("[auth] re-check skipped:", type(_e).__name__, _e)
                 else:
                     status_chip.value = status_html("fail")
 
@@ -2155,11 +2164,35 @@ def build_icesheets_ui():
             _check_result = _remote_check(_)
             if mode_dd.value != "remote":
                 return
+            _profile = get_compute_profile(cluster_name_for_keys.value or "pace")
+
+            # Connectivity failed: classify it. A public-key rejection is an
+            # actionable "your CryoStack key is not registered yet" state (B3
+            # moved to a per-user/resource namespaced key); everything else is
+            # a generic failure. Never run identity verification on a failed
+            # connection.
+            if not _check_result or not _check_result.get("ok"):
+                _kind = classify_ssh_failure(
+                    stderr=(_check_result or {}).get("stderr", ""),
+                    stdout=(_check_result or {}).get("stdout", ""),
+                    returncode=(_check_result or {}).get("returncode"),
+                )
+                try:
+                    if _kind == SSH_KEY_NOT_AUTHORIZED:
+                        remote_conn_panel.set_key_unregistered(_profile)
+                        with log_out:
+                            print("[access] SSH key not registered — the Connector "
+                                  "reached the resource, but this CryoStack key is "
+                                  "not yet authorized for your account. See the "
+                                  "Remote connection panel for how to register it.")
+                    else:
+                        remote_conn_panel.set_status("failed")
+                except NameError:
+                    pass
+                return
             try:
                 _resolved = "connector" if should_use_connector() else "direct"
-                _vcmd = get_compute_profile(
-                    cluster_name_for_keys.value or "pace"
-                ).verification_command
+                _vcmd = _profile.verification_command
                 # The connectivity probe above already ran `hostname && whoami
                 # && pwd` in one command. When the resource's identity check is
                 # just `whoami`, reuse that output instead of a second remote

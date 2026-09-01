@@ -10,7 +10,8 @@ Reorganised around the user's workflow instead of the transport internals:
     [ Check SSH Access ] [ Open Connector Setup ]
 
     CryoStack Connector   Status: Waiting / Connected + Pairing code
-    > Diagnostics         session id / websocket path / relay + raw state
+                          > Diagnostics (session id / ws path / relay state)
+    > Advanced            remote job tag (only when extra controls exist)
 
 This is a presentation helper. It takes the gateway's existing widget
 instances and arranges them; it never changes transport behaviour, the B3
@@ -27,6 +28,7 @@ from icesee_jupyter_book.ui.shared_auth_ux import (
     manual_registration_steps,
     portal_link,
     requires_manual_registration,
+    supports_password_bootstrap,
 )
 
 # status chip: (css-modifier, dot, label)
@@ -36,6 +38,7 @@ _STATUS = {
     "verified": ("is-verified", "●", "Verified"),
     "mismatch": ("is-mismatch", "●", "Mismatch"),
     "failed": ("is-failed", "●", "Failed"),
+    "key_unregistered": ("is-key-unregistered", "●", "SSH key not registered"),
 }
 
 # B3 AccessState value -> status-chip kind (AccessState is a str enum, compared
@@ -87,36 +90,71 @@ def _row(*fields: W.Widget) -> W.HBox:
 class RemoteConnectionPanel:
     container: W.VBox
     status_chip: W.HTML
-    diagnostics: W.HTML
     registration_box: W.VBox
     auth_method: W.Widget
     _state: dict = field(default_factory=dict)
+    _profile: object = None
 
     def set_status(self, kind: str) -> None:
         self.status_chip.value = _status_html(kind)
         self._state["status"] = kind
+        # A verified identity supersedes any "register your key" guidance.
+        if kind == "verified":
+            self.registration_box.children = ()
+            self.registration_box.layout.display = "none"
 
     def set_status_from_access(self, state) -> None:
         self.set_status(access_state_to_status_kind(state))
 
-    def set_diagnostics(self, *, session_id="", ws_path="", relay_state="", raw_state="") -> None:
-        rows = [
-            ("session id", session_id or "—"),
-            ("websocket path", ws_path or "—"),
-            ("relay state", relay_state or "—"),
-            ("raw connector state", raw_state or "—"),
-        ]
-        body = "".join(
-            f"<div><span class='cryostack-diag__k'>{k}:</span> "
-            f"<code>{v}</code></div>"
-            for k, v in rows
+    def set_key_unregistered(self, profile=None) -> None:
+        """The Connector reached the resource but the server rejected the
+        CryoStack public key (``Permission denied (publickey``). Show an
+        actionable "register your key" state instead of a bare red Failed.
+
+        * password-bootstrap resources  -> point at Password bootstrap (one-time)
+        * manual/portal resources       -> show the existing manual checklist
+        * anything else                 -> neutral "register it, then re-check"
+        """
+        profile = profile if profile is not None else self._profile
+        self.set_status("key_unregistered")
+
+        if profile is not None and requires_manual_registration(profile):
+            self._render_registration(profile)
+            return
+
+        resource = (getattr(profile, "name", "") or "your HPC account").strip() \
+            or "your HPC account"
+        if profile is not None and supports_password_bootstrap(profile):
+            guidance = (
+                "<div class='cryostack-help'>Select <b>Authentication method &rarr; "
+                "Password bootstrap (one-time)</b>, enter your "
+                f"{resource} password once, and click <b>Enable passwordless SSH</b>. "
+                "CryoStack registers this key and re-checks access automatically. "
+                "Your password is used once and never stored.</div>"
+            )
+        else:
+            guidance = (
+                "<div class='cryostack-help'>Add this CryoStack public key wherever "
+                f"{resource} manages authorized SSH keys, then Check SSH Access "
+                "again.</div>"
+            )
+
+        self.registration_box.children = (
+            W.HTML(
+                "<div class='cryostack-group-title'>SSH key is not registered</div>"
+                "<div class='cryostack-help'>The CryoStack Connector is connected, "
+                "but this CryoStack credential has not yet been authorized for "
+                f"{resource}.</div>"
+                f"{guidance}"
+            ),
         )
-        self.diagnostics.value = f"<div class='cryostack-diag'>{body}</div>"
+        self.registration_box.layout.display = "flex"
 
     def apply_profile(self, profile) -> None:
         """Refresh the resource-aware auth options and the manual-registration
         checklist for the newly selected resource. Preserves the current auth
         selection when the new resource still supports it."""
+        self._profile = profile
         options = auth_method_options(profile)
         tokens = [t for _, t in options]
         current = getattr(self.auth_method, "value", None)
@@ -182,7 +220,6 @@ def build_remote_connection_panel(
     advanced_children: list[W.Widget] | None = None,
 ) -> RemoteConnectionPanel:
     status_chip = W.HTML(_status_html("unchecked"))
-    diagnostics = W.HTML()
     registration_box = W.VBox(layout=W.Layout(width="100%", gap="4px", display="none"))
 
     compute_resource = W.VBox(
@@ -244,37 +281,34 @@ def build_remote_connection_panel(
     )
     connector_section.add_class("cryostack-connector-card")
 
-    diag_children = [diagnostics]
+    # Session/relay diagnostics live in the Connector status card itself
+    # (connector_card). This accordion carries only genuinely extra controls
+    # (e.g. the remote job tag) and is omitted entirely when there are none.
+    sections = [
+        compute_resource,
+        identity,
+        access,
+        status_group,
+        actions,
+        connector_section,
+    ]
     if advanced_children:
-        diag_children.extend(advanced_children)
-    diag_inner = W.VBox(diag_children, layout=W.Layout(width="100%", gap="8px"))
-    diag_accordion = W.Accordion(children=[diag_inner])
-    diag_accordion.set_title(0, "Diagnostics")
-    diag_accordion.selected_index = None
-    diag_accordion.add_class("cryostack-diagnostics-accordion")
+        adv_inner = W.VBox(list(advanced_children), layout=W.Layout(width="100%", gap="8px"))
+        adv_accordion = W.Accordion(children=[adv_inner])
+        adv_accordion.set_title(0, "Advanced")
+        adv_accordion.selected_index = None
+        adv_accordion.add_class("cryostack-advanced-accordion")
+        sections.append(adv_accordion)
 
-    container = W.VBox(
-        [
-            compute_resource,
-            identity,
-            access,
-            status_group,
-            actions,
-            connector_section,
-            diag_accordion,
-        ],
-        layout=W.Layout(width="100%", gap="18px"),
-    )
+    container = W.VBox(sections, layout=W.Layout(width="100%", gap="18px"))
     container.add_class("cryostack-remote-connection-panel")
 
     panel = RemoteConnectionPanel(
         container=container,
         status_chip=status_chip,
-        diagnostics=diagnostics,
         registration_box=registration_box,
         auth_method=auth_method,
     )
-    panel.set_diagnostics()
     if profile is not None:
         panel.apply_profile(profile)
     return panel

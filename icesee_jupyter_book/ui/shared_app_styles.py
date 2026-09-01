@@ -672,6 +672,28 @@ pre.cryostack-code-block {
 .cryostack-conn-status.is-failed { background: rgba(220, 38, 38, 0.14); color: #b91c1c; }
 .cryostack-conn-status.is-failed .cryostack-conn-status__dot { color: #dc2626; }
 
+.cryostack-conn-status.is-key-unregistered { background: rgba(217, 119, 6, 0.16); color: #b45309; }
+.cryostack-conn-status.is-key-unregistered .cryostack-conn-status__dot { color: #d97706; }
+
+
+/* The Authentication-method toggle must never clip "Password bootstrap
+   (one-time)": let the control size to its content instead of a fixed width. */
+.cryostack-remote-connection-panel .widget-togglebuttons {
+    width: auto !important;
+    max-width: 100%;
+}
+
+.cryostack-remote-connection-panel .widget-togglebuttons .widget-toggle-buttons,
+.cryostack-remote-connection-panel .widget-togglebuttons .jupyter-widgets {
+    flex-wrap: wrap;
+}
+
+.cryostack-remote-connection-panel .widget-togglebuttons button {
+    white-space: nowrap;
+    width: auto;
+    min-width: max-content;
+}
+
 
 /* =========================================================
    B4 -- connector card, diagnostics, manual key registration
@@ -747,8 +769,8 @@ a.cryostack-portal-link {
         width: 100% !important;
     }
 
-    .cryostack-diagnostics-accordion,
-    .cryostack-diagnostics-accordion .widget-accordion-child {
+    .cryostack-advanced-accordion,
+    .cryostack-advanced-accordion .widget-accordion-child {
         width: 100%;
         max-width: 100%;
     }

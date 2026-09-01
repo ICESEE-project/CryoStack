@@ -34,6 +34,8 @@ from cryostack_src.remote.access_state import (
     verify_remote_identity,
     identity_result_from_output,
     can_reuse_connectivity_identity,
+    classify_ssh_failure,
+    SSH_KEY_NOT_AUTHORIZED,
 )
 from icesee_jupyter_book.core.config_io import load_yaml, dump_yaml
 from icesee_jupyter_book.core.example_discovery import (
@@ -581,7 +583,7 @@ def build_icesee_ui():
         auth_mode = W.ToggleButtons(
         options=[("Key-only", "key"), ("Bootstrap with password (one-time)", "bootstrap")],
         value="key",
-        layout=W.Layout(width="420px")
+        layout=W.Layout(width="auto", max_width="100%")
         )
 
         cluster_password = W.Password(
@@ -1236,9 +1238,16 @@ def build_icesee_ui():
                 if result.get("ok"):
                     set_status("done")
                     auth_mode.value = "key"
-                    cluster_password.value = ""
+                    cluster_password.value = ""     # never persisted/logged
                     with log_out:
                         print("[auth] ✅ Passwordless SSH is working.")
+                    # The new B3 namespaced key is now registered — re-run the
+                    # SSH check so the panel reaches Verified without a 2nd click.
+                    try:
+                        run_example_remote_test()
+                    except Exception as _e:
+                        with log_out:
+                            print("[auth] re-check skipped:", type(_e).__name__, _e)
                 else:
                     set_status("fail")
                     # with log_out:
@@ -1704,6 +1713,29 @@ def build_icesee_ui():
                     except NameError:
                         pass
 
+            def _classify_and_report_failure(res) -> None:
+                """A failed connectivity probe: a public-key rejection is an
+                actionable "register your CryoStack key" state (B3 namespaced
+                key), everything else stays a generic failure."""
+                _kind = classify_ssh_failure(
+                    stderr=(res or {}).get("stderr", ""),
+                    stdout=(res or {}).get("stdout", ""),
+                    returncode=(res or {}).get("returncode"),
+                )
+                try:
+                    _profile = get_compute_profile(cluster_name_for_keys.value or "pace")
+                    if _kind == SSH_KEY_NOT_AUTHORIZED:
+                        remote_conn_panel.set_key_unregistered(_profile)
+                        with log_out:
+                            print("[access] SSH key not registered — the Connector "
+                                  "reached the resource, but this CryoStack key is "
+                                  "not yet authorized for your account. See the "
+                                  "Remote connection panel for how to register it.")
+                    else:
+                        remote_conn_panel.set_status("failed")
+                except NameError:
+                    pass
+
             try:
 
                 if access_mode_dd.value == "connector":
@@ -1742,7 +1774,10 @@ def build_icesee_ui():
 
                     if payload.get("ok"):
                         _report_identity("connector", payload.get("stdout") or "")
-                    set_status("done" if payload.get("ok") else "fail")
+                        set_status("done")
+                    else:
+                        set_status("fail")
+                        _classify_and_report_failure(payload)
                     return
                 result = remote_test_connection(host, user, port)
 
@@ -1784,7 +1819,10 @@ def build_icesee_ui():
 
                 if result["ok"]:
                     _report_identity("direct", result.get("stdout") or "")
-                set_status("done" if result["ok"] else "fail")
+                    set_status("done")
+                else:
+                    set_status("fail")
+                    _classify_and_report_failure(result)
 
             except subprocess.TimeoutExpired:
                 set_status("fail")

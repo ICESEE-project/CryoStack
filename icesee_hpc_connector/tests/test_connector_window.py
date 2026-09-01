@@ -22,6 +22,7 @@ from icesee_hpc_connector.connector_window import (
 )
 
 _MENU = _REPO / "icesee_hpc_connector" / "connector_menubar_app.py"
+_WINDOW = _REPO / "icesee_hpc_connector" / "connector_window.py"
 
 _ONBOARDING = (
     ConnectorState.IDLE, ConnectorState.WAITING,
@@ -79,6 +80,30 @@ def test_menu_bar_keeps_every_useful_item_and_adds_show_window():
                  '"Open Setup Page"', '"Open Log File"', '"Quit"'):
         assert item in darwin, item
     assert "self._status_item" in darwin                # Status: connected ✓ etc.
+
+
+# ── pairing field behaves like a normal text field ────────────────────
+def test_pairing_field_gets_first_responder_and_is_cleared_after_pairing():
+    src = _WINDOW.read_text()
+    # cursor lands in the field when the window shows in the code-entry state
+    assert "makeFirstResponder_(self._field)" in src
+    assert "if not self._field.isHidden():" in src
+    # the code is wiped once we leave the entry state (post-pair / connecting)
+    assert 'if not view["show_code_field"]:' in src
+    assert 'self._field.setStringValue_("")' in src
+    # explicit editable/selectable single-line config for paste + context menu
+    assert "setEditable_(True)" in src and "setSelectable_(True)" in src
+
+
+def test_app_installs_a_standard_edit_menu_for_clipboard_shortcuts():
+    src = _MENU.read_text()
+    darwin = src.split('if sys.platform == "darwin":')[1].split("# ====")[0]
+    assert "_install_edit_menu(AppKit)" in darwin
+    for sel in ('"cut:"', '"copy:"', '"paste:"', '"selectAll:"'):
+        assert sel in darwin, sel
+    assert "setMainMenu_(main)" in darwin
+    # guarded against installing twice
+    assert 'title() == "Edit"' in darwin
 
 
 def test_first_launch_is_dock_visible_and_shows_the_window():

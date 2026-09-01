@@ -17,9 +17,14 @@ from cryostack_src.remote.access_state import (
     AccessInputs,
     AccessState,
     classify_access_state,
+    classify_ssh_failure,
     enforce_remote_access,
     run_blocked,
     verify_remote_identity,
+    SSH_KEY_NOT_AUTHORIZED,
+    SSH_CONNECTION_FAILED,
+    SSH_AUTH_FAILED_OTHER,
+    SSH_FAILURE_UNKNOWN,
 )
 from cryostack_src.resources.profiles import ComputeProfile, get_compute_profile
 
@@ -181,6 +186,35 @@ def test_profile_direct_ssh_trust_defaults_to_shared_and_is_validated():
     assert get_compute_profile("frontera").direct_ssh_trust == "shared"
     with pytest.raises(ValueError):
         ComputeProfile(name="x", direct_ssh_trust="bogus")
+
+
+# ── classify_ssh_failure (conservative) ──────────────────────────────
+def test_publickey_rejection_is_the_only_key_not_authorized_signal():
+    pace = ("Permission denied (publickey,gssapi-keyex,gssapi-with-mic,"
+            "password,hostbased).")
+    assert classify_ssh_failure(stderr=pace, returncode=255) == SSH_KEY_NOT_AUTHORIZED
+
+
+def test_generic_permission_denied_is_not_key_not_authorized():
+    assert classify_ssh_failure(stderr="Permission denied, please try again.",
+                                returncode=255) == SSH_AUTH_FAILED_OTHER
+
+
+@pytest.mark.parametrize("err", [
+    "ssh: connect to host x port 22: Connection refused",
+    "ssh: connect to host x port 22: Connection timed out",
+    "ssh: Could not resolve hostname nope: Name or service not known",
+    "Host key verification failed.",
+])
+def test_unreachable_host_is_connection_failed_not_key(err):
+    assert classify_ssh_failure(stderr=err, returncode=255) == SSH_CONNECTION_FAILED
+
+
+def test_a_255_with_no_recognisable_marker_stays_unknown():
+    # "Do not classify every SSH return code 255 as 'key not registered'"
+    assert classify_ssh_failure(stderr="kex_exchange_identification: banner",
+                                returncode=255) == SSH_FAILURE_UNKNOWN
+    assert classify_ssh_failure(stderr="", returncode=255) == SSH_FAILURE_UNKNOWN
 
 
 # ── gateway wiring source guard ──────────────────────────────────────

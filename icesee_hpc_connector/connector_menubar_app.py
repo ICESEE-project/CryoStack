@@ -128,6 +128,7 @@ if sys.platform == "darwin":
                 import AppKit
                 AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyRegular)
                 self._install_reopen_handler(AppKit)
+                self._install_edit_menu(AppKit)
             except Exception:
                 pass
 
@@ -176,6 +177,48 @@ if sys.platform == "darwin":
             else:
                 rumps.notification(APP_NAME, APP_NAME,
                                    "Use 'Pair with CryoStack…' in the menu bar.")
+
+        def _install_edit_menu(self, AppKit):
+            """Give the app a standard Edit menu.
+
+            A rumps menu-bar app has no application main menu, so the pairing
+            text field gets no Cmd+C / Cmd+V / Cmd+X / Cmd+A. These items target
+            ``nil`` (the first responder), so the standard NSTextField editing
+            actions handle them for whichever field has focus. Guarded against
+            running twice.
+            """
+            main = AppKit.NSApp.mainMenu()
+            if main is None:
+                main = AppKit.NSMenu.alloc().init()
+                AppKit.NSApp.setMainMenu_(main)
+            for i in range(main.numberOfItems()):
+                if main.itemAtIndex_(i).title() == "Edit":
+                    return   # already installed
+
+            edit_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Edit", None, "")
+            edit_menu = AppKit.NSMenu.alloc().initWithTitle_("Edit")
+            for title, action, key in (
+                ("Undo", "undo:", "z"),
+                ("Redo", "redo:", "Z"),
+                (None, None, None),
+                ("Cut", "cut:", "x"),
+                ("Copy", "copy:", "c"),
+                ("Paste", "paste:", "v"),
+                ("Select All", "selectAll:", "a"),
+            ):
+                if title is None:
+                    edit_menu.addItem_(AppKit.NSMenuItem.separatorItem())
+                    continue
+                item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                    title, action, key.lower()
+                )
+                if key.isupper():
+                    item.setKeyEquivalentModifierMask_(
+                        AppKit.NSEventModifierFlagCommand | AppKit.NSEventModifierFlagShift
+                    )
+                edit_menu.addItem_(item)
+            edit_item.setSubmenu_(edit_menu)
+            main.addItem_(edit_item)
 
         def _install_reopen_handler(self, AppKit):
             # Clicking the Dock icon should bring the window forward.

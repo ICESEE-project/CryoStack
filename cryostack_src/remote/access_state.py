@@ -129,6 +129,67 @@ def identity_result_from_output(
     return VerificationResult(ok=True, expected=expected, remote_identity=remote)
 
 
+#: SSH-failure classification for the Check-SSH connectivity probe.
+#:
+#: The intent (B3): a public-key rejection by the server is an *actionable*
+#: "your CryoStack key is not registered yet" state, not a generic red Failed.
+#: But we must be conservative -- an SSH client exits 255 for nearly every
+#: failure, so only the explicit ``Permission denied (publickey`` marker is
+#: treated as "key not authorized". Everything else stays a generic failure.
+SSH_KEY_NOT_AUTHORIZED = "key_not_authorized"
+SSH_CONNECTION_FAILED = "connection_failed"
+SSH_AUTH_FAILED_OTHER = "auth_failed_other"
+SSH_FAILURE_UNKNOWN = "unknown"
+
+_CONNECTION_MARKERS = (
+    "connection refused",
+    "connection timed out",
+    "connection closed by remote host",
+    "connection reset by peer",
+    "could not resolve hostname",
+    "name or service not known",
+    "no route to host",
+    "network is unreachable",
+    "operation timed out",
+    "no address associated with hostname",
+    "host key verification failed",
+    "unable to negotiate",
+)
+
+
+def classify_ssh_failure(*, stderr: str = "", stdout: str = "", returncode=None) -> str:
+    """Classify a *failed* SSH connectivity probe conservatively.
+
+    Returns one of :data:`SSH_KEY_NOT_AUTHORIZED`, :data:`SSH_CONNECTION_FAILED`,
+    :data:`SSH_AUTH_FAILED_OTHER`, :data:`SSH_FAILURE_UNKNOWN`.
+
+    Only ``Permission denied (publickey`` -- the server explicitly rejecting the
+    key we offered -- maps to "key not authorized". A bare "Permission denied"
+    or "authentication failed" is ``auth_failed_other``; unreachable-host errors
+    are ``connection_failed``; anything else is ``unknown`` (callers must not
+    assume key registration from an unknown failure).
+    """
+    blob = f"{stderr or ''}\n{stdout or ''}".lower()
+    if not blob.strip():
+        return SSH_FAILURE_UNKNOWN
+
+    for marker in _CONNECTION_MARKERS:
+        if marker in blob:
+            return SSH_CONNECTION_FAILED
+
+    if "permission denied (publickey" in blob:
+        return SSH_KEY_NOT_AUTHORIZED
+
+    if (
+        "permission denied" in blob
+        or "authentication failed" in blob
+        or "too many authentication failures" in blob
+    ):
+        return SSH_AUTH_FAILED_OTHER
+
+    return SSH_FAILURE_UNKNOWN
+
+
 def can_reuse_connectivity_identity(verification_command: str) -> bool:
     """True when the Check SSH connectivity probe (``hostname && whoami && …``)
     already yields what the resource's identity check needs, so a second remote

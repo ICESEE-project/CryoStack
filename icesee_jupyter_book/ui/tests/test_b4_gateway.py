@@ -83,7 +83,7 @@ def test_shared_css_carries_the_b4_responsive_classes():
     css = _SHARED_CSS.read_text()
     for cls in ("cryostack-group-title",
                 "cryostack-slurm-numeric-grid", "cryostack-conn-status",
-                "cryostack-remote-connection-panel", "cryostack-diagnostics-accordion",
+                "cryostack-remote-connection-panel", "cryostack-advanced-accordion",
                 "cryostack-help"):
         assert cls in css
     for bp in ("max-width: 768px", "max-width: 430px", "max-width: 360px"):

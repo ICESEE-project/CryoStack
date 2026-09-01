@@ -132,6 +132,16 @@ class _AppKitConnectorWindow:  # pragma: no cover - requires a macOS GUI session
         self._body = self._label(AppKit, (24, 120, 372, 84), 13)
         self._field = AppKit.NSTextField.alloc().initWithFrame_(AppKit.NSMakeRect(24, 84, 280, 24))
         self._field.setPlaceholderString_("pairing code")
+        # Behave like a normal text field: editable, selectable, single line so
+        # Cmd+C/V/X/A and the AppKit context menu work (the standard Edit menu
+        # installed by the app supplies the key equivalents).
+        self._field.setEditable_(True)
+        self._field.setSelectable_(True)
+        self._field.setUsesSingleLineMode_(True)
+        cell = self._field.cell()
+        if cell is not None:
+            cell.setUsesSingleLineMode_(True)
+            cell.setScrollable_(True)
         self._button = AppKit.NSButton.alloc().initWithFrame_(AppKit.NSMakeRect(312, 82, 84, 28))
         self._button.setBezelStyle_(AppKit.NSBezelStyleRounded)
         self._button.setTarget_(self._make_target(objc))
@@ -189,6 +199,9 @@ class _AppKitConnectorWindow:  # pragma: no cover - requires a macOS GUI session
         self._body.setStringValue_(view["body"])
         self._foot.setStringValue_(view.get("footnote", ""))
         self._field.setHidden_(not view["show_code_field"])
+        if not view["show_code_field"]:
+            # never keep a pairing code around after we leave the entry state
+            self._field.setStringValue_("")
         buttons = view["buttons"]
         self._button.setHidden_(len(buttons) < 1)
         self._button2.setHidden_(len(buttons) < 2)
@@ -201,6 +214,10 @@ class _AppKitConnectorWindow:  # pragma: no cover - requires a macOS GUI session
     def show(self):
         self._AppKit.NSApp.activateIgnoringOtherApps_(True)
         self._win.makeKeyAndOrderFront_(None)
+        # When the pairing field is showing, put the cursor in it so the user
+        # can paste (Cmd+V) or type the code immediately.
+        if not self._field.isHidden():
+            self._win.makeFirstResponder_(self._field)
 
     def hide(self):
         self._win.orderOut_(None)

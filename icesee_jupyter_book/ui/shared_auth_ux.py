@@ -69,6 +69,13 @@ def default_auth_method(profile) -> str:
     return auth_method_options(profile)[0][1]
 
 
+def supports_password_bootstrap(profile) -> bool:
+    """True when the selected resource declares one-time password bootstrap
+    (``password_bootstrap``) -- i.e. an unauthorized CryoStack key can be
+    registered from the UI without a manual/portal step."""
+    return "bootstrap" in supported_auth_tokens(profile)
+
+
 def requires_manual_registration(profile) -> bool:
     """True when the user must register a public key by hand (portal or manual)."""
     return getattr(profile, "key_registration_method", "manual") in ("portal", "manual")

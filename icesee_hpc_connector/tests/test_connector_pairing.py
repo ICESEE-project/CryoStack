@@ -42,6 +42,21 @@ def test_pair_session_exchanges_code_for_secret(monkeypatch):
     assert out["session_secret"] == "sec-1"
 
 
+def test_pair_session_normalizes_a_pasted_code_and_never_logs_it(monkeypatch, capsys):
+    seen = {}
+
+    def fake_post(url, json=None, timeout=None):
+        seen["json"] = json
+        return _Resp({"ok": True, "session_id": "sid-1", "session_secret": "sec-1",
+                      "ws_url": "/connector/ws/sid-1"})
+
+    monkeypatch.setattr(cc.requests, "post", fake_post)
+    # a code pasted with surrounding whitespace / newline
+    cc.pair_session("https://relay.example", "  ABCDE-FGHIJ \n")
+    assert seen["json"] == {"pairing_code": "ABCDE-FGHIJ"}
+    assert "ABCDE-FGHIJ" not in (capsys.readouterr().out)
+
+
 def test_pair_session_returns_none_on_rejection(monkeypatch):
     monkeypatch.setattr(cc.requests, "post", lambda *a, **k: _Resp({"detail": "bad"}, status=403))
     assert cc.pair_session("https://relay.example", "WRONG") is None

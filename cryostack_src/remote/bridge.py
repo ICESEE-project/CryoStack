@@ -86,6 +86,7 @@ class RemoteBridge:
                     "host": self.host,
                     "user": self.user,
                     "port": self.port,
+                    "cluster_name": self.cluster_name,
                     "command": command,
                     "timeout": 30,
                 },
@@ -306,6 +307,7 @@ class RemoteBridge:
                 "host": self.host,
                 "user": self.user,
                 "port": self.port,
+                "cluster_name": self.cluster_name,
                 "command": "hostname && whoami && pwd",
                 "timeout": 30,
             },
@@ -327,7 +329,8 @@ class RemoteBridge:
         """
         response = send_command(
             self._require_session(), "ssh-run",
-            {"host": self.host, "user": self.user, "port": self.port, "command": command, "timeout": 30},
+            {"host": self.host, "user": self.user, "port": self.port,
+             "cluster_name": self.cluster_name, "command": command, "timeout": 30},
         )
         payload = response.get("result", response)
         lines = [line.strip() for line in (payload.get("stdout") or "").splitlines() if line.strip()]

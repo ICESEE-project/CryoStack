@@ -69,17 +69,63 @@ def test_workflow_groups_present():
         assert group in html
 
 
-def test_connector_and_session_internals_live_behind_a_diagnostics_accordion():
+def test_session_diagnostics_live_only_in_the_connector_card_not_a_second_accordion():
+    # the panel no longer renders its own always-empty "Diagnostics" accordion;
+    # relay/session diagnostics belong to the connector status card (passed in
+    # as connector_card by the gateway).
     panel = _panel()
-    assert "Diagnostics" in _titles(panel.container)
-    panel.set_diagnostics(
-        session_id="sess-123", ws_path="/connector/ws/sess-123",
-        relay_state="connected", raw_state="online",
+    assert "Diagnostics" not in _titles(panel.container)
+    assert not hasattr(panel, "set_diagnostics")
+    assert not hasattr(panel, "diagnostics")
+
+
+def test_advanced_accordion_only_appears_when_extra_controls_are_supplied():
+    plain = _panel()
+    assert "Advanced" not in _titles(plain.container)
+
+    tag = W.Text(value="icesheets")
+    with_extra = build_remote_connection_panel(
+        resource=W.Text(value="pace"), host=W.Text(value="h"), port=W.IntText(value=22),
+        hpc_username=W.Text(value=""), remote_directory=W.Text(value=""),
+        connection_method=W.Dropdown(options=[("Auto", "auto")], value="auto"),
+        auth_method=W.Dropdown(options=[("SSH key", "key")], value="key"),
+        check_ssh_button=W.Button(), open_connector_button=W.Button(),
+        connector_card=W.HTML(), connector_setup_link=W.HTML(),
+        profile=get_compute_profile("pace"), advanced_children=[tag],
     )
-    html = _all_html(panel.container)
-    assert "sess-123" in html
-    assert "/connector/ws/sess-123" in html
-    assert "raw connector state" in html
+    assert "Advanced" in _titles(with_extra.container)
+
+
+def test_key_unregistered_state_is_actionable_for_a_password_bootstrap_resource():
+    panel = _panel(profile=get_compute_profile("pace"))   # PACE supports bootstrap
+    panel.set_key_unregistered(get_compute_profile("pace"))
+    assert "SSH key not registered" in panel.status_chip.value
+    assert "is-key-unregistered" in panel.status_chip.value
+    html = _all_html(panel.registration_box)
+    assert "not yet been authorized" in html
+    assert "Password bootstrap (one-time)" in html
+    assert panel.registration_box.layout.display != "none"
+
+
+def test_key_unregistered_uses_the_manual_checklist_for_portal_resources():
+    portal = ComputeProfile(
+        name="m", key_registration_method="portal",
+        portal_url="https://keys.example.edu", portal_name="Example Portal",
+    )
+    panel = _panel(profile=portal)
+    panel.set_key_unregistered(portal)
+    html = _all_html(panel.registration_box)
+    assert "Example Portal" in html
+    assert "Password bootstrap" not in html
+
+
+def test_verified_status_clears_any_registration_guidance():
+    panel = _panel(profile=get_compute_profile("pace"))
+    panel.set_key_unregistered(get_compute_profile("pace"))
+    assert panel.registration_box.children != ()
+    panel.set_status("verified")
+    assert panel.registration_box.children == ()
+    assert panel.registration_box.layout.display == "none"
 
 
 def test_status_chip_starts_not_checked_and_reflects_checks():
