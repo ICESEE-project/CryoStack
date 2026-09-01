@@ -177,6 +177,52 @@ parity. Small green commits.
   no edits.
 
 ### B.next_action
-Spawn Agent B-1 with the bounded audit prompt below; while it runs, the
-coordinating agent independently reads the ISSM model adapter + shared model
-registry to be able to review B-1's findings.
+Agent B-1 (`aa66a8ef02d414872`) SPAWNED and running. Await its report, then:
+build the Before→After→Remaining matrix, review for architectural consistency,
+and implement the safe subset.
+
+### B.coordinating-agent notes while B-1 runs (independent reads)
+- `cryostack_src/models/__init__.py::get_model_adapter(name)` — accepts only
+  `{"issm","icepack"}`, returns the module. This is the generalisation seam.
+- `cryostack_src/models/icepack/` is a **skeleton**: `execution.py` (53 L,
+  real: run-command builder for spack/apptainer, `.py`/`.ipynb`/`.m` targets,
+  `import icepack` activation check), `configuration.py` (23 L, reuses ISSM's
+  `_container_check`; firedrake import probe), `slurm.py` (6 L, passthrough +
+  a `with-icepack` apptainer fragment), `postprocess.py` (2 L, **passthrough
+  stub**). **Absent:** `results.py`, `md_config.py` analogue, any
+  visualization, any dedicated test file, `EXAMPLE_ENTRYPOINTS` (empty tuple).
+- `cryostack_src/models/issm/results.py` (read in full): `SCHEMA =
+  "cryostack.issm.results"`; `PREFERRED_FIELDS` keyed by ISSM *solution* names
+  (`StressbalanceSolution` …); mesh = ISSM `x/y/z/elements`; `model_mat()` →
+  `md_final.mat`; the field/solution/timestep model mirrors
+  `md.results.<Solution>[i].<Field>`. The *container* shape
+  (`outputs/{metadata.json,mesh,fields,model,figures}` + a schema string +
+  a metadata-authoritative field list) is model-neutral; the *reader* and the
+  field/solution vocabulary are ISSM science.
+- Icepack science that has **no ISSM equivalent**: Firedrake function spaces
+  (no `md` struct), `icepack.models.{IceStream,IceShelf,HybridModel}` +
+  `icepack.solvers.FlowSolver` (`diagnostic_solve`/`prognostic_solve`), mesh
+  from gmsh/Firedrake not ISSM triangulation, `CheckpointFile`/`.pvd` output.
+  → a `cryostack.icepack.results` schema + its own reader is the correct shape,
+  NOT reusing `cryostack.issm.results`.
+- ICESEE (Phase C preview): already uses `build_icesee_app_menu()` (shared
+  header from `a20ffd2`), `build_remote_connection_panel`,
+  `build_slurm_resources_panel`, `shared_validation`, `UIRefreshCoordinator`.
+  **Missing:** WorkspaceManager / per-user isolation / run-history /
+  `ResultPackage` — ICESEE still writes `params.yaml` + uses the legacy
+  `icesee_jupyter_book/core/cloud_runner.py`.
+
+### B.anticipated commit sequence (subject to B-1's findings)
+1. `models/icepack`: real `postprocess.py` + `EXAMPLE_ENTRYPOINTS`/discovery
+   metadata parity with ISSM where model-neutral (no science invented).
+2. `cryostack.results` dispatch: `discover_results` / result-package factory
+   picks the reader by `metadata.json:schema`; ISSM path byte-for-byte
+   unchanged; Icepack path returns a clear "not yet a structured package"
+   until #3.
+3. `models/icepack/results.py`: reader for whatever the curated Icepack
+   examples actually emit — **gated on B-1 confirming the real output form**;
+   if that needs a scientific call it becomes a morning checkpoint, not a guess.
+4. run-history / provenance: confirm model-neutral; add Icepack coverage +
+   tests.
+5. docs + capability matrix: an honest Icepack section (what works, what is
+   ISSM-only and why).
