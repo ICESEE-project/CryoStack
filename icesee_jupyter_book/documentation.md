@@ -347,14 +347,15 @@
       </div>
 
       <div>
-        <h3>CryoStack Developer Guide
-          <span class="cryostack-status dev">In progress</span></h3>
+        <h3>CryoStack Developer Guide</h3>
         <p>
           The <a href="docs/developer_guide.html">Developer Guide</a> covers
-          building, publishing and releasing the CryoStack Connector
-          (native builds &rarr; canonical store &rarr; public downloads),
-          plus release verification and the nginx audit. A consolidated
-          platform-architecture and contribution guide is still being written.
+          the platform architecture, application development, the shared
+          application-shell UI, model adapters, the result and visualization
+          contracts, testing, building a connector locally, and the
+          contribution workflow. Operating a deployment (production connector
+          publishing, release store, nginx, service administration) is a
+          separate, role-restricted Maintainer Guide.
         </p>
       </div>
 

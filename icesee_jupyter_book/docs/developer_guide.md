@@ -1,59 +1,325 @@
 # Developer Guide
 
-This guide is for people **building, releasing, or operating** CryoStack itself.
-It is separate from the end-user documentation: instructions for ordinary users
-who install and pair the CryoStack Connector, and for configuring HPC access,
-live in the CryoLauncher **User Manual**.
+:::{raw} html
+<style>
+.bd-article-container section:first-child > h1:first-child {
+  display: none !important;
+}
+</style>
+:::
 
-A consolidated platform-architecture and contribution guide is still in
-progress. The section below is complete and authoritative.
+:::{raw} html
+<div class="cryostack-docs-page">
+
+  <section class="cryostack-docs-hero">
+
+    <div class="cryostack-section-label">
+      CryoStack Documentation
+    </div>
+
+    <h1>Developer Guide</h1>
+
+    <p>
+      Build, extend, test, and integrate applications with the
+      CryoStack scientific-computing platform.
+    </p>
+
+    <div class="cryostack-docs-actions">
+      <a class="cryostack-btn primary"
+         href="https://github.com/ICESEE-project/CryoLauncher"
+         target="_blank" rel="noopener noreferrer">
+        CryoLauncher Repository
+      </a>
+
+      <a class="cryostack-btn secondary" href="../documentation.html">
+        Platform Documentation
+      </a>
+    </div>
+
+  </section>
+
+  <section id="navigation" class="cryostack-section">
+
+    <div class="cryostack-section-label">
+      On this page
+    </div>
+
+    <h2>Where to go next.</h2>
+
+    <p class="cryostack-section-intro">
+      Cards navigate to the sections below. Detailed material stays as
+      readable documentation, not cards.
+    </p>
+
+    <div class="cryostack-docs-summary-grid">
+
+      <div class="cryostack-docs-summary-card">
+        <div class="cryostack-docs-summary-icon">AR</div>
+        <h3><a href="#architecture">Architecture</a></h3>
+        <p>How the web shell, gateways, application layer, and execution
+           backends fit together.</p>
+      </div>
+
+      <div class="cryostack-docs-summary-card">
+        <div class="cryostack-docs-summary-icon">AP</div>
+        <h3><a href="#application-development">Application development</a></h3>
+        <p>Local environment, running a gateway, Basic and Advanced modes.</p>
+      </div>
+
+      <div class="cryostack-docs-summary-card">
+        <div class="cryostack-docs-summary-icon">UI</div>
+        <h3><a href="#shared-ui">Shared UI</a></h3>
+        <p>Reusable application-shell components and the single responsive
+           stylesheet.</p>
+      </div>
+
+      <div class="cryostack-docs-summary-card">
+        <div class="cryostack-docs-summary-icon">MA</div>
+        <h3><a href="#models-and-adapters">Models and adapters</a></h3>
+        <p>The model-adapter contract and the WorkspaceManager boundaries.</p>
+      </div>
+
+      <div class="cryostack-docs-summary-card">
+        <div class="cryostack-docs-summary-icon">RV</div>
+        <h3><a href="#results-and-visualization">Results and visualization</a></h3>
+        <p>The transport-neutral result package and deterministic rendering.</p>
+      </div>
+
+      <div class="cryostack-docs-summary-card">
+        <div class="cryostack-docs-summary-icon">TE</div>
+        <h3><a href="#testing">Testing</a></h3>
+        <p>The Python suite, Node tests, the book build, and source guards.</p>
+      </div>
+
+      <div class="cryostack-docs-summary-card">
+        <div class="cryostack-docs-summary-icon">CN</div>
+        <h3><a href="#connector-development">Connector development</a></h3>
+        <p>Connector architecture and how to build one locally.</p>
+      </div>
+
+      <div class="cryostack-docs-summary-card">
+        <div class="cryostack-docs-summary-icon">CW</div>
+        <h3><a href="#contribution-workflow">Contribution workflow</a></h3>
+        <p>Branching, commits, and the checks every change must pass.</p>
+      </div>
+
+    </div>
+
+  </section>
+
+  <section id="scope" class="cryostack-section">
+
+    <div class="cryostack-section-label">Scope</div>
+    <h2>What this guide covers.</h2>
+
+    <p class="cryostack-section-intro">
+      This guide is for people <strong>building on or extending</strong>
+      CryoStack. Instructions for ordinary users who install and pair the
+      CryoStack Connector, and for configuring HPC access, live in the
+      CryoLauncher <strong>User Manual</strong>.
+    </p>
+
+    <p>
+      Operating a CryoStack <em>deployment</em> &mdash; publishing production
+      connector binaries, the canonical release store, nginx and service
+      administration, production rollback &mdash; is covered by a separate
+      <strong>Maintainer Guide</strong> at <code>/docs/maintainer/</code>.
+      That guide is restricted at the authentication boundary to accounts
+      holding a <code>developer</code>, <code>maintainer</code>,
+      <code>admin</code>, or <code>owner</code> role; a project owner grants
+      roles from the CryoStack Control Center. It is not part of this public
+      build.
+    </p>
+
+    <p>
+      <span class="cryostack-status supported">Stable</span>
+      architecture, application development, shared UI, models, results,
+      testing, contribution workflow.
+      <span class="cryostack-status dev">In progress</span>
+      expanded model-adapter reference and integration examples.
+    </p>
+
+  </section>
+
+</div>
+:::
 
 ---
 
-## Building and Publishing CryoStack Connectors
+## Architecture
+
+CryoStack separates four layers so each can evolve independently:
+
+```text
+  WEB SHELL            GATEWAY UI            APPLICATION           EXECUTION
+ ┌───────────┐  ──►   ┌───────────┐  ──►   ┌───────────┐  ──►   ┌───────────┐
+ │ book +    │        │ Voilà     │        │ adapters, │        │ Remote /  │
+ │ auth +    │        │ gateways  │        │ workspace,│        │ HPC,      │
+ │ proxies   │        │ (per-user │        │ results,  │        │ containers│
+ │ (aiohttp) │        │  kernel)  │        │ profiles  │        │ Spack, …  │
+ └───────────┘        └───────────┘        └───────────┘        └───────────┘
+```
+
+**Request flow.** A browser request reaches nginx, which forwards everything
+to the aiohttp app (`bin/icesee_app.py`) on a local port. That app serves the
+built book as static files, installs the authentication routes, mounts the
+role-gated Control Center, and wraps each application proxy in `require_login`
+so an unauthenticated request never reaches a gateway kernel. The proxy
+forwards the caller's verified CryoStack identity to the kernel as a request
+header; the kernel treats that header as the **only** trusted identity and
+namespaces every workspace by it.
+
+**Ownership boundaries.** Resource facts (login host, scheduler defaults,
+supported access/auth mechanisms) belong to a `ComputeProfile` and are never
+personal. Per-user, per-resource settings (HPC username, remote directory,
+allocation) are persisted only for an authenticated user and are never
+inferred from the server process environment. Secrets (bootstrap passwords,
+pairing codes, relay tokens) are never persisted and never written to a
+manifest, run plan, or log.
+
+**Repository layout.**
+
+| Path | Contents |
+|---|---|
+| `bin/icesee_app.py` | aiohttp web shell: static book, auth, Control Center, gateway proxies |
+| `icesee_jupyter_book/` | Jupyter Book source, gateway UI (`ui/`), gateway core (`core/`) |
+| `icesee_jupyter_book/ui/` | Voilà gateways + shared application-shell components |
+| `cryostack_src/` | model adapters, workspace, submission, results, visualization, resource profiles, remote bridge |
+| `icesee_auth/` | session + role storage, OAuth providers, `require_login` / `require_roles` |
+| `control_center/` | role-gated operator console mounted at `/control/` |
+| `icesee_hpc_connector/` | the desktop Connector application |
+| `deployment/` | build, release, and nginx tooling (see the Maintainer Guide) |
+
+## Application development
+
+**Environment.** Development uses the project conda environment
+(`icesee1-dev`). Clone with submodules, create the environment from the
+project spec, then run the web shell:
+
+```bash
+git clone --recurse-submodules https://github.com/ICESEE-project/CryoLauncher.git
+cd CryoLauncher
+python bin/icesee_app.py        # serves http://127.0.0.1:8080
+```
+
+The shell expects the book to be built
+(`jupyter-book build icesee_jupyter_book`) and the two gateway notebooks to
+be present. It starts one Voilà process per application and proxies to them.
+
+**Gateway shape.** Each gateway is a single `build_*_ui()` function returning
+one `ipywidgets` tree. It composes:
+
+- shared application-shell components (header, Remote Connection panel, Slurm
+  Resources panel) from `icesee_jupyter_book/ui/`;
+- model-specific run settings, example discovery, and the Run Plan;
+- a Workspace panel (persistent, per-user) and a Results panel.
+
+**Basic and Advanced modes.** Basic mode presents curated, validated
+configuration — for ISSM this is a solver-aware parameter panel that stages a
+user-owned working copy and never mutates a canonical example. Advanced mode
+exposes a generic, model-neutral file editor over the same workspace, with
+canonical material read-only and a **Clone to My Workspace** action. Both
+modes converge on the same submission contract.
+
+## Shared UI
+
+The gateways share generic, model-neutral building blocks in
+`icesee_jupyter_book/ui/`. These components **arrange the gateway's existing
+widget instances** — they do not own transport, the Run gate, identity
+verification, or model logic.
+
+| Component | Responsibility |
+|---|---|
+| `shared_application_header.build_application_header(app_name)` | Compact shell header: fixed **CryoStack** wordmark above a distinct application name. The mark is derived from the one canonical `cryostack.png`. |
+| `shared_remote_connection_panel.build_remote_connection_panel(...)` | Remote Connection organised as *Compute resource / Your HPC identity / Access / Status*, with a status chip driven by the access state, the connector card, and a **Diagnostics** accordion holding the session id, websocket path, and relay state. |
+| `shared_slurm_resources_panel.build_slurm_resources_panel(...)` | Slurm request grouped as *Job settings / Compute resources / Allocation and notifications*, full-word labels, help text, responsive 3→2→1 numeric grid. Serializer keys and submission arguments are unchanged. |
+| `shared_auth_ux` | Authentication options come from `ComputeProfile.auth_modes` / `ssh_agent_supported`; certificates, token auth, and portal *provisioning* are never advertised. Manual key registration shows a fixed six-step checklist and never collects an institutional web-portal password. |
+| `shared_validation` | Pure pre-submit checks: node/task/tasks-per-node floors and consistency, wall-time and memory syntax, allocation required only when the profile says so. No invented site limits. |
+
+All responsive rules for the `cryostack-*` component classes live in a single
+stylesheet, `icesee_jupyter_book/ui/shared_app_styles.py`. Do not add a
+per-gateway visual system.
+
+## Models and adapters
+
+**Model adapters** (`cryostack_src/models/`) present a uniform interface to
+the gateway: discover runnable examples, resolve an entrypoint, describe
+templates, and — where relevant — expose a curated parameter schema. A new
+model is added by implementing that interface; the gateway code stays
+model-neutral.
+
+**WorkspaceManager contracts.** Every workspace is scoped to one
+authenticated CryoStack user and stored under a per-user owner root. The
+manager enforces containment: a path outside the owner root is rejected, and
+canonical application material is read-only and surfaced with a
+**Clone to My Workspace** action. User examples and datasets live under
+`<owner_root>/examples/<model>/` and `<owner_root>/datasets/`; discovery
+merges canonical and user entries and filters utility directories.
+
+**SSH credential namespace.** The server-side SSH Key Manager and the
+workstation Connector namespace the generated key by resource + HPC username
+(and, server-side, the authenticated CryoStack user), so two people
+configuring the same resource never collide on one key. Keys live under
+`~/.ssh/cryostack/`. An older cluster-only key is reported but never read or
+adopted automatically.
+
+## Results and visualization
+
+**Result package.** A completed run exports a transport-neutral package —
+`outputs/{metadata.json, mesh, fields, model, figures}` — that can be read
+without the original modelling stack. `discover_results()` and
+`ResultPackage` present it to the gateway.
+
+**Visualization.** Rendering is deterministic and operates only on the
+neutral package: `render_field` and `render_timeseries` in
+`cryostack_src/visualization/` back the Results panel's Solution / Field /
+Timestep controls. Given the same package and selection, the output is
+identical.
+
+## Testing
+
+| Suite | Command |
+|---|---|
+| Python | `python -m pytest cryostack_src icesee_jupyter_book icesee_hpc_connector deployment` |
+| Node (connector setup page) | `node --test deployment/tests/*.test.mjs` |
+| Documentation | `jupyter-book build icesee_jupyter_book` |
+
+**Source-guard tests.** Several tests assert on source text to prevent
+regressions a unit test would miss — for example that neither gateway
+reintroduces a personal default, that both still call the remote-access Run
+gate, and that the shared responsive classes stay in the shared stylesheet.
+When you rename or move code, update the corresponding guard.
+
+**Gateway build tests.** The gateways are built end-to-end in tests with an
+injected synthetic identity, so a broken widget tree fails fast without a
+browser.
+
+## Connector development
 
 The CryoStack Connector is the small desktop application that bridges the
-browser to a VPN-protected cluster. Releasing it has **three deliberately
-separate stages** so that a build produced on one machine can never disturb an
-artifact built on another:
+browser to a VPN-protected cluster over the relay.
 
-```
-   native builder                         release host
- ┌───────────────┐   register    ┌──────────────────────────┐   release   ┌──────────────────────────┐
- │ dist/packages/│ ────────────► │ canonical artifact store │ ──────────► │ downloads/connectors/    │
- │  <artifact>   │               │  <store>/<platform>/     │  candidate  │  (served, public)        │
- │  <..build.json│               │  source of truth         │  + promote  │  deployment target only  │
- └───────────────┘               └──────────────────────────┘             └──────────────────────────┘
-```
+**Architecture.** Pairing uses a versioned protocol: a `session_id` that is
+not secret, a one-time `pairing_code`, and per-session secrets that
+authenticate the connector's WebSocket. The relay never exposes a
+"newest session" endpoint. On macOS the Cocoa main thread does UI only (menu,
+onboarding/status window, a timer status poll) while **one** background
+worker owns the HTTP pairing exchange, the WebSocket connect/reconnect, and
+every SSH operation. The `.app` is built `--onedir` and ad-hoc signed so a
+copy in `/Applications` is not subject to Gatekeeper App Translocation.
 
-* **Native build output** — `dist/packages/` on the machine that can build that
-  platform. Transient; never published directly.
-* **Canonical artifact store** — `<store>/<platform>/`, a persistent directory
-  **outside the web root** on the release host, one subdirectory per platform.
-  This is the source of truth for what is publicly available.
-* **Served release** — `<web-root>/downloads/connectors/`. A deployment target
-  only. Regenerated wholesale from the store on every release.
-
-### Connectors cannot be cross-compiled
-
-Each platform artifact must be built **natively**:
-
-| Artifact | Builder |
-|---|---|
-| `CryoStack-Connector-linux-x86_64.tar.gz` | Linux x86_64 host |
-| `CryoStack-Connector-macos-arm64.dmg` | Apple Silicon Mac |
-| `CryoStack-Connector-macos-x86_64.dmg` | Intel Mac |
-| `CryoStack-Connector-windows-x86_64.exe` | Windows x86_64 host |
-
-### 1. Build natively
-
-On the appropriate builder:
+**Build one locally.** On the platform you are targeting (connectors cannot
+be cross-compiled):
 
 ```bash
 bash build_connector.sh
+# headless Linux:
+xvfb-run bash build_connector.sh
 ```
 
-(on a headless Linux host: `xvfb-run bash build_connector.sh`)
+`build_connector.sh` first runs `scripts/build_brand_assets.py`, which
+regenerates every icon and the shared header mark from the one canonical
+`icesee_jupyter_book/cryostack.png`. Do not hand-edit those outputs.
 
 Inspect the result:
 
@@ -62,315 +328,93 @@ ls -lh dist/packages/
 cat dist/packages/CryoStack-Connector-<platform>.<ext>.build.json
 ```
 
-The `.build.json` **sidecar** travels with the artifact and is validated at
-registration:
+The `.build.json` sidecar travels with the artifact:
 
 | Field | Meaning |
 |---|---|
 | `platform` | canonical platform key (`linux-x86_64`, `macos-arm64`, …) |
 | `filename` | canonical artifact filename |
-| `sha256` | checksum of the artifact, re-verified on register |
-| `size_bytes` | artifact size, re-verified on register |
-| `built_at` | UTC build time (not fabricated) |
-| `pairing_protocol` | connector ↔ relay pairing protocol the binary speaks |
+| `sha256`, `size_bytes` | re-verified when the artifact is registered for release |
+| `built_at` | UTC build time |
+| `pairing_protocol` | the connector–relay pairing protocol the binary speaks |
 | `connector_build_revision` | exact source revision (`git` short SHA, `-dirty` if modified) |
 
-**`pairing_protocol` matters.** The relay's session-pairing protocol is
-versioned. A connector built from source that predates a protocol change cannot
-pair with the current relay. Registration **refuses** an artifact whose
-`pairing_protocol` does not match the value this release line expects, so an
-outdated binary can never be published as current merely because its filename
-matches. Override deliberately (e.g. to stage a compatibility build) with
-`--allow-protocol-mismatch`.
-
-### Branding
-
-Every packaging icon is derived from **one** canonical image,
-`icesee_jupyter_book/cryostack.png`. `build_connector.sh` runs
-`scripts/build_brand_assets.py` first, which regenerates
-`icesee_hpc_connector/assets/cryostack-connector.{icns,ico,-512.png}` and the
-`/connect/` logo. Do not hand-edit those outputs — change the canonical file and
-re-run. macOS/`.app` and Windows/`.exe` get the icon via `--icon`; the Linux
-tray loads the 512px PNG; the displayed name is always **CryoStack Connector**.
-
-`build_brand_assets.py` also derives `icesee_jupyter_book/ui/assets/cryostack-mark-96.png`,
-the small mark base64-embedded by the shared Voila application header
-(`shared_application_header.py`). Same canonical source — do not hand-edit it.
-
-### Shared application UI (B4)
-
-The Voila gateways (IceSheets, ICESEE, future Icepack) share generic,
-model-neutral UI building blocks in `icesee_jupyter_book/ui/`:
-
-* `shared_application_header.build_application_header(app_name)` — compact shell
-  header: CryoStack wordmark + a distinct, prominent application name.
-* `shared_remote_connection_panel.build_remote_connection_panel(...)` —
-  reorganises the existing remote widgets into *Compute resource* / *Your HPC
-  identity* / *Access* / *Status*, with a status chip (Not checked / Verified /
-  Mismatch / Failed driven by the B3 AccessState), the connector card, and the
-  session id / websocket path / relay + raw state hidden behind a **Diagnostics**
-  accordion. `apply_profile(profile)` refreshes the resource-aware auth options
-  and the manual key-registration checklist.
-* `shared_slurm_resources_panel.build_slurm_resources_panel(...)` — groups the
-  existing Slurm widgets into *Job settings* / *Compute resources* /
-  *Allocation & notifications* with full-word labels and help text. Serializer
-  keys and submission kwargs are unchanged.
-* `shared_auth_ux` — auth methods come from `ComputeProfile.auth_modes` /
-  `ssh_agent_supported`; certificates / token auth / portal provisioning are
-  never advertised. Manual registration shows a fixed six-step checklist and
-  never asks for the institutional web-portal password.
-* `shared_validation` — pure pre-submit checks (nodes/tasks/tasks-per-node
-  floors and consistency, wall-time and memory syntax, account required only
-  when the profile says so). No invented site limits.
-
-These panels arrange the gateway's **existing** widget instances — they do not
-own transport, the B3 Run gate, identity verification, or model logic.
-Responsive rules for every shared class live only in
-`shared_app_styles.py`.
-
-### SSH credential namespace (B3)
-
-Both the server-side "SSH Key Manager" and the workstation Connector now
-namespace the generated SSH key by **resource + HPC username** (and, server-side,
-the authenticated CryoStack user) instead of cluster name alone — the old
-scheme (`~/.ssh/id_ed25519_icesee_<cluster>`) let two different people
-configuring the same resource collide on one key. New keys live under
-`~/.ssh/cryostack/id_ed25519_<namespace>`. The old key is **never read or
-adopted automatically**; if present it is simply orphaned and reported (not
-deleted) so an operator can clean it up once its replacement is confirmed
-working. Existing users re-register/re-bootstrap the new key once.
-
-### macOS connector — architecture & acceptance test
-
-The macOS connector uses a strict split: the Cocoa main thread does **UI only**
-(menu, the onboarding/status window, a `rumps.Timer` status poll), while **one**
-background worker owns the HTTP pairing exchange, the WebSocket
-connect/reconnect, and every SSH operation. `--onedir` (not `--onefile`) is used
-for the `.app`, and the bundle is **ad-hoc signed** (`codesign -s -`) so a copy
-in `/Applications` is not subject to Gatekeeper *App Translocation*.
-
-It is **not menu-bar-only**: a normal Dock-visible window appears on launch and
-whenever the connector is unpaired, with an obvious pairing field. After pairing
-it becomes a **✓ Connected** panel with *Open CryoStack* / *Hide Window*. The
-menu bar stays as a control surface (Status, Show CryoStack Connector,
-Pair/Re-pair, Open Setup Page, Open Log File, Quit). Clicking the Dock icon (or
-**Show CryoStack Connector**) brings the window back.
-
-**Acceptance test — run the copy installed in `/Applications`, on an Apple
-Silicon Mac:**
-
-1. Mount the DMG, drag **CryoStack Connector** to Applications, eject the DMG.
-2. Double-click `/Applications/CryoStack Connector.app` → a **visible window**
-   appears with `Status: Not paired` and a pairing field. (No menu-bar
-   knowledge required.)
-3. Leave it **60 s** unpaired — window and menu stay responsive.
-4. Enter a valid pairing code (from the CryoLauncher/ICESEE UI) → `Pair` →
-   window shows **✓ Connected**; menu shows `Status: connected ✓`.
-5. **Hide Window**; reopen via **Show CryoStack Connector** and via a Dock click.
-6. Stay connected several minutes; drop the network/relay then restore →
-   `reconnecting… → connected ✓`, no freeze.
-7. **Quit** → `pgrep -fl 'CryoStack Connector'` shows nothing.
-8. Relaunch immediately — **no reboot**; a second launch shows *"CryoStack
-   Connector is already running"* and exits.
-
-**If the `/Applications` copy is unresponsive** (while the DMG copy works), it is
-almost certainly translocation of an unsigned bundle. Run the audit:
-
-```bash
-bash scripts/diagnose_connector_macos.sh
-```
-
-It checks running processes, the single-instance lock
-(`~/.cryostack/connector.lock`), the `com.apple.quarantine` xattr, `codesign` /
-`spctl` state, and whether the process command path contains `AppTranslocation`.
-Clear it with `xattr -dr com.apple.quarantine "/Applications/CryoStack Connector.app"`.
-If the app is genuinely hung, capture the main-thread stack first:
-
-```bash
-sample "$(pgrep -f 'CryoStack Connector' | head -1)" 5 -file /tmp/cryostack-connector-sample.txt
-```
-
-Lifecycle events are in `~/icesee_connector.log` as `[lifecycle] <ts> <event>`
-(fixed names only — never a pairing code, secret, or SSH argument).
-
-#### Known macOS issues (accepted for the current release)
-
-Connector **v2 pairing, direct launch, the menu bar, and the visible
-pairing/status window all work**. Two macOS issues are deferred:
-
-1. **`/Applications` copy can become unresponsive** while a direct launch (from
-   the DMG or elsewhere) works. Suspected cause: Gatekeeper App Translocation of
-   the ad-hoc-signed (not Developer-ID-notarized) bundle. **Workaround:**
-   `xattr -dr com.apple.quarantine "/Applications/CryoStack Connector.app"` then
-   relaunch, or run from a non-`/Applications` location; `bash
-   scripts/diagnose_connector_macos.sh` confirms translocation. Real fix =
-   Developer-ID signing + notarization (future).
-2. **Copy/paste into the pairing-code field does not work reliably** in the
-   native window / `rumps.Window`. **Workaround:** type the code, or export
-   `CRYOSTACK_PAIRING_CODE` before launch.
-
-Do not regress the working direct-launch path while addressing these.
-
-### 2. Register into the canonical store
-
-**Same machine builds and serves** (the common single-host case):
-
-```bash
-bash publish_connector_artifact.sh
-```
-
-**Separate builder** (e.g. releasing the macOS build from a Mac to the Linux
-release host):
-
-```bash
-export CRYOSTACK_RELEASE_HOST=<release-host>      # ssh target
-export CRYOSTACK_RELEASE_USER=<release-user>      # optional ssh user
-bash publish_connector_artifact.sh
-```
-
-The store path is resolved **on the release host**, from `<release-user>`'s home
-(`~/.cryostack/connector-artifacts`). The builder's home is never used remotely —
-so a Mac's `/Users/<name>/…` cannot leak onto a Linux release host.
-
-`CRYOSTACK_RELEASE_STORE` is an **optional override**, not normally required:
-
-```bash
-export CRYOSTACK_RELEASE_STORE=<remote-store-path>   # only if the store is not in the default location
-```
-
-When it is omitted, the default is resolved from the release user's home **on
-the release host**.
-
-Registering one platform never touches another. Registering macOS preserves the
-Linux artifact; registering Windows later preserves both.
-
-### 3. Inspect the canonical store
-
-On the release host:
-
-```bash
-python3 deployment/connector_store.py list
-```
-
-```
-[store] /home/<release-user>/.cryostack/connector-artifacts
-[store]   linux-x86_64   CryoStack-Connector-linux-x86_64.tar.gz       383220894  v2  1a2b3c4d5e6f
-[store]   macos-arm64    CryoStack-Connector-macos-arm64.dmg            61365713  v2  1a2b3c4d5e6f
-```
-
-### 4. Release
-
-Run **as the release owner, without sudo**:
-
-```bash
-bash release_connector.sh
-```
-
-`release_connector.sh` manages the privilege boundary itself:
-
-1. it resolves the canonical store from the **release owner's** home — never
-   `/root`, even if the whole script is invoked under `sudo`;
-2. it inspects the store, builds a **candidate** web tree and fully verifies it
-   (manifest, `SHA256SUMS`, permissions) — all **unprivileged**;
-3. only the final **atomic promotion** into the (root-owned)
-   `downloads/connectors/`, and the nginx reload, run through `sudo` — which may
-   trigger the site's sudo / Duo prompt the first time. That is expected.
-
-If candidate verification fails, the currently served release is left
-**byte-for-byte unchanged**; a failed directory swap rolls the previous live
-release back. Re-running with the same store re-publishes the same release
-(idempotent). After promotion the script enforces `0755` directories / `0644`
-files and re-verifies the **live** tree before reporting success.
-
-Check what it will do first, without touching anything:
-
-```bash
-bash release_connector.sh --print-config
-```
-
-> `sudo bash release_connector.sh` is also supported (the release owner and the
-> canonical store still resolve to the **invoking** user via `SUDO_USER`, not to
-> `root`), but it is not the normal workflow — you do not need to prefix the
-> whole command with `sudo`.
-
-`build_deploy_connector.sh` chains all three stages for the single-host case
-(`CRYOSTACK_SKIP_BUILD=1` to skip the build and register/release an existing
-`dist/packages/` artifact).
-
-### 5. Verify the public release
-
-A connector release is only operational when **both** the setup page and the
-downloads respond:
-
-```bash
-curl -sSIL https://cryostack.eas.gatech.edu/connect/
-curl -sSL  https://cryostack.eas.gatech.edu/downloads/connectors/manifest.json
-```
-
-`/connect/` must return `HTTP/2 200` (not `403`). A `403` there is almost always
-DAC permissions: `deploy_web.sh` re-hardens the web tree to `0755` dirs / `0644`
-files after `rsync -a` (which otherwise preserves the repo's `0770/0660`), and
-runs `restorecon` when SELinux is active. If it still 403s:
-
-```bash
-sudo namei -l /var/www/cryolauncher/connect/index.html
-sudo tail -n 50 /var/log/nginx/error.log
-getenforce; ls -Zd /var/www/cryolauncher/connect
-```
-
-Then the download checks:
-
-```bash
-curl -sSL  https://cryostack.eas.gatech.edu/downloads/connectors/SHA256SUMS
-curl -sSIL https://cryostack.eas.gatech.edu/downloads/connectors/<artifact> \
-  | grep -Ei 'HTTP/|content-(type|length|disposition)'
-```
-
-A healthy artifact response is `HTTP/2 200`, `Content-Type:
-application/octet-stream`, `Content-Disposition: attachment`, and a
-`Content-Length` matching `size_bytes` in the manifest.
-
-**Always check the live `manifest.json` before assuming a release succeeded** —
-it lists exactly the platforms currently published and their `pairing_protocol`.
-`deploy_web.sh` runs the `/connect/` smoke check itself after every deploy
-(override the host with `CRYOSTACK_PUBLIC_BASE`, skip with
-`CRYOSTACK_SKIP_SMOKE=1`).
-
-### 6. Audit nginx
-
-```bash
-sudo bash deployment/nginx_audit.sh
-```
-
-A healthy result: exactly one `server` block owns `server_name
-cryostack.eas.gatech.edu` on each listen address, exactly one `map
-$connection_upgrade`, and `OK: no server_name appears in more than one block`.
-A duplicate means a stale conf file is still loaded — `deploy_web.sh` disables
-known prior CryoStack blocks, but Certbot-managed or hand-added blocks must be
-reconciled by hand.
-
-### 7. Remove a platform
-
-A platform is **only** removed on request:
-
-```bash
-python3 deployment/connector_store.py unpublish <platform>
-bash release_connector.sh
-```
-
-Publishing or releasing from one builder must never remove artifacts built on
-another platform. `unpublish` is the intentional removal mechanism.
-
-### Troubleshooting
-
-| Symptom | Cause / fix |
-|---|---|
-| `/Users/...` path appears on the Linux release host | An old `publish_connector_artifact.sh` expanded the default store with the builder's `$HOME`. Fixed: the remote store resolves on the release host. Set `CRYOSTACK_RELEASE_STORE` only for a non-default location. |
-| `list` shows an empty store / `build-candidate` fails with "no registered platforms" | Nothing is registered on this host yet — run `publish_connector_artifact.sh` first. `release_connector.sh --print-config` shows the resolved store path. |
-| Store resolved to `/root/.cryostack/...` | An older `release_connector.sh`. The current one resolves the store from the invoking user's home even under `sudo` (via `SUDO_USER`). `--print-config` confirms `canonical_store`. |
-| `Permission denied` writing under `/var/www/...` when run without sudo | Expected on a normal deployment — the script detects the root-owned web root and escalates the **promotion** step with `sudo` on its own (watch for the Duo prompt). It never `chmod`s unrelated `/var/www` content. |
-| `pairing_protocol ... != expected` on register | The connector was built from source older than the current pairing protocol and cannot pair. Rebuild from current source, or `--allow-protocol-mismatch` if you deliberately need a compatibility build. |
-| `zero bytes` / `sidecar sha256 does not match` on register | Truncated or corrupted build output. Rebuild; do not hand-edit the sidecar. |
-| A platform is missing from `manifest.json` | Either never registered on this release host, or explicitly `unpublish`ed. `connector_store.py list` shows what the store actually holds. |
-| `nginx_audit.sh` reports a duplicate `server_name` | A stale/other conf file also declares it. Identify it in the audit output and reconcile; do not blind-delete Certbot files. |
-| Release "succeeded" but users report an old build | Check the **live** manifest (`curl .../manifest.json`) and `connector_build_revision`; a release is only real once the served manifest reflects it. |
+`pairing_protocol` matters: a connector built from source that predates a
+protocol change cannot pair with the current relay, and release registration
+refuses a mismatch. Publishing and releasing a built artifact is a
+maintainer operation — see the Maintainer Guide.
+
+**Known macOS issues (accepted for the current release).** Connector v2
+pairing, direct launch, the menu bar, and the visible pairing/status window
+all work. Two issues are deferred: a `/Applications` copy can become
+unresponsive while a direct launch works (suspected App Translocation of the
+ad-hoc-signed bundle; clear with
+`xattr -dr com.apple.quarantine "/Applications/CryoStack Connector.app"`),
+and paste into the pairing-code field is unreliable (type the code, or export
+`CRYOSTACK_PAIRING_CODE`). `bash scripts/diagnose_connector_macos.sh` audits
+translocation, quarantine, and signing state. Do not regress the working
+direct-launch path while addressing these.
+
+## Contribution workflow
+
+1. Branch from `main`. Keep a change focused — one concern per commit, a
+   couple of small related commits at most.
+2. Match the surrounding code: naming, comment density, and idiom.
+3. Run the full Python suite, the Node tests when connector-page code
+   changed, and the book build when documentation changed. State plainly
+   what passed and what was skipped.
+4. Never introduce a personal default, a credential, or a secret — the
+   source-guard tests reject the obvious cases, but the responsibility is
+   yours.
+5. Open a pull request against `main` describing what changed and how it was
+   verified.
+
+:::{raw} html
+<div class="cryostack-docs-page">
+  <footer class="cryostack-footer">
+
+    <div class="cryostack-footer-main">
+
+      <div class="cryostack-footer-brand">
+        <div class="cryostack-footer-logo">CryoStack</div>
+        <p>
+          An integrated platform for cryosphere modeling, data assimilation,
+          scientific visualization, and HPC-enabled research.
+        </p>
+      </div>
+
+      <div class="cryostack-footer-group">
+        <h3>Platform</h3>
+        <a href="../index.html">Home</a>
+        <a href="../documentation.html">Documentation</a>
+        <a href="../resources.html">Resources</a>
+        <a href="../about.html">About</a>
+      </div>
+
+      <div class="cryostack-footer-group">
+        <h3>Applications</h3>
+        <a href="/icesheets/">CryoLauncher</a>
+        <a href="/icesee-gui/">ICESEE</a>
+        <a href="/livist/">LIVIST</a>
+      </div>
+
+      <div class="cryostack-footer-group">
+        <h3>Community</h3>
+        <a href="https://github.com/ICESEE-project/CryoLauncher" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/ICESEE-project" target="_blank" rel="noopener noreferrer">ICESEE Project</a>
+        <a href="https://github.com/ICESEE-project/CryoLauncher/issues" target="_blank" rel="noopener noreferrer">Report an Issue</a>
+      </div>
+
+    </div>
+
+    <div class="cryostack-footer-bottom">
+      <div>Developed by ICCL and PGSL at the Georgia Institute of Technology.</div>
+      <div class="cryostack-footer-meta">
+        <span>© 2026 CryoStack</span>
+        <span>BSD 2-Clause License</span>
+      </div>
+    </div>
+
+  </footer>
+</div>
+:::

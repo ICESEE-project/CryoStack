@@ -93,6 +93,70 @@ def frozen_legacies_data_root() -> Path:
 def frozen_legacies_assets_root() -> Path:
     return frozen_legacies_root() / "assets"
 
+def maintainer_guide_source() -> Path:
+    return (
+        repo_root()
+        / "icesee_jupyter_book"
+        / "docs"
+        / "maintainer_guide.md"
+    )
+
+
+# Minimal page shell for the role-protected Maintainer Guide. It reuses the
+# published CryoStack stylesheet (/_static/icesee.css) — no page-specific
+# visual system — and the same responsive .cryostack-docs-page rules that the
+# public documentation pages use.
+_MAINTAINER_SHELL = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Maintainer Guide — CryoStack</title>
+<link rel="stylesheet" href="/_static/icesee.css">
+<style>
+  body {{ margin: 0; background: #f8fafc; }}
+  .cryostack-maintainer-shell {{
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 32px 22px 64px;
+  }}
+  .cryostack-maintainer-shell .cryostack-section-label {{ margin-bottom: 10px; }}
+</style>
+</head>
+<body>
+<main class="cryostack-docs-page cryostack-maintainer-shell">
+  <div class="cryostack-section-label">CryoStack Operations</div>
+  {body}
+</main>
+</body>
+</html>
+"""
+
+
+async def maintainer_guide_redirect(request: web.Request) -> web.StreamResponse:
+    raise web.HTTPFound("/docs/maintainer/")
+
+
+async def maintainer_guide_page(request: web.Request) -> web.StreamResponse:
+    src = maintainer_guide_source()
+    if not src.exists():
+        raise web.HTTPNotFound(text="Maintainer Guide source is not present.")
+
+    from markdown_it import MarkdownIt
+
+    md = (
+        MarkdownIt("commonmark", {"html": False, "linkify": True})
+        .enable("table")
+        .enable("strikethrough")
+    )
+    body = md.render(src.read_text(encoding="utf-8"))
+    return web.Response(
+        text=_MAINTAINER_SHELL.format(body=body),
+        content_type="text/html",
+    )
+
+
 def run_center_nb() -> Path:
     return repo_root() / "icesee_jupyter_book" / "icesee_jupyter_notebooks" / "run_center_voila.ipynb"
 
@@ -524,6 +588,21 @@ def make_app() -> web.Application:
         show_index=False,
     )
     
+    # Role-protected Maintainer / Operations Guide. Restricted at the request
+    # boundary by the same require_roles mechanism as the Control Center; the
+    # source markdown is deliberately excluded from the public book build.
+    maintainer_access = auth.require_roles(
+        "developer",
+        "maintainer",
+        "admin",
+        "owner",
+    )
+    app.router.add_get("/docs/maintainer", maintainer_guide_redirect)
+    app.router.add_get(
+        "/docs/maintainer/",
+        maintainer_access(maintainer_guide_page),
+    )
+
     app.router.add_get("/", root_redirect)
     app.router.add_static("/", path=str(book_root()), show_index=True)
 
