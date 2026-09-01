@@ -36,18 +36,21 @@ def build_activation_check() -> str:
     return 'python -c "import icepack; print(\'Icepack import successful\')"'
 
 
+#: Icepack examples are Python: notebooks first, then scripts. ``.m`` is only a
+#: last resort (an Icepack example directory should not contain one).
+_RUN_TARGET_ORDER = (".ipynb", ".py", ".m")
+
+
 def order_run_targets(names):
-    preferred = [name for name in names if name.lower().endswith((".m", ".py", ".ipynb"))]
-    others = [name for name in names if not name.lower().endswith((".m", ".py", ".ipynb"))]
+    preferred = [n for n in names if n.lower().endswith(_RUN_TARGET_ORDER)]
+    others = [n for n in names if not n.lower().endswith(_RUN_TARGET_ORDER)]
     return preferred + others
 
 
 def choose_run_target(names):
     ordered = order_run_targets(names)
-    if "runme.m" in ordered:
-        return "runme.m"
-    for suffix in (".m", ".py", ".ipynb"):
+    for suffix in _RUN_TARGET_ORDER:
         for name in ordered:
-            if name.endswith(suffix):
+            if name.lower().endswith(suffix):
                 return name
     return ordered[0] if ordered else ""
