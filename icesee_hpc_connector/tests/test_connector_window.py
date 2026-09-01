@@ -17,6 +17,8 @@ from icesee_hpc_connector.connector_window import (
     ACTION_PAIR,
     WindowMode,
     build_appkit_window,
+    looks_like_pairing_code,
+    normalize_pairing_code,
     should_show_on_state,
     window_view,
 )
@@ -108,6 +110,42 @@ def test_app_installs_a_standard_edit_menu_for_clipboard_shortcuts():
     assert "_edit_menu_ready" in darwin
 
 
+@pytest.mark.parametrize("raw,norm", [
+    ("  ABCDE-FGHJK \n", "ABCDE-FGHJK"),
+    ("ABCDE-FGHJK", "ABCDE-FGHJK"),
+    ("\tXY2P4-9MNQR\r\n", "XY2P4-9MNQR"),
+    (None, ""),
+])
+def test_normalize_pairing_code_trims_transfer_noise(raw, norm):
+    assert normalize_pairing_code(raw) == norm
+
+
+@pytest.mark.parametrize("text,ok", [
+    ("ABCDE-FGHJK", True),
+    ("  abcde-fghjk  ", True),          # normalised + upper-cased
+    ("ABCDEFGHJK", False),              # no dash
+    ("ABCDE-FGHJKX", False),            # too long
+    ("ABCD1-FGHJK", False),             # 1 is not in the alphabet
+    ("hello world", False),
+    ("", False),
+    (None, False),
+])
+def test_looks_like_pairing_code_matches_only_the_code_shape(text, ok):
+    assert looks_like_pairing_code(text) is ok
+
+
+def test_pairing_prompts_prefill_only_a_code_shaped_clipboard():
+    win = _WINDOW.read_text()
+    menu = _MENU.read_text()
+    # AppKit window: pre-fill on show, guarded by looks_like_pairing_code
+    assert "_prefill_from_clipboard_if_code" in win
+    assert "looks_like_pairing_code(text)" in win
+    # rumps modal + tk dialog: default/initial value from a code-shaped clipboard
+    assert "_clipboard_pairing_code()" in menu
+    assert "default_text=_clipboard_pairing_code()" in menu
+    assert "initialvalue=prefill" in menu
+
+
 def test_window_has_an_explicit_paste_button_that_does_not_autosubmit():
     src = _WINDOW.read_text()
     assert "NSPasteboard.generalPasteboard()" in src
@@ -117,8 +155,8 @@ def test_window_has_an_explicit_paste_button_that_does_not_autosubmit():
     helper = src.split("def _paste_from_clipboard")[1].split("\n    def ")[0]
     assert "setStringValue_" in helper
     assert "_on_action" not in helper and "_fire(" not in helper
-    # normalised: strip() before it lands in the field
-    assert ".strip()" in helper
+    # normalised before it lands in the field
+    assert "normalize_pairing_code(" in helper
     # the Paste button is shown/hidden with the code field
     assert '_paste_btn.setHidden_(not view["show_code_field"])' in src
 

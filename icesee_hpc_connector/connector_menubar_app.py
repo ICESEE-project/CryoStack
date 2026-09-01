@@ -67,18 +67,32 @@ def open_log_file() -> None:
 
 
 def _prompt_pairing_code_tk() -> str | None:
-    """Linux/Windows pairing prompt. Not used on macOS."""
+    """Linux/Windows pairing prompt. Not used on macOS. Ctrl+V/C/X/A work
+    natively in the tk Entry; if the clipboard already holds a code we pre-fill
+    it so no paste is needed."""
     try:
         import tkinter as tk
         from tkinter import simpledialog
+
+        from icesee_hpc_connector.connector_window import (
+            looks_like_pairing_code, normalize_pairing_code,
+        )
     except Exception:
         return None
     root = tk.Tk()
     root.withdraw()
+    prefill = ""
+    try:
+        clip = root.clipboard_get()
+        if looks_like_pairing_code(clip):
+            prefill = normalize_pairing_code(clip)
+    except Exception:
+        prefill = ""
     try:
         return simpledialog.askstring(
             APP_NAME,
             "Enter the pairing code from the CryoStack Connector Setup page:",
+            initialvalue=prefill,
         )
     finally:
         try:
@@ -99,8 +113,24 @@ if sys.platform == "darwin":
         ACTION_PAIR,
         CRYOSTACK_URL,
         build_appkit_window,
+        looks_like_pairing_code,
+        normalize_pairing_code,
         should_show_on_state,
     )
+
+    def _clipboard_pairing_code() -> str:
+        """Return the clipboard contents iff they look like a pairing code, so
+        the pairing dialog can pre-fill without ever surfacing other clipboard
+        data. Empty string otherwise."""
+        try:
+            import AppKit
+            text = AppKit.NSPasteboard.generalPasteboard().stringForType_(
+                AppKit.NSPasteboardTypeString)
+            if text and looks_like_pairing_code(text):
+                return normalize_pairing_code(text)
+        except Exception:
+            pass
+        return ""
 
     class CryoStackConnectorApp(rumps.App):
         def __init__(self, controller: ConnectorController):
@@ -167,7 +197,7 @@ if sys.platform == "darwin":
         # -- window actions (main thread) ----------------------------
         def _on_window_action(self, action: str, code: str) -> None:
             if action == ACTION_PAIR:
-                code = (code or "").strip()
+                code = normalize_pairing_code(code)
                 if not code:
                     return
                 self.controller.emit("pairing-dialog-open")
@@ -258,8 +288,9 @@ if sys.platform == "darwin":
             resp = rumps.Window(
                 message="Enter the pairing code from the CryoStack Connector Setup page:",
                 title=APP_NAME, ok="Pair", cancel="Cancel", dimensions=(240, 24),
+                default_text=_clipboard_pairing_code(),   # pre-fill if already copied
             ).run()
-            code = (resp.text or "").strip()
+            code = normalize_pairing_code(resp.text)
             if resp.clicked and code:
                 if not self.controller.start(code):
                     rumps.notification(APP_NAME, "Already running",

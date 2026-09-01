@@ -13,9 +13,28 @@ is imported only on macOS.
 """
 from __future__ import annotations
 
+import re
+
 from icesee_hpc_connector.connector_controller import ConnectorState
 
 CRYOSTACK_URL = "https://cryostack.eas.gatech.edu/"
+
+# Pairing codes are XXXXX-XXXXX over an unambiguous alphabet (see
+# connector_relay_auth.new_pairing_code). Used to decide whether the clipboard
+# already holds a code we can pre-fill -- never to validate one (the relay does).
+_PAIRING_CODE_RE = re.compile(r"^[A-HJ-NP-Z2-9]{5}-[A-HJ-NP-Z2-9]{5}$")
+
+
+def normalize_pairing_code(text: str | None) -> str:
+    """Trim surrounding whitespace/newlines from a pasted code. The relay does
+    the real validation; this only removes transfer noise."""
+    return (text or "").strip()
+
+
+def looks_like_pairing_code(text: str | None) -> bool:
+    """True when ``text`` (after normalisation, upper-cased) is shaped like a
+    pairing code -- safe to pre-fill the entry field from the clipboard."""
+    return bool(_PAIRING_CODE_RE.match(normalize_pairing_code(text).upper()))
 
 # action ids emitted by the window's buttons
 ACTION_PAIR = "pair"
@@ -174,7 +193,7 @@ class _AppKitConnectorWindow:  # pragma: no cover - requires a macOS GUI session
         self.refresh(self._state)
 
     # -- clipboard fallback -------------------------------------------
-    def _paste_from_clipboard(self):
+    def _clipboard_text(self):
         AppKit = self._AppKit
         pb = AppKit.NSPasteboard.generalPasteboard()
         text = pb.stringForType_(AppKit.NSPasteboardTypeString)
@@ -183,11 +202,25 @@ class _AppKitConnectorWindow:  # pragma: no cover - requires a macOS GUI session
                 text = pb.stringForType_("public.utf8-plain-text")
             except Exception:
                 text = None
+        return str(text) if text else ""
+
+    def _paste_from_clipboard(self):
+        text = self._clipboard_text()
         if not text:
             return
-        # normalise here too; _fire already strips before submit
-        self._field.setStringValue_(str(text).strip())
+        # populate the field only -- never auto-submit
+        self._field.setStringValue_(normalize_pairing_code(text))
         self._win.makeFirstResponder_(self._field)
+
+    def _prefill_from_clipboard_if_code(self):
+        """When the window opens with an empty field and the clipboard already
+        holds something shaped like a pairing code, drop it in so the user does
+        not even have to paste. Anything else on the clipboard is ignored."""
+        if self._field.isHidden() or str(self._field.stringValue()).strip():
+            return
+        text = self._clipboard_text()
+        if looks_like_pairing_code(text):
+            self._field.setStringValue_(normalize_pairing_code(text))
 
     # -- helpers --------------------------------------------------------
     def _label(self, AppKit, frame, size, bold=False):
@@ -223,7 +256,7 @@ class _AppKitConnectorWindow:  # pragma: no cover - requires a macOS GUI session
         if which >= len(buttons):
             return
         _label, action = buttons[which]
-        code = str(self._field.stringValue()).strip() if view["show_code_field"] else ""
+        code = normalize_pairing_code(self._field.stringValue()) if view["show_code_field"] else ""
         self._on_action(action, code)
 
     # -- public --------------------------------------------------------
@@ -250,9 +283,14 @@ class _AppKitConnectorWindow:  # pragma: no cover - requires a macOS GUI session
     def show(self):
         self._AppKit.NSApp.activateIgnoringOtherApps_(True)
         self._win.makeKeyAndOrderFront_(None)
-        # When the pairing field is showing, put the cursor in it so the user
-        # can paste (Cmd+V) or type the code immediately.
+        # When the pairing field is showing, pre-fill it if the clipboard
+        # already holds a code, then put the cursor in it so the user can
+        # paste (Cmd+V) or type immediately.
         if not self._field.isHidden():
+            try:
+                self._prefill_from_clipboard_if_code()
+            except Exception:
+                pass
             self._win.makeFirstResponder_(self._field)
 
     def hide(self):
