@@ -106,10 +106,22 @@ if [[ "$OS_TAG" == "macos" ]]; then
     --icon "$ICON_ICNS" \
     --osx-bundle-identifier "edu.gatech.cryostack.connector" \
     --hidden-import rumps --hidden-import Foundation --hidden-import AppKit \
+    --hidden-import objc \
     "$SRC_ENTRY"
 
   APP_BUNDLE="$DIST_DIR/${APP_BASENAME}.app"
   [[ -d "$APP_BUNDLE" ]] || { echo "ERROR: PyInstaller did not produce $APP_BUNDLE" >&2; exit 1; }
+
+  # Ad-hoc sign the bundle. An unsigned app copied into /Applications is subject
+  # to Gatekeeper "App Translocation" (runs from a random read-only path), which
+  # can make a large --onedir PyInstaller app appear to hang on first launch.
+  # An ad-hoc signature disables translocation. (Real notarization is a
+  # separate, later step and needs an Apple Developer ID.)
+  if command -v codesign >/dev/null 2>&1; then
+    codesign --force --deep --sign - --timestamp=none "$APP_BUNDLE" \
+      && echo "[build] ad-hoc signed $APP_BUNDLE" \
+      || echo "[build][WARN] ad-hoc codesign failed; first launch from /Applications may translocate" >&2
+  fi
 
   # Stage a drag-to-install DMG: the .app + an /Applications alias + volume icon.
   DMG_STAGE="$BUILD_DIR/dmg"

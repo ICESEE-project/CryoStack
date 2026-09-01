@@ -93,41 +93,58 @@ Every packaging icon is derived from **one** canonical image,
 re-run. macOS/`.app` and Windows/`.exe` get the icon via `--icon`; the Linux
 tray loads the 512px PNG; the displayed name is always **CryoStack Connector**.
 
-### macOS `.app` responsiveness acceptance test
+### macOS connector — architecture & acceptance test
 
-The macOS connector must be tested **as the packaged `.app`**, not only from
-Python source, before any release. It uses a strict threading split — the Cocoa
-main thread does UI only (menu, `rumps.Timer` status poll, native pairing
-dialog), while one background worker owns the HTTP pairing exchange, the
-WebSocket connect/reconnect, and every SSH operation. `--onedir` (not
-`--onefile`) is used for the bundle so a stale extraction directory from a
-crashed instance cannot hang the next launch.
+The macOS connector uses a strict split: the Cocoa main thread does **UI only**
+(menu, the onboarding/status window, a `rumps.Timer` status poll), while **one**
+background worker owns the HTTP pairing exchange, the WebSocket
+connect/reconnect, and every SSH operation. `--onedir` (not `--onefile`) is used
+for the `.app`, and the bundle is **ad-hoc signed** (`codesign -s -`) so a copy
+in `/Applications` is not subject to Gatekeeper *App Translocation*.
 
-Run this on an Apple Silicon Mac after mounting the DMG and copying the app to
-`/Applications`:
+It is **not menu-bar-only**: a normal Dock-visible window appears on launch and
+whenever the connector is unpaired, with an obvious pairing field. After pairing
+it becomes a **✓ Connected** panel with *Open CryoStack* / *Hide Window*. The
+menu bar stays as a control surface (Status, Show CryoStack Connector,
+Pair/Re-pair, Open Setup Page, Open Log File, Quit). Clicking the Dock icon (or
+**Show CryoStack Connector**) brings the window back.
 
-1. Launch; leave it **unpaired for 60 s** — the menu bar stays responsive, the
-   menu opens instantly.
-2. **Pair with CryoStack…** → **Cancel** — UI still responsive.
-3. Reopen, enter a valid pairing code (from the CryoLauncher/ICESEE UI) → status
-   goes `pairing… → connected ✓`.
-4. Stay connected several minutes, opening menus throughout.
-5. Drop the network / relay, then restore it → status cycles
-   `reconnecting… → connected ✓`; UI never freezes.
-6. **Quit** → `ps aux | grep -i 'CryoStack Connector'` shows no process.
-7. Relaunch immediately — **no machine restart required**; a second launch shows
-   *"CryoStack Connector is already running"* and exits cleanly.
+**Acceptance test — run the copy installed in `/Applications`, on an Apple
+Silicon Mac:**
 
-If the app ever reaches macOS's hung state, capture the main-thread stack before
-force-quitting:
+1. Mount the DMG, drag **CryoStack Connector** to Applications, eject the DMG.
+2. Double-click `/Applications/CryoStack Connector.app` → a **visible window**
+   appears with `Status: Not paired` and a pairing field. (No menu-bar
+   knowledge required.)
+3. Leave it **60 s** unpaired — window and menu stay responsive.
+4. Enter a valid pairing code (from the CryoLauncher/ICESEE UI) → `Pair` →
+   window shows **✓ Connected**; menu shows `Status: connected ✓`.
+5. **Hide Window**; reopen via **Show CryoStack Connector** and via a Dock click.
+6. Stay connected several minutes; drop the network/relay then restore →
+   `reconnecting… → connected ✓`, no freeze.
+7. **Quit** → `pgrep -fl 'CryoStack Connector'` shows nothing.
+8. Relaunch immediately — **no reboot**; a second launch shows *"CryoStack
+   Connector is already running"* and exits.
+
+**If the `/Applications` copy is unresponsive** (while the DMG copy works), it is
+almost certainly translocation of an unsigned bundle. Run the audit:
+
+```bash
+bash scripts/diagnose_connector_macos.sh
+```
+
+It checks running processes, the single-instance lock
+(`~/.cryostack/connector.lock`), the `com.apple.quarantine` xattr, `codesign` /
+`spctl` state, and whether the process command path contains `AppTranslocation`.
+Clear it with `xattr -dr com.apple.quarantine "/Applications/CryoStack Connector.app"`.
+If the app is genuinely hung, capture the main-thread stack first:
 
 ```bash
 sample "$(pgrep -f 'CryoStack Connector' | head -1)" 5 -file /tmp/cryostack-connector-sample.txt
 ```
 
-Lifecycle events are written to `~/icesee_connector.log` as
-`[lifecycle] <ts> <event>` (fixed names only — never a pairing code, secret, or
-SSH argument).
+Lifecycle events are in `~/icesee_connector.log` as `[lifecycle] <ts> <event>`
+(fixed names only — never a pairing code, secret, or SSH argument).
 
 ### 2. Register into the canonical store
 

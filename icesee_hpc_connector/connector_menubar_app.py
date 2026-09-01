@@ -88,48 +88,123 @@ def _prompt_pairing_code_tk() -> str | None:
 
 
 # ===========================================================================
-# macOS -- rumps
+# macOS -- rumps + a discoverable onboarding/status window
 # ===========================================================================
 if sys.platform == "darwin":
     import rumps
 
+    from icesee_hpc_connector.connector_window import (
+        ACTION_HIDE,
+        ACTION_OPEN_CRYOSTACK,
+        ACTION_PAIR,
+        CRYOSTACK_URL,
+        build_appkit_window,
+        should_show_on_state,
+    )
+
     class CryoStackConnectorApp(rumps.App):
         def __init__(self, controller: ConnectorController):
-            # The menu-bar title stays "CryoStack" text; the CryoStack mark is
-            # the .app / Dock icon (set at build time via --icon), which avoids
-            # the monochrome-template constraint on menu-bar images.
+            # Menu-bar title stays "CryoStack" text; the CryoStack mark is the
+            # .app / Dock icon (set at build time via --icon).
             super().__init__("CryoStack", quit_button=None)
             self.controller = controller
+            self._user_hid_window = False
+
             self._status_item = rumps.MenuItem(controller.status_label(), callback=None)
             self.menu = [
                 self._status_item,
                 None,
+                rumps.MenuItem("Show CryoStack Connector", callback=self.show_window),
                 rumps.MenuItem("Pair with CryoStack…", callback=self.pair),
                 rumps.MenuItem("Open Setup Page", callback=self.open_setup),
                 rumps.MenuItem("Open Log File", callback=self.open_log),
                 None,
                 rumps.MenuItem("Quit", callback=self.quit_app),
             ]
-            # Poll worker state on the MAIN thread -- never mutate menu items
-            # from the worker.
-            self._timer = rumps.Timer(self._tick, 1.5)
+
+            # Be a normal Dock-visible app so a first-time user who double-clicks
+            # the app immediately sees where to enter the pairing code.
+            try:
+                import AppKit
+                AppKit.NSApp.setActivationPolicy_(AppKit.NSApplicationActivationPolicyRegular)
+                self._install_reopen_handler(AppKit)
+            except Exception:
+                pass
+
+            self.window = build_appkit_window(self._on_window_action)
+            if self.window is not None:
+                self.window.show()          # visible on first launch
+
+            self._timer = rumps.Timer(self._tick, 1.0)
             self._timer.start()
 
             env_code = (os.environ.get("CRYOSTACK_PAIRING_CODE") or "").strip()
             if env_code:
                 self.controller.start(env_code)
 
+        # -- main-thread status pump ------------------------------------
         def _tick(self, _timer):
+            state = self.controller.status()
             self._status_item.title = self.controller.status_label()
+            if self.window is not None:
+                self.window.refresh(state)
+                # auto-surface while unpaired, unless the user explicitly hid it
+                if should_show_on_state(state) and not self._user_hid_window \
+                        and not self.window.is_visible():
+                    self.window.show()
 
+        # -- window actions (main thread) ----------------------------
+        def _on_window_action(self, action: str, code: str) -> None:
+            if action == ACTION_PAIR:
+                code = (code or "").strip()
+                if not code:
+                    return
+                self.controller.emit("pairing-dialog-open")
+                if not self.controller.start(code):
+                    rumps.notification(APP_NAME, "Already running",
+                                       "The connector is already paired/active.")
+            elif action == ACTION_OPEN_CRYOSTACK:
+                webbrowser.open(CRYOSTACK_URL)
+            elif action == ACTION_HIDE:
+                self._user_hid_window = True
+                self.window.hide()
+
+        def show_window(self, _):
+            self._user_hid_window = False
+            if self.window is not None:
+                self.window.show()
+            else:
+                rumps.notification(APP_NAME, APP_NAME,
+                                   "Use 'Pair with CryoStack…' in the menu bar.")
+
+        def _install_reopen_handler(self, AppKit):
+            # Clicking the Dock icon should bring the window forward.
+            import objc
+
+            app = self
+            delegate = AppKit.NSApp.delegate()
+            if delegate is None:
+                return
+
+            cls = type(delegate)
+            if not hasattr(cls, "applicationShouldHandleReopen_hasVisibleWindows_"):
+                def _reopen(self, _sender, _has):  # noqa: ANN001
+                    try:
+                        app.show_window(None)
+                    except Exception:
+                        pass
+                    return True
+
+                objc.classAddMethod(
+                    cls, b"applicationShouldHandleReopen:hasVisibleWindows:", _reopen
+                )
+
+        # -- menu items ---------------------------------------------
         def pair(self, _):
             self.controller.emit("pairing-dialog-open")
             resp = rumps.Window(
                 message="Enter the pairing code from the CryoStack Connector Setup page:",
-                title=APP_NAME,
-                ok="Pair",
-                cancel="Cancel",
-                dimensions=(240, 24),
+                title=APP_NAME, ok="Pair", cancel="Cancel", dimensions=(240, 24),
             ).run()
             code = (resp.text or "").strip()
             if resp.clicked and code:
