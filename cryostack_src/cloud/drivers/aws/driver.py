@@ -517,25 +517,89 @@ class AWSDriver(
             include_icepack=include_icepack,
         )
 
-    def submit(
-        self,
-        **kwargs,
-    ):
+    def submit(self, **kwargs):
+        """Submit a staged CryoStack cloud run to AWS Batch.
+
+        Flow: ``assert_cloud_run_allowed`` (license / model gate, before any
+        upload) -> ``stage_run_inputs`` (the StagedExample tree + descriptor to
+        ``s3://<bucket>/runs/<run-id>/input/``) -> ``aws batch submit-job`` with
+        three non-secret env values.
+
+        A legacy ``submitter`` may still be injected (old ICESEE path); it wins
+        when present so nothing existing breaks.
+
+        Returns a dict:
+            {run_id, batch_job_id, s3_run, s3_input, s3_outputs, model,
+             run_target, job_queue, job_definition, messages}
         """
-        Submit a cloud workload.
+        if self._submitter is not None:
+            return self._submitter(**kwargs)
 
-        During the strangler migration, existing cloud submission
-        implementations may be injected through ``submitter``.
-        """
+        from cryostack_src.cloud.preflight import assert_cloud_run_allowed
+        from .staging import stage_run_inputs
+        from .submit import submit_batch_job
+        from .batch_config import JOB_QUEUE_NAME, job_definition_name
 
-        if self._submitter is None:
-            raise RuntimeError(
-                "AWS cloud submission is not configured yet."
-            )
+        staged_source = kwargs.get("staged_source") or kwargs.get("source")
+        model = (kwargs.get("model") or "").strip().lower()
+        run_target = (kwargs.get("run_target") or "runme.m").strip()
+        bucket = (kwargs.get("bucket") or "").strip()
+        working_directory = kwargs.get("working_directory") or "."
+        run_id = kwargs.get("run_id")
+        job_name = kwargs.get("job_name") or "cryostack"
+        job_queue = (kwargs.get("job_queue") or "").strip() or JOB_QUEUE_NAME
+        job_definition = (kwargs.get("job_definition") or "").strip() or job_definition_name(model)
+        matlab_license_configured = bool(kwargs.get("matlab_license_configured", False))
+        s3 = kwargs.get("s3")
+        aws = kwargs.get("aws")
 
-        return self._submitter(
-            **kwargs
+        if staged_source is None:
+            raise RuntimeError("AWS cloud submission needs a staged run (staged_source).")
+        if not bucket:
+            raise RuntimeError("AWS cloud submission needs an S3 bucket.")
+
+        # 1. gate the run BEFORE anything is uploaded or a job is created
+        assert_cloud_run_allowed(
+            model=model, matlab_license_configured=matlab_license_configured
         )
+
+        # 2. stage the run's inputs to S3
+        staging = stage_run_inputs(
+            self.config,
+            source=staged_source,
+            model=model,
+            run_target=run_target,
+            bucket=bucket,
+            run_id=run_id,
+            working_directory=working_directory,
+            s3=s3,
+        )
+
+        # 3. submit to Batch
+        submission = submit_batch_job(
+            self.config,
+            job_name=job_name,
+            job_queue=job_queue,
+            job_definition=job_definition,
+            s3_run=staging.s3_run,
+            model=model,
+            run_target=run_target,
+            run_id=staging.run_id,
+            aws=aws,
+        )
+
+        return {
+            "run_id": staging.run_id,
+            "batch_job_id": submission.job_id,
+            "s3_run": staging.s3_run,
+            "s3_input": staging.s3_input,
+            "s3_outputs": staging.s3_outputs,
+            "model": model,
+            "run_target": run_target,
+            "job_queue": submission.job_queue,
+            "job_definition": submission.job_definition,
+            "messages": [*staging.messages, *submission.messages],
+        }
 
     def status(
         self,

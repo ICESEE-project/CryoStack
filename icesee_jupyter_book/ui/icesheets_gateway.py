@@ -35,6 +35,12 @@ from icesee_jupyter_book.core.remote_runner import (
     connector_get_public_key,
 )
 from cryostack_src.cloud.bridge import CloudBridge
+from cryostack_src.cloud import (
+    DEFAULT_CLOUD_REGION,
+    cloud_run_preflight,
+    resolve_cloud_config,
+    validate_cloud_config,
+)
 
 from icesee_jupyter_book.core.local_connector import build_connector_panel
 from icesee_jupyter_book.ui.shared_ssh_widgets import build_ssh_key_manager
@@ -585,7 +591,7 @@ def build_icesheets_ui():
                 region=(
                     selected_metadata.get("region")
                     or aws_region.value.strip()
-                    or "us-east-2"
+                    or DEFAULT_CLOUD_REGION
                 ),
                 profile=(
                     selected_metadata.get("profile")
@@ -594,6 +600,136 @@ def build_icesheets_ui():
                 ),
                 results_sync=workspace_manager.sync_cloud_results,
             )
+
+        # -- Cloud run state chip: Not configured -> Checking -> Ready ->
+        #    Submitting -> Queued -> Running -> Completed / Failed --------
+        _CLOUD_STATES = {
+            "not_configured": ("icesee-idle", "Not configured"),
+            "checking": ("icesee-running", "Checking…"),
+            "ready": ("icesee-done", "Ready"),
+            "submitting": ("icesee-running", "Submitting…"),
+            "queued": ("icesee-running", "Queued"),
+            "running": ("icesee-running", "Running"),
+            "completed": ("icesee-done", "Completed"),
+            "failed": ("icesee-fail", "Failed"),
+        }
+
+        def _set_cloud_state(kind: str) -> None:
+            cls, label = _CLOUD_STATES.get(kind, _CLOUD_STATES["not_configured"])
+            cloud_state_chip.value = (
+                f"<span class='icesee-status {cls}'>Cloud: {label}</span>"
+            )
+
+        def _submit_cloud_run(staged_dir, md_provenance):
+            """AWS Batch: validate + preflight -> stage inputs to S3 -> submit
+            -> register a real cloud run. Never billable on a config error."""
+            _model = model_dd.value
+            _cfg = resolve_cloud_config(
+                provider="aws",
+                region=aws_region.value.strip(),
+                bucket=cloud_bucket.value.strip(),
+                profile=aws_profile.value.strip(),
+                model=_model,
+                job_queue=batch_job_queue.value.strip(),
+                job_definition=batch_job_def.value.strip(),
+            )
+            _lic = get_compute_profile("aws").has_matlab_license
+            _problems = validate_cloud_config(_cfg, model=_model)
+            _problems += cloud_run_preflight(
+                model=_model, matlab_license_configured=_lic
+            )
+            if _problems:
+                status_chip.value = status_html("fail")
+                _set_cloud_state("failed")
+                with log_out:
+                    print("[cloud][ERROR] Fix the cloud configuration before submitting:")
+                    for _p in _problems:
+                        print("  -", _p)
+                return None
+
+            _target = (Path(run_target.value or "runme.m").name) or "runme.m"
+
+            # cloud always uploads a user-owned working copy (parity with Remote)
+            if str(staged_dir) == str(example_dir.value):
+                try:
+                    _sc = workspace_manager.stage_example_for_run(
+                        source_example=example_dir.value
+                    )
+                    staged_dir = str(_sc.path)
+                except Exception as _e:
+                    status_chip.value = status_html("fail")
+                    _set_cloud_state("failed")
+                    with log_out:
+                        print("[cloud][stage][ERROR]", type(_e).__name__, _e)
+                    return None
+
+            _set_cloud_state("submitting")
+            status_chip.value = status_html("running")
+            with log_out:
+                print("[cloud] AWS Batch submit")
+                print("  region :", _cfg.region)
+                print("  bucket :", _cfg.bucket)
+                print("  queue  :", _cfg.job_queue)
+                print("  job def:", _cfg.job_definition)
+
+            try:
+                _result = current_cloud_bridge().submit(
+                    staged_source=str(staged_dir),
+                    model=_model,
+                    run_target=_target,
+                    bucket=_cfg.bucket,
+                    job_queue=_cfg.job_queue,
+                    job_definition=_cfg.job_definition,
+                    job_name=(batch_job_name.value.strip() or "cryostack"),
+                    matlab_license_configured=_lic,
+                )
+            except Exception as _e:
+                status_chip.value = status_html("fail")
+                _set_cloud_state("failed")
+                with log_out:
+                    print("[cloud][ERROR]", type(_e).__name__, _e)
+                return None
+
+            with log_out:
+                for _m in _result.messages:
+                    print(_m)
+
+            _job_id = _result.job_id
+            _s3_run = _result.metadata.get("s3_run") or _result.working_directory
+            _s3_outputs = _result.metadata.get("s3_outputs") or (
+                f"{_s3_run.rstrip('/')}/outputs" if _s3_run else None
+            )
+            if _job_id:
+                STATUS["batch_job_id"] = _job_id
+            if _s3_run:
+                STATUS["cloud_run"] = _s3_run
+
+            if _job_id and _s3_run:
+                workspace_bridge.start_run(
+                    name=str(_result.metadata.get("run_id") or _job_id),
+                    model=_model,
+                    backend="aws",
+                    execution_mode="cloud",
+                    jobid=_job_id,
+                    remote_directory=Path(str(_s3_run)),
+                    log_file=None,
+                    metadata={
+                        **(md_provenance or {}),
+                        "cloud_run": _s3_run,
+                        "s3_outputs": _s3_outputs,
+                        "run_id": _result.metadata.get("run_id"),
+                        "region": _cfg.region,
+                        "job_queue": _cfg.job_queue,
+                        "job_definition": _cfg.job_definition,
+                        "provider": "aws",
+                    },
+                )
+                _set_cloud_state("queued")
+                status_chip.value = status_html("done")
+            else:
+                status_chip.value = status_html("fail")
+                _set_cloud_state("failed")
+            return _result
 
         def current_remote_bridge(*, mode=None):
             return RemoteBridge(
@@ -858,15 +994,21 @@ def build_icesheets_ui():
         # Cloud controls
         # -----------------------------
         cloud_environment = build_cloud_environment_card(
-            region="us-east-1",
+            region=DEFAULT_CLOUD_REGION,
             profile="",
             s3_prefix="",
             job_queue="",
             job_definition="",
-            job_name="icesheets",
+            job_name="cryostack",
         )
 
-        cloud_box = cloud_environment.container
+        cloud_state_chip = W.HTML(
+            "<span class='icesee-status icesee-idle'>Cloud: Not configured</span>"
+        )
+        cloud_box = W.VBox(
+            [cloud_state_chip, cloud_environment.container],
+            layout=W.Layout(width="100%", gap="8px"),
+        )
 
         aws_region = cloud_environment.region
         aws_profile = cloud_environment.profile
@@ -1558,38 +1700,6 @@ def build_icesheets_ui():
                 and action == "test"
             )
 
-            if mode == "cloud":
-                result = current_cloud_bridge().submit(
-                    backend=selected_text(backend_dd),
-                    model=selected_text(model_dd),
-                    display_region=aws_region.value.strip() or "us-east-1",
-                    s3_prefix=cloud_bucket.value.strip(),
-                    job_queue=batch_job_queue.value.strip(),
-                    job_definition=batch_job_def.value.strip(),
-                    job_name=batch_job_name.value.strip() or "icesheets",
-                )
-                with log_out:
-                    for message in result.messages:
-                        print(message)
-                if result.job_id:
-                    STATUS["batch_job_id"] = result.job_id
-                cloud_run = result.metadata.get("s3_run") or result.working_directory
-                if cloud_run:
-                    STATUS["cloud_run"] = cloud_run
-                if result.job_id or cloud_run:
-                    workspace_bridge.start_run(
-                        name=str(result.metadata.get("run_id") or result.job_id or "cloud-run"),
-                        model=model_dd.value,
-                        backend=backend_dd.value,
-                        execution_mode="cloud",
-                        jobid=result.job_id,
-                        remote_directory=Path(str(cloud_run or "cloud")),
-                        log_file=None,
-                        metadata={"cloud_run": cloud_run, "region": aws_region.value.strip(), "profile": aws_profile.value.strip()},
-                    )
-                status_chip.value = status_html("done")
-                return
-            
             if mode == "remote" and access_mode_dd.value == "connector":
                 create_or_refresh_connector_session()
 
@@ -1735,9 +1845,18 @@ def build_icesheets_ui():
                         for _d in _staged.provenance.get("staged_datasets", []):
                             print(f"[stage] dataset -> {_d['as']}")
 
+            # =========================================================
+            # CLOUD  (AWS Batch)  -- C4/C5
+            # validate config + preflight -> stage a working copy to S3 ->
+            # submit-job -> register a real cloud run in the Workspace.
+            # =========================================================
+            if mode == "cloud":
+                _cloud_result = _submit_cloud_run(effective_example_dir, md_run_provenance)
+                return
+
             # ICESEE-Spack scientific runs are blocked unless the live
             # environment probe reports Ready. Never install silently at Run.
-            if backend_dd.value == "spack":
+            if mode != "cloud" and backend_dd.value == "spack":
                 try:
                     _env = current_remote_bridge(
                         mode="connector" if should_use_connector() else "direct"
@@ -2119,6 +2238,10 @@ def build_icesheets_ui():
         on_tail = workspace_logs.on_tail
         on_auto_tail_change = workspace_logs.on_auto_tail_change
 
+        def _cloud_status_result(job_id, state):
+            workspace_manager.update_run_status_by_job(job_id, state)
+            _set_cloud_state(state if state in _CLOUD_STATES else "checking")
+
         cloud_runtime = build_cloud_runtime_callbacks(
             runtime_status=STATUS,
             log_output=log_out,
@@ -2129,7 +2252,7 @@ def build_icesheets_ui():
             set_cloud_status=set_cloud_status,
             bucket_value=lambda: cloud_bucket.value.strip(),
             results_output=results_out,
-            on_status_result=workspace_manager.update_run_status_by_job,
+            on_status_result=_cloud_status_result,
         )
         on_cloud_status = cloud_runtime.status
         on_cloud_logs = cloud_runtime.logs
@@ -2168,12 +2291,27 @@ def build_icesheets_ui():
             selected = workspace_manager.selected_run()
             return selected.execution_mode if selected else mode_dd.value
 
+        def _selected_cloud_run_s3():
+            """The S3 run location for the selected cloud run -- from its
+            persisted metadata, falling back to this session's last submit."""
+            selected = workspace_manager.selected_run()
+            if selected and selected.execution_mode == "cloud":
+                loc = selected.metadata.get("cloud_run")
+                if loc:
+                    return str(loc)
+            return STATUS.get("cloud_run")
+
         def sync_selected_run_results():
             """Synchronise the selected run's outputs into its local run cache,
             using whichever backend produced it. Returns the local outputs dir
             (or None). Performs no rendering."""
             if active_execution_mode() == "cloud":
-                return on_cloud_results()
+                s3 = _selected_cloud_run_s3()
+                if not s3:
+                    with results_out:
+                        print("[cloud] No cloud run location for the selected run.")
+                    return None
+                return current_cloud_bridge().results(s3_uri=s3)
             return workspace_manager.refresh_results()
 
         def on_results_preview(_=None):
@@ -2181,7 +2319,14 @@ def build_icesheets_ui():
             # structured visualization panel: re-read the local package, rebuild
             # Solution/Field/Timestep, and render an initial recommended plot.
             if active_execution_mode() == "cloud":
-                on_cloud_results()
+                try:
+                    _p = sync_selected_run_results()
+                    with results_out:
+                        if _p:
+                            print("[cloud] Results synchronised:", _p)
+                except Exception as _e:
+                    with results_out:
+                        print("[cloud][ERROR]", type(_e).__name__, _e)
             else:
                 workspace_manager.preview_results()
             visualization_panel.controller.preview()

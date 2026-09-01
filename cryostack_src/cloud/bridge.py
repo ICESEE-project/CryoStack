@@ -35,34 +35,17 @@ class CloudBridge:
         self.manager = CloudManager()
 
     def submit(self, **kwargs) -> ExecutionResult:
-        if self.submitter is not None:
-            kwargs.pop("display_region", None)
-            return self.backend.submit(**kwargs)
+        """Submit a staged cloud run.
 
-        selected_backend = kwargs.get("backend", "")
-        model = kwargs.get("model", "")
-        s3_prefix = kwargs.get("s3_prefix", "")
-        job_queue = kwargs.get("job_queue", "")
-        job_definition = kwargs.get("job_definition", "")
-        job_name = kwargs.get("job_name", "icesheets")
-        display_region = kwargs.get("display_region") or self.region
-
-        return ExecutionResult(
-            success=True,
-            backend="cloud",
-            messages=[
-                "[cloud] Placeholder for AWS Batch submission.",
-                f"[cloud] backend : {selected_backend}",
-                f"[cloud] model   : {model}",
-                f"[cloud] region  : {display_region}",
-                f"[cloud] profile : {self.profile or '(default)'}",
-                f"[cloud] bucket  : {s3_prefix or '(not set)'}",
-                f"[cloud] queue   : {job_queue or '(not set)'}",
-                f"[cloud] job def : {job_definition or '(not set)'}",
-                f"[cloud] job name: {job_name or 'icesheets'}",
-                "[cloud] Next step is to adapt submit_cloud_example for model-only workflows.",
-            ],
-        )
+        A legacy ``submitter`` (old ICESEE ``params.yaml`` path) still wins when
+        one was injected. Otherwise the run goes through the real path:
+        preflight -> S3 staging -> ``aws batch submit-job`` inside
+        :class:`AWSDriver.submit`.
+        """
+        kwargs.pop("display_region", None)
+        # drop presentation-only kwargs the driver does not use
+        kwargs.pop("backend", None)
+        return self.backend.submit(**kwargs)
 
     def status(self, *, job_id: str) -> ExecutionStatus:
         return self.backend.status(job_id=job_id)

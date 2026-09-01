@@ -83,12 +83,8 @@ class CloudBackend(
         **kwargs,
     ) -> ExecutionResult:
 
-        if self._submitter is None:
-            raise RuntimeError(
-                "Cloud submitter has not been "
-                "configured."
-            )
-
+        # A legacy submitter (old ICESEE params.yaml path) is still honoured
+        # when injected; otherwise the driver's real submit path is used.
         result = self.manager.submit(
             provider=self.provider,
             region=self.region,
@@ -101,6 +97,7 @@ class CloudBackend(
         # Existing cloud implementations may return
         # either dictionaries or dataclass objects.
         #
+        extra: dict = {}
         if isinstance(
             result,
             dict,
@@ -127,6 +124,15 @@ class CloudBackend(
             run_id = result.get(
                 "run_id"
             )
+
+            extra = {
+                k: result[k]
+                for k in (
+                    "s3_input", "s3_outputs", "model", "run_target",
+                    "job_queue", "job_definition",
+                )
+                if result.get(k)
+            }
 
         else:
 
@@ -192,6 +198,7 @@ class CloudBackend(
                 "provider": "aws",
                 "run_id": run_id,
                 "s3_run": s3_run,
+                **extra,
             },
             messages=list(
                 messages or []

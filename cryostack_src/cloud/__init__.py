@@ -24,6 +24,12 @@
 Public CryoStack cloud API.
 """
 
+from .config import (
+    CloudRunConfig,
+    DEFAULT_CLOUD_REGION,
+    resolve_cloud_config,
+    validate_cloud_config,
+)
 from .manager import CloudManager
 from .preflight import assert_cloud_run_allowed, cloud_run_preflight
 from .runtime import (
@@ -37,15 +43,22 @@ from .runtime import (
 from .drivers.aws import (
     AWSConfig,
     AWSDriver,
+    BatchSubmission,
     CloudRunStaging,
     CloudStagingError,
+    CloudSubmitError,
     stage_run_inputs,
+    submit_batch_job,
 )
 
 __all__ = [
     "CloudManager",
     "AWSDriver",
     "AWSConfig",
+    "CloudRunConfig",
+    "DEFAULT_CLOUD_REGION",
+    "resolve_cloud_config",
+    "validate_cloud_config",
     "SUPPORTED_CLOUD_MODELS",
     "CloudRuntimeError",
     "build_cloud_runner",
@@ -56,4 +69,7 @@ __all__ = [
     "CloudRunStaging",
     "CloudStagingError",
     "stage_run_inputs",
+    "BatchSubmission",
+    "CloudSubmitError",
+    "submit_batch_job",
 ]

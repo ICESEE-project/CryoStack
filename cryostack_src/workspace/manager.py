@@ -976,26 +976,41 @@ class WorkspaceManager:
         s3_uri: str,
         region: str | None = None,
         profile: str | None = None,
+        aws=None,
     ) -> Path:
+        """Pull a cloud run's ``outputs/`` into this user's local run cache in
+        the same ``outputs/{metadata.json,mesh,fields,model,figures}`` shape the
+        Remote path produces, so the Results UI needs no cloud-specific reader.
+
+        ``aws`` is an injectable ``callable(args) -> CompletedProcess`` (tests
+        mock the transfer). The write target is per-``WorkspaceManager`` (=per
+        authenticated user); a cloud result never lands in another user's cache.
+        """
         self.invalidate_result_package_cache(self._selected_run_id)
         outputs_dir = self.local_run_cache_dir() / "cloud_outputs"
         if outputs_dir.exists():
             self.delete(outputs_dir)
         outputs_dir.mkdir(parents=True, exist_ok=True)
-        command = ["aws"]
+        args = []
         if profile:
-            command.extend(["--profile", profile])
+            args.extend(["--profile", profile])
         if region:
-            command.extend(["--region", region])
-        command.extend([
-            "s3",
-            "sync",
+            args.extend(["--region", region])
+        args.extend([
+            "s3", "sync",
             f"{s3_uri.rstrip('/')}/outputs/",
             f"{outputs_dir}/",
         ])
-        result = subprocess.run(command, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError((result.stderr or result.stdout).strip())
+        if aws is not None:
+            result = aws(args)
+            code = result[0] if isinstance(result, tuple) else getattr(result, "returncode", 0)
+            err = (result[2] if isinstance(result, tuple) else getattr(result, "stderr", "")) or ""
+            out = (result[1] if isinstance(result, tuple) else getattr(result, "stdout", "")) or ""
+        else:
+            proc = subprocess.run(["aws", *args], capture_output=True, text=True)
+            code, err, out = proc.returncode, proc.stderr, proc.stdout
+        if code != 0:
+            raise RuntimeError((err or out).strip() or "cloud results sync failed")
         return outputs_dir
 
     def remote_outputs_dir(self) -> str:
