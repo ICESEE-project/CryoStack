@@ -59,9 +59,12 @@ You need:
 
 - a modern web browser;
 - access to the CryoStack platform;
-- for **Remote** execution: access to a Linux/HPC computing resource and valid
-  credentials (SSH, or a CryoStack Connector session when the resource cannot
-  be reached directly).
+- for **Remote** execution: **your own** access to a Linux/HPC computing
+  resource — your HPC username, your allocation, and the ability to add an SSH
+  key to your account (directly or through your institution's portal). CryoStack
+  connects *as you*; it does not provide HPC accounts. See
+  <a href="#configure-access-to-your-hpc-resource-remote">Configure access to
+  your HPC resource</a> below.
 
 Browsing the interface and preparing a run does not require a local
 installation.
@@ -196,7 +199,50 @@ For **Remote**, choose a backend:
 - **ICESEE-Spack** — run against a Spack-managed software environment on the
   remote resource. First-time use requires an onboarding step (below).
 
-## 6. Configure
+## 6. Configure access to your HPC resource (Remote)
+
+For **Remote** execution you connect with **your own** HPC identity — CryoStack
+does not create an account and does not run through a developer's account. In
+**Run settings → Remote Connection** set:
+
+- **Compute resource** — Resource, Host, Port (host/port are pre-filled from
+  the resource profile);
+- **Your HPC identity** — your **HPC username** and a **remote working
+  directory** you own and can write (e.g. `~/projects/cryostack` or
+  `/scratch/<your-username>/cryostack`);
+- **Access** — **Connection method** and **Authentication method**.
+
+**Recommended path — the CryoStack Connector** (a small app on your
+workstation, best for VPN/campus-network clusters):
+
+```
+Connection method: CryoStack Connector
+      ↓  Open Connector Setup   (shows a pairing code)
+      ↓  download the connector for your platform, launch it
+      ↓  pair  →  Connector card shows Connected
+      ↓  set up your SSH key, then Check SSH Access  →  Verified
+```
+
+Only platforms listed in `/downloads/connectors/manifest.json` are offered for
+download. **Direct SSH from server** is a shared-trust / developer mode, not
+the normal multi-user path.
+
+**SSH key:** CryoStack generates a key scoped to your identity. Register the
+**public** key with the resource — via **Password bootstrap** (a one-time
+password use that installs the key; the password is not stored) or manually
+through your institution's SSH-key portal. **Never** paste a private key into a
+portal or share it.
+
+**Check SSH Access** connects, reads the remote username, and compares it to
+your configured **HPC username**. A remote run is blocked (with a fresh check
+at submit time) if they do not match.
+
+The full reference — trust model, manual portal registration, VPN/MFA, Slurm
+Account, troubleshooting — is in the
+<a href="user_manual.html#configure-access-to-your-hpc-system">User Manual →
+Configure access to your HPC system</a>.
+
+## 7. Configure the science
 
 **Basic mode (ISSM):** open the *ISSM configuration (Basic)* panel. Enable only
 the parameters you want to change; leave the rest at the example defaults. The
@@ -206,7 +252,7 @@ and validates every value before the run is allowed.
 **Advanced mode:** use the file editor to inspect and edit the run target and
 supporting files in your workspace copy. Save before submitting.
 
-## 7. Prepare / check the environment
+## 8. Prepare / check the environment
 
 Some backends need a one-time setup on the remote resource:
 
@@ -216,7 +262,7 @@ Some backends need a one-time setup on the remote resource:
 - **Remote + Container (tested image)** — no preparation step; the tested
   image is used directly.
 
-## 8. Run and monitor
+## 9. Run and monitor
 
 Submit the run. The **Run log** reports staging, the submission command, the
 scheduler job id, and progress. A scheduler job keeps running if you close the
@@ -225,7 +271,7 @@ browser, as long as submission completed.
 Open the **Runs** panel to see run history and status; select a run to inspect
 its files and logs.
 
-## 9. Results
+## 10. Results
 
 Select the completed run and open the **Results** tab, then click
 **Preview Results**. CryoLauncher fetches the run's outputs into a local cache
@@ -248,7 +294,7 @@ plotted shows a clear reason instead of failing.
 Legacy runs (from before structured export) still show their existing figures
 and model file, with a note that the structured selector is unavailable.
 
-## 10. Download
+## 11. Download
 
 From the Results controls:
 

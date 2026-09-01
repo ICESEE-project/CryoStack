@@ -226,9 +226,12 @@ example**, in your personal dataset area.
 :::{raw} html
 <p>
   <b>Remote</b> <span class="cryostack-status supported">Supported</span>
-  &nbsp;— run on a Linux server or HPC cluster you have access to, over direct
-  SSH or through the CryoStack Connector. Slurm resource settings appear when
-  the resource is scheduler-managed.
+  &nbsp;— run on a Linux server or HPC cluster <b>you</b> have access to,
+  through the CryoStack Connector (recommended) or direct SSH. Configure access
+  with your own HPC identity — see
+  <a href="#configure-access-to-your-hpc-system">Configure access to your HPC
+  system</a>. Slurm resource settings appear when the resource is
+  scheduler-managed.
 </p>
 <p>
   <b>Cloud</b> <span class="cryostack-status dev">In development</span>
@@ -245,12 +248,263 @@ example**, in your personal dataset area.
   - **Local SIF** — a pre-built `.sif` on the remote resource;
   - **ICESEE-Containers (git)** — build from the container definitions.
 - **ICESEE-Spack** — run against a Spack-managed software environment on the
-  remote resource. First-time use requires onboarding (Section&nbsp;9).
+  remote resource. First-time use requires onboarding (Section&nbsp;10).
 
 The tested-image path pins the container by a verified digest so the software
 stack is reproducible.
 
-## 9. Preparing and launching runs
+## 9. Configure access to your HPC system
+
+### The trust model
+
+CryoStack does **not** create an HPC account and does **not** replace your
+institution's authentication. You must already have your own access to the
+target resource. CryoStack then acts entirely as **you**:
+
+- your own **HPC username**
+- your own **allocation / account**
+- your own **remote working directory**
+- your own **SSH credential** (a key CryoStack generates *for you*, scoped to
+  your identity)
+
+Runs never execute through a CryoStack developer's account or a shared
+identity. Before any remote run, CryoStack checks the **remote** username the
+resource reports and **blocks the run** when it does not match the HPC username
+you configured (see *Check SSH Access* and *Run protection* below).
+
+Your settings are stored **per CryoStack user × per compute resource** — another
+user configuring the same resource never sees or reuses your username,
+directory, allocation, or key.
+
+### Where you configure it
+
+**Run settings → Remote Connection**, laid out around your workflow:
+
+| Group | Fields |
+|---|---|
+| **Compute resource** | Resource, Host, Port |
+| **Your HPC identity** | HPC username, Remote working directory |
+| **Access** | Connection method, Authentication method |
+| **Status** | ● Not checked / Checking… / Verified / Mismatch / Failed |
+
+with **[ Check SSH Access ]** and **[ Open Connector Setup ]**, a **CryoStack
+Connector** card, and a **Diagnostics** section for the session id and relay
+details. Resource facts (host, port, scheduler defaults, VPN/MFA requirements)
+come from the resource's profile; the identity fields start blank and only ever
+hold *your* values.
+
+### Recommended path — the CryoStack Connector
+
+For clusters behind a campus network or VPN, the recommended **Connection
+method** is the **CryoStack Connector**: a small desktop app on *your*
+workstation that carries CryoStack's SSH through your existing network access.
+
+1. **Remote Connection → Connection method: CryoStack Connector.**
+2. Click **Open Connector Setup** — CryoStack creates a pairing session and
+   shows a **pairing code** on the **CryoStack Connector** card.
+3. On the setup page (`/connect/`), **download the connector for your
+   platform**. The offered downloads are exactly the platforms listed in
+   `/downloads/connectors/manifest.json`; if your platform is not listed, a
+   build has not been published for it yet — check
+   [/downloads/connectors/](https://cryostack.eas.gatech.edu/downloads/connectors/).
+4. **Install / launch** the connector.
+5. **Pair** — the connector pairs with your most recent CryoStack session
+   automatically; if it was already running, quit and relaunch it, or enter the
+   pairing code from the card into the connector's pairing field.
+6. The **CryoStack Connector** card then shows **Connected**.
+7. Fill in **HPC username** and **Remote working directory**, set up your SSH
+   key (below), and click **Check SSH Access** until it shows **Verified**.
+
+The pairing code is one-time, expires with the session, and is never added to a
+download link.
+
+**Known macOS notes (honest, not blocking normal use):** the macOS connector
+can be launched directly from the downloaded disk image. Copying it into
+`/Applications` has a known responsiveness issue on some systems, and
+copy/paste into the pairing field is still being polished — type the code, or
+run the connector from the disk image, if either bites.
+
+### Direct SSH from server
+
+**Direct SSH from server** connects from the CryoStack server straight to the
+resource using a **shared, server-side identity**. It is a **developer /
+shared-trust mode**, not the normal multi-user path — use it only for a
+single-tenant deployment or local development. Everyone else should use the
+Connector.
+
+### SSH keys
+
+CryoStack generates a dedicated SSH key for you, **namespaced by compute
+resource + your HPC username** (and, on the CryoStack server, by your CryoStack
+user). It is stored under `~/.ssh/cryostack/` on the machine that owns it —
+your workstation for the Connector, the server for Direct SSH. One CryoStack
+user's key is never reused as another user's credential. An older cluster-only
+key from a previous version (`~/.ssh/id_ed25519_icesee_<cluster>`) is shown for
+reference but never adopted; re-register once.
+
+```
+Generate / View your CryoStack SSH public key
+        ↓
+register the PUBLIC key with the HPC resource
+        ↓
+Check SSH Access  →  Verified
+```
+
+- The **public key** (the `...pub` file — one line starting `ssh-ed25519 …`)
+  is safe to give to the HPC service.
+- The **private key** must **never** be copied into an HPC portal, pasted into
+  a website, emailed, or shared. CryoStack never asks you for it, and never
+  asks for a portal password.
+
+How the public key is registered depends on the resource's **Authentication
+method**:
+
+#### SSH key
+
+Where the resource allows key installation over SSH, choose **Authentication
+method: SSH key**, seed it once with **Password bootstrap** (below), then Check
+SSH Access.
+
+#### Password bootstrap (one-time)
+
+For resources that support it, choose **Authentication method: Password
+bootstrap**:
+
+1. Enter your HPC account password in the one-time field.
+2. Click **Enable passwordless SSH**.
+
+CryoStack uses the password **once** to append your CryoStack public key to
+`~/.ssh/authorized_keys` on the resource. The password is **typed input only —
+it is not stored** and is not written anywhere. When it succeeds, switch back
+to **SSH key** and Check SSH Access. Password bootstrap does not work on every
+HPC system (some disable password SSH, or require MFA) — if it fails, use
+manual registration.
+
+#### Manual / web-portal registration
+
+Some HPC systems do not allow a key to be installed over SSH — you register it
+through an account-management website (for example sites like the University at
+Buffalo CCR, where you add authorized keys on a portal). CryoStack shows a
+**Register your key** checklist for these resources:
+
+1. **Generate / view** your CryoStack public key.
+2. **Copy** the *public* key.
+3. Sign in to **your institution's HPC / account portal**.
+4. Find **SSH keys / authorized keys / access keys**.
+5. **Add** the public key.
+6. **Save / apply** the change.
+7. **Return to CryoStack.**
+8. Click **Check SSH Access.**
+
+The exact portal and menu names differ by institution. If the resource's
+profile carries a portal URL, CryoStack links it directly; otherwise it shows
+these neutral steps. **CryoStack never asks for the portal's web password.**
+
+### VPN, MFA, campus network
+
+Some resources require an **institutional VPN**, **multi-factor
+authentication**, or being **on a campus network** before SSH works at all.
+These are **resource requirements, not CryoStack credentials** — CryoStack
+cannot satisfy them for you. When the resource's profile declares them,
+CryoStack shows the requirement beside the resource. Because the CryoStack
+Connector runs on your workstation, it naturally inherits your VPN / campus
+network.
+
+### SSH agent
+
+An **SSH agent** authentication option appears only for resources whose profile
+declares agent support. No currently configured resource does, and the
+**CryoStack Connector uses a dedicated key file, not your ssh-agent**. (The
+server-side SSH Key Manager has an *Add Key to Agent* action for the server's
+own agent, used only by the Direct SSH path.)
+
+### Remote working directory
+
+The **Remote working directory** is the location *on the HPC system* where
+CryoStack stages each run's files and reads back results. It must be
+**writable by your HPC identity**. Use a path you own, for example:
+
+```
+~/projects/cryostack
+/scratch/<your-username>/cryostack
+```
+
+Prefer a filesystem with enough quota for run inputs and outputs (often a
+`scratch` or `work` area rather than `home`). If the directory is missing or
+not writable, CryoStack fails the run with a clear message — it never falls
+back to another location.
+
+### Slurm resources
+
+When the resource is scheduler-managed, a **Slurm resources** panel appears,
+grouped as:
+
+| Group | Fields |
+|---|---|
+| **Job settings** | Job name, Wall time |
+| **Compute resources** | Nodes, Tasks, Tasks / node, Partition, Memory |
+| **Allocation & notifications** | Account, Email |
+
+- **Account** — your (or your project's) **Slurm allocation**. It can be
+  **mandatory** for a resource; CryoStack blocks submission with a clear
+  message when the resource requires an account and the field is empty.
+- **Email** — an optional address for job start / end / fail notifications.
+- **Wall time** — `MM:SS`, `HH:MM:SS`, or `D-HH:MM:SS`.
+- **Memory** — for example `512M`, `4G`, `16GB`, `1T`.
+- Before submission CryoStack checks internal consistency (nodes ≥ 1,
+  tasks ≥ 1, tasks / node ≥ 1, tasks / node ≤ tasks) and the syntax of wall
+  time and memory. It does **not** invent cluster-specific ceilings — the
+  scheduler still enforces the resource's real policies.
+
+### Check SSH Access
+
+**Check SSH Access** does exactly this:
+
+```
+connect to the resource
+   ↓
+run the identity command (whoami)
+   ↓
+compare the result to your configured HPC username
+```
+
+The **Status** chip shows:
+
+| State | Meaning |
+|---|---|
+| **Not checked** | you have not run a check yet |
+| **Checking…** | a check is running (the button is disabled) |
+| **Verified** | connected, and the remote username matches your configured HPC username |
+| **Identity mismatch** | connected, but the remote username is **not** the one you configured — the run log shows both |
+| **Failed** | could not connect or authenticate — see the run log |
+
+Resolving **Identity mismatch**:
+
+- confirm the **HPC username** field is your actual username on that resource;
+- confirm the SSH key you registered belongs to the **intended account**;
+- if using the Connector, confirm it is **paired to your current CryoStack
+  session** (the Connector card shows **Connected**).
+
+### Run protection
+
+When you submit a **remote** run, CryoStack performs a **fresh** access
+verification at submit time — it re-runs the identity check and blocks the run
+on a mismatch, an unverified or incomplete configuration, a missing credential,
+or (for the Connector path) an offline connector. A green **Check SSH Access**
+earlier is a useful UX signal but is **not** blindly trusted for execution.
+
+### Security and isolation
+
+- CryoStack application state (workspace, run history, settings) is scoped to
+  your **authenticated CryoStack user**.
+- HPC settings are stored **per user × compute resource**.
+- SSH credentials are **namespaced by user × resource × HPC identity**.
+- Connector pairing sessions are **owner-bound** — a session belongs to the
+  CryoStack user who created it.
+- SSH private keys, bootstrap passwords, pairing codes, and relay tokens are
+  **never written into run provenance** or any saved configuration.
+
+## 10. Preparing and launching runs
 
 ### Environment preparation
 
@@ -272,11 +526,12 @@ Some backends need a one-time setup on the remote resource:
 ### Launching
 
 Before submitting, confirm the model and example, the run target, the
-execution mode and backend, authentication and remote directory, and any
-scheduler resources. Submit the run. The Run log reports staging, the
-submission command, the scheduler job id, and progress.
+execution mode and backend, your HPC access (Section&nbsp;9 — **Check SSH
+Access** should read **Verified**), and any scheduler resources. Submit the
+run. CryoStack re-verifies remote access at submit time, then the Run log
+reports staging, the submission command, the scheduler job id, and progress.
 
-## 10. Run monitoring and history
+## 11. Run monitoring and history
 
 - **Runs panel.** Lists your run history with model, date, and status. Select
   a run to make it the active run for logs and results.
@@ -288,7 +543,7 @@ submission command, the scheduler job id, and progress.
 - **Isolation.** You only see your own runs. A run id owned by another user is
   simply absent from your history.
 
-## 11. Results
+## 12. Results
 
 CryoLauncher discovers **what a completed ISSM run actually produced**, rather
 than assuming every example has the same outputs.
@@ -321,7 +576,7 @@ Runs produced before structured export still work: their existing figures and
 model file are shown, with a note that the structured selector is unavailable
 for that run. Old results are never silently rewritten.
 
-## 12. Visualization
+## 13. Visualization
 
 The **Field visualization** panel is model-neutral: it only knows
 Solution → Field → Timestep and delegates the scientific rendering to the
@@ -353,7 +608,7 @@ model.
   the actual run. Unusual result shapes are handled explicitly — an
   unsupported field shows a short reason and never breaks the Results tab.
 
-## 13. Downloads
+## 14. Downloads
 
 From the Results controls:
 
@@ -363,7 +618,7 @@ From the Results controls:
 Downloads operate on the local cache for the selected run, so run Preview
 Results (or Fetch results) first.
 
-## 14. Reproducibility and provenance
+## 15. Reproducibility and provenance
 
 Each run records provenance so it can be understood later:
 
@@ -395,7 +650,7 @@ You normally never interact with these files directly — the Results tab and
 the download controls do it for you. `metadata.json` is the authoritative
 description of what a run produced.
 
-## 15. Troubleshooting
+## 16. Troubleshooting
 
 :::{raw} html
 <div class="cryostack-troubleshooting">
@@ -435,18 +690,96 @@ description of what a run produced.
   </details>
 
   <details>
-    <summary>Connector status stays offline</summary>
+    <summary>Connector not connected</summary>
     <p>
-      Confirm the connector is running on your workstation and that the
-      browser and connector share the same session identifier.
+      Confirm the connector is running on your workstation and paired to your
+      <em>current</em> CryoStack session. Click <b>Open Connector Setup</b>
+      again to refresh the session, then quit and relaunch the connector so it
+      picks up the newest session.
     </p>
   </details>
 
   <details>
-    <summary>Slurm rejects the job</summary>
+    <summary>Pairing code expired</summary>
     <p>
-      Review the account, partition, wall time, memory, and node/task counts
-      against the cluster's policies.
+      Pairing codes are one-time and expire with the session. Click
+      <b>Open Connector Setup</b> to generate a new one, then pair again.
+    </p>
+  </details>
+
+  <details>
+    <summary>SSH: Permission denied</summary>
+    <p>
+      Your CryoStack public key is not (yet) registered for this account.
+      Use <b>Password bootstrap</b> once, or register the public key manually
+      through your institution's portal, then <b>Check SSH Access</b>. Never
+      paste a private key anywhere.
+    </p>
+  </details>
+
+  <details>
+    <summary>Identity mismatch</summary>
+    <p>
+      You connected, but the remote username is not the one you configured.
+      Check the <b>HPC username</b> field, check the key you registered belongs
+      to the intended account, and check the connector is paired to your
+      current session. The run is blocked until this matches.
+    </p>
+  </details>
+
+  <details>
+    <summary>Remote working directory missing or not writable</summary>
+    <p>
+      Set <b>Remote working directory</b> to a path your HPC identity owns and
+      can write (often under <code>scratch</code> or <code>work</code>).
+      CryoStack never substitutes another location.
+    </p>
+  </details>
+
+  <details>
+    <summary>Slurm account required</summary>
+    <p>
+      This resource requires an allocation. Enter your project's Slurm
+      <b>Account</b> in <em>Allocation &amp; notifications</em> and resubmit.
+    </p>
+  </details>
+
+  <details>
+    <summary>VPN / MFA required</summary>
+    <p>
+      Some resources need an institutional VPN, MFA, or a campus network before
+      SSH works. These are resource requirements, not CryoStack settings.
+      Connect your VPN, then use the CryoStack Connector (which runs on your
+      workstation and inherits that access).
+    </p>
+  </details>
+
+  <details>
+    <summary>Public key registered but SSH still fails</summary>
+    <p>
+      Confirm you registered the <em>public</em> key (the <code>.pub</code>
+      line), that it was added to the intended account, and that the change was
+      saved/applied on the portal. Then check for a VPN/MFA requirement. Re-run
+      <b>Check SSH Access</b>.
+    </p>
+  </details>
+
+  <details>
+    <summary>Connector platform not listed for download</summary>
+    <p>
+      The setup page only offers platforms present in
+      <code>/downloads/connectors/manifest.json</code>. If yours is absent, a
+      build has not been published for it yet — use another platform or contact
+      the platform administrators.
+    </p>
+  </details>
+
+  <details>
+    <summary>macOS: connector installed in /Applications is unresponsive</summary>
+    <p>
+      Known issue on some systems. Run the connector directly from the
+      downloaded disk image instead. If copy/paste into the pairing field also
+      misbehaves, type the code.
     </p>
   </details>
 

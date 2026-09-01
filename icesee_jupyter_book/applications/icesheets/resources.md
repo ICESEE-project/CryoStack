@@ -154,10 +154,34 @@
     <div class="cryostack-resource-tag">Execution Mode</div>
     <h3>Remote <span class="cryostack-status supported">Supported</span></h3>
     <p>
-      Run on a Linux server or HPC cluster over SSH or the CryoStack
-      Connector, with Slurm settings for scheduler-managed systems.
+      Run on a Linux server or HPC cluster you have access to, through the
+      CryoStack Connector (recommended) or direct SSH, with Slurm settings for
+      scheduler-managed systems.
     </p>
     <a href="user_manual.html#execution-modes-and-backends">Execution guide &rarr;</a>
+  </article>
+
+  <article class="cryostack-resource-card">
+    <div class="cryostack-resource-tag">Access</div>
+    <h3>Configure HPC access</h3>
+    <p>
+      Connect with your own HPC username, allocation, remote directory, and a
+      CryoStack-generated SSH key scoped to your identity. Trust model,
+      Connector setup, key registration, VPN/MFA, and troubleshooting.
+    </p>
+    <a href="user_manual.html#configure-access-to-your-hpc-system">Access guide &rarr;</a>
+  </article>
+
+  <article class="cryostack-resource-card">
+    <div class="cryostack-resource-tag">Download</div>
+    <h3>CryoStack Connector</h3>
+    <p>
+      The desktop app that carries CryoStack's SSH through your workstation's
+      network access. Available platforms are those listed in the download
+      manifest.
+    </p>
+    <a href="/connect/">Connector setup &rarr;</a>
+    <a href="/downloads/connectors/">All downloads &rarr;</a>
   </article>
 
   <article class="cryostack-resource-card">

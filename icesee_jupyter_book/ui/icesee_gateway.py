@@ -614,9 +614,9 @@ def build_icesee_ui():
 
         access_mode_dd = W.Dropdown(
             options=[
+                ("CryoStack Connector (recommended)", "connector"),
+                ("Direct SSH from server (shared-trust / developer)", "direct"),
                 ("Auto", "auto"),
-                ("Direct SSH from server", "direct"),
-                ("Local Connector / VPN bridge", "connector"),
             ],
             value="connector",
             layout=W.Layout(width="320px"),
