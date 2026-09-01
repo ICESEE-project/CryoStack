@@ -226,25 +226,24 @@ export function recommendation(detectedKey, availableKeys) {
 }
 
 /*
- * Classify the live pairing state from the relay responses.
- *   inputs: { session, statusResp, latestResp, relayError }
- *   statusResp = GET /connector/status/<session> -> { online: bool } | null
- *   latestResp = GET /connector/latest           -> { ok, session_id } | null
+ * Classify the live pairing state from the relay's coarse status response.
+ *   inputs: { session, statusResp, relayError }
+ *   statusResp = GET /connector/status/<session>
+ *              -> { online: bool, state: "waiting"|"connected"|"disconnected"
+ *                                        |"superseded"|"expired"|"unknown" } | null
  *
- * Never reports "connected" when the relay could not be reached.
+ * The relay no longer exposes a global "latest session" endpoint, so staleness
+ * is read straight from `state`. Never reports "connected" when the relay
+ * could not be reached.
  */
-export function classifyConnection({ session, statusResp, latestResp, relayError } = {}) {
+export function classifyConnection({ session, statusResp, relayError } = {}) {
   if (!session) return { state: "no-session" };
-  if (relayError) return { state: "relay-unavailable" };
-  if (
-    latestResp &&
-    latestResp.ok &&
-    latestResp.session_id &&
-    latestResp.session_id !== session
-  ) {
-    return { state: "superseded" };
-  }
-  if (statusResp && statusResp.online === true) return { state: "connected" };
+  if (relayError || !statusResp) return { state: "relay-unavailable" };
+  const s = statusResp.state;
+  if (statusResp.online === true || s === "connected") return { state: "connected" };
+  if (s === "superseded") return { state: "superseded" };
+  if (s === "expired") return { state: "expired" };
+  if (s === "unknown") return { state: "session-unknown" };
   return { state: "waiting" };
 }
 
@@ -265,7 +264,19 @@ export const CONNECTION_TEXT = {
     tone: "error",
     title: "This pairing link is out of date",
     detail:
-      "A newer connector session has been created. Return to the application and open Connector Setup again for a fresh link.",
+      "A newer connector session has been created. Return to the application and open Connector Setup again for a fresh link and pairing code.",
+  },
+  expired: {
+    tone: "error",
+    title: "This pairing session has expired",
+    detail:
+      "Return to the application and open Connector Setup again for a fresh pairing code.",
+  },
+  "session-unknown": {
+    tone: "error",
+    title: "This pairing session was not found",
+    detail:
+      "The link may be old, or the relay may have restarted. Open Connector Setup again from the application.",
   },
   connected: {
     tone: "ok",
@@ -399,25 +410,16 @@ function paintConnection(box, state, returnTarget) {
 function startPairing(session, returnTarget) {
   const box = document.getElementById("conn");
   const statusUrl = `${RELAY_BASE}/status/${encodeURIComponent(session)}`;
-  const latestUrl = `${RELAY_BASE}/latest`;
 
   async function tick() {
     let statusResp = null;
-    let latestResp = null;
     let relayError = false;
     try {
       statusResp = await fetchJSON(statusUrl);
     } catch (_e) {
       relayError = true;
     }
-    if (!relayError) {
-      try {
-        latestResp = await fetchJSON(latestUrl);
-      } catch (_e) {
-        latestResp = null; // non-fatal: staleness check is best-effort
-      }
-    }
-    const { state } = classifyConnection({ session, statusResp, latestResp, relayError });
+    const { state } = classifyConnection({ session, statusResp, relayError });
     paintConnection(box, state, returnTarget);
   }
 

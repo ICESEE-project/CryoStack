@@ -48,6 +48,22 @@ RELAY_PORT=8899
 cd "${REPO_ROOT}"
 
 
+# ------------------------------------------------------------
+# Shared connector-relay deployment token.
+#
+# Gates relay session creation so a session's owner_user_id is trustworthy and
+# anonymous session-creation spam is rejected. The GUI/Voila kernels and the
+# relay must see the same value, so it is exported here before either starts.
+# Persisted once to ~/.cryostack/relay_control_token (mode 0600).
+# ------------------------------------------------------------
+if [ -z "${CRYOSTACK_RELAY_CONTROL_TOKEN:-}" ]; then
+    CRYOSTACK_RELAY_CONTROL_TOKEN="$(
+        python3 -m icesee_jupyter_book.core.connector_relay_auth ensure
+    )"
+    export CRYOSTACK_RELAY_CONTROL_TOKEN
+fi
+
+
 # ============================================================
 # Helpers
 # ============================================================

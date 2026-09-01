@@ -168,49 +168,48 @@ async def handle_command(command_type: str, payload: dict):
     }
 
 
-async def main(ws_url: str, relay: str = DEFAULT_RELAY, poll_seconds: int = 5):
+class PairingRejected(RuntimeError):
+    """The relay refused this connector's session credential -- do not retry."""
+
+
+# WebSocket close codes the relay uses to reject a connector permanently.
+_TERMINAL_WS_CODES = {4401, 4404, 4409}
+
+
+async def main(ws_url: str, session_secret: str, poll_seconds: int = 5):
     print(f"[connector] connecting to {ws_url}")
 
     async with websockets.connect(ws_url) as ws:
-        print("[connector] connected")
-
-        async def watch_for_newer_session():
-            while True:
-                await asyncio.sleep(poll_seconds)
-
-                try:
-                    latest = resolve_ws_url(relay=relay, session=None, ws_url=None)
-
-                    if latest and latest != ws_url:
-                        print("[connector] newer ICESEE session detected")
-                        print("[connector] old:", ws_url)
-                        print("[connector] new:", latest)
-                        await ws.close()
-                        return
-
-                except Exception as e:
-                    print("[connector] session watcher error:", type(e).__name__, e)
-
-        watcher = asyncio.create_task(watch_for_newer_session())
-
+        # Prove possession of this session's secret before anything else.
+        await ws.send(json.dumps({"type": "auth", "secret": session_secret}))
         try:
-            async for raw in ws:
-                msg = json.loads(raw)
+            hello = json.loads(await asyncio.wait_for(ws.recv(), timeout=15))
+        except (asyncio.TimeoutError, ValueError) as e:
+            raise PairingRejected(f"no auth acknowledgement from relay ({e})")
 
-                command_id = msg.get("command_id")
-                command_type = msg.get("command_type")
-                payload = msg.get("payload", {})
+        if hello.get("type") != "auth_ok":
+            raise PairingRejected(hello.get("type") or "relay rejected the session secret")
 
-                result = await handle_command(command_type, payload)
+        print("[connector] authenticated to session", hello.get("session_id"))
 
-                await ws.send(json.dumps({
-                    "command_id": command_id,
-                    "command_type": command_type,
-                    "result": result,
-                }))
+        async for raw in ws:
+            msg = json.loads(raw)
 
-        finally:
-            watcher.cancel()
+            # Ignore any stray non-command frames (e.g. a repeated auth_ok).
+            if "command_id" not in msg and "command_type" not in msg:
+                continue
+
+            command_id = msg.get("command_id")
+            command_type = msg.get("command_type")
+            payload = msg.get("payload", {})
+
+            result = await handle_command(command_type, payload)
+
+            await ws.send(json.dumps({
+                "command_id": command_id,
+                "command_type": command_type,
+                "result": result,
+            }))
 
 async def run_rsync_upload(payload: dict):
     local_path = payload["local_path"]
@@ -382,100 +381,99 @@ async def run_fetch_archive(payload: dict):
             "error": f"{type(e).__name__}: {e}",
         }
 
+def _relay_ws_base(relay: str) -> str:
+    return relay.rstrip("/").replace("http://", "ws://").replace("https://", "wss://")
+
+
+def pair_session(relay: str, pairing_code: str) -> dict | None:
+    """Exchange a one-time pairing code for ``{session_id, session_secret}``.
+
+    Returns ``None`` when the code is wrong, already used, or expired.
+    """
+    code = (pairing_code or "").strip()
+    if not code:
+        return None
+    try:
+        resp = requests.post(
+            f"{relay.rstrip('/')}/connector/pair",
+            json={"pairing_code": code},
+            timeout=15,
+        )
+    except Exception as e:
+        print("[connector] could not reach relay to pair:", type(e).__name__, e)
+        return None
+
+    if resp.status_code != 200:
+        return None
+    try:
+        data = resp.json()
+    except Exception:
+        return None
+    return data if data.get("ok") and data.get("session_secret") else None
+
+
 def resolve_ws_url(relay: str, session: str | None = None, ws_url: str | None = None):
+    """Build the connector WebSocket URL. No global session discovery."""
     if ws_url:
         return ws_url
-
-    relay = relay.rstrip("/")
-
     if session:
-        relay_ws_base = relay.replace("http://", "ws://").replace("https://", "wss://")
-        return f"{relay_ws_base}/connector/ws/{session}"
-
-    try:
-        response = requests.get(f"{relay}/connector/latest", timeout=10)
-
-        if response.status_code != 200:
-            print("[connector] relay returned status:", response.status_code)
-            print("[connector] response preview:", response.text[:120])
-            return None
-
-        # try:
-        #     resp = response.json()
-        # except Exception:
-        #     print("[connector] relay did not return JSON")
-        #     print("[connector] response preview:", response.text[:120])
-        #     return None
-        try:
-            resp = response.json()
-        except Exception as e:
-            print("[connector][ERROR] Failed to parse JSON response")
-            print("[connector][ERROR] URL:", response.url)
-            print("[connector][ERROR] status:", response.status_code)
-            print("[connector][ERROR] content-type:", response.headers.get("content-type"))
-            print("[connector][ERROR] text:")
-            print(response.text[:1000])
-            raise
-
-        print("[connector] latest response:", resp)
-
-        if not resp.get("ok"):
-            return None
-
-        relay_ws_base = relay.replace("http://", "ws://").replace("https://", "wss://")
-        return f"{relay_ws_base}{resp['ws_url']}"
-
-    except Exception as e:
-        print("[connector] could not contact relay:", type(e).__name__, e)
-        return None
+        return f"{_relay_ws_base(relay)}/connector/ws/{session}"
+    return None
 
 
 def run_connector(
     relay: str = DEFAULT_RELAY,
+    pairing_code: str | None = None,
     session: str | None = None,
+    session_secret: str | None = None,
     ws_url: str | None = None,
     poll: bool = True,
     poll_seconds: int = 5,
 ):
-    
-    import pathlib, datetime
+    import time
 
-    LOG_FILE = pathlib.Path.home() / "icesee_connector.log"
+    # Resolve the session + secret exactly once. A connector reaches a session
+    # only by holding that session's pairing capability -- never by asking the
+    # relay for "the latest session".
+    if not session_secret and pairing_code:
+        paired = pair_session(relay, pairing_code)
+        if not paired:
+            print("[connector] Pairing failed: the pairing code is invalid or expired.")
+            print("[connector] Open the Connector Setup page for a fresh code.")
+            return
+        session = paired["session_id"]
+        session_secret = paired["session_secret"]
 
-    def log(msg):
-        ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        with open(LOG_FILE, "a") as f:
-            f.write(f"[{ts}] {msg}\n")
-        print(msg)
+    if not (session and session_secret):
+        print("[connector] No pairing code provided.")
+        print("[connector] Open the Connector Setup page, copy your pairing code,")
+        print("[connector] and pair the connector with it.")
+        return
+
+    target = ws_url or resolve_ws_url(relay=relay, session=session)
+    print("[connector] session:", session)
 
     while True:
-        target = resolve_ws_url(relay=relay, session=session, ws_url=ws_url)
-
-        if not target:
-            if not poll:
-                print("[connector] No active session found.")
-                return
-
-            print(f"[connector] waiting for ICESEE session... retrying in {poll_seconds}s")
-            import time
-            time.sleep(poll_seconds)
-            continue
-
-        print("[connector] using ws_url:", target)
-
         try:
-            asyncio.run(main(target, relay=relay, poll_seconds=poll_seconds))
+            asyncio.run(main(target, session_secret=session_secret, poll_seconds=poll_seconds))
         except KeyboardInterrupt:
             print("[connector] stopped")
             return
+        except PairingRejected as e:
+            print("[connector] session is no longer valid:", e)
+            print("[connector] Re-pair from the Connector Setup page.")
+            return
         except Exception as e:
+            code = getattr(e, "code", None)
+            if code in _TERMINAL_WS_CODES:
+                print("[connector] relay closed the session (code", code, ") -- re-pair to continue.")
+                return
             print("[connector] disconnected:", type(e).__name__, e)
 
         if not poll:
             return
 
         print(f"[connector] reconnecting in {poll_seconds}s")
-        import time
         time.sleep(poll_seconds)
 
 def ensure_local_ssh_key(cluster_name="pace", key_type="ed25519"):
@@ -626,7 +624,11 @@ async def bootstrap_passwordless_ssh_local(payload):
         }
 
 def main_auto():
-    run_connector(relay=DEFAULT_RELAY, poll=True)
+    """Entry point for the packaged connector: pair from CRYOSTACK_PAIRING_CODE."""
+    import os
+
+    code = (os.environ.get("CRYOSTACK_PAIRING_CODE") or "").strip()
+    run_connector(relay=DEFAULT_RELAY, pairing_code=code or None, poll=True)
 
 async def get_public_key_local(payload: dict):
     cluster_name = payload.get("cluster_name", "pace")

@@ -82,9 +82,11 @@ def test_no_session_token_in_static_download_urls():
 def test_pairing_uses_live_relay_endpoints():
     js = _JS.read_text()
     assert "/connector/status/" in js
-    assert "/connector/latest" in js
+    # global "attach to newest session anywhere" discovery is gone
+    assert "/connector/latest" not in js
+    assert "latestResp" not in js
     # never claims connected on a relay error
-    assert 'if (relayError) return { state: "relay-unavailable" };' in js
+    assert 'if (relayError || !statusResp) return { state: "relay-unavailable" };' in js
 
 
 def test_return_target_is_allowlisted():

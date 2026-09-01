@@ -106,6 +106,7 @@ elif [[ "$OS_TAG" == "linux" ]]; then
   python3 -m pip install --quiet pystray pillow
   PYTHONPATH="$REPO_ROOT" pyinstaller "${PYI_ARGS[@]}" \
     --hidden-import pystray --hidden-import PIL \
+    --hidden-import tkinter --hidden-import tkinter.simpledialog \
     "$SRC_ENTRY"
 
   BIN="$DIST_DIR/${APP_BASENAME}"
@@ -117,6 +118,7 @@ else  # windows
   python3 -m pip install --quiet pystray pillow
   PYTHONPATH="$REPO_ROOT" pyinstaller "${PYI_ARGS[@]}" \
     --hidden-import pystray --hidden-import PIL \
+    --hidden-import tkinter --hidden-import tkinter.simpledialog \
     "$SRC_ENTRY"
 
   EXE="$DIST_DIR/${APP_BASENAME}.exe"

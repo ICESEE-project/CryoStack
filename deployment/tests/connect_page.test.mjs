@@ -143,25 +143,37 @@ test("classifyConnection: relay unreachable is never 'connected'", () => {
     classifyConnection({ session: "abc", relayError: true, statusResp: { online: true } }).state,
     "relay-unavailable",
   );
+  assert.equal(
+    classifyConnection({ session: "abc", statusResp: null }).state,
+    "relay-unavailable",
+  );
 });
 
-test("classifyConnection: online -> connected", () => {
+test("classifyConnection: online/state=connected -> connected", () => {
   assert.equal(
-    classifyConnection({ session: "abc", statusResp: { online: true }, latestResp: { ok: true, session_id: "abc" } }).state,
+    classifyConnection({ session: "abc", statusResp: { online: true, state: "connected" } }).state,
     "connected",
   );
 });
 
-test("classifyConnection: newer session supersedes this link", () => {
+test("classifyConnection: relay state drives staleness (no global-latest)", () => {
   assert.equal(
-    classifyConnection({ session: "abc", statusResp: { online: false }, latestResp: { ok: true, session_id: "xyz" } }).state,
+    classifyConnection({ session: "abc", statusResp: { online: false, state: "superseded" } }).state,
     "superseded",
+  );
+  assert.equal(
+    classifyConnection({ session: "abc", statusResp: { online: false, state: "expired" } }).state,
+    "expired",
+  );
+  assert.equal(
+    classifyConnection({ session: "abc", statusResp: { online: false, state: "unknown" } }).state,
+    "session-unknown",
   );
 });
 
-test("classifyConnection: waiting when offline and still the latest", () => {
+test("classifyConnection: waiting when the connector has not paired yet", () => {
   assert.equal(
-    classifyConnection({ session: "abc", statusResp: { online: false }, latestResp: { ok: true, session_id: "abc" } }).state,
+    classifyConnection({ session: "abc", statusResp: { online: false, state: "waiting" } }).state,
     "waiting",
   );
 });

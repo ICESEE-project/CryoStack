@@ -735,10 +735,19 @@ def build_icesheets_ui():
             log_out.clear_output()
 
             try:
+                # A relay-side session that is gone/expired/superseded must be
+                # recreated, not reused -- otherwise commands fail closed later.
+                if SESSION.get("id"):
+                    prior = relay_check_status(SESSION["id"])
+                    if prior.get("state") in {"unknown", "expired", "superseded"}:
+                        SESSION.clear()
+
                 if SESSION.get("id") is None:
-                    sess = create_session()
+                    owner = resolve_workspace_user(require_authenticated=True)
+                    sess = create_session(owner_user_id=owner.user_id)
                     SESSION["id"] = sess["session_id"]
                     SESSION["ws_url"] = sess["ws_url"]
+                    SESSION["pairing_code"] = sess["pairing_code"]
 
                     connector_setup_link.value = f"""
                     <a href="https://cryostack.eas.gatech.edu/connect/?session={SESSION['id']}&app=icesheets"
@@ -757,41 +766,36 @@ def build_icesheets_ui():
                     """
 
                 st = relay_check_status(SESSION["id"])
+                online = bool(st.get("online"))
 
                 relay_status.value = f"""
                 <div style="
-                    border:1px solid rgba(13,110,253,.18);
-                    background:rgba(13,110,253,.06);
-                    border-radius:12px;
-                    padding:12px;
-                    line-height:1.5;
-                    margin:8px 0;
+                    border:1px solid {'rgba(25,135,84,.25)' if online else 'rgba(13,110,253,.18)'};
+                    background:{'rgba(25,135,84,.08)' if online else 'rgba(13,110,253,.06)'};
+                    border-radius:12px; padding:12px; line-height:1.6; margin:8px 0;
                 ">
-                <b>Connector session:</b> {SESSION["id"]}<br>
-                <b>Status:</b> {"online" if st.get("online") else "waiting for connector"}<br>
-                <b>WebSocket path:</b> {SESSION["ws_url"]}
+                  <b>Connector:</b> {'connected ✅' if online else 'waiting for connector'}<br>
+                  <b>Pairing code:</b>
+                  <code style="font-size:15px;background:#eef1f4;padding:2px 8px;border-radius:6px;">
+                  {SESSION.get('pairing_code', '—')}</code><br>
+                  <span style="color:#5f6b7a;font-size:13px;">
+                  Enter this code in the CryoStack Connector on your workstation
+                  (“Pair with CryoStack…”). It is one-time and expires with this session.
+                  </span>
+                  <details style="margin-top:8px;">
+                    <summary style="cursor:pointer;color:#5f6b7a;font-size:13px;">Diagnostics</summary>
+                    <div style="font-size:12px;color:#5f6b7a;margin-top:4px;">
+                      session id: {SESSION['id']}<br>
+                      ws path: {SESSION['ws_url']}<br>
+                      relay state: {st.get('state', 'unknown')}
+                    </div>
+                  </details>
                 </div>
                 """
-                # is_online = st.get("online")
-
-                # relay_status.value = f"""
-                # <div style="
-                #     border:1px solid {'rgba(25,135,84,.25)' if is_online else 'rgba(13,110,253,.18)'};
-                #     background:{'rgba(25,135,84,.08)' if is_online else 'rgba(13,110,253,.06)'};
-                #     border-radius:12px;
-                #     padding:12px;
-                #     line-height:1.55;
-                #     margin:8px 0;
-                # ">
-                # <b>Connector session:</b> {SESSION["id"]}<br>
-                # <b>Status:</b> {'online ✅' if is_online else 'waiting for connector'}<br>
-                # <b>WebSocket path:</b> {SESSION["ws_url"]}
-                # </div>
-                # """
 
                 with log_out:
-                    print("[connector] Session ID:", SESSION["id"])
-                    print("[connector] Status:", st)
+                    print("[connector] pairing code:", SESSION.get("pairing_code"))
+                    print("[connector] relay state:", st.get("state"))
 
             except Exception as e:
                 relay_status.value = ""
