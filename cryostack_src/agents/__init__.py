@@ -22,6 +22,14 @@ from .context import ToolContext, build_tool_context
 from .permissions import Permission, PermissionError
 from .registry import ToolRegistry, default_registry
 from .tools import ToolResult, ToolSpec, tool
+from .assistant import AssistantResult, RunAssistant
+from .llm import (
+    LLMClient,
+    LLMMessage,
+    LLMResponse,
+    LLMToolCall,
+    ScriptedLLM,
+)
 from .trace import Trace, TraceEvent
 from .trace_store import (
     AGENT_PROVENANCE_KEY,
@@ -38,4 +46,6 @@ __all__ = [
     "Trace", "TraceEvent",
     "TraceStore", "run_manifest_stamp", "assert_no_agent_chatter",
     "AGENT_PROVENANCE_KEY",
+    "LLMClient", "LLMMessage", "LLMResponse", "LLMToolCall", "ScriptedLLM",
+    "RunAssistant", "AssistantResult",
 ]
