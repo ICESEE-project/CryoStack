@@ -94,6 +94,9 @@ def _local_dir(source) -> Path:
     return path
 
 
+_RUN_PREFIX_RE = re.compile(r"\A(?:[A-Za-z0-9][A-Za-z0-9._-]{0,63}/)*\Z")
+
+
 def stage_run_inputs(
     config: AWSConfig,
     *,
@@ -102,6 +105,7 @@ def stage_run_inputs(
     run_target: str,
     bucket: str,
     run_id: str | None = None,
+    run_prefix: str = "",
     working_directory: str = ".",
     s3=None,
 ) -> CloudRunStaging:
@@ -128,7 +132,12 @@ def stage_run_inputs(
     if not _RUN_ID_RE.match(run_id):
         raise CloudStagingError(f"unsafe run id: {run_id!r}")
 
-    s3_run = f"s3://{bucket}/runs/{run_id}"
+    prefix = (run_prefix or "").strip().strip("/")
+    prefix = f"{prefix}/" if prefix else ""
+    if not _RUN_PREFIX_RE.match(prefix):
+        raise CloudStagingError(f"unsafe run prefix: {run_prefix!r}")
+
+    s3_run = f"s3://{bucket}/runs/{prefix}{run_id}"
     s3_input = f"{s3_run}/input"
     s3_outputs = f"{s3_run}/outputs"
     invoke = s3 or (lambda args: run_aws(config, args))

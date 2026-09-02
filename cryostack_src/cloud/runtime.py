@@ -147,6 +147,17 @@ export ICESEE_RUN_DIR="${WORKDIR}"
 log "phase 2/3  run   model=${CRYOSTACK_MODEL}  target=${RUN_TARGET}"
 rc=0
 case "${CRYOSTACK_MODEL}" in
+  smoke)
+    # license-neutral infrastructure smoke test: no model runtime, just prove
+    # the container can read the staged input and write a structured output.
+    log "smoke: writing outputs/metadata.json (no model runtime)"
+    mkdir -p "${OUTPUTS}"
+    _host="$(hostname 2>/dev/null)"; [ -n "${_host}" ] || _host="container"
+    printf '{"schema":"cryostack.cloud.smoke","version":1,"ok":true,"run_target":"%s","hostname":"%s"}\n' \
+      "${RUN_TARGET}" "${_host}" > "${OUTPUTS}/metadata.json"
+    [ -f "${WORKDIR}/${RUN_TARGET}" ] && cp -f "${WORKDIR}/${RUN_TARGET}" "${OUTPUTS}/echoed-input.txt"
+    rc=0
+    ;;
   issm)
     with-issm matlab -nodesktop -nosplash -batch \
       "ICESEE_RUN_DIR='${WORKDIR}'; setenv('ICESEE_RUN_DIR','${WORKDIR}'); run('${RUN_TARGET}'); run('${WORKDIR}/postprocess_icesee.m');"

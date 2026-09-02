@@ -546,6 +546,7 @@ class AWSDriver(
         bucket = (kwargs.get("bucket") or "").strip()
         working_directory = kwargs.get("working_directory") or "."
         run_id = kwargs.get("run_id")
+        run_prefix = kwargs.get("run_prefix") or ""
         job_name = kwargs.get("job_name") or "cryostack"
         job_queue = (kwargs.get("job_queue") or "").strip() or JOB_QUEUE_NAME
         job_definition = (kwargs.get("job_definition") or "").strip() or job_definition_name(model)
@@ -571,6 +572,7 @@ class AWSDriver(
             run_target=run_target,
             bucket=bucket,
             run_id=run_id,
+            run_prefix=run_prefix,
             working_directory=working_directory,
             s3=s3,
         )

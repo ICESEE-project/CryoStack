@@ -192,28 +192,19 @@ def cloud_run_plan_summary(
 
 
 # ── user-scoped S3 prefix ─────────────────────────────────────────────────
-_SAFE_USER_RE = re.compile(r"[^a-z0-9-]+")
+_S3_SEG_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
-def safe_user_segment(user_id: str) -> str:
-    """A filesystem/S3-safe, collision-resistant segment for a CryoStack user.
-
-    Not reversible and not a secret; it only namespaces one user's runs from
-    another's under ``s3://<bucket>/runs/<seg>/``.
-    """
-    import hashlib
-
-    raw = (user_id or "").strip().lower()
-    slug = _SAFE_USER_RE.sub("-", raw).strip("-")[:24] or "user"
-    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:10]
-    return f"{slug}-{digest}"
-
-
-def user_run_prefix(user_id: str) -> str:
+def user_run_prefix(safe_user_id: str) -> str:
     """``<safe-user>/`` -- the S3 key prefix under ``runs/`` that isolates one
-    CryoStack user's cloud runs from another's. Passed to ``stage_run_inputs``
-    as ``run_prefix``."""
-    return safe_user_segment(user_id) + "/"
+    CryoStack user's cloud runs from another's.
+
+    Pass ``WorkspaceManager.owner.safe_id`` (already a collision-resistant,
+    filesystem-safe namespace key). A defensive re-slug here guarantees a
+    single clean path segment even if a caller hands a raw id.
+    """
+    seg = _S3_SEG_RE.sub("-", (safe_user_id or "").strip()).strip("-.") or "user"
+    return f"{seg[:64]}/"
 
 
 # ── the controller ────────────────────────────────────────────────────────

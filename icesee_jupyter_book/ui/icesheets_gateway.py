@@ -117,6 +117,7 @@ from cryostack_src.frontend.cryolauncher.cloud_run_controller import (
     CloudRunController,
     cloud_run_plan_summary,
     resolve_job_definition,
+    user_run_prefix,
 )
 from cryostack_src.cloud.drivers.aws.batch_config import (
     JOB_DEFINITION_NAMES as _CLOUD_JOB_DEFS,
@@ -788,6 +789,7 @@ def build_icesheets_ui():
                 model=_model,
                 run_target=_target,
                 bucket=_cfg.bucket,
+                run_prefix=user_run_prefix(workspace_manager.owner.safe_id),
                 job_queue=_cfg.job_queue,
                 job_definition=_cfg.job_definition,
                 job_name=(batch_job_name.value.strip() or "cryostack"),
@@ -1109,6 +1111,8 @@ def build_icesheets_ui():
 
         cloud_status_btn = W.Button(description="Check status", icon="search")
         cloud_logs_btn = W.Button(description="Logs hint", icon="file-text")
+        cloud_smoke_btn = W.Button(
+            description="Infrastructure smoke test", icon="stethoscope")
 
         # =========================================================
         # Outputs
@@ -1564,6 +1568,7 @@ def build_icesheets_ui():
 
             elif is_cloud:
                 log_runtime_controls.children = (
+                    cloud_smoke_btn,
                     cloud_status_btn,
                     cloud_logs_btn,
                     clear_btn,
@@ -2463,6 +2468,58 @@ def build_icesheets_ui():
             poll_interval=float(os.environ.get("CRYOSTACK_CLOUD_POLL_SECONDS", "20")),
         )
 
+        def _run_cloud_smoke_test(_=None):
+            """License-neutral: verify identity + S3 (your prefix) + Batch + ECR
+            reachability. Never submits a job, never runs ISSM."""
+            from cryostack_src.cloud import run_infrastructure_smoke_test
+            from cryostack_src.cloud.drivers.aws.batch_config import (
+                ECR_REPOSITORY_NAMES,
+            )
+            log_out.clear_output()
+            _model = model_dd.value
+            _cfg = resolve_cloud_config(
+                provider="aws", region=aws_region.value.strip(),
+                bucket=cloud_bucket.value.strip(), profile=aws_profile.value.strip(),
+                model=_model, job_queue=batch_job_queue.value.strip(),
+                job_definition=batch_job_def.value.strip(),
+            )
+            _probs = validate_cloud_config(_cfg, model=_model)
+            if _probs:
+                with log_out:
+                    print("[cloud][smoke] fix the configuration first:")
+                    for _p in _probs:
+                        print("  -", _p)
+                return
+            status_chip.value = status_html("running")
+            with log_out:
+                print("[cloud] Cloud infrastructure smoke test "
+                      "(no job submitted, no ISSM run)…")
+
+            async def _worker():
+                report = await asyncio.to_thread(
+                    run_infrastructure_smoke_test,
+                    region=_cfg.region, bucket=_cfg.bucket,
+                    user_prefix=workspace_manager.owner.safe_id,
+                    job_queue=_cfg.job_queue, job_definition=_cfg.job_definition,
+                    ecr_repository=ECR_REPOSITORY_NAMES.get(_model, ""),
+                    profile=_cfg.profile,
+                )
+                with log_out:
+                    for _ln in report.lines():
+                        print(_ln)
+                    print("[cloud] infrastructure ready"
+                          if report.infrastructure_ready
+                          else "[cloud] infrastructure NOT ready — see the failures above")
+                status_chip.value = status_html(
+                    "done" if report.infrastructure_ready else "fail")
+
+            try:
+                asyncio.get_running_loop().create_task(_worker())
+            except RuntimeError:
+                asyncio.run(_worker())
+
+        cloud_smoke_btn.on_click(_run_cloud_smoke_test)
+
         def tail_selected_workspace_run():
             selected = workspace_manager.selected_run()
             if selected and selected.execution_mode == "cloud":
@@ -2974,6 +3031,7 @@ def build_icesheets_ui():
 
         cloud_log_controls = build_workspace_toolbar(
             [
+                cloud_smoke_btn,
                 cloud_status_btn,
                 cloud_logs_btn,
                 clear_btn,

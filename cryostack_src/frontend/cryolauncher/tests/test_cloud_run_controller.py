@@ -31,7 +31,6 @@ from cryostack_src.frontend.cryolauncher.cloud_run_controller import (
     is_terminal,
     normalize_aws_state,
     resolve_job_definition,
-    safe_user_segment,
     user_run_prefix,
 )
 
@@ -180,13 +179,12 @@ def test_resolve_job_definition_is_controlled():
     assert jd == "cryostack-icepack" and not warn        # a known name, still allowed
 
 
-def test_user_segment_is_stable_distinct_and_safe():
-    a1 = safe_user_segment("alice@example.com")
-    a2 = safe_user_segment("alice@example.com")
-    b = safe_user_segment("bob@example.com")
-    assert a1 == a2 != b
-    assert user_run_prefix("alice@example.com").endswith("/")
-    assert all(c.isalnum() or c in "-/" for c in user_run_prefix("A B!@#"))
+def test_user_run_prefix_is_one_safe_segment():
+    assert user_run_prefix("alice-abc123def456").rstrip("/") == "alice-abc123def456"
+    p = user_run_prefix("weird id/../with spaces!@#")
+    assert p.endswith("/") and p.count("/") == 1
+    assert all(c.isalnum() or c in "._-/" for c in p)
+    assert user_run_prefix("") == "user/"
 
 
 # ── lifecycle ────────────────────────────────────────────────────────────

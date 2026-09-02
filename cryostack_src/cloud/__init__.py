@@ -32,6 +32,7 @@ from .config import (
 )
 from .manager import CloudManager
 from .preflight import assert_cloud_run_allowed, cloud_run_preflight
+from .smoke import SmokeReport, run_infrastructure_smoke_test
 from .runtime import (
     SUPPORTED_CLOUD_MODELS,
     CloudRuntimeError,
@@ -66,6 +67,8 @@ __all__ = [
     "is_supported_cloud_model",
     "cloud_run_preflight",
     "assert_cloud_run_allowed",
+    "SmokeReport",
+    "run_infrastructure_smoke_test",
     "CloudRunStaging",
     "CloudStagingError",
     "stage_run_inputs",
