@@ -48,6 +48,13 @@ from .llm import (
     LLMToolCall,
     ScriptedLLM,
 )
+from .llm_adapters import (
+    AnthropicAdapterSkeleton,
+    BaseAdapter,
+    OpenAIAdapterSkeleton,
+    RuleBasedAdapter,
+    assert_declarative_tools,
+)
 from .trace import Trace, TraceEvent, redact, scan_for_secrets
 from .trace_store import (
     AGENT_PROVENANCE_KEY,
@@ -70,6 +77,8 @@ __all__ = [
     "TraceStore", "run_manifest_stamp", "assert_no_agent_chatter",
     "AGENT_PROVENANCE_KEY",
     "LLMClient", "LLMMessage", "LLMResponse", "LLMToolCall", "ScriptedLLM",
+    "BaseAdapter", "RuleBasedAdapter", "assert_declarative_tools",
+    "AnthropicAdapterSkeleton", "OpenAIAdapterSkeleton",
     "RunAssistant", "AssistantResult",
     "ExperimentPlan", "SweepAxis", "ManagedExperiment", "ExperimentApproval",
 ]

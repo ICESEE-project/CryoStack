@@ -124,6 +124,14 @@ class RunAssistant:
                                           "summary": rd["summary"]})
                 messages.append(LLMMessage(
                     "tool", json.dumps(_trim(rd), sort_keys=True), name=call.name))
+                # optional adapter hook: let a stateful adapter thread a result
+                # (e.g. the plan dict) into its next turn. Purely advisory.
+                _observe = getattr(self._llm, "observe_tool_result", None)
+                if callable(_observe) and result.ok:
+                    try:
+                        _observe(call.name, result.value)
+                    except Exception:
+                        pass
                 if result.ok and call.name == "validate_run_plan":
                     proposed_plan = result.value
                 elif result.ok and call.name == "prepare_run_plan" and proposed_plan is None:
