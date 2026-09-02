@@ -6,3 +6,5 @@ chapters:
   - file: resources
   - file: about
   - file: docs/developer_guide
+    sections:
+      - file: docs/building_agents
