@@ -47,7 +47,19 @@ Key environment facts for PASS 2:
 - Repo `external/ICESEE/applications/icepack_model/` is ICESEE **DA** examples
   (`run_da_icepack.py`), NOT the CryoLauncher forward-model path.
 
-PASS 2 next action: see `AGENT_TRAIL.md` Phase I1/I2/... latest "next action".
+PASS 2 progress (from `4c43040`):
+- **Icepack I1-I6 COMPLETE** (`8252c52` params, `a1709f1` gateway wiring,
+  `9fc38f2` exporter+reader, `b7b7488` visualization, `56c3fb8` e2e harness).
+  Basic-mode overrides (T, num_timesteps) + container-side Firedrake exporter
+  (`cryostack.icepack.results` v2) + Firedrake-free reader + deterministic
+  matplotlib.tri visualizer + offline e2e/isolation harness. **The exporter
+  needs an HPC/container validation pass** (no firedrake on this box).
+- **ICESEE C-work**: audits done (`AUDIT_icesee_run_contract.md`,
+  `AUDIT_icesee_platform_pass2.md`). Safe items remaining: delete dead CSS
+  overlay + `build_sidebar`; adopt `WorkspaceBridge.start_run` run history.
+  Cloud compute primitive = OWNER DECISION (AWS Batch is Fargate-only, no MPI).
+
+Next autonomous action: ICESEE safe cleanups, then Q1 dedupe, then final report.
 Do NOT touch the live PACE/password-bootstrap path (morning checkpoint).
 
 ## Recoverability rule
