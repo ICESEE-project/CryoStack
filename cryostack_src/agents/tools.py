@@ -34,6 +34,10 @@ class ToolSpec:
     scientific_effect: str
     #: JSON-ish description of accepted kwargs: {name: {"type", "required", "help"}}
     parameters: dict = field(default_factory=dict)
+    #: what kind of object this tool's value is, when it is a first-class
+    #: artifact a caller threads onward (e.g. "run_plan"). Lets the assistant
+    #: capture a plan by capability, not by matching the tool's name.
+    result_kind: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "permission", Permission.parse(self.permission))
@@ -57,6 +61,7 @@ class ToolSpec:
             "requires_confirmation": self.requires_confirmation,
             "scientific_effect": self.scientific_effect,
             "parameters": self.parameters,
+            "result_kind": self.result_kind,
         }
 
 
@@ -122,6 +127,7 @@ def tool(
     requires_confirmation: bool = False,
     scientific_effect: str = "none",
     parameters: dict | None = None,
+    result_kind: str = "",
 ) -> Callable:
     """Decorator that registers ``fn`` as a CryoStack tool."""
 
@@ -131,6 +137,7 @@ def tool(
             permission=Permission.parse(permission), read_only=read_only,
             requires_confirmation=requires_confirmation,
             scientific_effect=scientific_effect, parameters=parameters or {},
+            result_kind=result_kind,
         )
         _PENDING.append(Tool(spec, fn))
         fn._cryostack_tool_spec = spec  # type: ignore[attr-defined]

@@ -94,6 +94,8 @@ class RunAssistant:
 
         with perf.span("agent tool discovery"):
             tools = self._registry.describe(ctx=ctx)
+        # capture a plan by capability (result_kind), never by tool name
+        _kind = {t["name"]: t.get("result_kind", "") for t in tools}
         messages: list[LLMMessage] = [LLMMessage("user", user_message)]
         steps: list[AssistantStep] = []
         last_text = ""
@@ -132,9 +134,10 @@ class RunAssistant:
                         _observe(call.name, result.value)
                     except Exception:
                         pass
-                if result.ok and call.name == "validate_run_plan":
+                if result.ok and _kind.get(call.name) == "validated_run_plan":
                     proposed_plan = result.value
-                elif result.ok and call.name == "prepare_run_plan" and proposed_plan is None:
+                elif (result.ok and _kind.get(call.name) == "run_plan"
+                        and proposed_plan is None):
                     proposed_plan = result.value
             steps.append(step)
         else:

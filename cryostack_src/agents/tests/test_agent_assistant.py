@@ -149,3 +149,25 @@ def test_assistant_result_is_serialisable():
     r = asst.handle(_ctx(), "hi")
     d = r.to_dict()
     assert d["submitted"] is False and d["text"] == "hello"
+
+
+def test_plan_is_captured_by_result_kind_not_by_tool_name():
+    """A renamed planning tool must not break plan capture — the assistant
+    matches ToolSpec.result_kind (PASS 4 review, ARCH P1)."""
+    reg = ToolRegistry()
+    drain_pending()
+
+    @tool(name="_totally_renamed_planner", description="build a plan",
+          permission=P.PLAN, read_only=True, result_kind="run_plan")
+    def _planner(ctx, *, x: int = 1):
+        return {"model": "issm", "digest": "abc", "findings": [],
+                "validated": False, "approvals_required": ["compute-submission"]}
+
+    reg.register_module_tools()
+    llm = ScriptedLLM([
+        LLMResponse(tool_calls=(LLMToolCall("_totally_renamed_planner", {}),)),
+        LLMResponse(text="done"),
+    ])
+    res = RunAssistant(llm=llm, registry=reg).handle(_ctx(), "make a plan")
+    assert res.proposed_plan is not None
+    assert res.proposed_plan["digest"] == "abc"

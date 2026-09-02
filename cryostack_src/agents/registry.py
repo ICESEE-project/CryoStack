@@ -107,12 +107,19 @@ def default_registry() -> ToolRegistry:
     """The lazily-built registry containing the shipped tool set."""
     global _DEFAULT
     if _DEFAULT is None:
-        reg = ToolRegistry()
-        from . import readonly_tools  # noqa: F401 - registers via @tool
-        try:
-            from . import planning_tools  # noqa: F401
-        except ImportError:
-            pass
-        reg.register_module_tools()
-        _DEFAULT = reg
+        _DEFAULT = build_default_registry()
     return _DEFAULT
+
+
+def build_default_registry() -> "ToolRegistry":
+    """Build a fresh registry with the shipped tool set. The gateway may call
+    this once and hold the result; :func:`default_registry` is the lazy
+    process-wide singleton over it.
+
+    A failure to import a shipped tool module is fatal here — it must not be
+    swallowed into a registry that silently ships fewer tools.
+    """
+    reg = ToolRegistry()
+    from . import planning_tools, readonly_tools  # noqa: F401 - register via @tool
+    reg.register_module_tools()
+    return reg

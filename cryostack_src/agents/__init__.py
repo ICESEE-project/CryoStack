@@ -31,7 +31,7 @@ from .context import ToolContext, build_tool_context
 from .fingerprint import RunInputFingerprint, fingerprint_inputs
 from .permissions import Permission, PermissionError
 from .planning import PlanFinding, RunPlan, SlurmRequest
-from .registry import ToolRegistry, default_registry
+from .registry import ToolRegistry, build_default_registry, default_registry
 from .store import AgentStore, PlanRepository, SecretInPayloadError
 from .tools import ToolResult, ToolSpec, tool
 from .assistant import AssistantResult, RunAssistant
@@ -67,7 +67,7 @@ __all__ = [
     "Permission", "PermissionError",
     "ToolContext", "build_tool_context",
     "ToolSpec", "ToolResult", "tool",
-    "ToolRegistry", "default_registry",
+    "ToolRegistry", "default_registry", "build_default_registry",
     "RunPlan", "SlurmRequest", "PlanFinding",
     "Approval", "ApprovalError", "ManagedPlan", "PlanState", "PlanStore",
     "assert_approved_for_execution", "restore_managed_plan",

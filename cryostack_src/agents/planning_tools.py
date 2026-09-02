@@ -25,7 +25,7 @@ from .tools import tool
       description="Construct a structured run plan (model, example, resource, "
                   "backend, parameter overrides, Slurm request). Submits "
                   "nothing — the plan is an inert proposal.",
-      permission=Permission.PLAN, read_only=True,
+      permission=Permission.PLAN, read_only=True, result_kind="run_plan",
       parameters={
           "model": {"type": "str", "required": True},
           "example": {"type": "str", "required": True},
@@ -85,6 +85,7 @@ def prepare_run_plan(ctx, *, model: str, example: str, compute_resource: str,
                   "model/backend preflight). Returns findings + which approvals "
                   "the plan requires. Submits nothing.",
       permission=Permission.PLAN, read_only=True,
+      result_kind="validated_run_plan",
       parameters={"plan": {"type": "dict", "required": True}})
 def validate_run_plan(ctx, *, plan: dict) -> dict:
     p = RunPlan.from_dict(plan)
