@@ -3015,10 +3015,27 @@ def build_icesheets_ui():
         remote_actions = remote_log_controls
         cloud_actions = cloud_log_controls
 
+        def _on_workspace_run_selected(_run_id):
+            visualization_panel.controller.refresh()
+            # C6: if a still-running cloud run is selected (e.g. after a kernel
+            # restart) and nothing is polling it, resume the auto-poll.
+            run = workspace_manager.selected_run()
+            ctl = _cloud["controller"]
+            if (run is not None and run.execution_mode == "cloud"
+                    and ctl is not None and ctl.job_id != str(run.jobid or "")):
+                meta = run.metadata or {}
+                ctl.attach(
+                    job_id=str(run.jobid or ""),
+                    s3_run=str(meta.get("cloud_run") or run.remote_directory or ""),
+                    model=run.model, region=meta.get("region") or "",
+                    profile=meta.get("profile"),
+                    state={"submitted": "queued"}.get(run.status, run.status),
+                )
+
         with perf.span("history panel"):
             workspace_history_panel = build_workspace_history_panel(
                 manager=workspace_manager,
-                on_run_selected=lambda _run_id: visualization_panel.controller.refresh(),
+                on_run_selected=_on_workspace_run_selected,
                 defer_initial_load=True,   # list runs now; inspect on selection
             )
 

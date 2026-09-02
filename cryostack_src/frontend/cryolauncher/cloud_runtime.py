@@ -3,6 +3,18 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from cryostack_src.frontend.cryolauncher.cloud_run_controller import (
+    classify_cloud_failure,
+)
+
+
+def _report(log_output, error, *, prefix="[cloud][ERROR]"):
+    """Print a short actionable line plus the full detail for the log."""
+    short, detail = classify_cloud_failure(error)
+    with log_output:
+        print(prefix, short)
+        print("[cloud][detail]", detail)
+
 
 @dataclass
 class CloudRuntimeCallbacks:
@@ -55,9 +67,7 @@ def build_cloud_runtime_callbacks(
         except Exception as error:
             _mark_environment_failed()
             status_widget.value = status_html("fail")
-            with log_output:
-                print("[cloud][ERROR] AWS credentials or CLI connection are unavailable.")
-                print(type(error).__name__, error)
+            _report(log_output, error, prefix="[cloud][ERROR] AWS access check failed:")
 
     def on_prepare_environment(_=None):
         log_output.clear_output()
@@ -76,9 +86,7 @@ def build_cloud_runtime_callbacks(
         except Exception as error:
             _mark_environment_failed()
             status_widget.value = status_html("fail")
-            with log_output:
-                print("[cloud][ERROR] Could not prepare the cloud environment.")
-                print(type(error).__name__, error)
+            _report(log_output, error, prefix="[cloud][ERROR] Could not prepare the cloud environment:")
 
     def _mark_environment_failed():
         for widget, label in (
@@ -110,8 +118,7 @@ def build_cloud_runtime_callbacks(
             status_widget.value = status_html("done")
         except Exception as error:
             status_widget.value = status_html("fail")
-            with log_output:
-                print("[cloud][ERROR]", type(error).__name__, error)
+            _report(log_output, error)
 
     def on_logs(_=None):
         log_output.clear_output()
@@ -137,8 +144,7 @@ def build_cloud_runtime_callbacks(
             status_widget.value = status_html("done")
         except Exception as error:
             status_widget.value = status_html("fail")
-            with log_output:
-                print("[cloud][ERROR]", type(error).__name__, error)
+            _report(log_output, error)
 
     def on_terminate(_=None):
         log_output.clear_output()
@@ -156,8 +162,7 @@ def build_cloud_runtime_callbacks(
             status_widget.value = status_html("done")
         except Exception as error:
             status_widget.value = status_html("fail")
-            with log_output:
-                print("[cloud][ERROR]", type(error).__name__, error)
+            _report(log_output, error)
 
     def on_results(_=None):
         results_output.clear_output()
@@ -171,8 +176,7 @@ def build_cloud_runtime_callbacks(
             with results_output:
                 print("[cloud] Results synchronized:", path)
         except Exception as error:
-            with results_output:
-                print("[cloud][ERROR]", type(error).__name__, error)
+            _report(results_output, error)
 
     return CloudRuntimeCallbacks(
         check_environment=on_check_environment,
