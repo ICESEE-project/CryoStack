@@ -25,6 +25,7 @@ Guarantees (see ``cryostack_src/agents/tests/test_agent_store.py``):
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import uuid
@@ -71,6 +72,11 @@ def _atomic_write_json(path: Path, payload: Any) -> None:
     os.replace(tmp, path)
 
 
+def _file_sig(path: Path) -> str:
+    """sha256 of the file's bytes -- a filesystem-mtime-independent identity."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 class PlanRepository:
     """Persistent, owner-scoped store of :class:`ManagedPlan`."""
 
@@ -80,8 +86,12 @@ class PlanRepository:
         self._dir = Path(directory)
         self._dir.mkdir(parents=True, exist_ok=True)
         self._owner = owner_user_id
-        #: mtime_ns seen at load() time, per plan id — for optimistic locking
+        #: on-disk state seen at load()/save() time, per plan id — for optimistic
+        #: locking. mtime_ns is a fast path; the content sha256 is authoritative
+        #: (some filesystems round mtime coarsely, so two rapid saves can share a
+        #: tick — the hash still distinguishes them).
         self._seen_mtime: dict[str, int] = {}
+        self._seen_sig: dict[str, str] = {}
 
     def _path(self, plan_id: str) -> Path:
         return self._dir / f"{_safe_component(plan_id)}.json"
@@ -108,14 +118,15 @@ class PlanRepository:
         # optimistic lock: if we loaded this plan and the on-disk copy has since
         # changed (another Voila kernel for the same user), refuse rather than
         # silently clobber. A fresh create() has no seen-mtime, so it is exempt.
-        seen = self._seen_mtime.get(key)
-        if seen is not None and not force and path.is_file():
-            if path.stat().st_mtime_ns != seen:
+        seen_sig = self._seen_sig.get(key)
+        if seen_sig is not None and not force and path.is_file():
+            if _file_sig(path) != seen_sig:
                 raise ConcurrentModificationError(
                     f"plan {mp.plan_id} changed on disk since it was loaded; "
                     "reload and re-apply your change (or save(force=True))")
         _atomic_write_json(path, payload)
         self._seen_mtime[key] = path.stat().st_mtime_ns
+        self._seen_sig[key] = _file_sig(path)
         return path
 
     # -- read ------------------------------------------------------------
@@ -127,7 +138,9 @@ class PlanRepository:
         if not path.is_file():
             raise KeyError(f"no plan {plan_id!r} for this user")
         d = json.loads(path.read_text(encoding="utf-8"))
-        self._seen_mtime[_safe_component(str(plan_id))] = path.stat().st_mtime_ns
+        key = _safe_component(str(plan_id))
+        self._seen_mtime[key] = path.stat().st_mtime_ns
+        self._seen_sig[key] = _file_sig(path)
         return restore_managed_plan(d, owner_user_id=self._owner)
 
     def list_ids(self) -> list[str]:
