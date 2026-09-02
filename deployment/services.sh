@@ -64,6 +64,19 @@ if [ -z "${CRYOSTACK_RELAY_CONTROL_TOKEN:-}" ]; then
 fi
 
 
+# ------------------------------------------------------------
+# CryoStack Agent interaction mode (Basic | Advanced | Agent).
+#
+# The already-implemented "Agent" mode in the IceSheets gateway is opt-in via
+# CRYOSTACK_AGENT_PANEL and is off unless this is set. This deployment exposes
+# it, so default the flag on here (the same place the GUI/Voila kernels pick up
+# their shared environment). Still overridable -- run with
+# CRYOSTACK_AGENT_PANEL=0 to hide the mode again. This changes no code path:
+# Agent mode stays capped at PLAN with no submit backend wired.
+# ------------------------------------------------------------
+export CRYOSTACK_AGENT_PANEL="${CRYOSTACK_AGENT_PANEL:-1}"
+
+
 # ============================================================
 # Helpers
 # ============================================================
