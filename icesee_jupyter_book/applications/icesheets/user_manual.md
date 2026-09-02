@@ -150,6 +150,29 @@ model-code editor.
   canonical example untouched. If the example is already one of your own, the
   overrides are applied to it in place.
 
+### Basic mode for Icepack
+
+Icepack examples are Firedrake/Python notebooks, not an ISSM `md` model object,
+so the curated set is different and deliberately small. Two parameters are
+exposed today, both scalars with an unambiguous physical meaning that every
+flow tutorial sets the same way:
+
+- **Ice temperature** (`T`, kelvin, 200&nbsp;K – pressure-melting point). Sets
+  the depth-averaged temperature from which Icepack derives the ice fluidity.
+- **Number of timesteps** — the length of the time-integration loop, only where
+  the example sets it as a plain literal (it does not change the physics or the
+  timestep size).
+
+The same guarantees apply: the value is range-checked before submission; the
+override is a single, exact, commented line change in a user-owned working
+copy; the canonical example is never modified; run provenance records exactly
+which line changed from what to what. **If the selected Icepack example does
+not set the parameter as a plain literal** (for example a temperature written
+as an expression, or a timestep count derived from `num_years ×
+timesteps_per_year`), the run is blocked with a clear message rather than run
+with a silently-ignored value — use Advanced mode to edit that example
+directly. No ISSM parameter names or `md` semantics are used for Icepack.
+
 ## 4. Advanced mode
 
 Advanced mode is a **model-neutral workspace and file editor** for modifying
