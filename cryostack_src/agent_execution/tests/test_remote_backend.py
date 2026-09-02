@@ -261,6 +261,34 @@ def test_unknown_dataset_reference_blocks(tmp_path, example_dir):
     assert e.value.stage == "datasets"
 
 
+# ── input-fingerprint binding (task 5) ──────────────────────────────
+def test_input_fingerprint_drift_blocks_before_staging(tmp_path, example_dir):
+    from cryostack_src.agents.fingerprint import fingerprint_inputs
+
+    class _Appr:
+        input_fingerprint = fingerprint_inputs(example_dir, run_target="runme.m").digest()
+        approver_user_id = "rsb-u"
+        approved_at = "2026-09-02T00:00:00Z"
+
+    bridge, sub = _Bridge(), _Submitter()
+    mgr = _Manager(tmp_path / "w")
+    be = _backend(bridge, sub, example_dir)
+
+    # a matching fingerprint submits fine
+    be.submit(_plan(example_dir), ctx=_ctx(mgr), approval=_Appr())
+    assert sub.kwargs is not None
+
+    # now the canonical example changes -> the approved fingerprint is stale
+    (example_dir / "runme.m").write_text("% edited after approval\n")
+    sub2 = _Submitter()
+    be2 = _backend(bridge, sub2, example_dir)
+    with pytest.raises(SubmitBlocked) as e:
+        be2.submit(_plan(example_dir), ctx=_ctx(_Manager(tmp_path / "w2")),
+                   approval=_Appr())
+    assert e.value.stage == "inputs"
+    assert sub2.kwargs is None
+
+
 # ── the backend is outside the agents package ────────────────────────
 def test_backend_module_is_not_under_the_agents_package():
     import cryostack_src.agent_execution.remote_backend as m

@@ -142,7 +142,7 @@ class RemoteSubmitBackend:
         self._enforce_connector = enforce_connector_for_agent
 
     # -- the SubmitBackend protocol -----------------------------------
-    def submit(self, plan, *, ctx: Any) -> str:
+    def submit(self, plan, *, ctx: Any, approval: Any = None) -> str:
         from cryostack_src.agents.permissions import Permission
         from cryostack_src.models import get_model_capabilities
         from cryostack_src.resources.profiles import get_compute_profile
@@ -188,6 +188,10 @@ class RemoteSubmitBackend:
             raise SubmitBlocked("run-target",
                                 f"{run_target!r} is not a file in the example")
 
+        # 6b. input-fingerprint binding (task 5): if the human approved a
+        #     specific set of file contents, a later edit blocks the run.
+        self._verify_input_fingerprint(ctx, plan, approval, canonical_dir, run_target)
+
         # 7. stage a user-owned working copy — canonical is never touched
         mgr = ctx.workspace_manager
         if mgr is None:
@@ -229,6 +233,29 @@ class RemoteSubmitBackend:
         return str(job_id)
 
     # -- steps -------------------------------------------------------
+    def _verify_input_fingerprint(self, ctx, plan, approval, canonical_dir,
+                                  run_target) -> None:
+        expected = getattr(approval, "input_fingerprint", "") or ""
+        if not expected:
+            return
+        from cryostack_src.agents.fingerprint import fingerprint_inputs
+        mgr = ctx.workspace_manager
+        ds_paths = []
+        if mgr is not None and plan.datasets:
+            try:
+                cat = {d.get("name"): d.get("path") for d in mgr.list_datasets()}
+                ds_paths = [Path(cat[n]) for n in plan.datasets if cat.get(n)]
+            except Exception:
+                ds_paths = []
+        have = fingerprint_inputs(canonical_dir, run_target=run_target,
+                                  dataset_paths=ds_paths)
+        if have.digest() != expected:
+            raise SubmitBlocked(
+                "inputs",
+                "the approved input fingerprint no longer matches — a source "
+                "file or dataset changed since approval; re-validate and "
+                "re-approve")
+
     def _enforce_b3(self, profile) -> None:
         from cryostack_src.remote.access_state import enforce_remote_access
         gate = enforce_remote_access(

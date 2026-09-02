@@ -150,6 +150,62 @@ def validate_run_plan(ctx, *, plan: dict) -> dict:
     return out.to_dict()
 
 
+# ── input fingerprint (task 5) ────────────────────────────────────────
+@tool(name="fingerprint_run_inputs",
+      description="Compute a content fingerprint of the run's mutable inputs "
+                  "(the resolved run-target script, other source files in the "
+                  "example, and referenced datasets). A human can approve a "
+                  "plan bound to this fingerprint so a later edit to any of "
+                  "those files blocks execution. Reads only; submits nothing.",
+      permission=Permission.PLAN, read_only=True,
+      parameters={"plan": {"type": "dict", "required": True}})
+def fingerprint_run_inputs(ctx, *, plan: dict) -> dict:
+    from .fingerprint import fingerprint_inputs
+    p = RunPlan.from_dict(plan)
+    ex = _resolve_example(ctx, p.model, p.example)
+    if ex is None:
+        raise ValueError(f"no example {p.example!r} for model {p.model!r}")
+    fp = fingerprint_inputs(ex.path, run_target=p.run_target or "",
+                            dataset_paths=_dataset_paths(ctx, p.datasets))
+    ctx.trace.append("fingerprint", {"digest": fp.digest(),
+                                     "files": len(fp.tree),
+                                     "datasets": len(fp.datasets)})
+    return fp.to_dict()
+
+
+@tool(name="verify_run_input_fingerprint",
+      description="Recompute the run-input fingerprint and report whether it "
+                  "still matches a previously recorded one, naming any file or "
+                  "dataset that changed. Reads only.",
+      permission=Permission.PLAN, read_only=True,
+      parameters={"plan": {"type": "dict", "required": True},
+                  "expected": {"type": "dict", "required": True}})
+def verify_run_input_fingerprint(ctx, *, plan: dict, expected: dict) -> dict:
+    from .fingerprint import RunInputFingerprint, fingerprint_inputs
+    p = RunPlan.from_dict(plan)
+    ex = _resolve_example(ctx, p.model, p.example)
+    if ex is None:
+        raise ValueError(f"no example {p.example!r} for model {p.model!r}")
+    want = RunInputFingerprint.from_dict(expected)
+    have = fingerprint_inputs(ex.path, run_target=p.run_target or "",
+                              dataset_paths=_dataset_paths(ctx, p.datasets))
+    drift = have.drift_from(want)
+    return {"ok": not drift, "drift": drift,
+            "expected_digest": want.digest(), "current_digest": have.digest()}
+
+
+def _dataset_paths(ctx, names) -> list:
+    from pathlib import Path
+    mgr = ctx.workspace_manager
+    if mgr is None or not names:
+        return []
+    try:
+        catalog = {d.get("name"): d.get("path") for d in mgr.list_datasets()}
+    except Exception:
+        return []
+    return [Path(catalog[n]) for n in names if catalog.get(n)]
+
+
 # ── estimate ──────────────────────────────────────────────────────────
 @tool(name="estimate_execution_requirements",
       description="Summarise what running this plan would require: the compute "

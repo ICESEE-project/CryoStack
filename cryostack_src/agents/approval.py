@@ -47,6 +47,10 @@ class Approval:
     approver_user_id: str
     approved_at: str            # ISO-8601 UTC
     note: str = ""
+    #: optional second binding (PASS 4 task 5): sha256 of a RunInputFingerprint
+    #: over the *content* of the example / run_target / datasets. Empty ⇒
+    #: intent-only binding (today's behaviour).
+    input_fingerprint: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -54,6 +58,7 @@ class Approval:
             "approver_user_id": self.approver_user_id,
             "approved_at": self.approved_at,
             "note": self.note,
+            "input_fingerprint": self.input_fingerprint,
         }
 
 
@@ -98,7 +103,8 @@ class ManagedPlan:
         self.state = PlanState.AWAITING_APPROVAL
         self._log("submitted_for_approval", digest=self.plan.digest())
 
-    def approve(self, approver: WorkspaceUser, *, note: str = "") -> Approval:
+    def approve(self, approver: WorkspaceUser, *, note: str = "",
+                input_fingerprint: str = "") -> Approval:
         if approver.user_id != self.owner_user_id:
             raise ApprovalError(
                 "the approver must be the user the plan belongs to")
@@ -110,6 +116,7 @@ class ManagedPlan:
             approver_user_id=approver.user_id,
             approved_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             note=note,
+            input_fingerprint=input_fingerprint,
         )
         self.state = PlanState.APPROVED
         self._log("approved", digest=self.approval.plan_digest,
@@ -174,6 +181,7 @@ class ManagedPlan:
                 approver_user_id=appr["approver_user_id"],
                 approved_at=appr["approved_at"],
                 note=appr.get("note", ""),
+                input_fingerprint=appr.get("input_fingerprint", ""),
             ) if appr else None,
             run_id=d.get("run_id"),
             failure_reason=d.get("failure_reason"),

@@ -28,6 +28,7 @@ from .approval import (
     restore_managed_plan,
 )
 from .context import ToolContext, build_tool_context
+from .fingerprint import RunInputFingerprint, fingerprint_inputs
 from .permissions import Permission, PermissionError
 from .planning import PlanFinding, RunPlan, SlurmRequest
 from .registry import ToolRegistry, default_registry
@@ -64,6 +65,7 @@ __all__ = [
     "Approval", "ApprovalError", "ManagedPlan", "PlanState", "PlanStore",
     "assert_approved_for_execution", "restore_managed_plan",
     "AgentStore", "PlanRepository", "SecretInPayloadError",
+    "RunInputFingerprint", "fingerprint_inputs",
     "Trace", "TraceEvent", "redact", "scan_for_secrets",
     "TraceStore", "run_manifest_stamp", "assert_no_agent_chatter",
     "AGENT_PROVENANCE_KEY",
