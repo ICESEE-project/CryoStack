@@ -134,6 +134,35 @@ def test_gateway_builds_with_agent_mode_on(builder, monkeypatch):
     assert mode_toggles and "agent" in dict(mode_toggles[0].options).values()
 
 
+def test_mode_switching_keeps_one_intact_workspace(monkeypatch):
+    """Basic -> Agent -> Advanced -> Agent -> Basic must not duplicate the
+    Workspace Tab or lose its Runs/Files/Run Log/Results structure."""
+    monkeypatch.setenv("CRYOSTACK_AGENT_PANEL", "1")
+    monkeypatch.setenv("CRYOSTACK_WORKSPACE_USER", "mode-switch-user")
+    monkeypatch.setenv("USER", "mode-switch-service")
+    import matplotlib
+    matplotlib.use("Agg")
+    from icesee_jupyter_book.ui.icesheets_gateway import build_icesheets_ui
+    page = build_icesheets_ui()
+
+    def _tabs():
+        return [w for w in _iter(page)
+                if isinstance(w, W.Tab)
+                and "cryostack-workspace-tabs" in getattr(w, "_dom_classes", ())]
+
+    ws = _tabs()
+    assert len(ws) == 1 and len(ws[0].children) == 4
+
+    toggles = [w for w in _iter(page) if isinstance(w, W.ToggleButtons)]
+    mode = next(t for t in toggles
+                if set(dict(t.options).values()) >= {"basic", "advanced", "agent"})
+    for value in ("basic", "agent", "advanced", "agent", "basic"):
+        mode.value = value
+        again = _tabs()
+        assert len(again) == 1 and again[0] is ws[0]        # same Tab, no duplicate
+        assert len(again[0].children) == 4                  # structure intact
+
+
 @pytest.mark.parametrize("builder", ["build_icesheets_ui"])
 def test_gateway_builds_with_agent_mode_off(builder, monkeypatch):
     monkeypatch.delenv("CRYOSTACK_AGENT_PANEL", raising=False)

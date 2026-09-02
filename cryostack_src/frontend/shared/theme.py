@@ -360,6 +360,23 @@ CRYOSTACK_FRONTEND_CSS = r"""
     .icesee-right {
         position: static;
     }
+
+    /* prefer natural page flow; relax the aggressive nested scrolling and
+       keep touch devices out of nested-scroll pain. No horizontal overflow. */
+    .cryostack-log-viewer,
+    .cryostack-results-viewer {
+        max-height: none !important;
+        min-height: 220px;
+    }
+
+    .cryostack-live-log {
+        max-height: none;
+    }
+
+    .cryostack-output-workspace,
+    .cryostack-workspace-tabs > .widget-tab-contents {
+        overflow-x: hidden;
+    }
 }
 
 .cryostack-output-workspace {
@@ -395,19 +412,6 @@ CRYOSTACK_FRONTEND_CSS = r"""
     overflow: visible;
 }
 
-/*
- * The log / results text output is a terminal-like region: it keeps its own
- * scroll with a generous cap so a long run log does not make the whole page
- * unusable. This is the text area *inside* a tab, not the Workspace card.
- */
-.cryostack-output-tab .jupyter-widgets-output-area {
-    min-height: 0;
-    max-height: 70vh;
-
-    overflow-y: auto !important;
-    overflow-x: auto !important;
-}
-
 .cryostack-right-workspace {
     min-height: 0;
 }
@@ -416,8 +420,9 @@ CRYOSTACK_FRONTEND_CSS = r"""
  * ipywidgets Tab: <div.widget-tab (flex column)> > <div.widget-tab-contents
  * (flex-grow:1; overflow:auto)>. The default makes the tab body a fixed-size
  * inner scroll region. For a natural-height Workspace the body flows in normal
- * document order and the page scrolls; a modest floor keeps it from looking
- * empty.
+ * document order and the page scrolls. Only a small floor so an empty tab is
+ * not zero-height -- Runs / Files stay compact and are NOT forced to the taller
+ * Run Log / Results viewer height.
  */
 .cryostack-workspace-tabs.widget-tab,
 .cryostack-workspace-tabs {
@@ -427,16 +432,40 @@ CRYOSTACK_FRONTEND_CSS = r"""
 .cryostack-workspace-tabs > .widget-tab-contents {
     flex-grow: 0;
     height: auto !important;
-    min-height: 420px;
+    min-height: 120px;
     overflow: visible !important;
 }
 
+/*
+ * Run Log / Results viewers -- dynamic height.
+ *
+ * Each has a useful minimum, grows with its content, and uses the available
+ * screen space; the scoped viewer-sizing script sets `max-height` to roughly
+ *     viewport bottom - viewer top - footer padding
+ * so it only becomes internally scrollable once it reaches the usable viewport
+ * bottom. Short content stays compact (max-height is a cap, not a height). The
+ * whole Workspace is never internally scrollable just because a viewer is long.
+ */
+.cryostack-log-viewer {
+    min-height: 280px;
+    overflow-y: auto;
+    overflow-x: auto;
+}
+
+.cryostack-results-viewer {
+    width: 100%;
+    min-height: 300px;
+    overflow: auto;
+}
+
+/* the secondary text output (run summary / sync messages): keep a modest cap */
 .cryostack-live-log {
     min-height: 0;
     max-height: 70vh;
     overflow-y: auto;
     overflow-x: auto;
 }
+
 
 .cryostack-workspace-heading {
     box-sizing: border-box;
@@ -581,11 +610,12 @@ CRYOSTACK_FRONTEND_CSS = r"""
     white-space: pre;
 }
 
+/* the widget root scrolls (max-height set by the viewer-sizing script); the
+   inner output area flows naturally so there is never a double scrollbar. */
 .cryostack-live-log .jupyter-widgets-output-area {
-    height: 100%;
+    height: auto;
     min-height: 0;
-    overflow-y: auto !important;
-    overflow-x: auto !important;
+    overflow: visible;
 }
 
 </style>

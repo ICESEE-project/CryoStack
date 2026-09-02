@@ -1163,11 +1163,13 @@ def build_icesheets_ui():
 
         connector_setup_link = W.HTML("")
 
+        # The Run Log viewer: a useful minimum height, grows with the log, then
+        # scrolls internally once it reaches the usable viewport bottom (cap set
+        # by the scoped viewer-sizing script; relaxed on narrow screens).
         log_out = W.Output(
             layout=W.Layout(
                 width="100%",
-                min_height="0",
-                flex="1 1 0",
+                min_height="280px",
                 overflow_y="auto",
                 overflow_x="auto",
                 border="1px solid rgba(0,0,0,.10)",
@@ -1179,7 +1181,6 @@ def build_icesheets_ui():
             layout=W.Layout(
                 width="100%",
                 min_height="0",
-                flex="1 1 0",
                 overflow_y="auto",
                 overflow_x="auto",
                 border="1px solid rgba(0,0,0,.10)",
@@ -1188,6 +1189,7 @@ def build_icesheets_ui():
         )
 
         log_out.add_class("cryostack-live-log")
+        log_out.add_class("cryostack-log-viewer")
         results_out.add_class("cryostack-live-log")
 
         auto_scroll_script = W.HTML(
@@ -3158,11 +3160,51 @@ def build_icesheets_ui():
                     state={"submitted": "queued"}.get(run.status, run.status),
                 )
 
+        # Runs is the selection/control surface; Files / Run Log / Results are
+        # views of the SAME selected run. The Selected-Run actions route through
+        # the existing Workspace machinery: switch the existing Tab, then invoke
+        # the existing tail / preview path for the selected run. No second
+        # panel, no second viewer, no second result-loading path.
+        _workspace_tabs = {"w": None}       # late-bound: set after build_run_details
+        _WS_TAB = {"runs": 0, "files": 1, "log": 2, "results": 3}
+
+        def _switch_workspace_tab(name):
+            tab = _workspace_tabs["w"]
+            idx = _WS_TAB.get(name)
+            if tab is not None and idx is not None and idx < len(tab.children):
+                tab.selected_index = idx
+
+        def _runs_tail_log():
+            rid = workspace_history_panel.runs.value
+            if not rid:
+                return
+            workspace_manager.select_run(rid)          # shared selected run
+            _switch_workspace_tab("log")
+            workspace_manager.tail(rid)                # existing tail machinery
+
+        def _runs_show_figures():
+            rid = workspace_history_panel.runs.value
+            if not rid:
+                return
+            workspace_manager.select_run(rid)
+            _switch_workspace_tab("results")
+            on_results_preview()                      # existing ResultPackage / Visualizer
+
+        def _runs_download():
+            rid = workspace_history_panel.runs.value
+            if not rid:
+                return
+            workspace_manager.select_run(rid)
+            on_results_download()                     # download only -- no tab switch
+
         with perf.span("history panel"):
             workspace_history_panel = build_workspace_history_panel(
                 manager=workspace_manager,
                 on_run_selected=_on_workspace_run_selected,
                 defer_initial_load=True,   # list runs now; inspect on selection
+                on_tail_log=_runs_tail_log,
+                on_show_figures=_runs_show_figures,
+                on_download=_runs_download,
             )
 
         output_workspace = build_run_details(
@@ -3174,6 +3216,7 @@ def build_icesheets_ui():
             files_panel=workspace_history_panel.files_panel,
             visualization_panel=visualization_panel.container,
         )
+        _workspace_tabs["w"] = output_workspace.tabs
 
         workspace_ui = build_workspace_explorer(
             run_settings=run_settings_panel,

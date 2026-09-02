@@ -13,11 +13,22 @@ class WorkspaceHistoryPanel:
     refresh_button: W.Button
     runs: W.Select
     run_cards: W.VBox
+    tail_button: W.Button
+    download_button: W.Button
+    figures_button: W.Button
 
 
 def build_workspace_history_panel(
-    *, manager, on_run_selected=None, defer_initial_load=False
+    *, manager, on_run_selected=None, defer_initial_load=False,
+    on_tail_log=None, on_show_figures=None, on_download=None,
 ) -> WorkspaceHistoryPanel:
+    """Runs is the selection/control surface for the shared selected run.
+
+    ``on_tail_log`` / ``on_show_figures`` / ``on_download`` let the host route
+    the Selected-Run actions through the existing Workspace machinery (switch
+    the Run Log / Results tab, then invoke the existing tail / preview path).
+    Without them the buttons fall back to the manager's own tail / download.
+    """
     refresh_button = W.Button(description="Refresh", icon="refresh", layout=W.Layout(width="100px"))
     runs = W.Select(layout=W.Layout(display="none"))
     run_cards = W.VBox(layout=W.Layout(width="100%", gap="2px"))
@@ -161,15 +172,29 @@ def build_workspace_history_panel(
                 pass
 
     def tail(_):
-        if runs.value:
+        if not runs.value:
+            return
+        if on_tail_log is not None:
+            on_tail_log()                       # host: select + switch tab + tail
+        else:
             manager.tail(runs.value)
 
     def download(_):
-        if runs.value:
+        if not runs.value:
+            return
+        if on_download is not None:
+            on_download()
+        else:
+            manager.select_run(runs.value)
             manager.download_results(runs.value)
 
     def figures(_):
-        if runs.value:
+        if not runs.value:
+            return
+        if on_show_figures is not None:
+            on_show_figures()                   # host: select + switch tab + preview
+        else:
+            manager.select_run(runs.value)
             manager.download_figures(runs.value)
 
     def delete(_):
@@ -191,10 +216,10 @@ def build_workspace_history_panel(
         selected,
         W.HBox([tail_button, download_button, figures_button], layout=W.Layout(gap="8px", flex_wrap="wrap")),
         W.VBox([confirm, delete_button], layout=W.Layout(gap="4px")),
-    ], layout=W.Layout(width="100%", height="100%", min_height="0", gap="7px", overflow_y="auto"))
+    ], layout=W.Layout(width="100%", min_height="0", gap="7px"))
     files_panel = W.VBox(
         [files],
-        layout=W.Layout(width="100%", height="100%", min_height="0", overflow_y="auto"),
+        layout=W.Layout(width="100%", min_height="0"),
     )
     refresh(auto_select=not defer_initial_load)
     return WorkspaceHistoryPanel(
@@ -203,4 +228,7 @@ def build_workspace_history_panel(
         refresh_button=refresh_button,
         runs=runs,
         run_cards=run_cards,
+        tail_button=tail_button,
+        download_button=download_button,
+        figures_button=figures_button,
     )

@@ -318,7 +318,13 @@ def build_visualization_panel(*, manager: WorkspaceManager, selected_run_id,
                          layout=W.Layout(width="auto", display="none"))
     status = W.HTML()
     meta = W.HTML()
-    plot_out = W.Output()
+    # The figure viewer: controls / metadata sit above it. It has a useful
+    # minimum height, grows with the figure, and only scrolls internally once
+    # it reaches the usable viewport bottom (max-height set by the scoped
+    # viewer-sizing script; relaxed on narrow screens -- see theme CSS).
+    plot_out = W.Output(layout=W.Layout(width="100%", min_height="300px",
+                                        overflow="auto"))
+    plot_out.add_class("cryostack-results-viewer")
 
     controller = VisualizationController(
         manager=manager, selected_run_id=selected_run_id, log_output=log_output,

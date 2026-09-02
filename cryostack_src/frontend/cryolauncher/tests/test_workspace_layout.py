@@ -84,11 +84,27 @@ def test_run_details_containers_are_natural_height():
 
 def test_height_sync_no_longer_pins_the_right_column():
     ex = _explorer()
+    js = ex.height_sync.value.replace(" ", "")
+    # the right column is never given a fixed height copied from the left
+    assert "right.style.height=" not in js
+    assert "right.style.maxHeight=" not in js
+    assert "right.style.minHeight=" not in js
+    # it releases any stale inline sizing on the workspace column
+    assert "removeProperty" in js
+
+
+def test_viewer_sizing_script_caps_max_height_not_height():
+    ex = _explorer()
     js = ex.height_sync.value
-    # it may still exist (defensive cleanup) but must not SET a height
-    assert "style.height =" not in js.replace(" ", "")  # crude but effective
-    assert "maxHeight" not in js or "removeProperty" in js
-    assert "ResizeObserver" not in js
+    # sizes the Run Log / Results *viewers* only, via max-height
+    assert ".cryostack-log-viewer" in js and ".cryostack-results-viewer" in js
+    assert "maxHeight" in js
+    # derived from the viewport, not a fixed constant height
+    assert "innerHeight" in js and "getBoundingClientRect" in js
+    # never sets an explicit height on the viewer
+    assert re.search(r"\.style\.height\s*=", js) is None
+    # narrow screens: the cap is dropped
+    assert "removeProperty(\"max-height\")" in js or "removeProperty('max-height')" in js
 
 
 # ── CSS contract ────────────────────────────────────────────────────────
@@ -130,6 +146,34 @@ def test_responsive_breakpoint_stacks_the_columns():
     assert m, "no max-width:1050px stack breakpoint"
     body = m.group(1)
     assert "grid-template-columns: 1fr" in body
+
+
+def test_tab_body_floor_is_compact_not_the_viewer_height():
+    """Runs / Files must not be forced to the taller Run Log / Results height."""
+    block = _rule(CRYOSTACK_FRONTEND_CSS,
+                  ".cryostack-workspace-tabs > .widget-tab-contents")
+    m = re.search(r"min-height:\s*(\d+)px", block)
+    assert m and int(m.group(1)) <= 200, block
+
+
+def test_log_and_results_viewers_have_bounded_overflow_no_fixed_height():
+    css = CRYOSTACK_FRONTEND_CSS
+    for sel in (".cryostack-log-viewer", ".cryostack-results-viewer"):
+        block = _rule(css, sel)
+        assert "overflow" in block                       # scrollable when needed
+        assert "height: 100%" not in block
+        assert "100vh" not in block
+        assert "max-height" not in block                 # the script sets the cap
+        assert re.search(r"min-height:\s*\d+px", block)   # a useful minimum
+
+
+def test_mobile_relaxes_viewer_nested_scrolling():
+    css = CRYOSTACK_FRONTEND_CSS
+    m = re.search(r"@media\s*\(max-width:\s*1050px\)\s*\{(.*?)\n\}", css, re.S)
+    body = m.group(1)
+    assert ".cryostack-log-viewer" in body and ".cryostack-results-viewer" in body
+    assert "max-height: none" in body
+    assert "overflow-x: hidden" in body                  # no horizontal overflow
 
 
 def test_sticky_is_desktop_only_and_off_at_narrow_widths():
