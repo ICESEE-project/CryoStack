@@ -24,6 +24,7 @@ auditable. See ``overnight/AUDIT_icepack_parity.md`` and the tests.
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass, field
 
@@ -191,6 +192,9 @@ def validate_icepack_config(overrides: dict | None) -> dict:
             value: float | int = int(raw) if spec.kind == "int" else float(raw)
         except (TypeError, ValueError):
             errors.append(f"{key}: expected {spec.kind}, got {raw!r}")
+            continue
+        if not math.isfinite(value):
+            errors.append(f"{key}: {raw!r} is not a finite number")
             continue
         if spec.minimum is not None and value < spec.minimum:
             errors.append(f"{key}: {value} below minimum {spec.minimum}")

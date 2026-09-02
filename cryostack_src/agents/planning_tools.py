@@ -171,8 +171,15 @@ def fingerprint_run_inputs(ctx, *, plan: dict) -> dict:
                             dataset_paths=_dataset_paths(ctx, p.datasets))
     ctx.trace.append("fingerprint", {"digest": fp.digest(),
                                      "files": len(fp.tree),
-                                     "datasets": len(fp.datasets)})
-    return fp.to_dict()
+                                     "datasets": len(fp.datasets),
+                                     "truncated": fp.truncated})
+    out = fp.to_dict()
+    if fp.truncated:
+        out["warning"] = (
+            f"the example has more than {len(fp.tree)} files; the fingerprint "
+            "covers only the first (path-sorted) — files beyond that are not "
+            "bound. Review the example directory manually before approving.")
+    return out
 
 
 @tool(name="verify_run_input_fingerprint",
@@ -193,7 +200,8 @@ def verify_run_input_fingerprint(ctx, *, plan: dict, expected: dict) -> dict:
                               dataset_paths=_dataset_paths(ctx, p.datasets))
     drift = have.drift_from(want)
     return {"ok": not drift, "drift": drift,
-            "expected_digest": want.digest(), "current_digest": have.digest()}
+            "expected_digest": want.digest(), "current_digest": have.digest(),
+            "truncated": bool(have.truncated or want.truncated)}
 
 
 def _dataset_paths(ctx, names) -> list:

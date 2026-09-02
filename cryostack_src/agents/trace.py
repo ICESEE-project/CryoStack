@@ -65,7 +65,8 @@ _SECRET_PATTERNS: tuple[tuple[str, "re.Pattern[str]"], ...] = (
     ("gcp-api-key", re.compile(r"\bAIza[0-9A-Za-z_\-]{35}\b")),
     ("slack-token", re.compile(r"\bxox[baprs]-[0-9A-Za-z-]{10,}\b")),
     ("github-token", re.compile(r"\bgh[pousr]_[0-9A-Za-z]{36,}\b")),
-    ("bearer-header", re.compile(r"\bBearer\s+[0-9A-Za-z._\-]{20,}\b")),
+    ("auth-header", re.compile(r"\b(?:Bearer|Basic)\s+[0-9A-Za-z._\-+/=]{16,}\b")),
+    ("url-credentials", re.compile(r"://[^/\s:@]+:[^/\s:@]+@")),
     ("private-key-body", re.compile(r"PRIVATE KEY")),
     ("matlab-license-line", re.compile(r"\d+@matlablic")),
 )

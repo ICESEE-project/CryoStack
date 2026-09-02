@@ -211,3 +211,14 @@ def test_a_and_b_traces_are_in_separate_directories(store_a, store_b):
 def test_path_traversal_ids_are_rejected(store_a, bad_id):
     with pytest.raises((ValueError, KeyError)):
         store_a.plans.load(bad_id)
+
+
+def test_url_and_basic_auth_credentials_are_scrubbed_from_traces(store_a):
+    tr = Trace(user_id=_A.user_id)
+    store_a.traces.attach(tr)
+    tr.append("note", {"url": "https://alice:s3cr3tPass@repo.example/x.git",
+                       "hdr": "Authorization: Basic YWxpY2U6c2VjcmV0eHh4eHh4"})
+    raw = store_a.traces.path_for(tr.trace_id).read_text()
+    assert "s3cr3tPass" not in raw
+    assert "YWxpY2U6c2VjcmV0" not in raw
+    assert "scrubbed" in raw

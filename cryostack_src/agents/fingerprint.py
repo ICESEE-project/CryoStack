@@ -27,11 +27,19 @@ _TEXT_SUFFIXES = frozenset({
     ".m", ".py", ".ipynb", ".jl", ".txt", ".md", ".yaml", ".yml", ".json",
     ".toml", ".cfg", ".ini", ".sh", ".par", ".dat", ".csv", ".tsv", ".in",
 })
-_PER_FILE_HASH_CAP = 256 * 1024          # source files larger than this: size only
+#: binary files that *define the science* of an example — meshes, domain
+#: outlines, parameter arrays, geometry. Hashed in full up to the larger cap
+#: below, because a same-size perturbation to these is a real physics change.
+_BINARY_SCI_SUFFIXES = frozenset({
+    ".msh", ".exp", ".mat", ".nc", ".h5", ".hdf5", ".shp", ".geo", ".exo",
+    ".vtu", ".vtk", ".xml", ".xdmf", ".npy", ".npz",
+})
+_PER_FILE_HASH_CAP = 256 * 1024          # text files larger than this: size only
+_BINARY_SCI_HASH_CAP = 16 * 1024 * 1024  # science binaries larger than this: size only
 _FILE_COUNT_CAP = 200
 _DATASET_HASH_CAP = 8 * 1024 * 1024      # datasets larger than this: metadata only
 _SKIP_DIRS = frozenset({".git", "__pycache__", "outputs", ".ipynb_checkpoints",
-                        "figures", "results", "_modelrun_datasets", "data"})
+                        "figures", "results", "_modelrun_datasets"})
 
 
 def _sha256_file(path: Path) -> str:
@@ -127,8 +135,13 @@ def fingerprint_inputs(example_dir: str | Path, *, run_target: str,
                 size = p.stat().st_size
             except OSError:
                 continue
+            suffix = p.suffix.lower()
             digest = None
-            if p.suffix.lower() in _TEXT_SUFFIXES and size <= _PER_FILE_HASH_CAP:
+            hashable = (
+                (suffix in _TEXT_SUFFIXES and size <= _PER_FILE_HASH_CAP)
+                or (suffix in _BINARY_SCI_SUFFIXES and size <= _BINARY_SCI_HASH_CAP)
+            )
+            if hashable:
                 try:
                     digest = _sha256_file(p)
                 except OSError:

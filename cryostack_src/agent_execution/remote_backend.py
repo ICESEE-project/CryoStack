@@ -196,17 +196,22 @@ class RemoteSubmitBackend:
         #     specific set of file contents, a later edit blocks the run.
         self._verify_input_fingerprint(ctx, plan, approval, canonical_dir, run_target)
 
+        # 6c. independently re-validate the scientific overrides (do not trust
+        #     that the coordinator ran _revalidate first) and use the NORMALISED
+        #     dict for staging.
+        normalized = self._revalidate_overrides(ctx, plan)
+
         # 7. stage a user-owned working copy — canonical is never touched
         mgr = ctx.workspace_manager
         if mgr is None:
             raise SubmitBlocked("workspace", "no WorkspaceManager on the context")
-        extra_files, entry_transform = _staging_glue(plan.model, plan.parameter_overrides)
+        extra_files, entry_transform = _staging_glue(plan.model, normalized)
         staged = mgr.stage_example_for_run(
             source_example=str(canonical_dir),
             extra_files=extra_files,
             entrypoint=run_target,
             entrypoint_transform=entry_transform,
-            overrides=plan.parameter_overrides or None,
+            overrides=normalized or None,
         )
         if Path(staged.path).resolve() == canonical_dir:
             raise SubmitBlocked("staging", "refusing to run against the canonical example")
@@ -229,7 +234,7 @@ class RemoteSubmitBackend:
 
         # 11. register the run, owned by ctx.user, stamped with the digest
         self._register_run(ctx, plan, profile, staged, job_id, working_dir,
-                           log_path, stack)
+                           log_path, stack, approval=approval)
 
         ctx.trace.append("execution_decision", {
             "backend": "remote", "submitted": True, "job_id": job_id,
@@ -253,6 +258,10 @@ class RemoteSubmitBackend:
                 ds_paths = []
         have = fingerprint_inputs(canonical_dir, run_target=run_target,
                                   dataset_paths=ds_paths)
+        if have.truncated:
+            ctx.trace.append("fingerprint", {
+                "warning": "example exceeds the fingerprint file cap; some "
+                           "files are not bound", "truncated": True})
         if have.digest() != expected:
             raise SubmitBlocked(
                 "inputs",
@@ -298,6 +307,29 @@ class RemoteSubmitBackend:
                     f"{plan.model.upper()} runs MATLAB in the container but "
                     f"{profile.name} has no MATLAB licence configured")
         return matlab_license
+
+    def _revalidate_overrides(self, ctx, plan) -> dict:
+        """Re-run the model's Basic-mode validator here, so a raw override
+        cannot reach the staging transform even if this backend is driven
+        without the coordinator's revalidate phase."""
+        overrides = dict(plan.parameter_overrides or {})
+        if not overrides:
+            return {}
+        if plan.model == "icepack":
+            from cryostack_src.models.icepack import validate_icepack_config
+            res = validate_icepack_config(overrides)
+            if not res["ok"]:
+                raise SubmitBlocked("parameters", res["errors"])
+            return dict(res["normalized"])
+        if plan.model == "issm":
+            from cryostack_src.agents.planning_tools import _detect_issm_solvers
+            from cryostack_src.models.issm import validate_md_config
+            solvers = _detect_issm_solvers(ctx, plan)
+            v = validate_md_config(overrides, solvers=solvers)
+            if not v.ok:
+                raise SubmitBlocked("parameters", list(v.errors))
+            return dict(v.normalized)
+        return overrides
 
     def _check_datasets(self, plan, mgr) -> None:
         if not plan.datasets:
@@ -367,13 +399,14 @@ class RemoteSubmitBackend:
         )
 
     def _register_run(self, ctx, plan, profile, staged, job_id, working_dir,
-                      log_path, stack) -> None:
-        from cryostack_src.agents.trace_store import run_manifest_stamp
-        appr = getattr(ctx, "_approval", None)   # optional, set by the coordinator
+                      log_path, stack, approval=None) -> None:
+        from cryostack_src.agents.trace_store import (
+            assert_no_agent_chatter, run_manifest_stamp,
+        )
         stamp = run_manifest_stamp(
             trace_id=ctx.trace.trace_id, plan_digest=plan.digest(),
-            approver_user_id=getattr(appr, "approver_user_id", ctx.user_id),
-            approved_at=getattr(appr, "approved_at", ""),
+            approver_user_id=getattr(approval, "approver_user_id", ctx.user_id),
+            approved_at=getattr(approval, "approved_at", ""),
         )
         metadata = {
             "cluster_name": profile.name,
@@ -383,6 +416,8 @@ class RemoteSubmitBackend:
             "working_copy_from_canonical": staged.from_canonical,
             **stamp,
         }
+        # the run manifest must never carry operational-trace content
+        assert_no_agent_chatter(metadata)
         if self._register is not None:
             self._register(
                 name=Path(str(working_dir)).name or str(job_id),

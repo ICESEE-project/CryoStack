@@ -80,6 +80,42 @@ def test_there_is_no_submit_button():
     assert "approve plan" in labels and "revise plan" in labels
 
 
+def test_approve_stays_disabled_for_an_unvalidated_plan():
+    """PASS 4 review (security P2): even if an adapter emits prepare_run_plan
+    but skips validate_run_plan, Approve must not enable."""
+    from cryostack_src.agents.registry import default_registry
+    reg = default_registry()
+    orig = reg.invoke
+    captured = {}
+
+    def _spy(name, c, **kw):
+        r = orig(name, c, **kw)
+        if name == "prepare_run_plan" and r.ok:
+            captured["plan"] = r.value
+        return r
+    reg.invoke = _spy
+
+    llm = ScriptedLLM([
+        LLMResponse(tool_calls=(LLMToolCall("prepare_run_plan", {
+            "model": "issm", "example": "SquareIceShelf", "compute_resource": "pace",
+            "slurm": {"account": "a", "wall_time": "01:00:00"}}),)),
+        LLMResponse(text="here's a plan"),          # NO validate_run_plan
+    ])
+    panel = build_agent_panel(assistant=RunAssistant(llm=llm),
+                              build_context=_ctx_factory)
+    try:
+        res = panel.ask("run SquareIceShelf on pace")
+    finally:
+        reg.invoke = orig
+    if "plan" not in captured:
+        pytest.skip("example not resolvable")
+    assert res.proposed_plan is not None
+    assert res.proposed_plan.get("validated") in (False, None)
+    for cb in _widgets(panel.container, W.Checkbox):
+        cb.value = True
+    assert _btn(panel.container, "Approve plan").disabled is True
+
+
 def test_assistant_error_is_contained():
     class _Boom:
         def complete(self, **kw):

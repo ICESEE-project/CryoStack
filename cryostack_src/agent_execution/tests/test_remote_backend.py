@@ -293,3 +293,35 @@ def test_input_fingerprint_drift_blocks_before_staging(tmp_path, example_dir):
 def test_backend_module_is_not_under_the_agents_package():
     import cryostack_src.agent_execution.remote_backend as m
     assert "cryostack/agents/" not in m.__file__.replace("\\", "/")
+
+
+# ── PASS 4 review: backend re-validates overrides + no-chatter manifest ──
+def test_backend_rejects_an_invalid_override_even_without_the_coordinator(tmp_path, example_dir):
+    bridge, sub = _Bridge(), _Submitter()
+    bad = _plan(example_dir, model="icepack",
+                parameter_overrides={"ice_temperature": 5000.0})   # out of range
+    with pytest.raises(SubmitBlocked) as e:
+        _backend(bridge, sub, example_dir).submit(bad, ctx=_ctx(_Manager(tmp_path / "w")))
+    assert e.value.stage == "parameters"
+    assert sub.kwargs is None
+
+
+def test_registered_manifest_carries_no_agent_chatter(tmp_path, example_dir):
+    bridge, sub = _Bridge(), _Submitter()
+    captured = {}
+
+    class _Appr:
+        approver_user_id = "rsb-u"
+        approved_at = "2026-09-02T12:00:00Z"
+        input_fingerprint = ""
+
+    be = _backend(bridge, sub, example_dir,
+                  registrar=lambda **kw: captured.update(kw))
+    be.submit(_plan(example_dir), ctx=_ctx(_Manager(tmp_path / "w")),
+              approval=_Appr())
+    md = captured["metadata"]
+    assert md["agent_assist"]["approved_by"] == "rsb-u"
+    assert md["agent_assist"]["approved_at"] == "2026-09-02T12:00:00Z"
+    # no operational-trace keys
+    from cryostack_src.agents.trace_store import assert_no_agent_chatter
+    assert_no_agent_chatter(md)

@@ -155,7 +155,12 @@ def build_agent_panel(
         show = plan is not None
         for w in (config_box, validation_box, ack, revise_btn, approve_btn):
             w.layout.display = "" if show else "none"
-        approve_btn.disabled = not (show and ack.value and not _has_errors(plan))
+        # Approve requires: a plan, the human ack, no errors, AND that the plan
+        # was actually validated (validated=True) — never approve an unvalidated
+        # proposal even if an adapter skipped validate_run_plan.
+        ok = (show and ack.value and not _has_errors(plan)
+              and bool(plan.get("validated")))
+        approve_btn.disabled = not ok
 
     def _submit(text: str) -> Any:
         outcome.value = ""

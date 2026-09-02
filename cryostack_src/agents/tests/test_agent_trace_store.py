@@ -94,3 +94,17 @@ def test_assert_no_agent_chatter_rejects_extra_stamp_keys():
     with pytest.raises(AssertionError):
         assert_no_agent_chatter({AGENT_PROVENANCE_KEY: {
             "agent_assisted": True, "messages": ["hi"]}})
+
+
+# ── PASS 4 review: chatter keys + wiring ────────────────────────────
+def test_chatter_keys_catch_assistant_result_shapes():
+    from cryostack_src.agents.trace_store import assert_no_agent_chatter
+    for bad in (
+        {"model": "issm", "steps": [{"tool_calls": []}]},
+        {"provenance": {"arguments": {"x": 1}}},
+        {"transcript": "hello"},
+        {"user_message": "run it"},
+        {"llm_output": "sure"},
+    ):
+        with pytest.raises(AssertionError):
+            assert_no_agent_chatter(bad)

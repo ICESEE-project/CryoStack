@@ -34,9 +34,12 @@ AGENT_PROVENANCE_KEY = "agent_assist"
 
 #: keys that belong ONLY in the operational trace, never in a run manifest
 _CHATTER_KEYS = frozenset({
-    "prompt", "system_prompt", "messages", "completion", "model_output",
-    "llm_response", "tool_call", "tool_calls", "args", "request_text",
-    "assistant_text", "reasoning", "chain_of_thought",
+    "prompt", "system_prompt", "system", "messages", "message", "completion",
+    "model_output", "llm_response", "llm_output", "response",
+    "tool_call", "tool_calls", "tool_result", "tool_results",
+    "args", "arguments", "request_text", "request", "user_message",
+    "assistant_text", "assistant", "transcript", "conversation", "steps",
+    "reasoning", "chain_of_thought", "thinking",
 })
 
 

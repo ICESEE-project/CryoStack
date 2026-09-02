@@ -407,7 +407,15 @@ def _build_agent_accordion(workspace_manager):
         mp = store.plans.create(RunPlan.from_dict(plan_dict))
         mp.mark_validated(mp.plan)
         mp.submit_for_approval()
-        mp.approve(user)
+        # bind the approval to the *content* of the example / run-target /
+        # datasets, not just the intent digest, so a later edit blocks a run.
+        fp_digest = ""
+        try:
+            from cryostack_src.agents.planning_tools import fingerprint_run_inputs
+            fp_digest = fingerprint_run_inputs(_context(), plan=plan_dict).get("digest", "")
+        except Exception:
+            fp_digest = ""            # falls back to intent-only binding
+        mp.approve(user, input_fingerprint=fp_digest)
         store.plans.save(mp)
         return mp.plan_id
 

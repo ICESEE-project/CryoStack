@@ -121,3 +121,45 @@ def test_input_fingerprint_survives_persistence(tmp_path, example):
     reloaded = store.plans.load(mp.plan_id)
     assert reloaded.state is PlanState.APPROVED
     assert reloaded.approval.input_fingerprint == fp.digest()
+
+
+# ── PASS 4 review: binary scientific files + truncation ──────────────
+def test_binary_scientific_files_are_hashed(tmp_path):
+    d = tmp_path / "IceStream"
+    d.mkdir()
+    (d / "runme.m").write_text("solve(md);\n")
+    (d / "domain.exp").write_bytes(b"# exp outline\n" + b"1 2 3 " * 100)
+    (d / "params.mat").write_bytes(b"MATLAB 5.0 " + b"\x00" * 500)
+    a = fingerprint_inputs(d, run_target="runme.m")
+    exp_row = next(r for r in a.tree if r[0] == "domain.exp")
+    mat_row = next(r for r in a.tree if r[0] == "params.mat")
+    assert exp_row[2] is not None and mat_row[2] is not None      # sha256 present
+
+    (d / "domain.exp").write_bytes(b"# exp outline\n" + b"9 9 9 " * 100)  # same size
+    b = fingerprint_inputs(d, run_target="runme.m")
+    assert b.digest() != a.digest()
+    assert any("domain.exp" in x for x in b.drift_from(a))
+
+
+def test_data_dir_is_now_fingerprinted(tmp_path):
+    d = tmp_path / "Greenland"
+    (d / "data").mkdir(parents=True)
+    (d / "runme.m").write_text("solve(md);\n")
+    (d / "data" / "forcing.dat").write_text("1.0 2.0 3.0\n")
+    a = fingerprint_inputs(d, run_target="runme.m")
+    assert any(r[0] == "data/forcing.dat" for r in a.tree)
+    (d / "data" / "forcing.dat").write_text("9.0 9.0 9.0\n")
+    assert fingerprint_inputs(d, run_target="runme.m").digest() != a.digest()
+
+
+def test_truncation_is_flagged(tmp_path, monkeypatch):
+    from cryostack_src.agents import fingerprint as fpmod
+    monkeypatch.setattr(fpmod, "_FILE_COUNT_CAP", 3)
+    d = tmp_path / "Big"
+    d.mkdir()
+    (d / "runme.m").write_text("x\n")
+    for i in range(10):
+        (d / f"aux{i}.m").write_text(f"{i}\n")
+    fp = fingerprint_inputs(d, run_target="runme.m")
+    assert fp.truncated is True
+    assert len(fp.tree) == 3
