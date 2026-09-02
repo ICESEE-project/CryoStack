@@ -25,9 +25,11 @@ from typing import Any
 from cryostack_src.workspace.identity import WorkspaceUser
 from cryostack_src.workspace.roots import owner_root
 
-from .trace import Trace, TraceEvent
+from .trace import Trace, TraceEvent, scan_for_secrets
 
-_TRACE_DIRNAME = "agent-traces"
+#: under <owner_root>/.cryostack/agents/traces (PASS 4) — beside plans/, and
+#: consistent with the sibling .cryostack/{runs,working} internals.
+_TRACE_SUBPATH = ("agents", "traces")
 AGENT_PROVENANCE_KEY = "agent_assist"
 
 #: keys that belong ONLY in the operational trace, never in a run manifest
@@ -48,14 +50,27 @@ class TraceStore:
     @classmethod
     def for_user(cls, user: WorkspaceUser, *,
                  workspace_root: str | Path | None = None) -> "TraceStore":
-        return cls(owner_root(user, workspace_root=workspace_root)
-                   / ".cryostack" / _TRACE_DIRNAME)
+        root = owner_root(user, workspace_root=workspace_root) / ".cryostack"
+        for seg in _TRACE_SUBPATH:
+            root = root / seg
+        return cls(root)
 
     def path_for(self, trace_id: str) -> Path:
         safe = "".join(c for c in str(trace_id) if c.isalnum() or c in "-_")
-        if not safe:
+        if not safe or safe in (".", ".."):
             raise ValueError("invalid trace id")
         return self._dir / f"{safe}.jsonl"
+
+    @staticmethod
+    def _line_for(ev: TraceEvent) -> str:
+        """One JSONL line for an event, with a structural secret scrub as a
+        final guard over :func:`redact` (which is deny-by-known-key)."""
+        d = ev.to_dict()
+        leaked = scan_for_secrets(d)
+        if leaked:
+            d = {"seq": d["seq"], "at": d["at"], "kind": d["kind"],
+                 "payload": {"scrubbed": True, "patterns": leaked}}
+        return json.dumps(d, sort_keys=True) + "\n"
 
     def attach(self, trace: Trace) -> Path:
         """Wire the trace so every future event is flushed to disk as it is
@@ -64,14 +79,14 @@ class TraceStore:
 
         def _sink(ev: TraceEvent) -> None:
             with path.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(ev.to_dict(), sort_keys=True) + "\n")
+                fh.write(self._line_for(ev))
 
         # flush anything already recorded, then take over
         existing = trace.events
         trace._sink = _sink
         with path.open("a", encoding="utf-8") as fh:
             for ev in existing:
-                fh.write(json.dumps(ev.to_dict(), sort_keys=True) + "\n")
+                fh.write(self._line_for(ev))
         return path
 
     def persist(self, trace: Trace) -> Path:
@@ -79,8 +94,11 @@ class TraceStore:
         path = self.path_for(trace.trace_id)
         with path.open("a", encoding="utf-8") as fh:
             for ev in trace.events:
-                fh.write(json.dumps(ev.to_dict(), sort_keys=True) + "\n")
+                fh.write(self._line_for(ev))
         return path
+
+    def list_ids(self) -> list[str]:
+        return sorted(p.stem for p in self._dir.glob("*.jsonl"))
 
     def load(self, trace_id: str) -> list[dict]:
         path = self.path_for(trace_id)

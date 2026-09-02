@@ -18,9 +18,20 @@ deterministic mock for tests.
 """
 from __future__ import annotations
 
+from .approval import (
+    Approval,
+    ApprovalError,
+    ManagedPlan,
+    PlanState,
+    PlanStore,
+    assert_approved_for_execution,
+    restore_managed_plan,
+)
 from .context import ToolContext, build_tool_context
 from .permissions import Permission, PermissionError
+from .planning import PlanFinding, RunPlan, SlurmRequest
 from .registry import ToolRegistry, default_registry
+from .store import AgentStore, PlanRepository, SecretInPayloadError
 from .tools import ToolResult, ToolSpec, tool
 from .assistant import AssistantResult, RunAssistant
 from .experiment import (
@@ -36,7 +47,7 @@ from .llm import (
     LLMToolCall,
     ScriptedLLM,
 )
-from .trace import Trace, TraceEvent
+from .trace import Trace, TraceEvent, redact, scan_for_secrets
 from .trace_store import (
     AGENT_PROVENANCE_KEY,
     TraceStore,
@@ -49,7 +60,11 @@ __all__ = [
     "ToolContext", "build_tool_context",
     "ToolSpec", "ToolResult", "tool",
     "ToolRegistry", "default_registry",
-    "Trace", "TraceEvent",
+    "RunPlan", "SlurmRequest", "PlanFinding",
+    "Approval", "ApprovalError", "ManagedPlan", "PlanState", "PlanStore",
+    "assert_approved_for_execution", "restore_managed_plan",
+    "AgentStore", "PlanRepository", "SecretInPayloadError",
+    "Trace", "TraceEvent", "redact", "scan_for_secrets",
     "TraceStore", "run_manifest_stamp", "assert_no_agent_chatter",
     "AGENT_PROVENANCE_KEY",
     "LLMClient", "LLMMessage", "LLMResponse", "LLMToolCall", "ScriptedLLM",

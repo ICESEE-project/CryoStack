@@ -158,6 +158,52 @@ class ManagedPlan:
             "history": list(self.history),
         }
 
+    @classmethod
+    def from_dict(cls, d: dict) -> "ManagedPlan":
+        """Deserialize. Does NOT re-verify the approval digest — the store does
+        that (it must recompute against the just-loaded plan and downgrade a
+        tampered record). Use :func:`restore_managed_plan` for the safe path."""
+        appr = d.get("approval")
+        return cls(
+            plan_id=str(d["plan_id"]),
+            owner_user_id=str(d["owner_user_id"]),
+            plan=RunPlan.from_dict(d["plan"]),
+            state=PlanState(d.get("state", PlanState.DRAFT.value)),
+            approval=Approval(
+                plan_digest=appr["plan_digest"],
+                approver_user_id=appr["approver_user_id"],
+                approved_at=appr["approved_at"],
+                note=appr.get("note", ""),
+            ) if appr else None,
+            run_id=d.get("run_id"),
+            failure_reason=d.get("failure_reason"),
+            history=list(d.get("history") or []),
+        )
+
+
+def restore_managed_plan(d: dict, *, owner_user_id: str) -> ManagedPlan:
+    """Rebuild a :class:`ManagedPlan` from a persisted dict, binding the owner to
+    the caller (the storage location), never to the serialized blob, and
+    re-verifying the approval digest against the freshly-deserialized plan.
+
+    If the plan was tampered with while APPROVED (its recomputed digest no
+    longer matches the recorded approval), the approval is dropped and the
+    plan is forced back to DRAFT — exactly as an in-process post-approval edit
+    would."""
+    mp = ManagedPlan.from_dict(d)
+    mp.owner_user_id = owner_user_id            # authoritative: the store path
+    if mp.approval is not None:
+        if mp.approval.plan_digest != mp.plan.digest():
+            mp.approval = None
+            mp.state = PlanState.DRAFT
+            mp._log("reload_digest_mismatch")
+        elif mp.approval.approver_user_id != owner_user_id:
+            # an approval attributed to a different user is not trustworthy here
+            mp.approval = None
+            mp.state = PlanState.DRAFT
+            mp._log("reload_approver_mismatch")
+    return mp
+
 
 def assert_approved_for_execution(mp: ManagedPlan) -> None:
     """The single gate the executor calls. Raises :class:`ApprovalError` unless

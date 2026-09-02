@@ -21,8 +21,9 @@ def store(tmp_path):
 
 
 def test_trace_dir_is_separate_from_runs(store, tmp_path):
-    assert "agent-traces" in str(store._dir)
-    assert "runs" not in store._dir.name
+    # under <owner_root>/.cryostack/agents/traces -- beside plans/, never in runs/
+    assert str(store._dir).endswith("/.cryostack/agents/traces")
+    assert "runs" not in store._dir.parts
 
 
 def test_attach_flushes_each_event_append_only(store):

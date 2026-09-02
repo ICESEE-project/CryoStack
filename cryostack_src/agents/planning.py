@@ -139,6 +139,13 @@ class RunPlan:
             datasets=tuple(d.get("datasets") or ()),
             slurm=SlurmRequest(**d["slurm"]) if isinstance(d.get("slurm"), dict)
             else SlurmRequest(),
+            detected_solvers=tuple(d.get("detected_solvers") or ()),
+            findings=tuple(
+                PlanFinding(f["level"], f["where"], f["message"])
+                for f in (d.get("findings") or [])
+            ),
+            approvals_required=tuple(d.get("approvals_required") or ()),
+            validated=bool(d.get("validated", False)),
         )
 
     # -- helpers for the approval layer -----------------------------

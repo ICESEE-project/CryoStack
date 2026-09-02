@@ -13,6 +13,7 @@ token / MATLAB-license keys, recursively, before an event is stored.
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -42,13 +43,43 @@ def redact(value: Any) -> Any:
             k: ("***" if str(k).lower() in _SECRET_KEYS else redact(v))
             for k, v in value.items()
         }
-    if isinstance(value, (list, tuple)):
-        return type(value)(redact(v) for v in value)
+    if isinstance(value, list):
+        return [redact(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(redact(v) for v in value)
     if isinstance(value, str):
         if any(m in value for m in _SECRET_MARKERS):
             return "***"
         return value
     return value
+
+
+#: structural high-entropy / provider-shape secret patterns — a stricter,
+#: key-name-independent check used *before persistence* (belt and braces over
+#: :func:`redact`, which is deny-by-known-key). Deliberately conservative:
+#: it should not fire on ordinary scientific data.
+_SECRET_PATTERNS: tuple[tuple[str, "re.Pattern[str]"], ...] = (
+    ("pem-block", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
+    ("aws-access-key-id", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
+    ("aws-secret-access-key", re.compile(r"\baws_secret_access_key\b", re.I)),
+    ("gcp-api-key", re.compile(r"\bAIza[0-9A-Za-z_\-]{35}\b")),
+    ("slack-token", re.compile(r"\bxox[baprs]-[0-9A-Za-z-]{10,}\b")),
+    ("github-token", re.compile(r"\bgh[pousr]_[0-9A-Za-z]{36,}\b")),
+    ("bearer-header", re.compile(r"\bBearer\s+[0-9A-Za-z._\-]{20,}\b")),
+    ("private-key-body", re.compile(r"PRIVATE KEY")),
+    ("matlab-license-line", re.compile(r"\d+@matlablic")),
+)
+
+
+def scan_for_secrets(value: Any) -> list[str]:
+    """Return the names of any secret patterns found anywhere in ``value``
+    (after JSON-serialising it). Empty list == clean. Used to *reject* a
+    payload before it is written to disk."""
+    try:
+        blob = json.dumps(value, default=str, sort_keys=True)
+    except (TypeError, ValueError):
+        blob = str(value)
+    return sorted({name for name, rx in _SECRET_PATTERNS if rx.search(blob)})
 
 
 @dataclass(frozen=True)
