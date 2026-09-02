@@ -139,6 +139,20 @@ _SHARED_APPLICATION_CSS = """
 .icesee-running {
     background: rgba(37, 99, 235, 0.12);
     color: #1d4ed8;
+
+    /* a subtle pulse so an in-flight operation reads as "working",
+       without a fake progress bar or percentage. */
+    animation: cryostack-status-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes cryostack-status-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cryostack-status-running,
+    .icesee-running { animation: none; }
 }
 
 .cryostack-status-done,

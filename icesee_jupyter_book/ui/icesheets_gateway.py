@@ -700,6 +700,10 @@ def build_icesheets_ui():
         _CLOUD_STATES = {
             "not_configured": ("icesee-idle", "Not configured"),
             "checking": ("icesee-running", "Checking…"),
+            "testing": ("icesee-running", "Testing connection…"),
+            "preparing": ("icesee-running", "Preparing…"),
+            "smoke_testing": ("icesee-running", "Testing infrastructure…"),
+            "connected": ("icesee-done", "Connected"),
             "ready": ("icesee-done", "Ready"),
             "staging": ("icesee-running", "Staging…"),
             "submitting": ("icesee-running", "Submitting…"),
@@ -2479,6 +2483,37 @@ def build_icesheets_ui():
             workspace_manager.update_run_status_by_job(job_id, state)
             _set_cloud_state(state if state in _CLOUD_STATES else "checking")
 
+        # smoke test: a local config check (precheck) then the AWS probe (worker).
+        # Both share the resolved config; the worker never touches a widget.
+        _smoke_state: dict = {}
+
+        def _smoke_precheck():
+            from cryostack_src.cloud.drivers.aws.batch_config import (
+                ECR_REPOSITORY_NAMES,
+            )
+            _model = model_dd.value
+            _cfg = resolve_cloud_config(
+                provider="aws", region=aws_region.value.strip(),
+                bucket=cloud_bucket.value.strip(), profile=aws_profile.value.strip(),
+                model=_model, job_queue=batch_job_queue.value.strip(),
+                job_definition=batch_job_def.value.strip(),
+            )
+            problems = validate_cloud_config(_cfg, model=_model)
+            _smoke_state.update(
+                cfg=_cfg, ecr=ECR_REPOSITORY_NAMES.get(_model, ""),
+                user_prefix=workspace_manager.owner.safe_id)
+            return problems
+
+        def _smoke_worker():
+            from cryostack_src.cloud import run_infrastructure_smoke_test
+            _cfg = _smoke_state["cfg"]
+            return run_infrastructure_smoke_test(
+                region=_cfg.region, bucket=_cfg.bucket,
+                user_prefix=_smoke_state["user_prefix"],
+                job_queue=_cfg.job_queue, job_definition=_cfg.job_definition,
+                ecr_repository=_smoke_state["ecr"], profile=_cfg.profile,
+            )
+
         cloud_runtime = build_cloud_runtime_callbacks(
             runtime_status=STATUS,
             log_output=log_out,
@@ -2490,6 +2525,10 @@ def build_icesheets_ui():
             bucket_value=lambda: cloud_bucket.value.strip(),
             results_output=results_out,
             on_status_result=_cloud_status_result,
+            smoke_button=cloud_smoke_btn,
+            set_chip=_set_cloud_state,
+            smoke_precheck=_smoke_precheck,
+            smoke_worker=_smoke_worker,
         )
         on_cloud_status = cloud_runtime.status
         on_cloud_logs = cloud_runtime.logs
@@ -2531,57 +2570,10 @@ def build_icesheets_ui():
             poll_interval=float(os.environ.get("CRYOSTACK_CLOUD_POLL_SECONDS", "20")),
         )
 
-        def _run_cloud_smoke_test(_=None):
-            """License-neutral: verify identity + S3 (your prefix) + Batch + ECR
-            reachability. Never submits a job, never runs ISSM."""
-            from cryostack_src.cloud import run_infrastructure_smoke_test
-            from cryostack_src.cloud.drivers.aws.batch_config import (
-                ECR_REPOSITORY_NAMES,
-            )
-            log_out.clear_output()
-            _model = model_dd.value
-            _cfg = resolve_cloud_config(
-                provider="aws", region=aws_region.value.strip(),
-                bucket=cloud_bucket.value.strip(), profile=aws_profile.value.strip(),
-                model=_model, job_queue=batch_job_queue.value.strip(),
-                job_definition=batch_job_def.value.strip(),
-            )
-            _probs = validate_cloud_config(_cfg, model=_model)
-            if _probs:
-                with log_out:
-                    print("[cloud][smoke] fix the configuration first:")
-                    for _p in _probs:
-                        print("  -", _p)
-                return
-            status_chip.value = status_html("running")
-            with log_out:
-                print("[cloud] Cloud infrastructure smoke test "
-                      "(no job submitted, no ISSM run)…")
-
-            async def _worker():
-                report = await asyncio.to_thread(
-                    run_infrastructure_smoke_test,
-                    region=_cfg.region, bucket=_cfg.bucket,
-                    user_prefix=workspace_manager.owner.safe_id,
-                    job_queue=_cfg.job_queue, job_definition=_cfg.job_definition,
-                    ecr_repository=ECR_REPOSITORY_NAMES.get(_model, ""),
-                    profile=_cfg.profile,
-                )
-                with log_out:
-                    for _ln in report.lines():
-                        print(_ln)
-                    print("[cloud] infrastructure ready"
-                          if report.infrastructure_ready
-                          else "[cloud] infrastructure NOT ready — see the failures above")
-                status_chip.value = status_html(
-                    "done" if report.infrastructure_ready else "fail")
-
-            try:
-                asyncio.get_running_loop().create_task(_worker())
-            except RuntimeError:
-                asyncio.run(_worker())
-
-        cloud_smoke_btn.on_click(_run_cloud_smoke_test)
+        # The infrastructure smoke test (license-neutral: identity + S3 + Batch
+        # + ECR reachability, no job submitted) shares the same non-blocking
+        # coordinator as Test connection / Prepare cloud.
+        cloud_smoke_btn.on_click(cloud_runtime.smoke_test)
 
         def tail_selected_workspace_run():
             selected = workspace_manager.selected_run()

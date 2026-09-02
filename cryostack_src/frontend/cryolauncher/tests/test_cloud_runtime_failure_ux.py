@@ -30,16 +30,27 @@ class _Out:
     # which writes to real stdout. Capture via a builtins.print shim instead.
 
 
+class _Btn:
+    def __init__(self):
+        self.description = ""
+        self.icon = ""
+        self.button_style = ""
+        self.disabled = False
+
+
 def _mk(bridge, capsys):
     env = type("E", (), {k: type("W", (), {"value": ""})()
                          for k in ("account_status", "storage_status",
-                                   "registry_status", "compute_status")})()
+                                   "registry_status", "compute_status")}
+              | {"test_button": _Btn(), "prepare_button": _Btn()})()
     cb = build_cloud_runtime_callbacks(
-        runtime_status={"batch_job_id": "job-1", "cloud_run": "s3://b/r"},
+        runtime_status={"batch_job_id": "job-1", "cloud_run": "s3://b/runs/x"},
         log_output=_Out(), status_widget=type("S", (), {"value": ""})(),
         status_html=lambda s: s, bridge_factory=lambda: bridge,
         cloud_environment=env, set_cloud_status=lambda *a, **k: None,
-        bucket_value=lambda: "b", results_output=_Out(),
+        bucket_value=lambda: "cryostack-b", results_output=_Out(),
+        smoke_button=_Btn(), set_chip=lambda _k: None,
+        spawn=lambda coro: __import__("asyncio").run(coro),
     )
     return cb
 
