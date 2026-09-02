@@ -597,3 +597,23 @@ and keep going.
   its context reading every module.
 - **boundaries:** READ ONLY. No edits, no commits. file:line evidence.
 - (findings appended on return)
+
+---
+
+## PASS 3 progress — A5–A10 complete (coordinator, in-process)
+
+| Task | Commit | Tests |
+|---|---|---|
+| A5 approval boundary | 6ef2823 | test_agent_approval.py (10) — incl. approve-A / mutate / execute → rejected |
+| A6 dry-run coordinator | 9289d36 | test_agent_execution.py (8) — walks all phases, stops at submit; no-backend → dry run |
+| A7 trace persistence + provenance split | 646ce71 | test_agent_trace_store.py (8) — append-only, secrets never on disk, no chatter in manifest |
+| A8 Run Assistant + LLM adapter | c2b5609 | test_agent_assistant.py (4) — deterministic loop, PLAN hard-cap, never submits |
+| A9 prototype agent panel | 9a9a9bf | test_shared_agent_panel.py (2) — Approve gated on human ack |
+| A10 Developer Guide "Building Agents in CryoStack" | 48a9776 | jupyter-book build clean |
+
+`cryostack_src/agents/` now: permissions, trace, trace_store, context, tools,
+registry, policy, readonly_tools, planning(+_tools), approval, execution, llm,
+assistant. 58 agent tests green.
+
+Next: P1 ModelCapabilities registry, P2 result-contract generalization,
+P3 run/experiment abstraction (backward-compat gate), then R1/R2/R3.

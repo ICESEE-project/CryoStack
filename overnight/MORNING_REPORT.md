@@ -1,296 +1,278 @@
-# Overnight autonomous session — morning report
+# Overnight autonomous session — PASS 3 morning report
 
-Two continuous passes from `52d8edb` (branch `gatech_vm_backend`).
-**End HEAD: `7347bd9`.** All work committed in small green checkpoints; the only
-uncommitted tracked entries are the pre-existing `external/*` submodule build
-artifacts. Agent trail: `overnight/AGENT_TRAIL.md`. Audits:
-`overnight/AUDIT_*.md` (5 files).
+**Objective: make CryoStack genuinely agentic, as a teaching implementation.**
 
-Everything that could not be established from repository evidence, needs
-production access, Duo/MFA, a Connector publish, a paid cloud call, or a
-scientific/design decision was **stopped and left as an explicit checkpoint** —
-§9.
+From `ebee0c5` (PASS 2, accepted as checkpoint) on `gatech_vm_backend`.
+**End HEAD: `49df948`** (before this report's own commit). All work in small
+green commits. Prior passes: `overnight/MORNING_REPORT_pass1-2.md`.
+
+Nothing that needed production access, Duo/MFA, a Connector publish, a paid
+cloud call, a real HPC job, or a scientific decision was done — those are
+marked **OWNER_CHECKPOINT** in §13.
 
 ---
 
-## 1. Commits in chronological order
+## 1. What was built
 
-### Pass 1 — connector/bootstrap + Icepack safe subset + ICESEE isolation
-| hash | purpose |
+A new `cryostack_src/agents/` package: a provider-agnostic layer that lets an
+orchestrator (an LLM, a script, a test) drive CryoStack through **bounded,
+typed, permission-declaring tools**, with human approval bound to a
+deterministic digest and a dry-run execution boundary that stops before any
+real submission.
+
+* **A1–A10** — the agent layer: audit, safety model, tool registry + 11
+  read-only tools, planning tools, approval boundary, dry-run executor, trace
+  persistence + provenance split, the Run Assistant + LLM adapter, a prototype
+  UI panel, the Developer Guide.
+* **P1–P3** — platform generalizations: ModelCapabilities registry,
+  model-neutral result contract, additive experiment/sweep abstraction.
+* **R1–R3** — cross-model contract matrix, malicious-agent, and
+  scientific-integrity test suites.
+* Teaching doc: `overnight/LEARNING_AGENTIC_DEVELOPMENT.md`.
+
+---
+
+## 2. Commits in order
+
+| hash | task | what |
+|---|---|---|
+| `cad59f8` | — | PASS 3 plan + A1 delegation in the trail |
+| `1ac7cde` | A2 | `overnight/AGENT_SAFETY_MODEL.md` |
+| `dc52568` | A2+A3 | `AUDIT_agent_capabilities.md`; permissions, trace, context, tools, registry, policy, readonly_tools; 18 core tests |
+| `a1af2bb` | A4 | `planning.py` (RunPlan + digest) + `planning_tools.py` (prepare/validate/estimate); 13 tests |
+| `6ef2823` | A5 | `approval.py` — lifecycle + digest-bound approval; 10 tests incl. approve-A / mutate / execute → rejected |
+| `9289d36` | A6 | `execution.py` — dry-run coordinator stopping at the submit boundary; 8 tests |
+| `646ce71` | A7 | `trace_store.py` — append-only JSONL + `run_manifest_stamp` / `assert_no_agent_chatter`; 8 tests |
+| `c2b5609` | A8 | `llm.py` (adapter + ScriptedLLM mock) + `assistant.py` (RunAssistant, PLAN-capped); 4 tests |
+| `9a9a9bf` | A9 | `icesee_jupyter_book/ui/shared_agent_panel.py` — prototype panel, Approve gated on human ack; 2 tests |
+| `48a9776` | A10 | `icesee_jupyter_book/docs/building_agents.md` in the public Developer Guide |
+| `53d266d` | P1 | `cryostack_src/models/capabilities.py` — ModelCapabilities registry; agent layer consumes it; 6 tests |
+| `7a88ad3` | P2 | `results_common` — `ResultPackageProtocol` / `VisualizerProtocol` / `describe_package` / resolvers; manager delegates; 3 tests |
+| `271252f` | P3 | `experiment.py` — ExperimentPlan / SweepAxis / ManagedExperiment; 8 tests |
+| `49df948` | R1–3 | `test_r1_contract_matrix.py`, `test_r2_malicious_agent.py`, `test_r3_scientific_integrity.py` |
+
+---
+
+## 3. The agent architecture
+
+```
+orchestrator (LLM / script / test)
+      │
+   RunAssistant  ── deterministic loop, hard-capped at PLAN
+      │
+   ToolRegistry.invoke(name, ctx, **kwargs)     ← the one checkpoint
+      │   enforces: permission ceiling · confirmation gate · identity · trace
+      ▼
+  OBSERVE tools        PLAN tools (prepare / validate / estimate)
+      │                     │
+      │                RunPlan ──digest──►  approval.ManagedPlan lifecycle
+      │                                         │  human approves (digest-bound)
+      │                                         ▼
+      │                              DryRunExecutionCoordinator
+      │                                  stops before sbatch / aws batch submit
+      ▼
+  append-only, redacted Trace  ──(pointer only)──►  scientific run manifest
+```
+
+Files: `permissions.py`, `context.py`, `trace.py`, `trace_store.py`,
+`tools.py`, `registry.py`, `policy.py`, `readonly_tools.py`, `planning.py`,
+`planning_tools.py`, `approval.py`, `execution.py`, `llm.py`, `assistant.py`,
+`experiment.py`. **No LLM vendor SDK is imported anywhere.**
+
+---
+
+## 4. The permission model
+
+`OBSERVE (10) < PLAN (20) < PREPARE (30) < EXECUTE (40) < DESTRUCTIVE (50)`.
+
+Every tool declares its minimum level. `ToolContext` carries a
+`max_permission` ceiling (only ever lowered, never raised — `with_ceiling`
+takes a `min`). The registry refuses any call above the ceiling **and** traces
+the refusal. Discovery is filtered: a context never sees a tool it could not
+call. Everything shipped is OBSERVE or PLAN and read-only — no EXECUTE or
+DESTRUCTIVE tool is wired to a real backend.
+
+Derived from CryoStack's existing boundaries (B2 workspace isolation, B3
+remote-identity verification, B4 pre-submit Slurm validation), not invented on
+top of them.
+
+---
+
+## 5. Safety guarantees, and the test that proves each
+
+| Guarantee | Test |
 |---|---|
-| `a930cfd` | (pre-brief) first-use SSH-key registration UX |
-| `52d8edb` | (pre-brief) bootstrap visible state + structured failure reasons + macOS Paste button |
-| `d4d5603` | overnight agent-trail + checkpoint scaffolding |
-| `416da3d` | **A** connector bootstrap end-to-end namespace test + pairing-prompt paste |
-| `b5eb565` `c369ada` `0281194` | trail/checkpoint |
-| `132b8b1` | **B** icepack structured result package + honest output collector |
-| `a234078` | **B** run the icepack output collector after a remote run |
-| `3466e20` | trail: Phase B audit |
-| `1513267` | **B** accurate Icepack docs |
-| `e4cf471` | **B** icepack adapter test coverage + Python-first run-target order |
-| `5d00d0e` `f23a040` | trail / draft report |
-| `3fb5cb1` | **B** offline Icepack pipeline integration test |
-| `3a7705f` | **C** parameterize `run_dir()` for per-user isolation |
-| `1e68ae8` | **C** `WorkspaceManager` accepts a fixed model name |
-| `c342f4f` | **C** ICESEE per-user run directories + `workspace/roots.py` |
-| `d06baca` `4c43040` | trail / report |
+| No agent context without an authenticated identity | `test_r2::test_context_cannot_be_built_without_an_authenticated_identity` |
+| A forged identity source is rejected | `test_r2::test_context_rejects_a_forged_identity_source` |
+| No tool takes a `user_id` / `owner` argument | `test_r2::test_no_tool_accepts_a_user_id_argument` |
+| An agent cannot read another user's run | `test_agent_core` + `test_r2::test_agent_cannot_read_another_users_run` |
+| The permission ceiling cannot be raised | `test_r2::test_context_ceiling_cannot_be_raised` |
+| A tool above the ceiling is refused | `test_r2::test_registry_refuses_a_tool_above_the_ceiling` |
+| The assistant stays at PLAN even given an EXECUTE context | `test_r2::test_assistant_stays_at_plan_even_with_an_execute_context` |
+| **Approve config A, mutate, execute config B → rejected, no side effects** | `test_agent_approval` + `test_r2::test_approve_A_execute_B_is_rejected_with_no_side_effects` |
+| A fabricated approval object is caught by the live digest check | `test_r2::test_fabricated_approval_object_is_caught` |
+| A user cannot approve another user's plan | `test_r2::test_a_user_cannot_approve_another_users_plan` |
+| A live execute without an EXECUTE ceiling never calls the backend | `test_r2::test_live_execute_without_execute_ceiling_never_calls_the_backend` |
+| Secrets passed to a tool are redacted in the trace / on disk | `test_r2` + `test_agent_trace_store::test_secrets_never_hit_disk` |
+| Tool modules reference no prohibited symbol (AST scan) | `test_agent_core` + `test_r2::test_tool_modules_reference_no_prohibited_symbol` |
+| A scientific change shows in digest + `scientific_changes` + `approvals_required` and forces re-approval | `test_r3` (2 tests) |
+| Out-of-range Basic-mode values block validation | `test_r3::test_out_of_range_basic_mode_value_is_a_validation_error` |
+| No shipped tool mutates or invents science | `test_r3` (2 tests) |
+| Agent chatter never enters a run manifest | `test_agent_trace_store` + `test_r3::test_agent_assisted_run_manifest_carries_only_a_pointer` |
 
-### Pass 2 — deep evidence-based Icepack (I1–I6) + ICESEE audits
-| hash | purpose |
-|---|---|
-| `12bd3ac` | PASS 2 plan + environment facts + delegation |
-| `8252c52` | **I1** Icepack Basic-mode parameter architecture (`parameters.py`) |
-| `c5dec1d` | save 3 PASS-2 audits |
-| `a1709f1` | **I1** wire Basic-mode overrides into the IceSheets gateway |
-| `50505d2` | trail: I1 + audit findings/decisions |
-| `9fc38f2` | **I2/I3** structured result export (container-side Firedrake exporter) + schema-v2 reader + `.msh` capture |
-| `b7b7488` | **I4** deterministic Results visualization (`visualization/icepack.py`) |
-| `789a33f` | trail: I2–I5 results + I5 unsupported-state conclusion |
-| `56c3fb8` | **I6** end-to-end offline acceptance harness |
-| `e107a70` | checkpoint |
-| `7347bd9` | **C4** icesee: remove dead `build_sidebar` |
+96 agent tests total.
 
 ---
 
-## 2. Icepack ↔ ISSM parity matrix — Before → After → Remaining
+## 6. Identity & isolation
 
-| Area | Before (session start) | After | Remaining |
-|---|---|---|---|
-| 1 example discovery / metadata | at parity | at parity | curation heuristic (minor) |
-| 2 Basic-mode configuration | **ISSM-only** | **ice temperature (T, K) + timestep count**, opt-in, validated, single-line fail-closed override in a per-run working copy; provenance recorded; UI panel wired | broader param set (accumulation/friction are spatial fields — genuinely not scalars) |
-| 3 advanced editor / clone | at parity | at parity | — |
-| 4 dataset staging | at parity | at parity | — |
-| 5 local execution | absent both | **documented unsupported + exact requirements** (I5) | a local execution backend + guaranteed local Firedrake/apptainer |
-| 6 remote / HPC execution | Icepack wired, untested | Icepack wired + tested (sbatch render, both submit fns) | one real HPC run |
-| 7 tested-container selection | Icepack-aware | Icepack-aware | Icepack release policy (needs per-Firedrake-pin images) |
-| 8 Slurm config + validation | at parity | at parity | — |
-| 9 run staging / submission / monitor / logs | partial | partial + export + collector steps | — |
-| 10 deterministic postprocessing | **absent for Icepack** | **container-side Firedrake exporter** → `outputs/{mesh,fields}` (CG1 nodal), non-fatal | HPC/container validation of the exporter's namespace-scrape + interpolation |
-| 11 structured ResultPackage | **absent for Icepack** | **`cryostack.icepack.results` v2** — Firedrake-free reader (`is_readable`, `available_fields`, `load_mesh`, `load_field`, `load_field_magnitude`, `recommended_plots`) | transient (multi-timestep) representation; 1-D / extruded meshes; tensor fields |
-| 12 visualization / field-timestep | **absent for Icepack** | **`visualization/icepack.py`** — `matplotlib.tri` tripcolor (scalar) + speed map/quiver (vector); wired into the shared Results panel via `_visualizer_for("icepack")` | streamlines; transects; 3-D (Paraview territory) |
-| 13 Results / Figures downloads | at parity | at parity (structured package zips cleanly) | — |
-| 14 provenance + run-history | at parity | at parity + Icepack tests | — |
-| 15 documentation + tests | "Experimental" stub, **0 tests** | accurate docs + **~110 Icepack tests** (adapter, params, postprocess, results, export, visualization, submission, pipeline, e2e) | — |
-
-**Deferred parity items are science/design decisions, documented in
-`AUDIT_icepack_results.md` §5 (D-1…D-8) and §9 below — not guesses.**
+`ToolContext` is built from
+`resolve_workspace_user(require_authenticated=True)` and raises
+`WorkspaceIdentityError` if there is no trusted identity — no anonymous, no
+developer fallback. Trusted sources: `cryostack-auth`, `env-override` (the CLI
+single-user pin). Scope is always `ctx.user`; no tool signature contains
+`user_id`. Filesystem helpers go through `policy.assert_within_workspace`.
+`AUDIT_agent_capabilities.md` enumerates the exact "never expose" functions and
+the identity-spoof surface (anything taking `host=` / `user=` / `session_id=` /
+`owner=`).
 
 ---
 
-## 3. Exact Icepack scientific capabilities added this session
+## 7. Approval & the digest
 
-1. **Basic-mode ice temperature override.** `T = firedrake.Constant(<K>)` in the
-   working copy is replaced by an exact regex (200 K … pressure-melting point),
-   which drives `A = icepack.rate_factor(T)` downstream. Fails closed
-   (pre-submission) if the example writes `T` as an expression (`Constant(273.15
-   - 5)`) rather than a literal.
-2. **Basic-mode timestep count override.** `num_timesteps = <int>` where the
-   example uses a literal; refused where it is derived (`num_years *
-   timesteps_per_year`).
-3. **Structured field export** of the final state, from a fixed allow-list found
-   in the executed script's namespace: `thickness` (m), `velocity` (m/a, →
-   `velocity_x`/`velocity_y`/`magnitude`), `surface` / `bed` (m a.s.l.),
-   `accumulation` (m/a), `log_fluidity`, `damage`. Each interpolated to **CG1**
-   (linearised for a Firedrake-free reader — the same trade-off VTK makes;
-   `linearised: true` recorded), written as `/x /y /elements` + `/values` in the
-   exact ISSM on-disk shape. Units hard-coded from upstream notebook colorbar
-   text.
-4. **Deterministic 2-D map rendering** of every exported field (scalar
-   tripcolor; vector speed + quiver), NaN-node masking, cached PNGs.
-5. **Honest degradation** at every step: extruded / 1-D / no-Function cases →
-   `unsupported_geometry` / `empty`; export failure → `export_failed` with the
-   error; a figures-only run → the figure fallback. The export step is
-   **non-fatal** — it never turns a good science run into a failed one.
+`RunPlan.digest()` = SHA-256 over **only** the scientific + resource fields
+(model, example, execution mode, compute resource, backend, run target,
+parameter overrides, datasets, Slurm request) — not findings, not timestamps.
+
+`Approval{plan_digest, approver_user_id, approved_at}`. Only the plan's owner
+can approve. `assert_approved_for_execution` recomputes the live digest and
+refuses on mismatch. Revising any scientific/resource field drops the approval
+and returns the plan to DRAFT. This is the load-bearing property: an agent
+cannot get approval for one configuration and run another.
 
 ---
 
-## 4. Scientific differences deliberately preserved (never faked for parity)
+## 8. Dry-run execution boundary
 
-- **`md` model struct (MATLAB) vs Firedrake `Function`s (Python).** ISSM Basic
-  mode mutates `md.<section>.<field>`; Icepack Basic mode is a validated text
-  substitution of a Python literal. No `md`, no ISSM parameter names, no
-  `solve()` anchor for Icepack.
-- **MATLAB runtime + license vs pure Python.** `_matlab_container_env` returns
-  `("","")` for Icepack; no MATLAB-license preflight; no cloud license gate.
-- **Solver families.** ISSM `Stressbalance/Transient/Thermal/…` each with a
-  `defaultoutputs` field set vs Icepack diagnostic (`diagnostic_solve`) +
-  prognostic (`prognostic_solve`) on `IceShelf`/`IceStream`/`HybridModel`. The
-  Icepack reader uses a single synthetic solution `"icepack"` — not a fake
-  taxonomy.
-- **Mesh + result representation.** ISSM `md.mesh.{x,y,z,elements}` + struct
-  array per timestep + `md_final.mat` vs Firedrake mesh + `Function` DOF
-  vectors + `CheckpointFile`. The Icepack exporter linearises to CG1 for
-  display and says so; `CheckpointFile` (`how-to/02`) is archived, not rendered.
-- **Example shape.** `runme.m` entrypoint vs Jupyter tutorial notebooks
-  (`EXAMPLE_ENTRYPOINTS = ()`, glob `*.ipynb`/`*.py`; `choose_run_target`
-  prefers `.ipynb` → `.py`).
-- **Container coupling.** ISSM `COMPILED`/`OVERRIDE_NONE` vs Icepack
-  `SOURCE_OVERRIDABLE` but `gated_by="firedrake"` (`ENVIRONMENT_SENSITIVE`).
-- **No DA diagnostics for ICESEE.** `rmse` exists but is never called; no rank
-  histogram / spread code. Nothing was modelled that does not exist.
+`DryRunExecutionCoordinator` walks revalidate → check-approval →
+resolve-identity → stage → precheck-scheduler → **SUBMIT (stop)**. In dry-run
+mode the SUBMIT phase returns a redacted description of the command a backend
+would issue (`sbatch …` / `aws batch submit-job …`) and returns — nothing
+reaches a scheduler or AWS. A real `SubmitBackend` is a Protocol with **no
+implementation in the tree**; wiring one is a human step gated on B3. With no
+backend, a live request is downgraded to dry-run. The coordinator never
+imports the remote/cloud submission modules (AST-scanned).
 
 ---
 
-## 5. ICESEE DA run-contract conclusion (`AUDIT_icesee_run_contract.md`)
+## 9. Trace vs scientific provenance
 
-**A "DA run" = one `python run_da_<model>.py -F params.yaml` invocation.** One
-ensemble = one run; a parameter sweep = N runs (CryoLauncher already mints a
-fresh run id per click). There is **no run-identity/manifest/hash concept
-inside `external/ICESEE/`** — identity is the strings in `params.yaml` + the
-`data_path` folder name.
-
-**Safe to register now (no semantics invented):** one `RunInfo` with
-`model="icesee"`, `execution_mode ∈ {local,remote,cloud}`, and `metadata`
-carrying `example`, `model_name`, `filter_type`, `Nens`, `seed`, `nt`, `dt`,
-`icesee_run_mode` (0/1/2 — renamed to avoid colliding with the transport axis),
-estimation flags, observation config, and `cycles`/`obs_index` **read from the
-finished run**. `RunInfo`/manifest v2 accept this with **zero code changes**
-(confirmed).
-
-**`cryostack.icesee.results` hierarchy justified by current outputs:**
-`experiment → series(ensemble | ensemble_mean | true_state | background_state |
-observations) → variable_block → spatial_index → time_index [→ member]`. Cycle
-is a time-axis subset, not a level. No diagnostic level (no data).
-
-**OWNER DECISIONS (not made):** `results_directory` semantics (the default
-serial/partial mode keeps the ensemble in `_modelrun_datasets/`, not
-`results/`); whether "cycle" is a first-class concept; the restart/resume model;
-whether to trust the inferred local `status` (`run_models_da.py` swallows
-exceptions); whether CryoStack should compute RMSE/spread itself.
+Two separate records. The **operational trace** (`.cryostack/agent-traces/
+<id>.jsonl`, append-only, redacted) holds every request, tool call, validation,
+approval, and execution decision. The **run manifest** gets only
+`run_manifest_stamp(...)`: agent-assisted flag, plan digest, approver, time,
+and a *pointer* to the trace. `assert_no_agent_chatter` rejects a manifest that
+smuggled tool calls / prompt text / model output into the scientific record.
 
 ---
 
-## 6. ICESEE platform improvements
+## 10. The Run Assistant + LLM adapter
 
-**Pass 1:** ICESEE local/cloud/remote-fetch runs are now **per-authenticated-
-user** (`user_run_root(app="icesee")` + a `timestamp+uuid` run id) instead of a
-shared process-global `BOOK/icesee_runs/<second>` that two users in the same
-second could overwrite. `WorkspaceManager` now accepts `model="icesee"` (fixed
-string, not only a widget) so full adoption needs no schema change.
-
-**Pass 2:** removed 87 lines of dead `build_sidebar` code (C4 cleanup).
-
-**Audited, not yet done (`AUDIT_icesee_platform_pass2.md`):**
-- **Run history** — `WorkspaceBridge.start_run` + `build_workspace_history_panel`
-  adoption. Safe (run-contract §5) but a substantial gateway change; deferred to
-  a reviewed commit.
-- **Results panel** — genuinely blocked on the `cryostack.icesee.results` schema
-  decision (§5).
-- **Cloud (C5)** — `AUDIT_icesee_platform_pass2.md` Task B: **AWS Batch here is
-  Fargate-only, single-container; there is no multi-node MPI support anywhere**
-  (`numNodes`/`nodeProperties` absent). `SUPPORTED_CLOUD_MODELS = ("issm",)`.
-  ICESEE's MPI ensemble genuinely does not fit. **OWNER ARCHITECTURE DECISION:**
-  AWS ParallelCluster vs Batch-MNP-on-EC2+EFA vs single-node `mpirun` (small
-  ensembles only) vs EKS+MPI-operator. Safe-now: adopt `CloudBridge` as the
-  *interface* with an injected submitter bridging to today's `cloud_runner` —
-  unifies status/logs/normalize, no infra.
-- **Q1 dedup** — 11 byte-identical / near-identical helper functions between the
-  two gateways (exact list + line ranges in the audit).
+`llm.LLMClient` is a `Protocol`; `llm.ScriptedLLM` is a deterministic mock used
+by every test. `assistant.RunAssistant.handle(ctx, message)` hard-caps the
+context at PLAN, runs a deterministic loop over `complete()`, runs read/plan
+tools **through the registry**, and returns an `AssistantResult` whose
+`submitted` field is always `False`. A validated plan is surfaced as a
+*proposal*. `shared_agent_panel` is a prototype Voila panel over it with an
+Approve control gated behind an explicit human acknowledgement.
 
 ---
 
-## 7. Agent activity / delegation
+## 11. Platform generalizations (P1–P3)
 
-| Agent | Pass | Task | Output | Tokens |
-|---|---|---|---|---|
-| main (coordinator) | 1+2 | architecture, ALL implementation + commits, connector work, I1 | — | — |
-| `aa66a8ef…` | 1 | ISSM↔Icepack 15-area parity audit | `AUDIT_icepack_parity.md` | 186k / 71 calls |
-| `a65c945f…` | 1 | ICESEE vs IceSheets platform audit | `AUDIT_icesee_platform.md` | 153k / 33 calls |
-| `aa41b24b…` | 2 | Firedrake/Icepack output-field audit | `AUDIT_icepack_results.md` | 153k / 35 calls |
-| `a3e2613e…` | 2 | ICESEE DA lifecycle / run-contract audit | `AUDIT_icesee_run_contract.md` | 137k / 51 calls |
-| `aa633909…` | 2 | ICESEE C4/C5 shell + cloud-migration audit | `AUDIT_icesee_platform_pass2.md` | 167k / 55 calls |
-
-**Every subagent was a bounded, read-only audit.** No subagent wrote code. The
-coordinator reviewed each report for architectural consistency, turned it into
-decisions (D-A1…D-A3, D-B1…D-B4, D-C1…D-C3, D-I2…D-I5), and did every commit.
-Full rationale in `AGENT_TRAIL.md`.
-
----
-
-## 8. Tests and build results
-
-- Python suite: **928 → 1033 passed, 1 skipped** (+105 across both passes).
-  Every implementation commit was green before the next landed.
-- `node --test deployment/tests/*.test.mjs`: **18/18**.
-- `jupyter-book build` + `bin/build_application_docs.sh`: **clean**.
-- Firedrake is not installed on this box, so the Icepack **exporter** is tested
-  with a mocked `firedrake` (structure, geometry gating, never-raises, no
-  heredoc-delimiter leak); the **reader + visualizer** are tested with real
-  `h5py` + `matplotlib` fixtures.
+* **P1 `ModelCapabilities`** (`models/capabilities.py`) — one authoritative
+  statement per model of Basic-mode config, structured results + contract,
+  offline reader, visualization, MATLAB requirement, execution modes/backends,
+  cloud support. Import-time asserts keep it consistent with the adapters and
+  `cloud.runtime.SUPPORTED_CLOUD_MODELS`. The agent layer now consumes it
+  instead of hard-coding `_MODELS` and per-model contracts.
+* **P2 result contract** — `results_common` now declares
+  `ResultPackageProtocol` / `VisualizerProtocol` (both models already satisfy
+  them), `describe_package()`, and `resolve_result_reader` /
+  `resolve_visualizer`. `WorkspaceManager` delegates its dispatch here.
+  Behaviour unchanged (existing suites pass).
+* **P3 experiment abstraction** — `experiment.py`: `ExperimentPlan` = base
+  `RunPlan` + one `SweepAxis`; `expand()` yields ordinary `RunPlan`s;
+  `ManagedExperiment` gives each child its own digest-bound `ManagedPlan`; one
+  `approve()` binds the experiment digest **and** every child digest. Purely
+  additive — no change to `RunPlan`, `approval.py`, `execution.py`, the
+  manifest, or the gateway. Sweeps capped at 32 runs.
 
 ---
 
-## 9. Remaining P0 / P1 / P2 checkpoints
+## 12. Tests and builds
 
-### P0 — blocks a real demo (needs you)
-- **PACE password-bootstrap:** we now have evidence the Connector reaches PACE
-  and PACE rejects simple password auth. Institutional-authentication
-  investigation — Duo/MFA. Leave as a manual acceptance checkpoint.
-- Deployed relay + `icesee_app.py` service are stale → redeploy; rebuild
-  Connector Linux/macOS from HEAD (not done, per instruction).
-
-### P1 — science / design decisions (decide with you, then I implement)
-- **Icepack exporter HPC validation:** run one Icepack tutorial in the
-  `with-icepack` container and confirm the exporter's `runpy` namespace-scrape,
-  CG1 interpolation, and `cell_node_map().values` connectivity match reality.
-  (D-7: re-run vs fold-into-run-block; D-8: pin the Firedrake version.)
-- **Icepack transient results** (D-3): every-Nth-step export vs final-only.
-- **Icepack 1-D / extruded meshes** (D-4): `04-x`, `06-xz`, `06-xyz`.
-- **Icepack tensor / derived fields** (D-5): `ε`, `M`, `τ`.
-- **Icepack local execution:** a local execution backend + guaranteed local
-  Firedrake/apptainer (I5).
-- **ICESEE:** `results_directory` semantics + the `cryostack.icesee.results`
-  schema — both block ICESEE structured-results + Results-panel adoption.
-- **ICESEE cloud compute primitive** — ParallelCluster / Batch-MNP / small-
-  ensemble / EKS. AWS Batch/Fargate cannot run the MPI ensemble.
-
-### P2 — safe, deferred for risk/scope
-- Gateway `if model == "issm"` UI-toggle cleanup → adapter capability queries.
-- Refactor ISSM `results.py` onto `results_common.py`.
-- Fold the Icepack export into the run block (avoid the second script run).
-- Icepack cloud enablement (`SUPPORTED_CLOUD_MODELS`, ECR image, runner branch).
-- ICESEE `WorkspaceBridge.start_run` run-history adoption (after the P1
-  decisions).
-- ICESEE remote-submit per-user path enforcement (6 `submit_remote_example*`).
-- ICESEE Q1 gateway-helper dedup; trim the bespoke `css` overlay to non-theme
-  rules only.
+* Python (`cryostack_src` + `icesee_jupyter_book` + `bin` +
+  `icesee_hpc_connector` + `deployment`): **1140 passed, 1 skipped**
+  (+~118 this pass; 96 in `cryostack_src/agents/`). Green before every commit.
+* `node --test deployment/tests/connect_page.test.mjs`: **18/18**.
+* `jupyter-book build icesee_jupyter_book/`: **clean** (new `building_agents`
+  page renders).
+* `bin/build_application_docs.sh` (CryoLauncher / ICESEE / Frozen Legacies):
+  **all build succeeded**.
+* Firedrake / icepack still not importable on this box — Icepack exporter
+  remains mock-tested (unchanged from PASS 2).
 
 ---
 
-## 10. Exact manual acceptance tests to run together
+## 13. OWNER_CHECKPOINT — decisions and work left for you
 
-1. **Icepack Basic-mode override.** IceSheets → model **Icepack** → tutorial
-   `02-synthetic-ice-shelf` → open "⚙️ Icepack configuration (Basic)" → tick
-   **Ice temperature**, set 260 → Submit (Remote). Expect: a working copy under
-   your workspace whose notebook cell reads
-   `T = firedrake.Constant(260.0)  # CryoStack Basic-mode override`; the
-   canonical example unchanged; the run manifest metadata shows
-   `parameter_overrides: {ice_temperature: 260.0}`.
-   Then try `01-synthetic-ice-sheet` (temperature is `Constant(273.15 - 5)`):
-   the run must be **blocked before submission** with a clear message.
-2. **Icepack structured results (HPC).** Run `02-synthetic-ice-shelf` on the
-   cluster. After completion: Results tab shows a **thickness** map and a
-   **velocity** speed-map; the field selector lists thickness/velocity/surface;
-   `outputs/metadata.json` has `schema: cryostack.icepack.results`, `version: 2`,
-   non-empty `fields` with `units` and `linearised: true`;
-   `outputs/mesh/mesh.h5` and `outputs/fields/icepack/*.h5` exist; Download
-   Results returns a zip containing all of them.
-   **This is the exact scenario `test_icepack_e2e_offline.py` simulates offline —
-   the acceptance test is that it now works for real.**
-3. **Icepack exporter failure is non-fatal.** Run a tutorial whose final state is
-   inside a function (`how-to/02-checkpointing` or `04-synthetic-ice-stream-x`):
-   the science run must still succeed; the Results tab shows the collected
-   figures with the note that structured export found no fields
-   (`status: empty`), not a failed run.
-4. **ISSM regression sanity.** Run one ISSM example end-to-end; confirm the
-   structured field viewer, timestep selector, and figure downloads are
-   unchanged (ISSM `results.py` / `postprocess.py` / submission blocks were not
-   touched).
-5. **ICESEE per-user isolation.** As two different authenticated CryoStack
-   users, run a local DA example each within the same minute. Confirm each run's
-   `params.yaml` + `results/` land under
-   `<workspace-root>/users/<that-user>/.cryostack/icesee_runs/<id>/` and neither
-   user's run directory is visible/writable to the other.
-6. **Connector pairing paste (packaged app).** Copy a pairing code from the
-   browser; open the (rebuilt) Connector; the field should already contain it;
-   Cmd+V / the Paste button also work; a trailing newline still pairs.
+**Carried from PASS 2 (still open):**
+* **PACE password-bootstrap / institutional auth (Duo/MFA)** — untouched, per
+  instruction. Manual acceptance checkpoint.
+* **Icepack structured exporter** needs a real Firedrake/HPC validation before
+  any further scientific expansion — no scientific Icepack work was done this
+  pass.
+* Stale deployed relay + `icesee_app.py`; Connector rebuild — not done.
+* ICESEE `cryostack.icesee.results` schema + `results_directory` semantics;
+  ICESEE cloud compute primitive (Batch/Fargate can't run the MPI ensemble).
+
+**New — decisions this pass surfaces:**
+1. **Wiring a real `SubmitBackend`.** The dry-run boundary is complete and
+   tested. A live submitter must reuse `enforce_remote_access` / the B3
+   verification and must not change `approval.py` or the digest scope. This is
+   the intended next integration step and needs your review of the interface
+   in `execution.py`.
+2. **Granting the Run Assistant more than PLAN.** Today it is hard-capped. If a
+   future "prepare my working copy" step (PREPARE) is wanted, it needs its own
+   confirmation gate and an "does nothing without approval" test — decide the
+   UX first.
+3. **Persisting `PlanStore` / `TraceStore` in the real workspace.** Both are
+   in-memory / file-local prototypes with the right interface. Backing them
+   with the workspace is safe but is a schema touch — deferred for your call.
+4. **An agent panel in the live gateway.** `shared_agent_panel` is a prototype;
+   mounting it in `icesheets_gateway` / `icesee_gateway` and choosing the
+   `on_approve` target (the approval queue UI) is a gateway change.
+5. **Real LLM adapter.** `LLMClient` is ready; a concrete implementation
+   (Anthropic or otherwise) belongs in a separate integration package, not in
+   `cryostack_src/agents/`.
+
+**Nothing in this pass changed** authentication, B2/B3/B4, connector-v2
+ownership, credential handling, Slurm validation, tested-container gates, or a
+scientific-result contract. No personal identifiers or developer defaults were
+added.
+
+---
+
+## Manual acceptance for the agent layer
+
+1. `python -m pytest cryostack_src/agents -q` → 96 passed.
+2. Read `overnight/LEARNING_AGENTIC_DEVELOPMENT.md` end to end — it is the
+   design rationale.
+3. Read `icesee_jupyter_book/docs/building_agents.md` (renders under Developer
+   Guide) — the public narrative + add-a-tool checklist.
+4. Skim `overnight/AGENT_SAFETY_MODEL.md` §2 (permission table), §4
+   (prohibitions), §5 (approval contract).
+5. In a Python shell: `build_tool_context(application="icesheets")` with no
+   identity env set → `WorkspaceIdentityError`. With
+   `CRYOSTACK_WORKSPACE_USER=you` → a context capped at PLAN.
