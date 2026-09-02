@@ -45,10 +45,17 @@ def _example_provider(ctx):
     return merged_examples_for_model
 
 
+def example_identifier(ex) -> str:
+    """A stable name an agent passes back to prepare_run_plan / inspect_example:
+    the directory name for ISSM, the notebook stem for Icepack."""
+    return ex.path.stem if ex.kind == "notebook" else ex.path.name
+
+
 def _slim_example(ex) -> dict:
     d = ex.to_dict()
     return {
-        "name": d["label"].lstrip("⧉ ").strip(),
+        "name": example_identifier(ex),
+        "display": d["label"].lstrip("⧉ ").strip(),
         "model": d["model_name"],
         "kind": d["kind"],
         "category": d["category"],

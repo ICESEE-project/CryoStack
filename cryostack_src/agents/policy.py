@@ -32,7 +32,8 @@ PROHIBITED_SYMBOLS = frozenset({
 })
 
 #: modules whose tool functions are subject to the source scan
-TOOL_MODULES = ("readonly_tools", "planning_tools", "assistant", "execution")
+TOOL_MODULES = ("readonly_tools", "planning_tools", "planning", "approval",
+                "assistant", "execution")
 
 
 def _referenced_names(source: str) -> set[str]:
