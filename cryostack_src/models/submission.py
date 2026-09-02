@@ -23,6 +23,9 @@ from cryostack_src.models.issm.postprocess import (
 from cryostack_src.models.icepack.postprocess import (
     build_collection_shell_block as build_icepack_collection_block,
 )
+from cryostack_src.models.icepack.export import (
+    build_export_shell_block as build_icepack_export_block,
+)
 from cryostack_src.models.stack import (
     checkout_bind_suffix,
     checkout_setup_block,
@@ -560,9 +563,19 @@ apptainer exec "{sif_path}" with-icepack python -c "import icepack; print('Icepa
 '''
         body = container_setup + "\n" + run_block
 
-    # Icepack has no MATLAB neutral-export; instead collect the figures / native
-    # files the run produced into outputs/ (see icepack.postprocess). Non-fatal.
+    # Icepack has no MATLAB neutral-export. Two appended, non-fatal steps:
+    #  1. a container-side Firedrake exporter -> structured outputs/ package
+    #     (cryostack.icepack.results: mesh + CG1 nodal fields);
+    #  2. a stdlib collector that folds in any figures / native files and never
+    #     clobbers the exporter's richer metadata.
     if model == "icepack" and not test_mode:
+        body = body + "\n" + build_icepack_export_block(
+            run_dir=remote_run_dir, example_dir=remote_example_dir, backend=backend,
+            sif_path=locals().get("sif_path", ""),
+            spack_path=locals().get("spack_path", ""),
+            stack_binds=locals().get("_stack_binds", ""),
+            run_file_name=run_file_name, run_file_py=run_file_py,
+        )
         body = body + "\n" + build_icepack_collection_block(
             run_dir=remote_run_dir, example_dir=remote_example_dir,
         )
@@ -978,9 +991,19 @@ apptainer exec "{sif_path}" with-icepack python -c "import icepack; print('Icepa
 
         body = container_setup + "\n" + run_block
 
-    # Icepack has no MATLAB neutral-export; instead collect the figures / native
-    # files the run produced into outputs/ (see icepack.postprocess). Non-fatal.
+    # Icepack has no MATLAB neutral-export. Two appended, non-fatal steps:
+    #  1. a container-side Firedrake exporter -> structured outputs/ package
+    #     (cryostack.icepack.results: mesh + CG1 nodal fields);
+    #  2. a stdlib collector that folds in any figures / native files and never
+    #     clobbers the exporter's richer metadata.
     if model == "icepack" and not test_mode:
+        body = body + "\n" + build_icepack_export_block(
+            run_dir=remote_run_dir, example_dir=remote_example_dir, backend=backend,
+            sif_path=locals().get("sif_path", ""),
+            spack_path=locals().get("spack_path", ""),
+            stack_binds=locals().get("_stack_binds", ""),
+            run_file_name=run_file_name, run_file_py=run_file_py,
+        )
         body = body + "\n" + build_icepack_collection_block(
             run_dir=remote_run_dir, example_dir=remote_example_dir,
         )

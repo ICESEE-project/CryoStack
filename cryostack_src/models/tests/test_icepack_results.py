@@ -68,6 +68,90 @@ def test_outputs_with_nothing_recognisable_is_legacy(tmp_path):
     assert p.status == "legacy"
 
 
+def _structured(tmp_path):
+    """Write a schema-v2 structured package (mesh + thickness + velocity)."""
+    h5py = pytest.importorskip("h5py")
+    import numpy as np
+    out = tmp_path / "outputs"
+    (out / "mesh").mkdir(parents=True)
+    (out / "fields" / "icepack").mkdir(parents=True)
+    (out / "figures").mkdir()
+    with h5py.File(out / "mesh" / "mesh.h5", "w") as fh:
+        fh["x"] = np.array([0.0, 1.0, 0.0, 1.0])
+        fh["y"] = np.array([0.0, 0.0, 1.0, 1.0])
+        fh["elements"] = np.array([[0, 1, 2], [1, 3, 2]])
+    with h5py.File(out / "fields" / "icepack" / "thickness.h5", "w") as fh:
+        fh["values"] = np.array([10.0, 11.0, 12.0, 13.0])
+    with h5py.File(out / "fields" / "icepack" / "velocity.h5", "w") as fh:
+        fh["values"] = np.array([1.0, 2.0, 3.0, 4.0])
+        fh["values_y"] = np.array([0.0, 0.0, 1.0, 1.0])
+        fh["magnitude"] = np.hypot([1.0, 2, 3, 4], [0.0, 0, 1, 1])
+    meta = {
+        "schema": SCHEMA, "version": 2, "model": "icepack", "status": "ok",
+        "mesh": {"path": "mesh/mesh.h5", "numberofvertices": 4,
+                 "numberofelements": 2, "dimension": 2, "cell": "triangle"},
+        "fields": [
+            {"name": "thickness", "components": ["thickness"], "rank": "scalar",
+             "location": "nodal", "units": "meters",
+             "exported_space": "CG1", "source_space": "CG2", "linearised": True,
+             "path": "fields/icepack/thickness.h5", "timestep": None},
+            {"name": "velocity", "components": ["velocity_x", "velocity_y"],
+             "rank": "vector", "location": "nodal", "units": "meters/year",
+             "path": "fields/icepack/velocity.h5", "timestep": None},
+        ],
+        "figures": [], "model_files": [], "skipped": [],
+    }
+    (out / "metadata.json").write_text(json.dumps(meta))
+    return discover_results(tmp_path)
+
+
+def test_structured_package_is_readable(tmp_path):
+    p = _structured(tmp_path)
+    assert p.status == "ok"
+    assert p.is_readable() is True
+    assert p.available_solutions() == ["icepack"]
+    # velocity surfaced before thickness (preference order)
+    assert p.available_fields() == ["velocity", "thickness"]
+    assert p.timesteps() == [0]
+
+
+def test_structured_package_loads_mesh_and_fields(tmp_path):
+    import numpy as np
+    p = _structured(tmp_path)
+    mesh = p.load_mesh()
+    assert mesh["numberofvertices"] == 4 and mesh["numberofelements"] == 2
+    assert list(mesh["x"]) == [0.0, 1.0, 0.0, 1.0]
+    assert mesh["elements"].shape == (2, 3)
+
+    thk = p.load_field("thickness")
+    assert list(thk) == [10.0, 11.0, 12.0, 13.0]
+
+    vx, vy = p.load_field("velocity")
+    assert list(vx) == [1.0, 2.0, 3.0, 4.0] and list(vy) == [0.0, 0.0, 1.0, 1.0]
+    mag = p.load_field_magnitude("velocity")
+    assert np.allclose(mag, np.hypot([1, 2, 3, 4], [0, 0, 1, 1]))
+
+    plots = p.recommended_plots()
+    assert {pl["field"] for pl in plots} == {"thickness", "velocity"}
+
+
+def test_exporter_declared_failure_states_pass_through(tmp_path):
+    out = tmp_path / "outputs"
+    out.mkdir()
+    (out / "metadata.json").write_text(json.dumps({
+        "schema": SCHEMA, "version": 2, "status": "unsupported_geometry",
+        "fields": [], "note": "extruded mesh"}))
+    p = discover_results(tmp_path)
+    assert p.status == "unsupported_geometry"
+    assert p.is_readable() is False
+
+
+def test_field_units_are_carried_through(tmp_path):
+    p = _structured(tmp_path)
+    assert p.field_metadata("thickness")["units"] == "meters"
+    assert p.field_metadata("velocity")["rank"] == "vector"
+
+
 def test_workspace_manager_resolves_the_icepack_reader():
     from cryostack_src.workspace.manager import _result_reader_for
     assert _result_reader_for("icepack") is discover_results

@@ -27,7 +27,7 @@ from pathlib import Path
 
 FIGURE_SUFFIXES = (".png", ".jpg", ".jpeg", ".svg", ".pdf", ".gif")
 NATIVE_SUFFIXES = (".h5", ".hdf5", ".pvd", ".vtu", ".vtk", ".pvtu", ".xdmf",
-                   ".nc", ".npz", ".npy", ".pkl", ".mat")
+                   ".nc", ".npz", ".npy", ".pkl", ".mat", ".msh")
 
 run_dir = Path(os.environ.get("CRYOSTACK_RUN_DIR") or ".").expanduser()
 example_dir = os.environ.get("CRYOSTACK_EXAMPLE_DIR") or ""
@@ -76,22 +76,37 @@ for root in search_roots:
             continue
         (figures if suffix in FIGURE_SUFFIXES else model_files).append(dest.name)
 
-metadata = {
-    "schema": "%SCHEMA%",
-    "version": 1,
-    "model": "icepack",
-    "status": "artifacts" if (figures or model_files) else "empty",
-    "generated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-    "solutions": [],
-    "fields": [],
-    "figures": sorted(set(figures)),
-    "model_files": sorted(set(model_files)),
-    "skipped": skipped,
-    "note": ("Icepack structured field export is not yet available. Figures and "
-             "native output files produced by the example are collected here; "
-             "no fields or solutions are inferred."),
-}
-(outputs / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+# A structured export (cryostack_icepack_export) may already have written a
+# richer metadata.json (fields / mesh / status "ok"). Never clobber that --
+# only fold in the figures / native files this collector found.
+meta_path = outputs / "metadata.json"
+existing = {}
+try:
+    existing = json.loads(meta_path.read_text(encoding="utf-8"))
+except Exception:
+    existing = {}
+
+if existing.get("fields") or existing.get("status") == "ok":
+    existing["figures"] = sorted(set(existing.get("figures", [])) | set(figures))
+    existing["model_files"] = sorted(set(existing.get("model_files", [])) | set(model_files))
+    existing.setdefault("skipped", []).extend(skipped)
+    metadata = existing
+else:
+    metadata = {
+        "schema": "%SCHEMA%",
+        "version": existing.get("version", 1),
+        "model": "icepack",
+        "status": "artifacts" if (figures or model_files) else existing.get("status", "empty"),
+        "generated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "solutions": [],
+        "fields": [],
+        "figures": sorted(set(figures)),
+        "model_files": sorted(set(model_files)),
+        "skipped": skipped + list(existing.get("skipped", [])),
+        "note": ("Icepack structured field export produced no fields; figures "
+                 "and native output files are collected here."),
+    }
+meta_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
 print("[cryostack] icepack outputs collected:",
       len(metadata["figures"]), "figure(s),", len(metadata["model_files"]),

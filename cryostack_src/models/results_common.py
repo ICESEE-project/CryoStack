@@ -26,7 +26,7 @@ METADATA_NAME = "metadata.json"
 FIGURE_SUFFIXES = (".png", ".jpg", ".jpeg", ".svg", ".pdf", ".gif")
 NATIVE_ARTIFACT_SUFFIXES = (
     ".mat", ".h5", ".hdf5", ".pvd", ".vtu", ".vtk", ".pvtu", ".xdmf",
-    ".nc", ".npz", ".npy", ".pkl",
+    ".nc", ".npz", ".npy", ".pkl", ".msh", ".exo", ".geo",
 )
 
 

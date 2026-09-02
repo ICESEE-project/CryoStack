@@ -1,22 +1,23 @@
 """Backend-neutral reader for a CryoStack Icepack result package.
 
-Scope note (deliberate): Icepack results are Firedrake ``Function`` objects on a
-Firedrake function space. A model-aware structured export (field/DOF/mesh
-semantics, transient representation, a "recommended plots" ordering) is a
-pending scientific decision -- see ``overnight/AGENT_TRAIL.md`` §B "Needs a
-scientific decision". Until that is made, this reader deliberately does **not**
-invent a solution/field taxonomy. It reports:
+Reads the package written by the container-side exporter
+(:mod:`cryostack_src.models.icepack.export`):
 
-* ``status == "missing"``   -- no ``outputs/`` directory
-* ``status == "artifacts"`` -- ``outputs/`` with figures / native files the run
-                               produced (collected by
-                               :mod:`cryostack_src.models.icepack.postprocess`)
-* ``status == "empty"``     -- an ``outputs/`` package that produced nothing
-* ``status == "legacy"``    -- an ``outputs/`` tree with no recognisable metadata
+    outputs/metadata.json         schema "cryostack.icepack.results", v2
+    outputs/mesh/mesh.h5          /x /y /elements  (2-D triangular, 0-based)
+    outputs/fields/icepack/<f>.h5 /values  (+ /values_y /magnitude for vectors)
 
-``is_readable()`` is always ``False`` here (there is no structured field reader
-yet), so the Results panel shows the collected figures and native artifacts and
-disables the solution/field selectors -- honestly, without fabrication.
+Needs neither Firedrake nor icepack -- the exporter has already interpolated
+every field to CG1 and written plain arrays. Deterministic plotting lives in
+:mod:`cryostack_src.visualization.icepack`.
+
+``status``:
+  ``missing``   -- no ``outputs/`` directory
+  ``ok``        -- structured fields present (``is_readable()`` is True)
+  ``artifacts`` -- figures / native files only, no structured fields
+  ``empty``     -- the run produced nothing collectable
+  ``unsupported_geometry`` / ``export_failed`` -- the exporter said so
+  ``legacy``    -- an ``outputs/`` tree with no recognisable metadata
 """
 from __future__ import annotations
 
@@ -31,9 +32,22 @@ from cryostack_src.models.results_common import (
 
 SCHEMA = "cryostack.icepack.results"
 
+#: the single synthetic "solution" name -- Icepack has no ISSM-style solution
+#: taxonomy, but the shared Results panel keys off solution -> field -> timestep,
+#: so a readable package presents its fields under one solution.
+SOLUTION = "icepack"
+
+#: surfacing order when a run exports several fields
+_FIELD_ORDER = ("velocity", "thickness", "surface", "bed", "accumulation",
+                "log_fluidity", "damage")
+
+
+class ResultError(RuntimeError):
+    """A requested field / mesh could not be read."""
+
 
 class IcepackResultPackage:
-    """A read-only view of one Icepack run's collected outputs."""
+    """A read-only view of one Icepack run's exported results."""
 
     def __init__(self, *, root: Path, outputs: Path | None, metadata: dict) -> None:
         self.root = Path(root)
@@ -57,12 +71,21 @@ class IcepackResultPackage:
     def metadata(self) -> dict:
         return dict(self._meta)
 
+    def _fields_meta(self) -> list[dict]:
+        return list(self._meta.get("fields") or [])
+
     @property
     def status(self) -> str:
         if self.outputs is None:
             return "missing"
         if self._meta.get("schema") == SCHEMA:
-            return self._meta.get("status") or "artifacts"
+            declared = self._meta.get("status")
+            if declared in ("ok", "empty", "unsupported_geometry", "export_failed"):
+                return declared
+            if declared:
+                return declared
+        if self._fields_meta() and (self.outputs / "mesh" / "mesh.h5").is_file():
+            return "ok"
         model_dir = self.outputs / "model"
         has_native = model_dir.is_dir() and any(model_dir.iterdir())
         if list_figures(self.outputs) or has_native:
@@ -70,21 +93,99 @@ class IcepackResultPackage:
         return "legacy"
 
     def is_readable(self) -> bool:
-        """No structured Icepack field reader exists yet -- always ``False``."""
-        return False
+        return bool(
+            self.outputs is not None
+            and self._fields_meta()
+            and (self.outputs / "mesh" / "mesh.h5").is_file()
+        )
 
-    # -- structured access (deliberately empty until the science is decided) --
+    # -- structured access ------------------------------------------------
     def available_solutions(self) -> list[str]:
-        return []
+        return [SOLUTION] if self.is_readable() else []
 
-    def available_fields(self, solution: str, *, preferred: bool = True) -> list[str]:
-        return []
+    def available_fields(self, solution: str = SOLUTION, *, preferred: bool = True) -> list[str]:
+        names = [f["name"] for f in self._fields_meta()]
+        if not preferred:
+            return names
+        idx = {n: i for i, n in enumerate(_FIELD_ORDER)}
+        return sorted(names, key=lambda n: (idx.get(n, len(idx)), names.index(n)))
 
-    def timesteps(self, solution: str) -> list[int]:
-        return []
+    def field_metadata(self, field: str, solution: str = SOLUTION) -> dict:
+        for f in self._fields_meta():
+            if f["name"] == field:
+                return dict(f)
+        raise ResultError(f"no exported field {field!r}")
 
+    def timesteps(self, solution: str = SOLUTION) -> list[int]:
+        return [0]                    # tier 1: final state only
+
+    def times(self, solution: str = SOLUTION):
+        return None
+
+    # -- data -----------------------------------------------------------
+    def load_mesh(self) -> dict:
+        self._require_readable()
+        import numpy as np
+        h5py = _h5py()
+        path = self.outputs / "mesh" / "mesh.h5"
+        with h5py.File(path, "r") as fh:
+            x = np.asarray(fh["x"][()]).reshape(-1)
+            y = np.asarray(fh["y"][()]).reshape(-1)
+            el = np.asarray(fh["elements"][()]).astype("int64")
+        return {
+            "x": x, "y": y, "z": np.zeros_like(x),
+            "elements": el,
+            "numberofvertices": int(len(x)),
+            "numberofelements": int(len(el)),
+            "dimension": 2,
+            "element_columns": el.shape[1] if el.ndim == 2 else 0,
+            "connectivity_indexing": "0-based",
+        }
+
+    def load_field(self, field: str, timestep: int | None = None, *, solution: str = SOLUTION):
+        """Return the CG1 nodal values for ``field``. For a vector field returns
+        ``(values_x, values_y)``; a magnitude is available via
+        :meth:`load_field_magnitude`."""
+        self._require_readable()
+        import numpy as np
+        h5py = _h5py()
+        info = self.field_metadata(field)
+        path = self.outputs / info["path"]
+        if not path.is_file():
+            raise ResultError(f"field data not found: {path}")
+        with h5py.File(path, "r") as fh:
+            vx = np.asarray(fh["values"][()]).reshape(-1)
+            if info.get("rank") == "vector":
+                vy = np.asarray(fh["values_y"][()]).reshape(-1)
+                return vx, vy
+            return vx
+
+    def load_field_magnitude(self, field: str, *, solution: str = SOLUTION):
+        self._require_readable()
+        import numpy as np
+        h5py = _h5py()
+        info = self.field_metadata(field)
+        path = self.outputs / info["path"]
+        with h5py.File(path, "r") as fh:
+            if "magnitude" in fh:
+                return np.asarray(fh["magnitude"][()]).reshape(-1)
+            v = self.load_field(field)
+            return np.hypot(*v) if isinstance(v, tuple) else np.abs(v)
+
+    # -- recommendations ------------------------------------------------
     def recommended_plots(self, solution: str | None = None) -> list[dict]:
-        return []
+        if not self.is_readable():
+            return []
+        out = []
+        for name in self.available_fields():
+            info = self.field_metadata(name)
+            out.append({
+                "solution": SOLUTION, "field": name,
+                "kind": "map", "location": "nodal",
+                "rank": info.get("rank", "scalar"),
+                "transient": False, "timestep": None,
+            })
+        return out
 
     # -- figures / native artifacts ---------------------------------------
     def figures(self) -> list[Path]:
@@ -99,12 +200,28 @@ class IcepackResultPackage:
     def skipped_files(self) -> list[dict]:
         return list(self._meta.get("skipped") or [])
 
+    # -- internals ----------------------------------------------------------
+    def _require_readable(self) -> None:
+        if not self.is_readable():
+            raise ResultError(
+                f"no structured Icepack result package under {self.root} "
+                f"(status: {self.status})"
+            )
+
 
 def discover_results(path: str | Path) -> IcepackResultPackage:
-    """Locate and describe an Icepack run's collected outputs. Never raises for a
-    missing / partial directory -- inspect :attr:`IcepackResultPackage.status`."""
+    """Locate and describe an Icepack run's results. Never raises for a missing
+    / partial directory -- inspect :attr:`IcepackResultPackage.status`."""
     root = Path(path)
     outputs = find_outputs_dir(root)
     return IcepackResultPackage(
         root=root, outputs=outputs, metadata=read_metadata(outputs),
     )
+
+
+def _h5py():
+    try:
+        import h5py
+    except ImportError as err:  # pragma: no cover
+        raise ResultError("reading Icepack result arrays needs h5py") from err
+    return h5py
