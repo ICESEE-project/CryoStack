@@ -113,6 +113,14 @@ from cryostack_src.frontend.cryolauncher.cloud_environment import (
 from cryostack_src.frontend.cryolauncher.cloud_runtime import (
     build_cloud_runtime_callbacks,
 )
+from cryostack_src.frontend.cryolauncher.cloud_run_controller import (
+    CloudRunController,
+    cloud_run_plan_summary,
+    resolve_job_definition,
+)
+from cryostack_src.cloud.drivers.aws.batch_config import (
+    JOB_DEFINITION_NAMES as _CLOUD_JOB_DEFS,
+)
 from cryostack_src.frontend.cryolauncher.remote_runtime import (
     build_remote_runtime_callbacks,
 )
@@ -665,11 +673,13 @@ def build_icesheets_ui():
             "not_configured": ("icesee-idle", "Not configured"),
             "checking": ("icesee-running", "Checking…"),
             "ready": ("icesee-done", "Ready"),
+            "staging": ("icesee-running", "Staging…"),
             "submitting": ("icesee-running", "Submitting…"),
             "queued": ("icesee-running", "Queued"),
             "running": ("icesee-running", "Running"),
             "completed": ("icesee-done", "Completed"),
             "failed": ("icesee-fail", "Failed"),
+            "cancelled": ("icesee-idle", "Cancelled"),
         }
 
         def _set_cloud_state(kind: str) -> None:
@@ -677,11 +687,54 @@ def build_icesheets_ui():
             cloud_state_chip.value = (
                 f"<span class='icesee-status {cls}'>Cloud: {label}</span>"
             )
+            if kind == "completed":
+                status_chip.value = status_html("done")
+            elif kind in ("failed", "cancelled"):
+                status_chip.value = status_html("fail")
+
+        #: late-bound; assigned once the CloudRunController is built (below).
+        _cloud = {"controller": None}
+
+        def _register_cloud_run(*, handle, result):
+            """Enter a submitted cloud run into the experiment/workspace system --
+            the same registration the Remote path uses."""
+            meta = getattr(result, "metadata", {}) or {}
+            s3_run = handle.s3_run
+            s3_outputs = meta.get("s3_outputs") or (
+                f"{s3_run.rstrip('/')}/outputs" if s3_run else None
+            )
+            STATUS["batch_job_id"] = handle.job_id
+            STATUS["cloud_run"] = s3_run
+            workspace_bridge.start_run(
+                name=str(handle.run_id or handle.job_id),
+                model=handle.model,
+                backend="aws",
+                execution_mode="cloud",
+                jobid=handle.job_id,
+                remote_directory=Path(str(s3_run)),
+                log_file=None,
+                metadata={
+                    **(handle.metadata or {}),
+                    "cloud_run": s3_run,
+                    "s3_outputs": s3_outputs,
+                    "run_id": handle.run_id,
+                    "region": handle.region,
+                    "job_queue": meta.get("job_queue"),
+                    "job_definition": meta.get("job_definition"),
+                    "provider": "aws",
+                },
+            )
 
         def _submit_cloud_run(staged_dir, md_provenance):
-            """AWS Batch: validate + preflight -> stage inputs to S3 -> submit
-            -> register a real cloud run. Never billable on a config error."""
+            """Validate + preflight + stage the user-owned working copy
+            (synchronous, local, fast), then hand the run to the
+            CloudRunController -- staging to S3, submit-job, polling and result
+            retrieval all run off the event loop. Never billable on a config
+            error."""
             _model = model_dd.value
+            _job_def, _jd_warnings = resolve_job_definition(
+                _model, batch_job_def.value.strip(), allow_list=_CLOUD_JOB_DEFS,
+            )
             _cfg = resolve_cloud_config(
                 provider="aws",
                 region=aws_region.value.strip(),
@@ -689,7 +742,7 @@ def build_icesheets_ui():
                 profile=aws_profile.value.strip(),
                 model=_model,
                 job_queue=batch_job_queue.value.strip(),
-                job_definition=batch_job_def.value.strip(),
+                job_definition=_job_def,
             )
             _lic = get_compute_profile("aws").has_matlab_license
             _problems = validate_cloud_config(_cfg, model=_model)
@@ -721,73 +774,29 @@ def build_icesheets_ui():
                         print("[cloud][stage][ERROR]", type(_e).__name__, _e)
                     return None
 
-            _set_cloud_state("submitting")
+            with log_out:
+                for _w in _jd_warnings:
+                    print("[cloud]", _w)
+                print(cloud_run_plan_summary(
+                    model=_model, region=_cfg.region, bucket=_cfg.bucket,
+                    job_queue=_cfg.job_queue, job_definition=_cfg.job_definition,
+                ))
+
             status_chip.value = status_html("running")
-            with log_out:
-                print("[cloud] AWS Batch submit")
-                print("  region :", _cfg.region)
-                print("  bucket :", _cfg.bucket)
-                print("  queue  :", _cfg.job_queue)
-                print("  job def:", _cfg.job_definition)
-
-            try:
-                _result = current_cloud_bridge().submit(
-                    staged_source=str(staged_dir),
-                    model=_model,
-                    run_target=_target,
-                    bucket=_cfg.bucket,
-                    job_queue=_cfg.job_queue,
-                    job_definition=_cfg.job_definition,
-                    job_name=(batch_job_name.value.strip() or "cryostack"),
-                    matlab_license_configured=_lic,
-                )
-            except Exception as _e:
-                status_chip.value = status_html("fail")
-                _set_cloud_state("failed")
-                with log_out:
-                    print("[cloud][ERROR]", type(_e).__name__, _e)
-                return None
-
-            with log_out:
-                for _m in _result.messages:
-                    print(_m)
-
-            _job_id = _result.job_id
-            _s3_run = _result.metadata.get("s3_run") or _result.working_directory
-            _s3_outputs = _result.metadata.get("s3_outputs") or (
-                f"{_s3_run.rstrip('/')}/outputs" if _s3_run else None
+            _cloud["controller"].submit(
+                staged_source=str(staged_dir),
+                model=_model,
+                run_target=_target,
+                bucket=_cfg.bucket,
+                job_queue=_cfg.job_queue,
+                job_definition=_cfg.job_definition,
+                job_name=(batch_job_name.value.strip() or "cryostack"),
+                matlab_license_configured=_lic,
+                _region=_cfg.region,
+                _profile=_cfg.profile,
+                _md_provenance=md_provenance,
             )
-            if _job_id:
-                STATUS["batch_job_id"] = _job_id
-            if _s3_run:
-                STATUS["cloud_run"] = _s3_run
-
-            if _job_id and _s3_run:
-                workspace_bridge.start_run(
-                    name=str(_result.metadata.get("run_id") or _job_id),
-                    model=_model,
-                    backend="aws",
-                    execution_mode="cloud",
-                    jobid=_job_id,
-                    remote_directory=Path(str(_s3_run)),
-                    log_file=None,
-                    metadata={
-                        **(md_provenance or {}),
-                        "cloud_run": _s3_run,
-                        "s3_outputs": _s3_outputs,
-                        "run_id": _result.metadata.get("run_id"),
-                        "region": _cfg.region,
-                        "job_queue": _cfg.job_queue,
-                        "job_definition": _cfg.job_definition,
-                        "provider": "aws",
-                    },
-                )
-                _set_cloud_state("queued")
-                status_chip.value = status_html("done")
-            else:
-                status_chip.value = status_html("fail")
-                _set_cloud_state("failed")
-            return _result
+            return None
 
         def current_remote_bridge(*, mode=None):
             return RemoteBridge(
@@ -2419,6 +2428,29 @@ def build_icesheets_ui():
         on_cloud_terminate = cloud_runtime.terminate
         on_cloud_results = cloud_runtime.results
 
+        # -- C6: non-blocking submit + auto-poll + auto-retrieve -----------
+        def _cloud_log(message: str) -> None:
+            with log_out:
+                print(message)
+
+        def _cloud_results_ready() -> None:
+            try:
+                visualization_panel.controller.refresh()
+            except Exception:
+                pass
+            with results_out:
+                print("[cloud] Results retrieved. Open 'Preview Results'.")
+
+        _cloud["controller"] = CloudRunController(
+            bridge_factory=current_cloud_bridge,
+            register_run=_register_cloud_run,
+            sync_results=workspace_manager.sync_cloud_results,
+            on_state=_set_cloud_state,
+            on_log=_cloud_log,
+            on_results_ready=_cloud_results_ready,
+            poll_interval=float(os.environ.get("CRYOSTACK_CLOUD_POLL_SECONDS", "20")),
+        )
+
         def tail_selected_workspace_run():
             selected = workspace_manager.selected_run()
             if selected and selected.execution_mode == "cloud":
@@ -2541,7 +2573,32 @@ def build_icesheets_ui():
         terminate_btn.on_click(on_terminate)
         cloud_status_btn.on_click(on_cloud_status)
         cloud_logs_btn.on_click(on_cloud_logs)
-        cloud_terminate_btn.on_click(on_cloud_terminate)
+
+        # Terminate is destructive -> two-step confirm. The controller's
+        # terminate() also stops the auto-poll loop.
+        _cloud_term_armed = {"v": False}
+
+        def _reset_cloud_terminate():
+            _cloud_term_armed["v"] = False
+            cloud_terminate_btn.description = "Terminate"
+            cloud_terminate_btn.button_style = "danger"
+
+        def on_cloud_terminate_confirm(_=None):
+            if not _cloud_term_armed["v"]:
+                _cloud_term_armed["v"] = True
+                cloud_terminate_btn.description = "Confirm terminate"
+                cloud_terminate_btn.button_style = "warning"
+                with log_out:
+                    print("[cloud] Click again to confirm termination of the running job.")
+                return
+            _reset_cloud_terminate()
+            job_id = STATUS.get("batch_job_id")
+            if _cloud["controller"] is not None and job_id:
+                _cloud["controller"].terminate(str(job_id))
+            else:
+                on_cloud_terminate()
+
+        cloud_terminate_btn.on_click(on_cloud_terminate_confirm)
         cloud_environment.test_button.on_click(cloud_runtime.check_environment)
         cloud_environment.prepare_button.on_click(cloud_runtime.prepare_environment)
         results_download_btn.on_click(on_results_download)

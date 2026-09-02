@@ -35,16 +35,46 @@ def test_cloud_branch_validates_and_preflights_before_submit():
 
 def test_cloud_run_is_registered_with_backend_aws_and_a_real_job_id():
     src = _ICESHEETS.read_text()
-    # a run is only registered when there is a real job id + s3 run
     assert 'backend="aws"' in src
     assert 'execution_mode="cloud"' in src
-    assert "if _job_id and _s3_run:" in src
+    # registration now happens in _register_cloud_run, called by the
+    # CloudRunController only after it has a real job id + S3 run
+    assert "_register_cloud_run" in src
+    assert "CloudRunController(" in src
+
+    from cryostack_src.frontend.cryolauncher.cloud_run_controller import (
+        CloudRunController,
+    )
+    calls = []
+
+    class _Bridge:
+        def submit(self, **kw):
+            class _R:
+                job_id = None            # no job id -> must NOT register
+                metadata = {}
+                working_directory = None
+                messages = []
+            return _R()
+
+    ctl = CloudRunController(
+        bridge_factory=_Bridge,
+        register_run=lambda **kw: calls.append(kw),
+        sync_results=lambda **kw: "/x",
+        on_state=lambda s: None,
+        on_log=lambda m: None,
+        poll_interval=0.0,
+    )
+    import asyncio
+    asyncio.run(ctl.run_once(staged_source="/x", model="issm",
+                             run_target="runme.m", bucket="b"))
+    assert calls == []                     # no job id -> no registration
+    assert ctl.state == "failed"
 
 
 def test_cloud_state_chip_covers_the_documented_states():
     src = _ICESHEETS.read_text()
-    for state in ("not_configured", "checking", "ready", "submitting",
-                  "queued", "running", "completed", "failed"):
+    for state in ("not_configured", "checking", "ready", "staging", "submitting",
+                  "queued", "running", "completed", "failed", "cancelled"):
         assert f'"{state}"' in src
 
 
