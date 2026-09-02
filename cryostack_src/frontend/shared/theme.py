@@ -291,6 +291,16 @@ CRYOSTACK_FRONTEND_CSS = r"""
 
 }
 
+/*
+ * Two-column application shell.
+ *
+ * The columns align at the TOP and each grows to its own natural content
+ * height. The left (Run settings) card must never determine or cap the
+ * height of the right (Workspace) card -- in Agent mode the left card is
+ * short, and the Workspace must still show all of its content. There is no
+ * equal-height / stretch behaviour and no inner Workspace scrollbar: a tall
+ * Workspace scrolls with the page.
+ */
 .icesee-grid {
     display: grid !important;
     grid-template-columns:
@@ -298,146 +308,134 @@ CRYOSTACK_FRONTEND_CSS = r"""
         minmax(0, 54fr);
 
     gap: 16px;
-    align-items: stretch;
+    align-items: start;
 }
 
-/*
- * Left side determines the height of the grid row.
- */
 .icesee-left {
     min-width: 0;
-    min-height: 0;
+    align-self: start;
 }
 
-/*
- * Right side occupies exactly the grid-row height,
- * but its contents do not contribute to that height.
- */
 .icesee-right {
-    position: relative;
     min-width: 0;
+    align-self: start;
+
+    /* natural height -- never clipped by the left column */
+    height: auto;
     min-height: 0;
-    overflow: hidden;
+    overflow: visible;
 }
 
-/*
- * Fill the right-hand grid cell without increasing
- * the height of the parent grid.
- */
 .icesee-right > .widget-vbox {
-    position: absolute;
-    inset: 0;
+    position: static;
 
     width: 100%;
-    height: 100%;
+    height: auto;
 
     min-width: 0;
     min-height: 0;
 
-    overflow: hidden;
+    overflow: visible;
 }
 
-@media (max-width: 1000px) {
+/*
+ * Desktop enhancement: keep the Workspace in view while a very tall Run
+ * settings column scrolls. Sticky (not fixed) -- if the Workspace itself is
+ * taller than the viewport it scrolls away with the page rather than being
+ * trapped. Disabled on tablet / mobile (below).
+ */
+@media (min-width: 1051px) {
+    .cryostack-right-workspace {
+        position: sticky;
+        top: 12px;
+    }
+}
+
+@media (max-width: 1050px) {
     .icesee-grid {
         grid-template-columns: 1fr;
     }
 
-    /*
-     * Return to normal document flow on small screens.
-     */
+    .cryostack-right-workspace,
     .icesee-right {
         position: static;
-        min-height: 600px;
-    }
-
-    .icesee-right > .widget-vbox {
-        position: static;
-
-        width: 100%;
-        height: auto;
-
-        min-height: 600px;
     }
 }
 
 .cryostack-output-workspace {
-    display: flex !important;
+    display: flex;
     flex-direction: column;
 
     width: 100%;
-    height: 100%;
+    height: auto;
 
     min-height: 0;
 
-    overflow: hidden;
+    overflow: visible;
 }
 
 .cryostack-output-tabs {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
 
     width: 100%;
     min-height: 0;
 
-    overflow: hidden;
+    overflow: visible;
 }
 
-/*
- * Each selected tab fills the available workspace.
- */
 .cryostack-output-tab {
-    display: flex !important;
+    display: flex;
     flex-direction: column;
 
     width: 100%;
-    height: 100%;
+    height: auto;
 
     min-height: 0;
 
-    overflow: hidden;
+    overflow: visible;
 }
 
 /*
- * Log/output widget is the scrollable terminal area.
+ * The log / results text output is a terminal-like region: it keeps its own
+ * scroll with a generous cap so a long run log does not make the whole page
+ * unusable. This is the text area *inside* a tab, not the Workspace card.
  */
 .cryostack-output-tab .jupyter-widgets-output-area {
-    flex: 1 1 auto;
-
     min-height: 0;
+    max-height: 70vh;
 
     overflow-y: auto !important;
     overflow-x: auto !important;
 }
 
 .cryostack-right-workspace {
-    overflow: hidden !important;
-    min-height: 0 !important;
+    min-height: 0;
 }
 
-.cryostack-output-workspace {
-    height: 100% !important;
-    min-height: 0 !important;
-    overflow: hidden !important;
-
-    display: flex !important;
-    flex-direction: column !important;
+/*
+ * ipywidgets Tab: <div.widget-tab (flex column)> > <div.widget-tab-contents
+ * (flex-grow:1; overflow:auto)>. The default makes the tab body a fixed-size
+ * inner scroll region. For a natural-height Workspace the body flows in normal
+ * document order and the page scrolls; a modest floor keeps it from looking
+ * empty.
+ */
+.cryostack-workspace-tabs.widget-tab,
+.cryostack-workspace-tabs {
+    height: auto !important;
 }
 
-.cryostack-output-tabs {
-    flex: 1 1 0 !important;
-    min-height: 0 !important;
-    overflow: hidden !important;
-}
-
-.cryostack-output-tab {
-    height: 100% !important;
-    min-height: 0 !important;
-    overflow: hidden !important;
+.cryostack-workspace-tabs > .widget-tab-contents {
+    flex-grow: 0;
+    height: auto !important;
+    min-height: 420px;
+    overflow: visible !important;
 }
 
 .cryostack-live-log {
-    min-height: 0 !important;
-    overflow-y: auto !important;
-    overflow-x: auto !important;
+    min-height: 0;
+    max-height: 70vh;
+    overflow-y: auto;
+    overflow-x: auto;
 }
 
 .cryostack-workspace-heading {

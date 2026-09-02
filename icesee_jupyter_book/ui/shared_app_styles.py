@@ -207,7 +207,9 @@ _SHARED_APPLICATION_CSS = """
 .icesee-grid {
     display: flex;
     width: 100%;
-    align-items: stretch;
+    /* columns align at the top; each keeps its own natural height so the
+       short left card never caps the Workspace column (see theme.py). */
+    align-items: flex-start;
     gap: 24px;
 }
 
@@ -430,8 +432,9 @@ pre.cryostack-code-block {
     max-width: 100%;
 }
 
-/* Two-column layout: stack sooner, and release the JS height-sync so the
-   right (Workspace) panel is not pinned to the tall left column. */
+/* Two-column layout: stack on tablet / mobile. The Workspace column keeps
+   its natural height and page scrolling at every width; sticky positioning
+   (desktop only, see theme.py) is disabled here. */
 @media (max-width: 1050px) {
     .cryostack-right-workspace,
     .icesee-right {
@@ -439,6 +442,7 @@ pre.cryostack-code-block {
         max-height: none !important;
         min-height: 0 !important;
         overflow: visible !important;
+        position: static !important;
     }
 }
 

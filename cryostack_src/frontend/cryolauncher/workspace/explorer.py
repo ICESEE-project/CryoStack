@@ -21,42 +21,44 @@ def build_workspace_explorer(*, run_settings, runtime, run_details) -> Workspace
     for css_class in ("icesee-card", "icesee-left", "cryostack-left-workspace"):
         left.add_class(css_class)
 
+    # The right (Workspace) column determines its OWN natural height: no fixed
+    # height, no max-height, overflow visible so nothing is clipped when the
+    # left card is short (e.g. Agent mode). Page-level scrolling handles a tall
+    # Workspace -- there is no inner Workspace scrollbar.
     right = W.VBox(
         [run_details],
-        layout=W.Layout(width="100%", min_width="0", min_height="0", overflow="hidden"),
+        layout=W.Layout(width="100%", min_width="0", align_self="flex-start"),
     )
     for css_class in ("icesee-card", "icesee-right", "cryostack-right-workspace"):
         right.add_class(css_class)
 
-    container = W.HBox([left, right], layout=W.Layout(width="100%"))
+    # Two-column shell: columns align at the TOP and each grows to its own
+    # content height -- never equal-height / stretch (the left card must not
+    # cap Workspace).
+    container = W.HBox(
+        [left, right],
+        layout=W.Layout(width="100%", align_items="flex-start"),
+    )
     container.add_class("icesee-grid")
 
+    # No height synchronisation: the right column is not pinned to the left.
+    # This inert script only *releases* any stale inline sizing a previously
+    # cached bundle may have pinned onto the Workspace column.
     height_sync = W.HTML("""
     <script>
     (() => {
-        function setupCryoStackWorkspaceSync() {
-            const left = document.querySelector(".cryostack-left-workspace");
-            const right = document.querySelector(".cryostack-right-workspace");
-            if (!left || !right) {
-                setTimeout(setupCryoStackWorkspaceSync, 250);
-                return;
-            }
-            if (right.dataset.heightSyncAttached === "1") return;
-            right.dataset.heightSyncAttached = "1";
-            const syncHeight = () => {
-                const height = left.getBoundingClientRect().height;
-                if (height > 0) {
-                    right.style.height = `${height}px`;
-                    right.style.maxHeight = `${height}px`;
-                    right.style.minHeight = `${height}px`;
-                }
-            };
-            syncHeight();
-            const observer = new ResizeObserver(syncHeight);
-            observer.observe(left);
-            window.addEventListener("resize", syncHeight);
-        }
-        setupCryoStackWorkspaceSync();
+        const release = () => {
+            document.querySelectorAll(
+                ".cryostack-right-workspace, .icesee-right"
+            ).forEach((el) => {
+                el.style.removeProperty("height");
+                el.style.removeProperty("min-height");
+                el.style.removeProperty("max-height");
+                el.style.removeProperty("overflow");
+            });
+        };
+        release();
+        setTimeout(release, 500);
     })();
     </script>
     """)
