@@ -226,11 +226,55 @@ hands the plan to the host's `on_approve` callback.
 
 ---
 
-## 11. What is deliberately *not* here
+## 11. Persistence, the submit backend, and provider adapters
 
-* No autonomous submit. No agent tool at `EXECUTE` or `DESTRUCTIVE` is wired
-  to a real backend.
+**Persistence.** `agents.AgentStore` is the per-user facade, built from a
+trusted `WorkspaceUser` (never a caller-supplied id). It writes to
+`<workspace>/.cryostack/agents/` — `plans/<id>.json` (atomic replace) and
+`traces/<id>.jsonl` (append-only). On load, `restore_managed_plan` binds the
+owner to the **storage path**, not the serialized blob, and recomputes the
+plan digest: a plan edited on disk while `APPROVED` reloads as `DRAFT` with the
+approval dropped. `trace.scan_for_secrets` is a structural, key-name-independent
+check (PEM, `AKIA`, provider tokens) — a plan matching it is refused, a trace
+event is scrubbed, before anything touches disk.
+
+**The submit backend.** `agents.execution.SubmitBackend` is a `Protocol`. The
+one real implementation, `cryostack_src.agent_execution.RemoteSubmitBackend`,
+lives **outside** the `agents` package (it composes `submit_remote_icesheets`,
+which imports `ssh_run` — a prohibited symbol). It is reached only *after* the
+coordinator has verified the approval digest and the `EXECUTE` ceiling, and it
+re-runs B3 (`enforce_remote_access`), B4 (`validate_slurm_resources`), and the
+MATLAB preflight itself. Connection details (host, user, remote dir, connector
+session) come from the gateway, never the plan or the LLM. It is **not wired
+into the gateway** — see `overnight/AUDIT_agent_submit_backend.md`.
+
+**Input fingerprint.** The plan digest binds *intent* but only names the
+example / run target / datasets. `agents.fingerprint.RunInputFingerprint` is a
+second, optional binding over their *content* (the run-target `sha256`, the
+example source tree, dataset size+mtime). An approval may carry its digest;
+`RemoteSubmitBackend` recomputes it and blocks on drift. See
+`overnight/AUDIT_agent_approval_integrity.md`.
+
+**Provider adapters.** The whole provider contract is `llm.LLMClient.complete`.
+`llm_adapters.assert_declarative_tools` proves a provider only ever sees plain
+tool-description dicts. `RuleBasedAdapter` is a deterministic, network-free
+stub; `AnthropicAdapterSkeleton` / `OpenAIAdapterSkeleton` are commented
+references (no SDK, no key, no call). See
+`overnight/AGENT_LLM_PROVIDER_CONTRACT.md`.
+
+**Inspecting a session.** `python -m cryostack_src.agents.inspect <path-or-id>`
+renders a saved plan or trace — the digest, every permission decision, the
+approval and whether it still binds, the tool calls, the execution decision.
+It never replays a side effect.
+
+---
+
+## 12. What is deliberately *not* here
+
+* No autonomous submit. `RemoteSubmitBackend` exists and is tested but is not
+  wired into the gateway; the dry-run coordinator is the default.
 * No autonomous scientific-parameter optimisation. An agent proposes; a human
   approves the exact digest.
 * No modification of canonical examples through an agent.
 * No LLM vendor SDK dependency anywhere in the package.
+* The Run Assistant panel (`CRYOSTACK_AGENT_PANEL=1`) has **no Submit button**.
