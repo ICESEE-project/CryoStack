@@ -12,14 +12,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from cryostack_src.models import get_model_adapter
+from cryostack_src.models import get_model_adapter, get_model_capabilities
 from cryostack_src.resources.profiles import get_compute_profile
 
 from .permissions import Permission
 from .planning import PlanFinding, RunPlan, SlurmRequest
 from .tools import tool
-
-_ICEPACK_CLOUD_SUPPORTED = False   # cloud/runtime.SUPPORTED_CLOUD_MODELS = ("issm",)
 
 
 # ── build ─────────────────────────────────────────────────────────────
@@ -136,11 +134,11 @@ def validate_run_plan(ctx, *, plan: dict) -> dict:
             "error", "preflight",
             f"ISSM runs MATLAB in the container but {profile.name} has no "
             "MATLAB licence configured."))
-    if p.model == "icepack" and p.execution_mode == "cloud" and not _ICEPACK_CLOUD_SUPPORTED:
+    if p.execution_mode == "cloud" and not get_model_capabilities(p.model).cloud_supported:
         findings.append(PlanFinding(
             "error", "preflight",
-            "Cloud (AWS Batch) execution is ISSM-only today; Icepack cloud runs "
-            "are blocked at preflight."))
+            f"Cloud (AWS Batch) execution is ISSM-only today; {p.model} cloud "
+            "runs are blocked at preflight."))
 
     approvals = _approvals_required(p, findings)
     out = p.with_findings(findings, approvals_required=approvals, solvers=solvers)

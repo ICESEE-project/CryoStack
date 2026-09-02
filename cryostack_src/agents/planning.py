@@ -17,13 +17,15 @@ import json
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
-_MODELS = ("issm", "icepack")
+from cryostack_src.models import MODEL_CAPABILITIES, SUPPORTED_MODELS
+
+_MODELS = SUPPORTED_MODELS
 _EXECUTION_MODES = ("remote", "cloud")           # no "local" -- not implemented
 _BACKENDS = ("spack", "container")
 
+#: model -> transport-neutral result contract, from the capabilities registry (P1)
 _RESULT_CONTRACT = {
-    "issm": "cryostack.issm.results",
-    "icepack": "cryostack.icepack.results",
+    name: cap.result_contract for name, cap in MODEL_CAPABILITIES.items()
 }
 
 

@@ -12,14 +12,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from cryostack_src.models import get_model_adapter
+from cryostack_src.models import (
+    SUPPORTED_MODELS,
+    get_model_adapter,
+    get_model_capabilities,
+)
 from cryostack_src.resources.profiles import COMPUTE_PROFILES, get_compute_profile
 
 from .permissions import Permission
 from .tools import tool
 
-# models CryoStack ships adapters for (kept explicit, not guessed)
-_MODELS = ("issm", "icepack")
+# models CryoStack ships adapters for — from the ModelCapabilities registry (P1)
+_MODELS = SUPPORTED_MODELS
 
 
 # ── models ────────────────────────────────────────────────────────────
@@ -28,14 +32,22 @@ _MODELS = ("issm", "icepack")
                   "note on each.",
       permission=Permission.OBSERVE)
 def list_models(ctx) -> list[dict]:
-    notes = {
-        "issm": "Ice-sheet & Sea-level System Model (MATLAB). Mature: Basic-mode "
-                "md configuration, structured results, deterministic field viewer.",
-        "icepack": "Firedrake-based glacier flow (Python). Basic-mode ice "
-                   "temperature / timestep count; structured export + field "
-                   "viewer (tier-1, final-state); no MATLAB.",
-    }
-    return [{"name": m, "note": notes.get(m, "")} for m in _MODELS]
+    out = []
+    for m in _MODELS:
+        cap = get_model_capabilities(m)
+        out.append({"name": cap.name, "display_name": cap.display_name,
+                    "language": cap.language, "note": cap.notes})
+    return out
+
+
+@tool(name="list_model_capabilities",
+      description="For each model, what CryoStack can actually do with it: "
+                  "Basic-mode config, structured results + contract, offline "
+                  "result reader, visualization, MATLAB requirement, execution "
+                  "modes and backends, cloud support.",
+      permission=Permission.OBSERVE)
+def list_model_capabilities(ctx) -> list[dict]:
+    return [get_model_capabilities(m).to_dict() for m in _MODELS]
 
 
 # ── examples ──────────────────────────────────────────────────────────
