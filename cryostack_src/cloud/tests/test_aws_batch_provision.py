@@ -31,14 +31,33 @@ IMAGE = "123456789012.dkr.ecr.us-east-2.amazonaws.com/cryostack-issm:tested"
 
 
 class FakeAWS:
-    """A minimal in-memory AWS Batch / Logs the provisioner can drive."""
+    """A minimal in-memory AWS Batch / Logs the provisioner can drive.
 
-    def __init__(self):
+    ``ce_status_seq`` / ``queue_status_seq`` model the async ``status``
+    transition AWS reports on successive ``describe-*`` calls (default: VALID
+    immediately). Each ``describe-compute-environments`` / ``describe-job-queues``
+    consumes one entry; the last entry sticks.
+    """
+
+    def __init__(self, *, ce_status_seq=None, queue_status_seq=None,
+                 ce_status_reason="", queue_status_reason=""):
         self.calls: list[list[str]] = []
         self.compute_envs: list[dict] = []
         self.job_queues: list[dict] = []
         self.job_defs: list[dict] = []
         self.log_groups: set[str] = set()
+        self._ce_seq = list(ce_status_seq or ["VALID"])
+        self._q_seq = list(queue_status_seq or ["VALID"])
+        self._ce_reason = ce_status_reason
+        self._q_reason = queue_status_reason
+
+    def _next_ce_status(self):
+        s = self._ce_seq[0] if len(self._ce_seq) == 1 else self._ce_seq.pop(0)
+        return s
+
+    def _next_q_status(self):
+        s = self._q_seq[0] if len(self._q_seq) == 1 else self._q_seq.pop(0)
+        return s
 
     # -- helpers -------------------------------------------------------
     def count(self, *prefix) -> int:
@@ -75,6 +94,11 @@ class FakeAWS:
             if "--compute-environments" in a:
                 want = self._opt(a, "--compute-environments")
                 envs = [e for e in envs if e["computeEnvironmentName"] == want]
+            # stamp the current async status on the way out
+            status = self._next_ce_status() if envs else None
+            envs = [{**e, "status": status,
+                     **({"statusReason": self._ce_reason} if self._ce_reason else {})}
+                    for e in envs]
             return (0, json.dumps({"computeEnvironments": envs}), "")
         if a[:2] == ["batch", "create-compute-environment"]:
             self.compute_envs.append({
@@ -96,6 +120,10 @@ class FakeAWS:
             if "--job-queues" in a:
                 want = self._opt(a, "--job-queues")
                 qs = [q for q in qs if q["jobQueueName"] == want]
+            status = self._next_q_status() if qs else None
+            qs = [{**q, "status": status,
+                   **({"statusReason": self._q_reason} if self._q_reason else {})}
+                  for q in qs]
             return (0, json.dumps({"jobQueues": qs}), "")
         if a[:2] == ["batch", "create-job-queue"]:
             self.job_queues.append({
@@ -141,12 +169,13 @@ class FakeAWS:
     def seed_ready(self):
         self.compute_envs.append({
             "computeEnvironmentName": "cryostack-fargate", "type": "MANAGED",
-            "state": "ENABLED",
+            "state": "ENABLED", "status": "VALID",
             "computeResources": {"type": "FARGATE", "maxvCpus": 16,
                                  "subnets": SUBNETS, "securityGroupIds": SGS},
         })
         self.job_queues.append({
             "jobQueueName": "cryostack-queue", "state": "ENABLED", "priority": 1,
+            "status": "VALID",
             "computeEnvironmentOrder": [
                 {"order": 1, "computeEnvironment": "cryostack-fargate"}],
         })
@@ -170,10 +199,16 @@ def aws(monkeypatch):
     return fake
 
 
+_SLEPT: list[float] = []
+
+
 def _provision(**over):
+    _SLEPT.clear()
     kw = dict(
         subnets=SUBNETS, security_groups=SGS, job_role_arn=JOB_ROLE,
         execution_role_arn=EXEC_ROLE, issm_image=IMAGE,
+        # deterministic, no real waiting: 6 describe attempts per resource
+        ready_interval=0.01, ready_timeout=0.05, sleep=_SLEPT.append,
     )
     kw.update(over)
     return bp.ensure_batch_resources(CONFIG, **kw)
@@ -329,3 +364,183 @@ def test_prepare_batch_pins_digest_and_makes_exactly_one_revision(aws, monkeypat
     second = driver.prepare_batch(network=net, iam=iam)
     assert "issm_job_definition" in second.reused
     assert aws.count("batch", "register-job-definition") == 1     # no new revision
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Batch resource readiness polling (the CreateJobQueue-before-CE-VALID fix)
+# ══════════════════════════════════════════════════════════════════════════
+from cryostack_src.cloud.drivers.aws.batch_provision import (  # noqa: E402
+    BatchResourceNotReady,
+    _poll_batch_status,
+)
+
+
+def _seq(*statuses):
+    """A describe() that yields one status dict per call, last one sticks."""
+    items = list(statuses)
+
+    def describe():
+        s = items[0] if len(items) == 1 else items.pop(0)
+        return None if s is None else {"state": "ENABLED", "status": s,
+                                       "statusReason": f"{s} reason"}
+    return describe
+
+
+# ── the poll helper in isolation ───────────────────────────────────────
+def test_poll_returns_immediately_when_already_valid():
+    slept = []
+    res = _poll_batch_status(_seq("VALID"), what="ce", interval=1, timeout=10,
+                             sleep=slept.append)
+    assert res["status"] == "VALID" and slept == []
+
+
+def test_poll_waits_through_creating_then_valid():
+    slept = []
+    res = _poll_batch_status(_seq("CREATING", "CREATING", "VALID"),
+                             what="ce", interval=5, timeout=60, sleep=slept.append)
+    assert res["status"] == "VALID" and slept == [5, 5]
+
+
+def test_poll_waits_through_updating_then_valid():
+    slept = []
+    res = _poll_batch_status(_seq("UPDATING", "VALID"),
+                             what="ce", interval=3, timeout=30, sleep=slept.append)
+    assert res["status"] == "VALID" and slept == [3]
+
+
+def test_poll_raises_on_invalid_with_the_reason():
+    with pytest.raises(BatchResourceNotReady) as ei:
+        _poll_batch_status(_seq("CREATING", "INVALID"), what="compute environment",
+                           interval=1, timeout=10, sleep=lambda _s: None)
+    assert "INVALID" in str(ei.value) and "INVALID reason" in str(ei.value)
+
+
+def test_poll_times_out_with_the_last_state():
+    with pytest.raises(BatchResourceNotReady) as ei:
+        _poll_batch_status(_seq("CREATING"), what="job queue cryostack-queue",
+                           interval=1, timeout=3, sleep=lambda _s: None)
+    msg = str(ei.value)
+    assert "did not become VALID" in msg and "status='CREATING'" in msg
+
+
+def test_poll_tolerates_a_transient_describe_failure():
+    slept = []
+    res = _poll_batch_status(_seq(None, "CREATING", "VALID"),
+                             what="ce", interval=2, timeout=20, sleep=slept.append)
+    assert res["status"] == "VALID" and slept == [2, 2]
+
+
+# ── ensure_compute_environment / ensure_job_queue ──────────────────────
+def test_ce_already_valid_is_reused_without_waiting(aws):
+    aws.seed_ready()
+    out = bp.ensure_compute_environment(
+        CONFIG, subnets=SUBNETS, security_groups=SGS,
+        ready_interval=0.01, ready_timeout=0.05, sleep=_SLEPT.append)
+    _SLEPT.clear()
+    assert out == "reused" and _SLEPT == []
+
+
+def test_ce_creating_then_valid_on_create(aws):
+    aws._ce_seq = ["CREATING", "VALID"]
+    out = bp.ensure_compute_environment(
+        CONFIG, subnets=SUBNETS, security_groups=SGS,
+        ready_interval=0.01, ready_timeout=1.0, sleep=lambda _s: None)
+    assert out == "created"
+    assert aws.count("batch", "create-compute-environment") == 1
+
+
+def test_ce_invalid_fails_before_the_queue_is_touched(aws):
+    aws._ce_seq = ["CREATING", "INVALID"]
+    aws._ce_reason = "CLIENT_ERROR: bad subnet"
+    with pytest.raises(BatchResourceNotReady) as ei:
+        _provision(sleep=lambda _s: None)
+    assert "CLIENT_ERROR" in str(ei.value)
+    assert aws.count("batch", "create-job-queue") == 0        # never got there
+
+
+def test_ce_timeout_fails_clearly(aws):
+    aws._ce_seq = ["CREATING"]                                # never valid
+    with pytest.raises(BatchResourceNotReady) as ei:
+        _provision(sleep=lambda _s: None)
+    assert "did not become VALID" in str(ei.value)
+    assert aws.count("batch", "create-job-queue") == 0
+
+
+def test_queue_creating_then_valid_on_create(aws):
+    aws._q_seq = ["CREATING", "CREATING", "VALID"]
+    result = _provision()
+    assert "job_queue" in result.created
+    assert aws.count("batch", "create-job-queue") == 1
+
+
+def test_queue_invalid_fails_with_reason(aws):
+    aws._q_seq = ["CREATING", "INVALID"]
+    aws._q_reason = "COMPUTE_ENVIRONMENT_ERROR"
+    with pytest.raises(BatchResourceNotReady) as ei:
+        _provision(sleep=lambda _s: None)
+    assert "COMPUTE_ENVIRONMENT_ERROR" in str(ei.value)
+
+
+def test_queue_timeout_fails_clearly(aws):
+    aws._q_seq = ["CREATING"]
+    with pytest.raises(BatchResourceNotReady) as ei:
+        _provision(sleep=lambda _s: None)
+    assert "job queue cryostack-queue did not become VALID" in str(ei.value)
+
+
+# ── the exact live partial state: CE VALID, no queue, no job def ───────
+def _seed_live_partial(aws):
+    """account 713938953301 state after the first failed bootstrap:
+    S3 + ECR exist (elsewhere); CE VALID; queue + job definition absent."""
+    aws.compute_envs.append({
+        "computeEnvironmentName": "cryostack-fargate", "type": "MANAGED",
+        "state": "ENABLED", "status": "VALID",
+        "statusReason": "ComputeEnvironment Healthy",
+        "computeResources": {"type": "FARGATE", "maxvCpus": 16,
+                             "subnets": SUBNETS, "securityGroupIds": SGS},
+    })
+    # no job_queues, no job_defs, no log group
+
+
+def test_rerun_on_the_live_partial_state_completes_only_whats_missing(aws):
+    _seed_live_partial(aws)
+    result = _provision()
+
+    # CE is reused (VALID, no drift) -- not recreated, not updated
+    assert "compute_environment" in result.reused
+    assert aws.count("batch", "create-compute-environment") == 0
+    assert aws.count("batch", "update-compute-environment") == 0
+
+    # only the missing queue + job definition are created
+    assert "job_queue" in result.created
+    assert "issm_job_definition" in result.created
+    assert aws.count("batch", "create-job-queue") == 1
+    assert aws.count("batch", "register-job-definition") == 1
+
+    # describe-CE happened before create-job-queue (readiness gate)
+    kinds = [c[1] for c in aws.calls if c[0] == "batch"]
+    assert kinds.index("describe-compute-environments") < kinds.index("create-job-queue")
+
+
+def test_second_rerun_after_the_fix_creates_nothing(aws):
+    _seed_live_partial(aws)
+    _provision()                                              # completes the stack
+    aws.calls.clear()
+    result = _provision()                                     # run again
+
+    assert result.created == [] and result.updated == []
+    assert set(result.reused) == {
+        "compute_environment", "job_queue", "issm_job_definition"}
+    assert aws.count("batch", "create-job-queue") == 0
+    assert aws.count("batch", "create-compute-environment") == 0
+    assert aws.count("batch", "register-job-definition") == 0
+
+
+def test_ce_update_waits_through_updating_then_valid(aws):
+    aws.seed_ready()
+    aws.compute_envs[0]["computeResources"]["maxvCpus"] = 8       # force an update
+    aws._ce_seq = ["VALID", "UPDATING", "UPDATING", "VALID"]      # describe(pre) then poll
+    result = _provision()
+    assert "compute_environment" in result.updated
+    assert aws.count("batch", "update-compute-environment") == 1
+    assert "job_queue" in result.reused                          # queue was already VALID

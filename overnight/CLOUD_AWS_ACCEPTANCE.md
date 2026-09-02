@@ -53,6 +53,16 @@ print(m.prepare_batch(provider="aws", region="us-east-2"))      # VPC/IAM/ECR/Ba
 PY
 ```
 
+`prepare_batch` now **waits** for the Fargate compute environment to reach
+`status == VALID` before it creates/attaches the job queue, and for the queue
+to reach `VALID` before it registers the job definitions
+(`batch_provision._poll_batch_status`, 10 s interval / 300 s timeout;
+`INVALID` fails immediately with `statusReason`). It is idempotent on the
+**current live partial state** (account `713938953301`): the `VALID`
+`cryostack-fargate` compute environment and the existing S3 bucket / ECR repo
+are **reused**, and only the missing `cryostack-queue` and `cryostack-issm`
+job definition are created. Just re-run the block above.
+
 Then push the tested ISSM image into `cryostack-issm` (the registry-delivery
 helper mirrors the digest-pinned image — see `cryostack_src/cloud/drivers/aws/
 registry_delivery.py`; do this from a host with Docker/buildx).
