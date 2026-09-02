@@ -103,7 +103,7 @@ def test_mutation_after_approval_blocks_execution():
 def test_live_execute_needs_an_execute_context():
     class _Spy:
         called = False
-        def submit(self, plan, *, ctx):
+        def submit(self, plan, *, ctx, approval=None):
             self.__class__.called = True
             return "job-1"
 
@@ -117,7 +117,7 @@ def test_live_execute_needs_an_execute_context():
 def test_live_execute_with_backend_and_execute_context_submits_once():
     calls = []
     class _Backend:
-        def submit(self, plan, *, ctx):
+        def submit(self, plan, *, ctx, approval=None):
             calls.append(plan.digest())
             return "job-42"
 

@@ -150,7 +150,7 @@ def test_live_execute_without_execute_ceiling_never_calls_the_backend():
 
     class _Backend:
         called = False
-        def submit(self, plan, *, ctx):
+        def submit(self, plan, *, ctx, approval=None):
             _Backend.called = True
             return "job"
     rep = DryRunExecutionCoordinator(submit_backend=_Backend()).execute(

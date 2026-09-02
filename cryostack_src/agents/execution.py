@@ -81,12 +81,16 @@ class DryRunReport:
 
 
 class SubmitBackend(Protocol):
-    """A real submitter. Implementations live outside the agents package and
-    are wired in by an explicit human integration step (never by an agent).
-    Must perform B3 remote-identity verification before issuing anything."""
+    """A real submitter. Implementations live outside the agents package
+    (``cryostack_src/agent_execution/``) and are wired in by an explicit human
+    integration step (never by an agent). Must perform B3 remote-identity
+    verification, B4 Slurm validation, and backend preflight before issuing
+    anything. ``approval`` is the digest-bound :class:`~cryostack_src.agents.
+    approval.Approval` the coordinator already verified — passed so the backend
+    can stamp it into the run's scientific provenance."""
 
-    def submit(self, plan: RunPlan, *, ctx: Any) -> str:  # returns a job id
-        ...
+    def submit(self, plan: RunPlan, *, ctx: Any, approval: Any = None) -> str:
+        ...  # returns a job id
 
 
 class ExecutionBlocked(RuntimeError):
@@ -205,8 +209,9 @@ class DryRunExecutionCoordinator:
                              {"submitted": False, "reason": "dry_run"})
             return report(submitted=False)
 
-        # live path (no backend ships in PASS 3)
-        job_id = self._backend.submit(plan, ctx=ctx)
+        # live path (no backend ships in cryostack_src/agents/; a real one is
+        # injected from cryostack_src/agent_execution/ by the gateway)
+        job_id = self._backend.submit(plan, ctx=ctx, approval=mp.approval)
         mp.mark_executing()
         outcomes.append(PhaseOutcome(
             ExecutionPhase.SUBMIT.value, "ok", "submitted",
