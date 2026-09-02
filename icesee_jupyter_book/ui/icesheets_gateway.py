@@ -147,6 +147,10 @@ from cryostack_src.resources.profiles import get_compute_profile, initial_remote
 from cryostack_src.frontend.cryolauncher.software_stack import build_software_stack_panel
 from cryostack_src.frontend.cryolauncher.container_image import build_container_image_panel
 from cryostack_src.frontend.cryolauncher.issm_md_panel import build_issm_md_panel
+from cryostack_src.frontend.cryolauncher.icepack_basic_panel import build_icepack_basic_panel
+from cryostack_src.models.icepack.parameters import (
+    IcepackOverrideError, IcepackParameterError, entrypoint_transform_for,
+)
 
 from cryostack_src.frontend.cryolauncher.panels import (
     build_logs_panel,
@@ -585,6 +589,9 @@ def build_icesheets_ui():
         # Basic-mode ISSM configuration: a curated, solver-aware, validated panel
         # (replaces the old raw md.<section>.<field> editor).
         md_panel = build_issm_md_panel()
+        # Basic-mode Icepack configuration: deliberately minimal (ice temperature,
+        # timestep count) -- see cryostack_src/models/icepack/parameters.py.
+        icepack_basic_panel = build_icepack_basic_panel()
 
         def current_cloud_bridge():
             selected_run = workspace_manager.selected_run()
@@ -1238,6 +1245,8 @@ def build_icesheets_ui():
 
             if model_dd.value == "issm":
                 md_panel.set_example(example_dir.value)
+            elif model_dd.value == "icepack":
+                icepack_basic_panel.set_example(example_dir.value)
             update_summary()
 
         def _example_summary(ex, selected: str) -> str:
@@ -1479,6 +1488,7 @@ def build_icesheets_ui():
             download_buttons_row.layout.display = ""
 
             md_config_panel.layout.display = "" if model_dd.value == "issm" else "none"
+            icepack_config_panel.layout.display = "" if model_dd.value == "icepack" else "none"
 
             # A connector session is created lazily -- on the "Open Connector
             # Setup" button, and at Check SSH / Run when connector mode is
@@ -1870,6 +1880,58 @@ def build_icesheets_ui():
                                   f"{', '.join(sorted(_md_validation.normalized))}")
                         for _d in _staged.provenance.get("staged_datasets", []):
                             print(f"[stage] dataset -> {_d['as']}")
+
+            elif model_dd.value == "icepack" and not test_mode:
+                # Basic-mode Icepack overrides: an exact, single-line, validated
+                # substitution in a user-owned working copy of the notebook/
+                # script. Fail-closed if the example does not expose a param.
+                _ip_validation = icepack_basic_panel.validate()
+                if not _ip_validation.ok:
+                    status_chip.value = status_html("fail")
+                    with log_out:
+                        print("[icepack][ERROR] Basic configuration is not valid:")
+                        for _err in _ip_validation.errors:
+                            print("  -", _err)
+                    return
+                _ip_ds_refs = bool(
+                    workspace_manager.example_dataset_references(example_dir.value)
+                )
+                if _ip_validation.normalized or _ip_ds_refs:
+                    _ip_entry = (run_target.value or "").strip()
+                    try:
+                        _staged = workspace_manager.stage_example_for_run(
+                            source_example=example_dir.value,
+                            entrypoint=_ip_entry or "runme.m",
+                            entrypoint_transform=(
+                                entrypoint_transform_for(_ip_validation.normalized)
+                                if _ip_validation.normalized else None
+                            ),
+                            overrides=_ip_validation.normalized or None,
+                        )
+                    except (IcepackOverrideError, IcepackParameterError) as _ov_err:
+                        status_chip.value = status_html("fail")
+                        with log_out:
+                            print("[icepack][ERROR]", _ov_err)
+                        return
+                    except Exception as _stage_err:
+                        status_chip.value = status_html("fail")
+                        with log_out:
+                            print("[stage][ERROR] Could not stage a working copy:",
+                                  type(_stage_err).__name__, _stage_err)
+                        return
+                    effective_example_dir = str(_staged.path)
+                    md_run_provenance = {
+                        "parameter_overrides": _ip_validation.normalized,
+                        "working_copy": str(_staged.path),
+                        "example_source": _staged.source,
+                        "working_copy_from_canonical": _staged.from_canonical,
+                        "staged_datasets": _staged.provenance.get("staged_datasets", []),
+                    }
+                    with log_out:
+                        print(f"[stage] working copy: {_staged.path}")
+                        if _ip_validation.normalized:
+                            print("[stage] icepack overrides: "
+                                  f"{', '.join(sorted(_ip_validation.normalized))}")
 
             # =========================================================
             # CLOUD  (AWS Batch)  -- C4/C5
@@ -2483,6 +2545,9 @@ def build_icesheets_ui():
         md_config_panel = W.Accordion(children=[md_panel.container])
         md_config_panel.set_title(0, "⚙️ ISSM configuration (Basic)")
         # md_config_panel.selected_index = 0  # open by default
+        icepack_config_panel = W.Accordion(children=[icepack_basic_panel.container])
+        icepack_config_panel.set_title(0, "⚙️ Icepack configuration (Basic)")
+        icepack_config_panel.selected_index = None
         container_source_row = form_row("Source:", container_source)
         image_uri_row = form_row("Image:", image_uri)
 
@@ -2813,6 +2878,7 @@ def build_icesheets_ui():
                 editor_panel.container,
                 run_target_row,
                 md_config_panel,
+                icepack_config_panel,
                 dataset_panel.container,
             ],
             remote_panel=remote_box,
