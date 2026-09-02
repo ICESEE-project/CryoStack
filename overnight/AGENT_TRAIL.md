@@ -492,3 +492,36 @@ notebooks for the exact assignment patterns; build
   local/remote/cloud with one `RunInfo` per run + the metadata from the
   run-contract audit). Do NOT touch the Results reader (needs the DA schema
   decision) or Cloud compute primitive (OWNER DECISION).
+
+### I2/I3/I4.results
+- `9fc38f2` (exporter `_export_core.py` + wiring + schema-v2 reader + `.msh`
+  capture, 17 tests) + `b7b7488` (`visualization/icepack.py` +
+  `_visualizer_for` wiring, 9 tests).
+- Firedrake is not on this box -> the exporter is structurally tested with a
+  mocked firedrake; the reader + visualizer are tested with real h5py fixtures.
+  **The exporter needs an HPC/container validation pass** (morning) — its
+  `runpy` namespace-scrape + CG1 interpolation + `cell_node_map().values`
+  connectivity extraction are from the I-Results audit, not run here.
+- D-1 resolved: flat field list under a single synthetic solution `"icepack"`
+  (no panel change; `FieldInfo`-compatible metadata object).
+- D-3 resolved conservatively: final-state only, tier-1 field allow-list.
+- D-4/D-5/D-6/D-7/D-8 remain morning checkpoints (1-D/extruded meshes; tensor
+  fields; inverse loss history; re-run vs fold-in; Firedrake version pin).
+
+### I5 — Icepack local execution: EXPLICIT UNSUPPORTED STATE
+- The IceSheets `execution_mode` dropdown offers **Remote** and **Cloud** only
+  (`cryostack_src/frontend/cryolauncher/run_settings_state.py:70-72`);
+  `cryostack_src/execution/manager.py` registers only `RemoteBackend` +
+  `CloudBackend`. There is **no local execution backend for either model**.
+- Firedrake/icepack are **not importable outside the tested container** (true on
+  this dev box; true on a generic Voila host). Local Icepack would require
+  `apptainer exec "$sif" with-icepack python …` on the workstation, i.e.:
+  (a) a local execution backend in `cryostack_src/execution/`;
+  (b) a guaranteed local apptainer + the `icesee-combined` SIF (or a local
+      Firedrake+icepack install);
+  (c) local per-user run isolation (already exists via `WorkspaceManager`);
+  (d) the same structured-export step this PASS added, run locally.
+- **The UI does not and must not advertise local Icepack execution.** Decision:
+  do NOT implement it tonight — the Firedrake environment cannot be guaranteed
+  and a local execution backend is a cross-cutting design change. Documented as
+  a P1 (see MORNING_REPORT).
