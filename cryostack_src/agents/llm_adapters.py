@@ -72,7 +72,12 @@ _MODEL_RE = re.compile(r"\b(issm|icepack)\b", re.I)
 _RESOURCE_RE = re.compile(r"\b(pace|frontera|anvil|expanse|bridges2?|delta)\b", re.I)
 _TEMP_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(?:k|kelvin)\b", re.I)
 _NODES_RE = re.compile(r"\b(\d+)\s*nodes?\b", re.I)
-_EXAMPLE_RE = re.compile(r"\b(?:run|use|example)\s+([A-Za-z0-9][\w./-]{2,})", re.I)
+#: an example token: after 'example'/'run'/'use', a name with a dash/dot/digit
+#: (so 'run icepack' is not mistaken for an example called 'icepack')
+_EXAMPLE_RE = re.compile(
+    r"\b(?:example|run|use)\s+([A-Za-z][\w]*[-./][\w./-]+)", re.I)
+_NOT_EXAMPLES = frozenset({"issm", "icepack", "pace", "frontera", "anvil",
+                           "expanse", "bridges", "bridges2", "delta"})
 
 
 class RuleBasedAdapter(BaseAdapter):
@@ -99,8 +104,9 @@ class RuleBasedAdapter(BaseAdapter):
             if _MODEL_RE.search(user) else "issm"
         resource = (_RESOURCE_RE.search(user).group(1).lower()
                     if _RESOURCE_RE.search(user) else self._default_resource)
-        example = (_EXAMPLE_RE.search(user).group(1)
-                   if _EXAMPLE_RE.search(user) else self._default_example)
+        m = _EXAMPLE_RE.search(user)
+        example = (m.group(1) if m and m.group(1).lower() not in _NOT_EXAMPLES
+                   else self._default_example)
         overrides: dict = {}
         if model == "icepack" and _TEMP_RE.search(user):
             overrides["ice_temperature"] = float(_TEMP_RE.search(user).group(1))
