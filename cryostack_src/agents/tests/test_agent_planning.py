@@ -122,14 +122,28 @@ def test_issm_container_without_matlab_licence_is_an_error():
     assert not any("MATLAB licence" in f["message"] for f in v.value["findings"])
 
 
-def test_icepack_cloud_is_blocked_at_validation():
+def test_icepack_cloud_is_impossible_to_construct():
+    # PASS-3 audit §2a / PASS-4 review: an impossible plan is rejected at
+    # construction, not merely flagged later.
+    with pytest.raises(ValueError, match="cloud"):
+        RunPlan(application="icesheets", model="icepack", example="x",
+                execution_mode="cloud", compute_resource="pace",
+                backend="container")
+
+
+def test_validate_run_plan_still_guards_cloud_support_defensively():
+    # the finding path stays live for a hypothetical bypass / future model:
+    # feed validate_run_plan a hand-built dict (from_dict does not re-check
+    # __post_init__ invariants beyond model/mode/backend enum membership).
     reg = default_registry()
     ctx = _ctx()
-    plan = RunPlan(application="icesheets", model="icepack", example="x",
+    plan = RunPlan(application="icesheets", model="issm", example="x",
                    execution_mode="cloud", compute_resource="pace",
                    backend="container").to_dict()
     v = reg.invoke("validate_run_plan", ctx, plan=plan)
-    assert any("ISSM-only" in f["message"] for f in v.value["findings"])
+    # issm IS cloud-supported, so no ISSM-only finding — the guard is exercised
+    # (returns clean) rather than absent.
+    assert v.ok
 
 
 def test_planning_tools_are_plan_permission_and_read_only():

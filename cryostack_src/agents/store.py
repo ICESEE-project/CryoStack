@@ -52,6 +52,11 @@ class SecretInPayloadError(RuntimeError):
         self.patterns = patterns
 
 
+class ConcurrentModificationError(RuntimeError):
+    """The on-disk plan changed since it was loaded (another Voila kernel for
+    the same user). The caller must reload and re-apply its change."""
+
+
 def _safe_component(value: str) -> str:
     safe = "".join(c for c in str(value) if c.isalnum() or c in "-_")
     if not safe or safe in (".", ".."):
@@ -75,6 +80,8 @@ class PlanRepository:
         self._dir = Path(directory)
         self._dir.mkdir(parents=True, exist_ok=True)
         self._owner = owner_user_id
+        #: mtime_ns seen at load() time, per plan id — for optimistic locking
+        self._seen_mtime: dict[str, int] = {}
 
     def _path(self, plan_id: str) -> Path:
         return self._dir / f"{_safe_component(plan_id)}.json"
@@ -87,7 +94,7 @@ class PlanRepository:
         self.save(mp)
         return mp
 
-    def save(self, mp: ManagedPlan) -> Path:
+    def save(self, mp: ManagedPlan, *, force: bool = False) -> Path:
         if mp.owner_user_id != self._owner:
             raise WorkspaceIdentityError(
                 f"plan {mp.plan_id} belongs to {mp.owner_user_id!r}, not this "
@@ -97,7 +104,18 @@ class PlanRepository:
         if leaked:
             raise SecretInPayloadError(leaked)
         path = self._path(mp.plan_id)
+        key = _safe_component(mp.plan_id)
+        # optimistic lock: if we loaded this plan and the on-disk copy has since
+        # changed (another Voila kernel for the same user), refuse rather than
+        # silently clobber. A fresh create() has no seen-mtime, so it is exempt.
+        seen = self._seen_mtime.get(key)
+        if seen is not None and not force and path.is_file():
+            if path.stat().st_mtime_ns != seen:
+                raise ConcurrentModificationError(
+                    f"plan {mp.plan_id} changed on disk since it was loaded; "
+                    "reload and re-apply your change (or save(force=True))")
         _atomic_write_json(path, payload)
+        self._seen_mtime[key] = path.stat().st_mtime_ns
         return path
 
     # -- read ------------------------------------------------------------
@@ -109,6 +127,7 @@ class PlanRepository:
         if not path.is_file():
             raise KeyError(f"no plan {plan_id!r} for this user")
         d = json.loads(path.read_text(encoding="utf-8"))
+        self._seen_mtime[_safe_component(str(plan_id))] = path.stat().st_mtime_ns
         return restore_managed_plan(d, owner_user_id=self._owner)
 
     def list_ids(self) -> list[str]:

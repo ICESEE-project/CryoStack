@@ -37,16 +37,15 @@ def test_capabilities_and_planning_agree_on_the_result_contract(model):
 
 
 @pytest.mark.parametrize("model", SUPPORTED_MODELS)
-def test_cloud_capability_matches_planning_validation(model):
+def test_cloud_capability_is_enforced_at_plan_construction(model):
     cap = get_model_capabilities(model)
-    ctx = _ctx()
-    reg = default_registry()
-    plan = RunPlan(application="icesheets", model=model, example="x",
-                   execution_mode="cloud", compute_resource="pace",
-                   backend="container").to_dict()
-    v = reg.invoke("validate_run_plan", ctx, plan=plan)
-    blocked = any("ISSM-only" in f["message"] for f in v.value["findings"])
-    assert blocked == (not cap.cloud_supported)
+    kw = dict(application="icesheets", model=model, example="x",
+              execution_mode="cloud", compute_resource="pace", backend="container")
+    if cap.cloud_supported:
+        RunPlan(**kw)                       # constructs fine
+    else:
+        with pytest.raises(ValueError, match="cloud"):
+            RunPlan(**kw)                   # an impossible plan is not constructible
 
 
 @pytest.mark.parametrize("model", SUPPORTED_MODELS)

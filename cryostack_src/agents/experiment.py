@@ -14,7 +14,6 @@ be swapped after approval any more than a single run can.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import time
 import uuid
@@ -24,7 +23,7 @@ from typing import Any, Callable
 from cryostack_src.workspace.identity import WorkspaceUser
 
 from .approval import Approval, ApprovalError, ManagedPlan, PlanState
-from .planning import RunPlan
+from .planning import RunPlan, canonical_digest
 
 _MAX_RUNS = 32          # a guard rail: an experiment is reviewable, not a fleet
 
@@ -91,14 +90,12 @@ class ExperimentPlan:
 
     # -- the experiment digest (approval binds to this) ------------
     def digest(self) -> str:
-        material = {
+        return canonical_digest({
             "name": self.name.strip(),
             "base": self.base._digest_material(),
             "axis": self.axis.to_dict(),
             "children": self.child_digests(),
-        }
-        blob = json.dumps(material, sort_keys=True, separators=(",", ":"))
-        return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+        })
 
     def scientific_changes(self) -> dict:
         return {

@@ -222,3 +222,26 @@ def test_url_and_basic_auth_credentials_are_scrubbed_from_traces(store_a):
     assert "s3cr3tPass" not in raw
     assert "YWxpY2U6c2VjcmV0" not in raw
     assert "scrubbed" in raw
+
+
+# ── PASS 4 review (ARCH P1): concurrent writers ─────────────────────
+def test_concurrent_modification_is_detected(tmp_path):
+    from cryostack_src.agents import ConcurrentModificationError
+    # two Voila kernels for the same user == two store instances, same dir
+    kernel_a = AgentStore(user=_A, workspace_root=tmp_path).plans
+    kernel_b = AgentStore(user=_A, workspace_root=tmp_path).plans
+
+    mp = kernel_a.create(_plan())
+    a = kernel_a.load(mp.plan_id)
+    b = kernel_b.load(mp.plan_id)
+
+    b.mark_validated(b.plan)
+    b.submit_for_approval()
+    b.approve(_A)
+    kernel_b.save(b)                     # B saves first — fine
+
+    a._log("stale edit")
+    with pytest.raises(ConcurrentModificationError):
+        kernel_a.save(a)                 # A's save would clobber B's approval
+
+    kernel_a.save(a, force=True)         # explicit override still possible

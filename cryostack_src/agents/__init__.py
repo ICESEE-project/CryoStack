@@ -30,9 +30,14 @@ from .approval import (
 from .context import ToolContext, build_tool_context
 from .fingerprint import RunInputFingerprint, fingerprint_inputs
 from .permissions import Permission, PermissionError
-from .planning import PlanFinding, RunPlan, SlurmRequest
+from .planning import PlanFinding, RunPlan, SlurmRequest, canonical_digest
 from .registry import ToolRegistry, build_default_registry, default_registry
-from .store import AgentStore, PlanRepository, SecretInPayloadError
+from .store import (
+    AgentStore,
+    ConcurrentModificationError,
+    PlanRepository,
+    SecretInPayloadError,
+)
 from .tools import ToolResult, ToolSpec, tool
 from .assistant import AssistantResult, RunAssistant
 from .experiment import (
@@ -68,10 +73,11 @@ __all__ = [
     "ToolContext", "build_tool_context",
     "ToolSpec", "ToolResult", "tool",
     "ToolRegistry", "default_registry", "build_default_registry",
-    "RunPlan", "SlurmRequest", "PlanFinding",
+    "RunPlan", "SlurmRequest", "PlanFinding", "canonical_digest",
     "Approval", "ApprovalError", "ManagedPlan", "PlanState", "PlanStore",
     "assert_approved_for_execution", "restore_managed_plan",
     "AgentStore", "PlanRepository", "SecretInPayloadError",
+    "ConcurrentModificationError",
     "RunInputFingerprint", "fingerprint_inputs",
     "Trace", "TraceEvent", "redact", "scan_for_secrets",
     "TraceStore", "run_manifest_stamp", "assert_no_agent_chatter",

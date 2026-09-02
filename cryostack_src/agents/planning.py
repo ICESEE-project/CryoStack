@@ -17,11 +17,25 @@ import json
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
-from cryostack_src.models import MODEL_CAPABILITIES, SUPPORTED_MODELS
+from cryostack_src.models import (
+    MODEL_CAPABILITIES,
+    SUPPORTED_MODELS,
+    get_model_capabilities,
+)
 
 _MODELS = SUPPORTED_MODELS
 _EXECUTION_MODES = ("remote", "cloud")           # no "local" -- not implemented
 _BACKENDS = ("spack", "container")
+
+
+def canonical_digest(material: Any) -> str:
+    """The one place the canonical-digest idiom lives. Approval binding
+    (`RunPlan`), experiment binding (`ExperimentPlan`), and the input
+    fingerprint (`RunInputFingerprint`) all go through this, so the
+    serialisation can never drift between them."""
+    blob = json.dumps(material, sort_keys=True, separators=(",", ":"),
+                      default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 #: model -> transport-neutral result contract, from the capabilities registry (P1)
 _RESULT_CONTRACT = {
@@ -85,6 +99,15 @@ class RunPlan:
             )
         if self.backend not in _BACKENDS:
             raise ValueError(f"backend must be one of {_BACKENDS}")
+        # an impossible plan cannot even be constructed (PASS-3 audit §2a):
+        cap = get_model_capabilities(self.model)
+        if not cap.supports_mode(self.execution_mode):
+            raise ValueError(
+                f"{self.model} does not support {self.execution_mode!r} "
+                f"execution (supported: {', '.join(cap.execution_modes)})")
+        if not cap.supports_backend(self.backend):
+            raise ValueError(
+                f"{self.model} does not support the {self.backend!r} backend")
         if not self.expected_result_contract:
             object.__setattr__(self, "expected_result_contract",
                                _RESULT_CONTRACT[self.model])
@@ -109,9 +132,7 @@ class RunPlan:
         }
 
     def digest(self) -> str:
-        blob = json.dumps(self._digest_material(), sort_keys=True,
-                          separators=(",", ":"))
-        return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+        return canonical_digest(self._digest_material())
 
     # -- serialization -----------------------------------------------
     def to_dict(self) -> dict:

@@ -66,8 +66,8 @@ class RunInputFingerprint:
         }
 
     def digest(self) -> str:
-        blob = json.dumps(self._material(), sort_keys=True, separators=(",", ":"))
-        return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+        from .planning import canonical_digest
+        return canonical_digest(self._material())
 
     def to_dict(self) -> dict:
         return {**self._material(), "digest": self.digest()}
