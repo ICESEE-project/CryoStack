@@ -442,3 +442,53 @@ Read `models/issm/md_config.py` for the spec *shape* to mirror (not content);
 read `discover_icepack_examples` + `stage_example_for_run`; sample 3–4 tutorial
 notebooks for the exact assignment patterns; build
 `cryostack_src/models/icepack/parameters.py`.
+
+### I1.results
+- `8252c52` (adapter: `parameters.py`, classify/validate/apply_overrides, 23
+  tests, docs) + `a1709f1` (gateway: `icepack_basic_panel.py` + second Basic
+  accordion + fail-closed staging branch, 8 tests).
+- Evidence: read notebooks 01/02/04-xy directly. `T = firedrake.Constant(<lit>)`
+  and `num_timesteps = <int>` are the only cross-example scalar literals.
+  Everything else (accumulation, friction C, fluidity A, dt, mesh res) is a
+  spatial field / derived / stability-coupled -> classified, NOT exposed.
+- Full suite 980 -> 1011 (+31). Node 18. Book clean.
+
+## Delegation round 2 (PASS 2 audits — all returned)
+- **I-Results** (`aa41b24be3b73e690`) -> `AUDIT_icepack_results.md`. HEADLINE:
+  upstream tutorial notebooks write NOTHING to disk headless (inline figures
+  thrown away). A structured package needs a **container-side Firedrake
+  exporter**. Recommends plain-HDF5 (DOF + coords + connectivity) in the EXACT
+  ISSM on-disk shape so `visualization/issm.py` triangulation code is reusable.
+  Tier-1 = thickness/velocity/surface/bed, 2-D triangular, final state, CG1.
+  8 owner decisions D-1..D-8.
+- **C-Run** (`a3e2613e90d7cc092`) -> `AUDIT_icesee_run_contract.md`. A DA run =
+  one `run_da_*.py -F params.yaml`. One ensemble = one run. `RunInfo`/manifest
+  take `model="icesee"` + rich metadata with zero changes. Result hierarchy:
+  `experiment -> series(ensemble|ensemble_mean|true_state|background_state|
+  observations) -> variable_block -> spatial_index -> time_index [-> member]`.
+  NO diagnostics exist. Hazard: default-mode ensemble lives in
+  `_modelrun_datasets/`, not `results/`.
+- **C-Platform** (`aa633909ea8faa9ac`) -> `AUDIT_icesee_platform_pass2.md`.
+  Shell parity mostly done; delete bespoke CSS overlay + dead `build_sidebar`.
+  **AWS Batch here is Fargate-only, single-container, NO multi-node MPI** —
+  ICESEE MPI ensemble genuinely doesn't fit; OWNER ARCHITECTURE DECISION
+  (ParallelCluster vs Batch-MNP-EC2 vs single-node small-ensemble vs EKS).
+  Safe now: adopt `CloudBridge` as the interface with an injected submitter.
+  Q1: 11 duplicated gateway helpers identified.
+
+### PASS 2 decisions
+- **D-I2/I3:** implement the container-side exporter (Firedrake code, mocked
+  tests since no firedrake here) + `cryostack.icepack.results` schema v2 reader
+  + `.msh` capture, using the conservative tier-1 reading of D-1..D-8. Flag for
+  HPC validation. Collector stays non-fatal.
+- **D-I4:** `visualization/icepack.py` as a thin adapter over
+  `visualization/issm.py`; `_visualizer_for("icepack")` wired; flat field list
+  (no synthetic solution) — D-1 resolved conservatively as "flat list".
+- **D-I5:** local Icepack execution — Firedrake cannot be guaranteed outside
+  the container on this box; document the unsupported state + requirements,
+  ensure the UI never advertises it.
+- **D-C:** ICESEE — implement the "safe now" C-Platform items (delete dead
+  CSS/sidebar; adopt run history via `WorkspaceBridge.start_run` for
+  local/remote/cloud with one `RunInfo` per run + the metadata from the
+  run-contract audit). Do NOT touch the Results reader (needs the DA schema
+  decision) or Cloud compute primitive (OWNER DECISION).
