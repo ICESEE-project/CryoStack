@@ -386,3 +386,59 @@ semantics change.
   but two CryoStack users on one HPC account can still collide. Documented, not
   changed (touching 6 bespoke submit variants autonomously is out of risk
   budget).
+
+---
+
+# PASS 2 — deeper evidence-based Icepack + ICESEE (from HEAD 4c43040)
+
+Operator brief: push Icepack toward real ISSM-level support using *repository
+evidence* (canonical examples, adapters, Firedrake/Icepack APIs present,
+container behaviour, output conventions) — do not stop merely because a
+feature needs scientific understanding. Then continue ICESEE. Safe pieces only;
+science/design checkpoints documented, not guessed.
+
+## PASS 2 environment facts (coordinator recon)
+- `/home/bkyanjo3/icepack` = upstream Icepack v1.1.0-ish. `notebooks/tutorials`
+  (00-meshes-functions … 07-rgi-meshing, + solver-fail-debugging) and
+  `notebooks/how-to` (01-performance … 04-sparse-data) are what
+  `discover_icepack_examples` walks.
+- `icepack`/`firedrake` NOT importable here → all Icepack code is mocked/tested
+  structurally. Runtime lives only in `icesee-combined:v1.0.0` (firedrake
+  2025.10.2).
+- Tutorial notebooks are pedagogical: they build a gmsh mesh, define initial
+  `h0`/`u0`, create `icepack.models.{IceShelf,IceStream,HybridModel}` +
+  `icepack.solvers.FlowSolver`, then loop `prognostic_solve`/`diagnostic_solve`.
+  Consistent scalar knobs seen: `T = firedrake.Constant(255.15)` (ice temp K)
+  → `A = icepack.rate_factor(T)`; `final_time` / `num_timesteps` / `dt`;
+  `a = firedrake.Constant(0.0)` (accumulation m/yr); friction `C` (ice-stream).
+  **No params.yaml / no parameter-exposure convention** — knobs are cell
+  literals.
+- Outputs in the notebooks: `h` (thickness, CG2 scalar), `u` (velocity,
+  vector CG2), `ε`/`ε_e` (strain, DG1 tensor/scalar), `D` (damage, DG1).
+  Viz: `firedrake.tripcolor`, `firedrake.streamplot`.
+
+## PASS 2 delegation
+- **Agent I-Results** (`general-purpose`, read-only) → `AUDIT_icepack_results.md`
+  (I2): per-field source-variable / Firedrake type / location / units /
+  rank / static-vs-time / meaningful viz, from the actual notebooks + any
+  output files + Firedrake's stable serialisation (`CheckpointFile`).
+- **Agent C-Run** (`general-purpose`, read-only) → `AUDIT_icesee_run_contract.md`
+  (C1): DA lifecycle boundaries already in the ICESEE code
+  (`run_da_icepack.py`, `_icepack_enkf.py`, `params.yaml`, checkpoints, logs).
+- **Agent C-Platform** (`general-purpose`, read-only) → appended to
+  `AUDIT_icesee_platform.md` (C4/C5): remaining ICESEE↔IceSheets shell gaps +
+  the exact legacy-`cloud_runner`→`CloudBridge` migration plan.
+- **Coordinator** owns I1 (parameter spec — needs judgment already informed by
+  reading the notebooks), all implementation, reconciliation, commits, tests.
+
+## I1 — Icepack Basic-mode parameter architecture
+### I1.objective
+Typed, model-aware Icepack parameter spec (NOT a copy of ISSM `md` controls) +
+a conservative override mechanism for the per-run working copy + validation +
+provenance + docs. Implement only "safe Basic-mode override" params with
+sufficient repo evidence.
+### I1.next_action
+Read `models/issm/md_config.py` for the spec *shape* to mirror (not content);
+read `discover_icepack_examples` + `stage_example_for_run`; sample 3–4 tutorial
+notebooks for the exact assignment patterns; build
+`cryostack_src/models/icepack/parameters.py`.

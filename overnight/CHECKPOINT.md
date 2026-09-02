@@ -34,10 +34,21 @@ user (`user_run_root(app="icesee")`), not a shared process-global dir. Full
 on two operator decisions (what is a DA run; the DA `outputs/` schema) and too
 much gateway surface for autonomous work. See `AUDIT_icesee_platform.md`.
 
-**All three phases' safe subsets are done.** Remaining work is P1 science/design
-checkpoints (need the operator) + P2 (documented, risk-deferred). Next
-autonomous action if resumed: polish `MORNING_REPORT.md`; otherwise idle —
-do not start P1/P2 without the operator.
+**PASS 1 complete** (`52d8edb`..`4c43040`). PASS 2 in progress from `4c43040`:
+deeper, evidence-based Icepack (I1–I6) + ICESEE (C1–C5) + quality (Q1–Q3).
+
+Key environment facts for PASS 2:
+- Upstream Icepack checkout at `/home/bkyanjo3/icepack` (v1.1.0-ish,
+  `v1.0.2-20-g6c67b51`); `notebooks/{tutorials,how-to}` are what
+  `discover_icepack_examples` surfaces.
+- `icepack` and `firedrake` are **NOT importable** in this Python env — all
+  Icepack work is code-first / mocked. Runtime Firedrake exists only in the
+  tested container.
+- Repo `external/ICESEE/applications/icepack_model/` is ICESEE **DA** examples
+  (`run_da_icepack.py`), NOT the CryoLauncher forward-model path.
+
+PASS 2 next action: see `AGENT_TRAIL.md` Phase I1/I2/... latest "next action".
+Do NOT touch the live PACE/password-bootstrap path (morning checkpoint).
 
 ## Recoverability rule
 
