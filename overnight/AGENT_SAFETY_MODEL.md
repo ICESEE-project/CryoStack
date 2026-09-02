@@ -151,3 +151,42 @@ structured trace: validation results, the staging actions that *would* run, the
 identity requirements, the command/backend that *would* be used (with secret
 values elided), the expected `outputs/` contract, and the blocked/approval
 reason. Real submission is **not wired in PASS 3**.
+
+---
+
+## 8. PASS-4 addendum — persistence, submit backend, input fingerprint
+
+**Persistence (task 2).** Managed plans and traces persist through the existing
+workspace: `<workspace>/users/<safe-id>/.cryostack/agents/{plans,traces}/`. The
+store facade `agents.AgentStore` is built from a **trusted `WorkspaceUser`**,
+never a caller-supplied id. On load, `restore_managed_plan` binds the owner to
+the storage path (a forged `owner_user_id` in the file is ignored) and
+recomputes `plan.digest()` — a plan edited on disk while `APPROVED` reloads as
+`DRAFT` with the approval dropped. A structural, key-name-independent secret
+scan (`trace.scan_for_secrets`: PEM, `AKIA`/`ASIA`, provider tokens) **refuses**
+a plan that matches and **scrubs** a trace event, before either touches disk.
+
+**Submit backend (task 4).** `agents.execution.SubmitBackend` is a `Protocol`.
+The one real implementation, `cryostack_src.agent_execution.RemoteSubmitBackend`,
+lives **outside `cryostack_src/agents/`** (it composes `submit_remote_icesheets`,
+which imports `ssh_run` — a prohibited symbol) and is never importable from a
+tool module. It is reached only *after* the coordinator has verified the
+approval digest and the `EXECUTE` ceiling, and it independently re-runs B3
+(`enforce_remote_access` — fresh `whoami`), B4 (`validate_slurm_resources`), and
+the MATLAB preflight. Every value it passes to the submitter is a plan scalar, a
+validated **basename** (`run_target`), a schema-validated override, or a
+**gateway connection value** — never a path, command, env dict, or LLM free
+string. `job_name` is sanitised, `account` charset-checked, direct-SSH agent
+submit is blocked (shared service identity — OWNER_CHECKPOINT). **It is not
+wired into the gateway.**
+
+**Input fingerprint (task 5).** The plan digest binds *intent* but only names
+the example / run target / datasets. `Approval.input_fingerprint` is an optional
+second binding — a `sha256` over the *content* of those inputs
+(`agents.fingerprint.RunInputFingerprint`). `RemoteSubmitBackend` recomputes it
+before staging and blocks (`SubmitBlocked("inputs")`) on drift. Empty
+fingerprint ⇒ intent-only binding, unchanged behaviour.
+
+**Ceiling unchanged.** The Run Assistant is still hard-capped at `PLAN`. The
+gateway panel (`CRYOSTACK_AGENT_PANEL=1`) has **no Submit button**; its
+"Approve plan" records a digest-bound `Approval` and nothing executes.
