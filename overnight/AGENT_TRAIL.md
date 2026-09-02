@@ -525,3 +525,25 @@ notebooks for the exact assignment patterns; build
   do NOT implement it tonight — the Firedrake environment cannot be guaranteed
   and a local execution backend is a cross-cutting design change. Documented as
   a P1 (see MORNING_REPORT).
+
+### I6.results
+- `56c3fb8` — `test_icepack_e2e_offline.py`: full offline pipeline (auth user ->
+  Icepack -> canonical -> Basic override -> per-user working copy -> mocked
+  run + export -> ResultPackage -> viz discovery -> render -> download bundle)
+  + two-user isolation + fail-closed override. 3 tests, all green.
+
+## ICESEE PASS 2 (C4 partial)
+- `7347bd9` — removed dead `build_sidebar` (87 lines).
+- Run-history adoption (`WorkspaceBridge.start_run` + history panel) and the
+  Results-panel work are DEFERRED: the former is a substantial gateway change
+  best done as a reviewed commit; the latter is blocked on the
+  `cryostack.icesee.results` schema OWNER DECISION.
+- Cloud C5: AWS Batch is Fargate-only / single-container; the ICESEE MPI
+  ensemble needs an OWNER ARCHITECTURE DECISION on the compute primitive. Safe
+  `CloudBridge`-as-interface adoption documented in the report.
+
+## FINAL STATE
+End HEAD `7347bd9`. Python 1033 passed / 1 skipped. Node 18/18. Book + app docs
+clean. Morning deliverables: `MORNING_REPORT.md` (10-point), `CHECKPOINT.md`,
+5 `AUDIT_*.md`. Stopped at every science/design/production checkpoint — see
+MORNING_REPORT §9.
