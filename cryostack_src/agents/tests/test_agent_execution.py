@@ -131,3 +131,41 @@ def test_live_execute_with_backend_and_execute_context_submits_once():
 
 def test_execution_module_is_policy_clean():
     assert_tool_modules_are_clean()
+
+
+# ── the coordinator↔backend error contract (PASS 4 review, ARCH P1) ──
+def test_a_backend_that_raises_SubmitError_becomes_a_blocked_report():
+    from cryostack_src.agents.execution import SubmitError
+
+    class _Decline:
+        def submit(self, plan, *, ctx, approval=None):
+            raise SubmitError("the remote said no")
+
+    mp = _approved_plan(PlanStore())
+    rep = DryRunExecutionCoordinator(submit_backend=_Decline()).execute(
+        _ctx(Permission.EXECUTE), mp, dry_run=False)
+    assert rep.blocked_reason == "submit-backend"
+    assert rep.submitted is False
+    assert mp.state is PlanState.APPROVED          # not advanced
+
+
+def test_a_backend_bug_does_not_escape_as_a_traceback():
+    class _Buggy:
+        def submit(self, plan, *, ctx, approval=None):
+            raise KeyError("oops")
+
+    mp = _approved_plan(PlanStore())
+    rep = DryRunExecutionCoordinator(submit_backend=_Buggy()).execute(
+        _ctx(Permission.EXECUTE), mp, dry_run=False)          # must not raise
+    assert rep.blocked_reason == "submit-backend-error"
+    assert rep.submitted is False
+
+
+def test_DryRunSubmitBackend_matches_the_protocol_and_never_submits():
+    from cryostack_src.agent_execution import DryRunSubmitBackend
+    mp = _approved_plan(PlanStore())
+    rep = DryRunExecutionCoordinator(
+        submit_backend=DryRunSubmitBackend()).execute(
+        _ctx(Permission.EXECUTE), mp, dry_run=False)          # no TypeError
+    assert rep.submitted is False
+    assert rep.blocked_reason == "submit-backend"

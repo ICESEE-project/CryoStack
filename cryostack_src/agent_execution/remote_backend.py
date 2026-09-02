@@ -31,12 +31,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from cryostack_src.agents.execution import SubmitError
+
 _JOB_NAME_RE = re.compile(r"[^A-Za-z0-9_-]")
 _ACCOUNT_RE = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
 
 
-class SubmitBlocked(RuntimeError):
-    """A pre-submit invariant failed; nothing was submitted."""
+class SubmitBlocked(SubmitError):
+    """A pre-submit invariant failed; nothing was submitted. The coordinator
+    catches this (as a :class:`SubmitError`) and reports it, rather than letting
+    it escape."""
 
     def __init__(self, stage: str, messages: list[str] | str) -> None:
         msgs = [messages] if isinstance(messages, str) else list(messages)
@@ -105,7 +109,7 @@ class DryRunSubmitBackend:
     named object instead of ``submit_backend=None``. Never submits; records the
     described command on the trace."""
 
-    def submit(self, plan, *, ctx: Any) -> str:  # noqa: D401 - matches Protocol
+    def submit(self, plan, *, ctx: Any, approval: Any = None) -> str:
         from cryostack_src.agents.execution import _describe_submission
         ctx.trace.append("execution_decision", {
             "backend": "dry-run", "submitted": False,

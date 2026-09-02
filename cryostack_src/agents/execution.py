@@ -25,8 +25,8 @@ from typing import Any, Protocol
 
 from cryostack_src import perf
 
-from .approval import ApprovalError, ManagedPlan, PlanState, assert_approved_for_execution
-from .permissions import Permission, PermissionError
+from .approval import ApprovalError, ManagedPlan, assert_approved_for_execution
+from .permissions import Permission
 from .planning import RunPlan
 
 
@@ -92,11 +92,21 @@ class SubmitBackend(Protocol):
     can stamp it into the run's scientific provenance."""
 
     def submit(self, plan: RunPlan, *, ctx: Any, approval: Any = None) -> str:
-        ...  # returns a job id
+        ...  # returns a job id; raises SubmitError (or a subclass) to decline
 
 
-class ExecutionBlocked(RuntimeError):
-    """A phase before SUBMIT failed; the run did not proceed."""
+class SubmitError(RuntimeError):
+    """The seam's failure contract. A :class:`SubmitBackend` raises this (or a
+    subclass) to say "I did not submit, and here is why" — the coordinator
+    catches it and turns it into a ``DryRunReport(blocked_reason=…)`` instead of
+    letting it escape as a traceback. ``cryostack_src.agent_execution.SubmitBlocked``
+    subclasses this."""
+
+    stage: str = "submit-backend"
+
+
+#: backward-compatible alias
+ExecutionBlocked = SubmitError
 
 
 def _describe_submission(plan: RunPlan) -> str:
@@ -219,8 +229,21 @@ class DryRunExecutionCoordinator:
         # live path (no backend ships in cryostack_src/agents/; a real one is
         # injected from cryostack_src/agent_execution/ by the gateway)
         perf.event("agent execution handoff")
-        with perf.span("agent submit backend"):
-            job_id = self._backend.submit(plan, ctx=ctx, approval=mp.approval)
+        try:
+            with perf.span("agent submit backend"):
+                job_id = self._backend.submit(plan, ctx=ctx, approval=mp.approval)
+        except SubmitError as e:
+            outcomes.append(PhaseOutcome(
+                ExecutionPhase.SUBMIT.value, "blocked",
+                f"submit backend blocked at {getattr(e, 'stage', 'submit')}: {e}"))
+            ctx.trace.failure("execution", f"submit backend: {e}")
+            return report(blocked="submit-backend")
+        except Exception as e:  # a backend bug must not escape as a traceback
+            outcomes.append(PhaseOutcome(
+                ExecutionPhase.SUBMIT.value, "blocked",
+                f"submit backend error: {type(e).__name__}: {e}"))
+            ctx.trace.failure("execution", f"submit backend error: {e}")
+            return report(blocked="submit-backend-error")
         mp.mark_executing()
         outcomes.append(PhaseOutcome(
             ExecutionPhase.SUBMIT.value, "ok", "submitted",

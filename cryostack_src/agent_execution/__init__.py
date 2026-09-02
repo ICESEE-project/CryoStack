@@ -16,6 +16,8 @@ is **not wired into the gateway** — see ``overnight/AUDIT_agent_submit_backend
 """
 from __future__ import annotations
 
+from cryostack_src.agents.execution import SubmitError
+
 from .remote_backend import (
     ConnectionContext,
     DryRunSubmitBackend,
@@ -28,4 +30,5 @@ __all__ = [
     "DryRunSubmitBackend",
     "RemoteSubmitBackend",
     "SubmitBlocked",
+    "SubmitError",
 ]
