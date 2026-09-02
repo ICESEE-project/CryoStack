@@ -48,6 +48,8 @@ from dataclasses import dataclass, field
 
 from .drivers.aws.auth import run_aws
 from .drivers.aws.models import AWSConfig
+from .s3_uri import S3LocationError
+from .s3_uri import bucket_name as _s3_bucket_name
 
 _PASS, _FAIL, _SKIP = "PASS", "FAIL", "SKIP"
 
@@ -98,6 +100,12 @@ def run_infrastructure_smoke_test(
     config = AWSConfig(region=region, profile=profile)
     invoke = aws or (lambda args: run_aws(config, args))
     report = SmokeReport()
+
+    try:                                    # accept a name or an s3:// URI
+        bucket = _s3_bucket_name(bucket)
+    except S3LocationError as err:
+        report.add("S3 bucket", _FAIL, str(err))
+        return report
 
     # 1. identity ---------------------------------------------------------
     code, out, err = invoke(["sts", "get-caller-identity", "--output", "json"])

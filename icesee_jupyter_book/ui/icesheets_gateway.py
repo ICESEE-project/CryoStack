@@ -816,7 +816,10 @@ def build_icesheets_ui():
                 model=_model,
                 run_target=_target,
                 bucket=_cfg.bucket,
-                run_prefix=user_run_prefix(workspace_manager.owner.safe_id),
+                run_prefix=(
+                    (f"{_cfg.base_prefix.strip('/')}/" if _cfg.base_prefix else "")
+                    + user_run_prefix(workspace_manager.owner.safe_id)
+                ),
                 job_queue=_cfg.job_queue,
                 job_definition=_cfg.job_definition,
                 job_name=(batch_job_name.value.strip() or "cryostack"),

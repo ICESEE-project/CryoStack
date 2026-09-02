@@ -267,9 +267,9 @@ def build_cloud_environment_card(
     )
 
     s3_prefix_widget = W.Text(
-        description="S3 prefix:",
+        description="S3 bucket:",
         value=s3_prefix,
-        placeholder="s3://bucket/prefix",
+        placeholder="cryostack-runs-<account-id>  (or s3://<bucket>)",
         layout=W.Layout(
             width="100%",
         ),

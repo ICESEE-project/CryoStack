@@ -95,6 +95,10 @@ _FAILURE_RULES: tuple[tuple[str, str], ...] = (
     (r"could not connect to the endpoint url.*\bregion\b|invalid region|"
      r"illegal location constraint|the bucket is in this region",
      "Region mismatch. Set the region to match your bucket and Batch resources."),
+    (r"not a valid s3 bucket name|s3 location must be a bucket|"
+     r"invalid bucket name|the s3 bucket name is empty|not a usable s3 key prefix",
+     "The S3 bucket / location is not valid. Enter a bucket name or an "
+     "s3://bucket URI."),
     (r"nosuchbucket|bucket does not exist|not staging.*bucket|needs an s3 bucket",
      "The S3 bucket is missing. Prepare cloud storage or fix the bucket name."),
     (r"accessdenied|access denied|forbidden|not authorized to perform",

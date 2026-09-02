@@ -55,6 +55,9 @@ from cryostack_src.cloud.runtime import (
     is_supported_cloud_model,
 )
 
+from cryostack_src.cloud.s3_uri import S3LocationError
+from cryostack_src.cloud.s3_uri import bucket_name as _s3_bucket_name
+
 from .auth import run_aws
 from .models import AWSConfig
 
@@ -116,8 +119,12 @@ def stage_run_inputs(
     ``aws s3 ...`` (defaults to the driver's ``run_aws``); it lets tests mock all
     transfer without touching AWS.
     """
-    if not bucket:
+    if not (bucket or "").strip():
         raise CloudStagingError("a cloud run needs an S3 bucket")
+    try:                                             # accept a name or an s3:// URI
+        bucket = _s3_bucket_name(bucket)
+    except S3LocationError as err:
+        raise CloudStagingError(str(err)) from None
     if not is_supported_cloud_model(model):
         raise CloudStagingError(
             f"model {model!r} has no supported cloud runtime yet -- not staging.")

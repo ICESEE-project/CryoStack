@@ -32,6 +32,13 @@ from .config import (
 )
 from .manager import CloudManager
 from .preflight import assert_cloud_run_allowed, cloud_run_preflight
+from .s3_uri import (
+    S3Location,
+    S3LocationError,
+    bucket_name,
+    parse_s3_location,
+    s3_uri,
+)
 from .smoke import SmokeReport, run_infrastructure_smoke_test
 from .runtime import (
     SUPPORTED_CLOUD_MODELS,
@@ -69,6 +76,11 @@ __all__ = [
     "assert_cloud_run_allowed",
     "SmokeReport",
     "run_infrastructure_smoke_test",
+    "S3Location",
+    "S3LocationError",
+    "parse_s3_location",
+    "bucket_name",
+    "s3_uri",
     "CloudRunStaging",
     "CloudStagingError",
     "stage_run_inputs",

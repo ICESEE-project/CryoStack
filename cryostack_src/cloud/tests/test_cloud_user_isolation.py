@@ -42,34 +42,34 @@ def test_run_prefix_puts_the_run_under_the_users_segment(staged):
     s3, calls = _fake_s3()
     prefix = user_run_prefix("alice-abc123def456")
     out = stage_run_inputs(_CFG, source=str(staged), model="issm",
-                           run_target="runme.m", bucket="b",
+                           run_target="runme.m", bucket="cryo-b",
                            run_prefix=prefix, s3=s3)
-    assert out.s3_run.startswith("s3://b/runs/alice-abc123def456/cloud-")
+    assert out.s3_run.startswith("s3://cryo-b/runs/alice-abc123def456/cloud-")
     assert out.s3_input == f"{out.s3_run}/input"
     assert out.s3_outputs == f"{out.s3_run}/outputs"
     # every upload targeted that user's tree
     for c in calls:
         dst = next((x for x in c if x.startswith("s3://")), "")
         if dst:
-            assert dst.startswith("s3://b/runs/alice-abc123def456/")
+            assert dst.startswith("s3://cryo-b/runs/alice-abc123def456/")
 
 
 def test_two_users_get_disjoint_s3_trees(staged):
     s3, _ = _fake_s3()
     a = stage_run_inputs(_CFG, source=str(staged), model="issm", run_target="runme.m",
-                         bucket="b", run_prefix=user_run_prefix("alice-aaa"), s3=s3)
+                         bucket="cryo-b", run_prefix=user_run_prefix("alice-aaa"), s3=s3)
     b = stage_run_inputs(_CFG, source=str(staged), model="issm", run_target="runme.m",
-                         bucket="b", run_prefix=user_run_prefix("bob-bbb"), s3=s3)
-    assert a.s3_run.startswith("s3://b/runs/alice-aaa/")
-    assert b.s3_run.startswith("s3://b/runs/bob-bbb/")
+                         bucket="cryo-b", run_prefix=user_run_prefix("bob-bbb"), s3=s3)
+    assert a.s3_run.startswith("s3://cryo-b/runs/alice-aaa/")
+    assert b.s3_run.startswith("s3://cryo-b/runs/bob-bbb/")
     assert not a.s3_run.startswith(b.s3_run.rsplit("/", 1)[0])
 
 
 def test_no_prefix_is_still_valid_backward_compatible(staged):
     s3, _ = _fake_s3()
     out = stage_run_inputs(_CFG, source=str(staged), model="issm",
-                           run_target="runme.m", bucket="b", s3=s3)
-    assert out.s3_run.startswith("s3://b/runs/cloud-")
+                           run_target="runme.m", bucket="cryo-b", s3=s3)
+    assert out.s3_run.startswith("s3://cryo-b/runs/cloud-")
 
 
 @pytest.mark.parametrize("bad", ["../escape/", "a//b/", "seg with space/",
@@ -78,7 +78,7 @@ def test_unsafe_run_prefix_is_rejected(staged, bad):
     s3, _ = _fake_s3()
     with pytest.raises(CloudStagingError):
         stage_run_inputs(_CFG, source=str(staged), model="issm",
-                         run_target="runme.m", bucket="b", run_prefix=bad, s3=s3)
+                         run_target="runme.m", bucket="cryo-b", run_prefix=bad, s3=s3)
 
 
 def test_sync_cloud_results_writes_only_the_calling_users_run_cache(tmp_path):

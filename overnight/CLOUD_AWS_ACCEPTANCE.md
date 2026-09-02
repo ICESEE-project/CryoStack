@@ -85,8 +85,9 @@ Expected resources created:
 ## 2. Infrastructure smoke test (no job, ~\$0) — do this first
 
 **UI:** CryoLauncher → model **ISSM** → Execution **Cloud** → set **Region**
-`us-east-2` and **S3 prefix** `s3://cryostack-runs-<account-id>` → open the
-log area → click **Infrastructure smoke test**.
+`us-east-2` and **S3 bucket** `cryostack-runs-<account-id>` (the field also
+accepts `s3://cryostack-runs-<account-id>` — CryoStack normalizes either form)
+→ open the log area → click **Infrastructure smoke test**.
 
 Expect in the log:
 ```
@@ -152,8 +153,9 @@ Watch it: `aws batch describe-jobs --jobs <jobId>` → `SUBMITTED` → `RUNNABLE
 
 **UI steps:**
 1. CryoLauncher → model **ISSM** → example **SquareIceShelf** → Execution **Cloud**.
-2. Cloud Environment: **Provider** AWS, **Region** `us-east-2`, **S3 prefix**
-   `s3://cryostack-runs-<account-id>`. Leave queue / job-def / profile blank
+2. Cloud Environment: **Provider** AWS, **Region** `us-east-2`, **S3 bucket**
+   `cryostack-runs-<account-id>` (a bare name or an `s3://` URI both work).
+   Leave queue / job-def / profile blank
    (deterministic defaults) unless overriding.
 3. Click **Infrastructure smoke test** → all green.
 4. Click **Submit job**. The log prints the cost/resource summary:

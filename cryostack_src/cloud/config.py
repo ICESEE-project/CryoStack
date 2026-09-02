@@ -49,10 +49,9 @@ from cryostack_src.cloud.drivers.aws.batch_config import (
     JOB_QUEUE_NAME,
     job_definition_name,
 )
+from cryostack_src.cloud.s3_uri import S3LocationError, parse_s3_location
 
 _REGION_RE = re.compile(r"\A[a-z]{2}-[a-z]+-\d\Z")
-_BUCKET_RE = re.compile(r"\A[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]\Z")
-_S3_URI_RE = re.compile(r"\As3://(?P<bucket>[a-z0-9][a-z0-9.-]{1,61}[a-z0-9])(?:/.*)?\Z")
 
 DEFAULT_CLOUD_REGION = "us-east-2"
 SUPPORTED_CLOUD_PROVIDERS = ("aws",)
@@ -62,10 +61,16 @@ SUPPORTED_CLOUD_PROVIDERS = ("aws",)
 class CloudRunConfig:
     provider: str = "aws"
     region: str = DEFAULT_CLOUD_REGION
+    #: bucket **name** only -- ready for an AWS API ``Bucket=`` arg
     bucket: str = ""
+    #: optional key prefix from an ``s3://bucket/some/prefix`` URI; the per-user
+    #: ``runs/<safe-user>/<run-id>`` tree is nested under it
+    base_prefix: str = ""
     profile: str | None = None
     job_queue: str = ""
     job_definition: str = ""
+    #: the raw user input that could not be normalized (validation reports it)
+    bucket_error: str = ""
 
     def provenance(self) -> dict:
         """The non-secret subset safe to record in run metadata."""
@@ -73,18 +78,11 @@ class CloudRunConfig:
             "provider": self.provider,
             "region": self.region,
             "bucket": self.bucket,
+            "base_prefix": self.base_prefix,
             "job_queue": self.job_queue,
             "job_definition": self.job_definition,
         }
         return {k: v for k, v in out.items() if v}
-
-
-def _bucket_from(value: str) -> str:
-    v = (value or "").strip()
-    m = _S3_URI_RE.match(v)
-    if m:
-        return m.group("bucket")
-    return v
 
 
 def resolve_cloud_config(
@@ -97,12 +95,27 @@ def resolve_cloud_config(
     job_queue: str = "",
     job_definition: str = "",
 ) -> CloudRunConfig:
-    """Fill deterministic defaults for anything the user did not supply."""
+    """Fill deterministic defaults and normalize the S3 location.
+
+    ``bucket`` may be a bare name, ``s3://name``, or ``s3://name/prefix`` -- it
+    is split into ``bucket`` (name only) + ``base_prefix``. A value that cannot
+    be normalized is kept in ``bucket_error`` for :func:`validate_cloud_config`
+    to report; this function never raises.
+    """
     provider = (provider or "aws").strip().lower()
+    bucket_name, base_prefix, bucket_error = "", "", ""
+    if (bucket or "").strip():
+        try:
+            loc = parse_s3_location(bucket)
+            bucket_name, base_prefix = loc.bucket, loc.prefix
+        except S3LocationError as err:
+            bucket_error = str(err)
     return CloudRunConfig(
         provider=provider,
         region=(region or "").strip() or DEFAULT_CLOUD_REGION,
-        bucket=_bucket_from(bucket),
+        bucket=bucket_name,
+        base_prefix=base_prefix,
+        bucket_error=bucket_error,
         profile=(profile or "").strip() or None,
         job_queue=(job_queue or "").strip() or JOB_QUEUE_NAME,
         job_definition=(job_definition or "").strip() or job_definition_name(model),
@@ -122,13 +135,15 @@ def validate_cloud_config(config: CloudRunConfig, *, model: str = "") -> list[st
     if not config.region or not _REGION_RE.match(config.region):
         problems.append("Region must look like 'us-east-2'.")
 
-    if not config.bucket:
+    if config.bucket_error:
+        problems.append(config.bucket_error)
+    elif not config.bucket:
         problems.append("An S3 bucket is required for cloud run inputs and outputs.")
-    elif not _BUCKET_RE.match(config.bucket):
-        problems.append(
-            "S3 bucket name is not valid (lowercase letters, digits, '.', '-'; "
-            "3-63 chars)."
-        )
+    else:
+        try:
+            parse_s3_location(config.bucket)          # revalidate the resolved name
+        except S3LocationError as err:
+            problems.append(str(err))
 
     if not config.job_queue:
         problems.append("A Batch job queue is required.")

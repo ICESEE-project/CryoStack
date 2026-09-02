@@ -26,7 +26,7 @@ def test_deterministic_queue_and_definition_when_not_supplied():
 
 def test_explicit_overrides_win():
     cfg = resolve_cloud_config(
-        region="eu-west-1", bucket="b1", model="issm",
+        region="eu-west-1", bucket="cryostack-b1", model="issm",
         job_queue="my-queue", job_definition="my-def:3",
     )
     assert (cfg.region, cfg.job_queue, cfg.job_definition) == ("eu-west-1", "my-queue", "my-def:3")
@@ -34,7 +34,12 @@ def test_explicit_overrides_win():
 
 def test_bucket_accepts_a_plain_name_or_an_s3_uri():
     assert resolve_cloud_config(bucket="cryostack-runs-1").bucket == "cryostack-runs-1"
-    assert resolve_cloud_config(bucket="s3://cryostack-runs-1/prefix/x").bucket == "cryostack-runs-1"
+    assert resolve_cloud_config(bucket="s3://cryostack-runs-1").bucket == "cryostack-runs-1"
+    # an s3://bucket/prefix keeps the bucket name only + a base_prefix
+    c = resolve_cloud_config(bucket="s3://cryostack-runs-1/team/x")
+    assert c.bucket == "cryostack-runs-1" and c.base_prefix == "team/x"
+    assert validate_cloud_config(c, model="issm").count(
+        "An S3 bucket is required for cloud run inputs and outputs.") == 0
 
 
 def test_valid_config_has_no_problems():
@@ -57,7 +62,13 @@ def test_bad_region_is_flagged(bad_region):
 
 def test_bad_bucket_name_is_flagged():
     cfg = resolve_cloud_config(bucket="Not_A_Valid_Bucket", model="issm")
-    assert any("bucket name is not valid" in p for p in validate_cloud_config(cfg))
+    assert any("not a valid S3 bucket name" in p for p in validate_cloud_config(cfg))
+
+
+def test_non_s3_scheme_is_flagged():
+    cfg = resolve_cloud_config(bucket="https://example.com/bucket", model="issm")
+    assert cfg.bucket == "" and cfg.bucket_error
+    assert any("bucket name or an s3:// URI" in p for p in validate_cloud_config(cfg))
 
 
 def test_unsupported_provider_is_flagged():

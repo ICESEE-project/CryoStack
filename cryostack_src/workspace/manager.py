@@ -993,6 +993,11 @@ class WorkspaceManager:
         mock the transfer). The write target is per-``WorkspaceManager`` (=per
         authenticated user); a cloud result never lands in another user's cache.
         """
+        run_uri = str(s3_uri or "").strip().rstrip("/")
+        if not run_uri.lower().startswith("s3://") or "/" not in run_uri[5:]:
+            raise RuntimeError(
+                f"cloud result location must be a full s3://bucket/... URI, "
+                f"got {s3_uri!r}")
         self.invalidate_result_package_cache(self._selected_run_id)
         outputs_dir = self.local_run_cache_dir() / "cloud_outputs"
         if outputs_dir.exists():
@@ -1005,7 +1010,7 @@ class WorkspaceManager:
             args.extend(["--region", region])
         args.extend([
             "s3", "sync",
-            f"{s3_uri.rstrip('/')}/outputs/",
+            f"{run_uri}/outputs/",
             f"{outputs_dir}/",
         ])
         if aws is not None:
