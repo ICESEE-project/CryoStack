@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Iterable
 
+from cryostack_src import perf
+
 from .context import ToolContext
 from .permissions import Permission, PermissionError
 from .tools import Tool, ToolResult, ToolSpec, drain_pending
@@ -81,7 +83,8 @@ class ToolRegistry:
             )
 
         # 3. dispatch
-        result = tool.invoke(ctx, **kwargs)
+        with perf.span(f"agent tool {name}"):
+            result = tool.invoke(ctx, **kwargs)
         ctx.trace.tool_call(name, args=_safe_args(kwargs),
                             permission=spec.permission.name, ok=result.ok,
                             summary=(result.summary if result.ok else (result.error or "")),

@@ -77,6 +77,15 @@ def mark(label: str, seconds: float) -> None:
         _emit(label, seconds, _depth())
 
 
+def event(label: str) -> None:
+    """Record a milestone with no duration (e.g. 'agent request received').
+    Static label only -- never a value, path, or credential."""
+    if enabled():
+        indent = "  " * _depth()
+        sys.stderr.write(f"[perf] {indent}{label}\n")
+        sys.stderr.flush()
+
+
 @contextlib.contextmanager
 def timed(sink: dict, key: str):
     """Accumulate elapsed seconds into ``sink[key]`` regardless of whether

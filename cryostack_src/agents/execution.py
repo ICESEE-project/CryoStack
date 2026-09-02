@@ -23,6 +23,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Protocol
 
+from cryostack_src import perf
+
 from .approval import ApprovalError, ManagedPlan, PlanState, assert_approved_for_execution
 from .permissions import Permission, PermissionError
 from .planning import RunPlan
@@ -118,6 +120,11 @@ class DryRunExecutionCoordinator:
         self._backend = submit_backend
 
     def execute(self, ctx, mp: ManagedPlan, *, dry_run: bool = True) -> DryRunReport:
+        with perf.span("agent dry-run coordinator" if dry_run
+                       else "agent execution coordinator"):
+            return self._execute(ctx, mp, dry_run=dry_run)
+
+    def _execute(self, ctx, mp: ManagedPlan, *, dry_run: bool = True) -> DryRunReport:
         plan = mp.plan
         outcomes: list[PhaseOutcome] = []
         submission = _describe_submission(plan)
@@ -211,7 +218,9 @@ class DryRunExecutionCoordinator:
 
         # live path (no backend ships in cryostack_src/agents/; a real one is
         # injected from cryostack_src/agent_execution/ by the gateway)
-        job_id = self._backend.submit(plan, ctx=ctx, approval=mp.approval)
+        perf.event("agent execution handoff")
+        with perf.span("agent submit backend"):
+            job_id = self._backend.submit(plan, ctx=ctx, approval=mp.approval)
         mp.mark_executing()
         outcomes.append(PhaseOutcome(
             ExecutionPhase.SUBMIT.value, "ok", "submitted",

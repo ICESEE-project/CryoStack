@@ -21,6 +21,7 @@ import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 
+from cryostack_src import perf
 from cryostack_src.workspace.identity import WorkspaceUser
 
 from .planning import RunPlan
@@ -121,6 +122,7 @@ class ManagedPlan:
         self.state = PlanState.APPROVED
         self._log("approved", digest=self.approval.plan_digest,
                   approver=approver.user_id)
+        perf.event("agent approval recorded")
         return self.approval
 
     def revise(self, new_plan: RunPlan) -> None:

@@ -20,6 +20,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from cryostack_src import perf
+
 from .context import ToolContext
 from .llm import LLMClient, LLMMessage, LLMResponse
 from .permissions import Permission
@@ -88,16 +90,19 @@ class RunAssistant:
         # hard-cap the context: the assistant never operates above PLAN
         ctx = ctx.with_ceiling(ASSISTANT_CEILING)
         ctx.trace.request(user_message)
+        perf.event("agent request received")
 
-        tools = self._registry.describe(ctx=ctx)
+        with perf.span("agent tool discovery"):
+            tools = self._registry.describe(ctx=ctx)
         messages: list[LLMMessage] = [LLMMessage("user", user_message)]
         steps: list[AssistantStep] = []
         last_text = ""
         proposed_plan: dict | None = None
 
         for i in range(max_steps):
-            resp: LLMResponse = self._llm.complete(
-                system=_SYSTEM, messages=list(messages), tools=tools)
+            with perf.span(f"agent model turn {i}"):
+                resp: LLMResponse = self._llm.complete(
+                    system=_SYSTEM, messages=list(messages), tools=tools)
             step = AssistantStep(index=i, text=resp.text)
             if resp.text:
                 last_text = resp.text
