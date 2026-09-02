@@ -17,10 +17,10 @@ _GW = _REPO / "icesee_jupyter_book/ui/icesheets_gateway.py"
 def test_gateway_has_a_separate_icepack_basic_panel_and_toggle():
     src = _GW.read_text()
     assert "build_icepack_basic_panel()" in src
-    assert 'icepack_config_panel.layout.display = "" if model_dd.value == "icepack" else "none"' in src
+    assert 'icepack_config_panel.layout.display = "" if (model_dd.value == "icepack" and not is_agent) else "none"' in src
     assert 'icepack_config_panel.set_title(0, "⚙️ Icepack configuration (Basic)")' in src
-    # the ISSM panel toggle is untouched
-    assert 'md_config_panel.layout.display = "" if model_dd.value == "issm" else "none"' in src
+    # the ISSM panel toggle is model-gated (and hidden in Agent mode)
+    assert 'md_config_panel.layout.display = "" if (model_dd.value == "issm" and not is_agent) else "none"' in src
 
 
 def test_basic_mode_staging_uses_the_adapter_transform_and_fails_closed():

@@ -388,8 +388,17 @@ def build_backend_check_cmd(backend: str, model: str, remote_base: str, remote_t
         backend=backend,
     )
 
-def _build_agent_accordion(workspace_manager):
-    """Construct the Run Assistant (Beta) accordion for the IceSheets gateway.
+def _agent_mode_enabled() -> bool:
+    """Agent is a third interaction mode only when opted in -- otherwise the
+    mode selector is exactly Basic / Advanced and nothing agent-related is
+    built or shown."""
+    return os.environ.get("CRYOSTACK_AGENT_PANEL", "").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
+def _build_agent_panel(workspace_manager):
+    """Construct the Run Assistant (Beta) panel for the IceSheets gateway's
+    **Agent** interaction mode.
 
     * context: the authenticated CryoStack user, hard-capped at PLAN, scoped to
       this gateway's ``workspace_manager``;
@@ -398,12 +407,17 @@ def _build_agent_accordion(workspace_manager):
     * on_approve: records + persists a digest-bound ``Approval`` in the user's
       own ``AgentStore``. There is no submit step -- no ``SubmitBackend`` is
       wired -- so an approved plan simply waits.
+
+    Agent mode orchestrates the *same* CryoStack services as Basic / Advanced:
+    the plan converges on the existing working-copy + validation (B3/B4/
+    Basic-mode/preflight) + approval boundary. No parallel execution path.
     """
     from cryostack_src.agents import (
         AgentStore, Permission, RuleBasedAdapter, RunAssistant, RunPlan,
         build_tool_context,
     )
     from cryostack_src.workspace.identity import resolve_workspace_user
+    from icesee_jupyter_book.ui.shared_agent_panel import build_agent_panel
 
     def _context():
         return build_tool_context(
@@ -428,7 +442,7 @@ def _build_agent_accordion(workspace_manager):
         store.plans.save(mp)
         return mp.plan_id
 
-    return build_agent_accordion(
+    return build_agent_panel(
         assistant=RunAssistant(llm=RuleBasedAdapter()),
         build_context=_context,
         on_approve=_on_approve,
@@ -474,6 +488,19 @@ def build_icesheets_ui():
         mode_dd = run_settings.execution_mode
         backend_dd = run_settings.backend
         model_dd = run_settings.model
+
+        # Interaction mode: Basic | Advanced are always present; Agent is a
+        # third, deliberately-optional mode only when opted in. Without the
+        # opt-in the selector and behaviour are byte-identical to before.
+        # The Agent panel itself is built later (needs workspace_manager).
+        _agent_mode = _agent_mode_enabled()
+        agent_panel = None
+        if _agent_mode:
+            ui_mode_dd.options = [
+                ("Basic", "basic"),
+                ("Advanced", "advanced"),
+                ("Agent · Beta", "agent"),
+            ]
 
         software_panel = build_software_stack_panel()
         image_panel = build_container_image_panel()
@@ -1365,6 +1392,19 @@ def build_icesheets_ui():
         _ws_span.__exit__(None, None, None)
         workspace_bridge.attach_manager(workspace_manager)
 
+        # Build the Agent-mode panel now that the (per-user) workspace manager
+        # exists. Any failure downgrades the selector to Basic / Advanced.
+        if _agent_mode and agent_panel is None:
+            try:
+                agent_panel = _build_agent_panel(workspace_manager)
+            except Exception as _ag_err:            # never block the gateway
+                with log_out:
+                    print("[agent] Agent mode unavailable:",
+                          type(_ag_err).__name__, _ag_err)
+                agent_panel = None
+                _agent_mode = False
+                ui_mode_dd.options = [("Basic", "basic"), ("Advanced", "advanced")]
+
         def list_editable_files(example_path: str) -> list[tuple[str, str]]:
             return workspace_manager.list_editable_files(example_path)
 
@@ -1520,36 +1560,56 @@ def build_icesheets_ui():
 
             is_remote = mode_dd.value == "remote"
             is_cloud = mode_dd.value == "cloud"
-            is_basic = ui_mode_dd.value == "basic"
+            is_agent = ui_mode_dd.value == "agent"
+            is_basic = ui_mode_dd.value == "basic" or (not is_agent and not
+                                                       ui_mode_dd.value == "advanced")
             is_advanced = ui_mode_dd.value == "advanced"
 
-            container_source_row.layout.display = "" if is_container else "none"
-            image_uri_row.layout.display = "" if (is_container and not is_oci) else "none"
+            # Agent is a peer interaction mode: when it is selected, the manual
+            # Basic / Advanced configuration is hidden and only the Run
+            # Assistant panel + the shared run details (log / results / history)
+            # remain. The mode toggle itself stays visible so the user can
+            # switch back. No agent controls appear in Basic / Advanced.
+            if agent_panel is not None:
+                agent_panel.container.layout.display = "" if is_agent else "none"
+            _manual = "none" if is_agent else ""
 
-            remote_box.layout.display = "" if is_remote else "none"
-            cloud_box.layout.display = "" if is_cloud else "none"
+            container_source_row.layout.display = "" if (is_container and not is_agent) else "none"
+            image_uri_row.layout.display = "" if (is_container and not is_oci and not is_agent) else "none"
 
-            remote_actions.layout.display = "" if is_remote else "none"
-            cloud_actions.layout.display = "" if is_cloud else "none"
+            remote_box.layout.display = "" if (is_remote and not is_agent) else "none"
+            cloud_box.layout.display = "" if (is_cloud and not is_agent) else "none"
+
+            remote_actions.layout.display = "" if (is_remote and not is_agent) else "none"
+            cloud_actions.layout.display = "" if (is_cloud and not is_agent) else "none"
             # remote_actions = remote_log_controls
             # cloud_actions = cloud_log_controls
-            terminate_btn.layout.display = "" if is_remote else "none"
-            cloud_terminate_btn.layout.display = "" if is_cloud else "none"
+            terminate_btn.layout.display = "" if (is_remote and not is_agent) else "none"
+            cloud_terminate_btn.layout.display = "" if (is_cloud and not is_agent) else "none"
 
-            example_picker_row.layout.display = ""
-            example_info_row.layout.display = ""
+            mode_row.layout.display = _manual
+            model_row.layout.display = _manual
+            example_picker_row.layout.display = _manual
+            example_info_row.layout.display = _manual
 
-            example_row.layout.display = "none" if is_basic else ""
-            exec_row.layout.display = ""
+            example_row.layout.display = "none" if (is_basic or is_agent) else ""
+            exec_row.layout.display = _manual
 
-            advanced_action_row.layout.display = "" if is_advanced else "none"
-            editor_panel.container.layout.display = "" if is_advanced else "none"
-            run_target_row.layout.display = ""
-            dataset_panel.container.layout.display = "" if is_advanced else "none"
+            advanced_action_row.layout.display = "" if (is_advanced and not is_agent) else "none"
+            editor_panel.container.layout.display = "" if (is_advanced and not is_agent) else "none"
+            run_target_row.layout.display = _manual
+            dataset_panel.container.layout.display = "" if (is_advanced and not is_agent) else "none"
             download_buttons_row.layout.display = ""
 
-            md_config_panel.layout.display = "" if model_dd.value == "issm" else "none"
-            icepack_config_panel.layout.display = "" if model_dd.value == "icepack" else "none"
+            md_config_panel.layout.display = "" if (model_dd.value == "issm" and not is_agent) else "none"
+            icepack_config_panel.layout.display = "" if (model_dd.value == "icepack" and not is_agent) else "none"
+
+            # the manual Run button + Run Plan belong to Basic / Advanced only
+            try:
+                actions_card.layout.display = "none" if is_agent else ""
+                run_plan.container.layout.display = "none" if is_agent else ""
+            except NameError:
+                pass
 
             # A connector session is created lazily -- on the "Open Connector
             # Setup" button, and at Check SSH / Run when connector mode is
@@ -3043,6 +3103,7 @@ def build_icesheets_ui():
         run_settings_panel = build_run_settings_panel(
             configuration_rows=[
                 ui_mode_row,
+                *([agent_panel.container] if agent_panel is not None else []),
                 mode_row,
                 model_row,
                 example_picker_row,
@@ -3156,18 +3217,10 @@ def build_icesheets_ui():
             with log_out:
                 print("[settings] restore skipped:", type(_b2_err).__name__, _b2_err)
 
-        # Run Assistant (Beta) -- opt-in via CRYOSTACK_AGENT_PANEL. Collapsed by
-        # default; the manual Basic/Advanced workflow is untouched. Any failure
-        # building it is swallowed so the gateway always renders.
-        agent_panel_widgets: list = []
-        if os.environ.get("CRYOSTACK_AGENT_PANEL", "").strip().lower() in (
-                "1", "true", "yes", "on"):
-            try:
-                agent_panel_widgets = [_build_agent_accordion(workspace_manager)]
-            except Exception as _agent_err:  # never block the gateway
-                with log_out:
-                    print("[agent] Run Assistant panel unavailable:",
-                          type(_agent_err).__name__, _agent_err)
+        # Run Assistant (Beta) is now the third interaction mode ("Agent"),
+        # opt-in via CRYOSTACK_AGENT_PANEL and built inline with the Run
+        # Settings (see _build_agent_panel / update_visibility). Nothing
+        # agent-related renders unless the user selects Agent mode.
 
         page = W.VBox(
             [
@@ -3181,7 +3234,6 @@ def build_icesheets_ui():
 
                 app_menu,
                 header,
-                *agent_panel_widgets,
                 row,
                 workspace_height_sync,
                 # actions_card,

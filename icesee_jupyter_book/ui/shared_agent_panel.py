@@ -121,14 +121,21 @@ def build_agent_panel(
              "padding:1px 7px;border:1px solid currentColor;border-radius:10px;"
              "opacity:.7;margin-left:6px'>BETA</span>")
     header = W.HTML(
-        f"<div class='cryostack-group-title'>Run Assistant {_beta}</div>"
-        "<div class='cryostack-help'>Describe the run you want. The assistant "
-        "builds a plan and validates it. It <b>cannot approve or submit</b> — "
-        "you do that. The manual Basic / Advanced workflow above is unchanged.</div>")
+        f"<div class='cryostack-group-title'>Agent-assisted experiment {_beta}</div>"
+        "<div class='cryostack-help'>"
+        "The assistant helps you <b>prepare</b> an experiment from a description. "
+        "CryoStack then validates the plan independently (remote identity, Slurm "
+        "resources, the model's parameter rules, the backend preflight), and you "
+        "review the exact configuration before approving. "
+        "<b>Execution stays under explicit human control</b> — the assistant "
+        "cannot approve or submit. Switch to Basic or Advanced for manual "
+        "configuration."
+        "</div>")
     question = W.Textarea(
-        placeholder="e.g. run SquareIceShelf on PACE, account <your-allocation>",
+        placeholder="Describe your experiment, e.g. run SquareIceShelf on PACE, "
+                    "account <your-allocation>",
         layout=W.Layout(width="100%", height="64px"))
-    ask_btn = W.Button(description="Ask", button_style="primary")
+    ask_btn = W.Button(description="Create plan", button_style="primary")
     transcript = W.HTML()
     config_box = W.HTML()
     validation_box = W.HTML()
