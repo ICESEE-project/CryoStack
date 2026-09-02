@@ -201,10 +201,30 @@ LLM chatter must never contaminate a run's scientific history.
 3. returns an `AssistantResult`. If a valid plan was produced it is surfaced
    as a *proposal*. `AssistantResult.submitted` is always `False`.
 
-`shared_agent_panel.build_agent_panel` is a prototype Voila panel over it: it
-shows the transcript and every tool call, renders the proposed plan, and gates
-an **Approve** button behind an explicit human acknowledgement. Approving only
+`shared_agent_panel.build_agent_panel` is the Voila panel over it: it shows the
+transcript and every tool call, renders the proposed plan, and gates an
+**Approve** button behind an explicit human acknowledgement. Approving only
 hands the plan to the host's `on_approve` callback.
+
+### Agent as an interaction mode
+
+In the CryoLauncher gateway (`icesheets_gateway.py`), the interaction-mode
+selector is **Basic · Advanced · Agent**. *Agent* is the third mode and is
+**opt-in** — it appears only when `CRYOSTACK_AGENT_PANEL` is set; without the
+flag the selector and behaviour are exactly Basic / Advanced.
+
+- **Basic / Advanced** — manual configuration; no agent controls are built or
+  shown.
+- **Agent** — the manual configuration (model / example / backend / remote /
+  cloud panels / Run Plan / Run button) is hidden and the Run Assistant panel
+  takes its place. The mode toggle stays visible so the user can switch back.
+
+All three modes are ways of *preparing the same experiment*. Agent mode
+orchestrates the same services — the plan converges on the existing
+working-copy staging, the same B3 / B4 / Basic-mode / preflight validation, the
+same digest-bound approval, and (when a submit backend is enabled) the same
+execution path. There is no `agent_submit()` / `agent_results()` /
+`agent_workspace()` parallel stack.
 
 ---
 
@@ -277,4 +297,7 @@ It never replays a side effect.
   approves the exact digest.
 * No modification of canonical examples through an agent.
 * No LLM vendor SDK dependency anywhere in the package.
-* The Run Assistant panel (`CRYOSTACK_AGENT_PANEL=1`) has **no Submit button**.
+* Agent mode (`CRYOSTACK_AGENT_PANEL=1`) has **no Submit control**, does not
+  weaken Basic-mode scientific validation / B3 identity / B4 Slurm validation /
+  the backend preflight / user isolation, and is never shown in Basic or
+  Advanced mode. Live agent-driven submission is not enabled.
