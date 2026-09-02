@@ -1192,73 +1192,11 @@ def build_icesheets_ui():
         log_out.add_class("cryostack-log-viewer")
         results_out.add_class("cryostack-live-log")
 
-        auto_scroll_script = W.HTML(
-            """
-            <script>
-            (() => {
-
-                function installCryoStackLogScroll() {
-
-                    const root = document.querySelector(
-                        ".cryostack-live-log"
-                    );
-
-                    if (!root) {
-                        setTimeout(
-                            installCryoStackLogScroll,
-                            250
-                        );
-                        return;
-                    }
-
-                    if (
-                        root.dataset.cryoAutoScroll === "1"
-                    ) {
-                        return;
-                    }
-
-                    root.dataset.cryoAutoScroll = "1";
-
-                    const findScroller = () => {
-                        return (
-                            root.querySelector(
-                                ".jupyter-widgets-output-area"
-                            )
-                            || root
-                        );
-                    };
-
-                    const scrollToBottom = () => {
-                        const scroller = findScroller();
-
-                        requestAnimationFrame(() => {
-                            scroller.scrollTop =
-                                scroller.scrollHeight;
-                        });
-                    };
-
-                    const observer = new MutationObserver(
-                        scrollToBottom
-                    );
-
-                    observer.observe(
-                        root,
-                        {
-                            childList: true,
-                            subtree: true,
-                            characterData: true
-                        }
-                    );
-
-                    scrollToBottom();
-                }
-
-                installCryoStackLogScroll();
-
-            })();
-            </script>
-            """
-        )
+        # Log auto-scroll / live-tail follow is handled by the Workspace
+        # viewer-sizing module (workspace/viewer_geometry.js, mounted via
+        # build_workspace_explorer) -- it follows the tail while the user is at
+        # the bottom and offers "Jump to latest" once they scroll up.
+        auto_scroll_script = W.HTML("")
 
         # =========================================================
         # Helpers

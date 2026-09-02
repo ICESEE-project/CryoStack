@@ -93,18 +93,23 @@ def test_height_sync_no_longer_pins_the_right_column():
     assert "removeProperty" in js
 
 
-def test_viewer_sizing_script_caps_max_height_not_height():
+def test_viewer_sizing_script_is_geometry_aware_and_scoped():
     ex = _explorer()
     js = ex.height_sync.value
-    # sizes the Run Log / Results *viewers* only, via max-height
+    # sizes the Run Log / Results viewers only
     assert ".cryostack-log-viewer" in js and ".cryostack-results-viewer" in js
-    assert "maxHeight" in js
-    # derived from the viewport, not a fixed constant height
-    assert "innerHeight" in js and "getBoundingClientRect" in js
-    # never sets an explicit height on the viewer
+    # from ACTUAL rendered geometry: viewport, viewer top, left-column bottom
+    assert "getBoundingClientRect" in js
+    assert "visualViewport" in js and "innerHeight" in js
+    assert ".cryostack-left-workspace" in js
+    # no hardcoded viewport arithmetic
+    assert "calc(100vh" not in js and "100vh -" not in js
+    # the cap is a scoped custom property; the viewer's own height is never set
+    assert "--cryostack-workspace-viewer-max-height" in js
     assert re.search(r"\.style\.height\s*=", js) is None
-    # narrow screens: the cap is dropped
-    assert "removeProperty(\"max-height\")" in js or "removeProperty('max-height')" in js
+    # event-driven recompute, never polled
+    assert "ResizeObserver" in js and "requestAnimationFrame" in js
+    assert "setInterval" not in js
 
 
 # ── CSS contract ────────────────────────────────────────────────────────
@@ -148,6 +153,29 @@ def test_responsive_breakpoint_stacks_the_columns():
     assert "grid-template-columns: 1fr" in body
 
 
+def test_viewer_script_recomputes_on_zoom_accordion_and_mode_changes():
+    js = _explorer().height_sync.value
+    assert "visualViewport.addEventListener" in js        # zoom / visual viewport
+    assert ".cryostack-left-workspace" in js              # left column geometry
+    # left-column height changes (accordion expand/collapse, mode switch) via a
+    # MutationObserver on the left column subtree
+    assert "MutationObserver" in js
+    assert "ResizeObserver" in js
+    # tab switch re-wires the (late-mounted) Run Log viewer
+    assert "cryostack-workspace-tabs" in js
+
+
+def test_jump_to_latest_control_is_styled_and_hidden_by_default():
+    css = CRYOSTACK_FRONTEND_CSS
+    block = _rule(css, ".cryostack-tail-jump")
+    assert "position: sticky" in block                    # follows the viewport bottom
+    hidden = _rule(css, ".cryostack-tail-jump[hidden]")
+    assert "display: none" in hidden
+    js = _explorer().height_sync.value
+    assert "jump.hidden = true" in js                     # created hidden
+    assert 'textContent = "Jump to latest' in js
+
+
 def test_tab_body_floor_is_compact_not_the_viewer_height():
     """Runs / Files must not be forced to the taller Run Log / Results height."""
     block = _rule(CRYOSTACK_FRONTEND_CSS,
@@ -160,10 +188,12 @@ def test_log_and_results_viewers_have_bounded_overflow_no_fixed_height():
     css = CRYOSTACK_FRONTEND_CSS
     for sel in (".cryostack-log-viewer", ".cryostack-results-viewer"):
         block = _rule(css, sel)
-        assert "overflow" in block                       # scrollable when needed
+        # bounded via the scoped custom property; scrollable only when needed
+        assert "max-height: var(--cryostack-workspace-viewer-max-height" in block
+        assert "overflow-y: auto" in block
         assert "height: 100%" not in block
         assert "100vh" not in block
-        assert "max-height" not in block                 # the script sets the cap
+        assert "calc(" not in block
         assert re.search(r"min-height:\s*\d+px", block)   # a useful minimum
 
 
@@ -177,15 +207,17 @@ def test_mobile_relaxes_viewer_nested_scrolling():
 
 
 def test_sticky_is_desktop_only_and_off_at_narrow_widths():
-    css = CRYOSTACK_FRONTEND_CSS
-    # every 'position: sticky' occurrence must be inside a min-width media query
-    for m in re.finditer(r"position:\s*sticky", css):
+    css = re.sub(r"/\*.*?\*/", "", CRYOSTACK_FRONTEND_CSS, flags=re.S)
+    # the WORKSPACE COLUMN sticky (not the tail-jump button) must live inside a
+    # min-width media query
+    for m in re.finditer(r"([^{}]*)\{([^{}]*position:\s*sticky[^{}]*)\}", css):
+        selectors, body = m.group(1), m.group(2)
+        if ".cryostack-right-workspace" not in selectors:
+            continue                                  # e.g. .cryostack-tail-jump
         head = css[:m.start()]
-        last_media = head.rfind("@media")
-        last_close = head.rfind("}")
-        assert last_media > last_close, "sticky outside a media query"
-        media_line = css[last_media:css.index("{", last_media)]
-        assert "min-width" in media_line, media_line
-    # and the narrow breakpoint forces static
+        last_media, last_close = head.rfind("@media"), head.rfind("}")
+        assert last_media > last_close, "column sticky outside a media query"
+        assert "min-width" in css[last_media:css.index("{", last_media)]
+    # and the narrow breakpoint forces the column static
     m = re.search(r"@media\s*\(max-width:\s*1050px\)\s*\{(.*?)\n\}", css, re.S)
     assert "position: static" in m.group(1)

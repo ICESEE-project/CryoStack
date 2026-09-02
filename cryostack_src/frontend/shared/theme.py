@@ -437,25 +437,57 @@ CRYOSTACK_FRONTEND_CSS = r"""
 }
 
 /*
- * Run Log / Results viewers -- dynamic height.
+ * Run Log / Results viewers -- geometry-aware dynamic height.
  *
- * Each has a useful minimum, grows with its content, and uses the available
- * screen space; the scoped viewer-sizing script sets `max-height` to roughly
- *     viewport bottom - viewer top - footer padding
- * so it only becomes internally scrollable once it reaches the usable viewport
- * bottom. Short content stays compact (max-height is a cap, not a height). The
- * whole Workspace is never internally scrollable just because a viewer is long.
+ * The viewer-sizing module (workspace/viewer_geometry.js) measures the actual
+ * rendered geometry -- visible viewport height, viewer top, left Run Settings
+ * column bottom -- and sets ONE scoped custom property:
+ *     --cryostack-workspace-viewer-max-height: <px>
+ * Priority: natural content height, then useful viewport space, then a
+ * secondary desktop balance against the left column (never below a usable
+ * minimum). Short content ends naturally (max-height is a cap, not a height,
+ * and there is no cap until the script computes one); long content uses the
+ * available space, then scrolls internally. `position: relative` anchors the
+ * "Jump to latest" control.
  */
 .cryostack-log-viewer {
+    position: relative;
     min-height: 280px;
+    max-height: var(--cryostack-workspace-viewer-max-height, none);
     overflow-y: auto;
     overflow-x: auto;
 }
 
 .cryostack-results-viewer {
+    position: relative;
     width: 100%;
     min-height: 300px;
-    overflow: auto;
+    max-height: var(--cryostack-workspace-viewer-max-height, none);
+    overflow-y: auto;
+    overflow-x: auto;
+}
+
+/* "Jump to latest" -- shown only while the user has scrolled up from the tail;
+   sticks to the bottom-right of the Run Log viewer. */
+.cryostack-tail-jump {
+    position: sticky;
+    bottom: 8px;
+    left: 100%;
+    transform: translateX(-100%);
+    margin-right: 8px;
+    padding: 4px 12px;
+    border: 1px solid rgba(15, 23, 42, 0.18);
+    border-radius: 999px;
+    background: #2563eb;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.18);
+}
+
+.cryostack-tail-jump[hidden] {
+    display: none;
 }
 
 /* the secondary text output (run summary / sync messages): keep a modest cap */
