@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="920" viewBox="0 0 1400 920" role="img" aria-labelledby="title desc">
+  <title id="title">CryoStack modular platform architecture</title>
+  <desc id="desc">Browser users access a shared gateway and operations plane serving CryoLauncher, ICESEE, LIVIST, and Frozen Legacies. Shared execution services connect to local, remote HPC, and evolving AWS resources.</desc>
+  <defs>
+    <style>
+      text { font-family: Arial; }
+      .title { font-size: 32px; font-weight: 700; fill: #153445; }
+      .layer { font-size: 15px; font-weight: 700; fill: #36576a; letter-spacing: 1px; }
+      .box-title { font-size: 20px; font-weight: 700; fill: #153445; }
+      .body { font-size: 15px; fill: #36576a; }
+      .small { font-size: 13px; fill: #36576a; }
+      .arrow { stroke: #54768a; stroke-width: 3; fill: none; marker-end: url(#arrowhead); }
+      .bus { stroke: #54768a; stroke-width: 3; fill: none; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#54768a"/></marker>
+    <filter id="shadow" x="-10%" y="-15%" width="120%" height="130%"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#153445" flood-opacity="0.13"/></filter>
+  </defs>
+
+  <rect width="1400" height="920" rx="20" fill="#f7fafb"/>
+  <text x="700" y="46" text-anchor="middle" class="title">CryoStack Scientific Cyberinfrastructure</text>
+
+  <text x="22" y="105" class="layer">USER EXPERIENCE</text>
+  <rect x="170" y="70" width="1060" height="72" rx="14" fill="#e5f2f5" stroke="#72a9b9" stroke-width="2" filter="url(#shadow)"/>
+  <text x="700" y="101" text-anchor="middle" class="box-title">Web browser</text>
+  <text x="700" y="126" text-anchor="middle" class="body">Documentation · scientific applications · personal workspaces · experiment history</text>
+  <path d="M700 142 L700 172" class="arrow"/>
+
+  <text x="22" y="230" class="layer">GATEWAY + OPERATIONS</text>
+  <rect x="170" y="172" width="1060" height="136" rx="14" fill="#d7edf0" stroke="#478a9c" stroke-width="2" filter="url(#shadow)"/>
+  <text x="700" y="205" text-anchor="middle" class="box-title">Nginx + aiohttp gateway</text>
+  <text x="700" y="234" text-anchor="middle" class="body">HTTP/WebSocket proxying · Jupyter Book · Voilà · static/React routes · application registry</text>
+  <text x="700" y="263" text-anchor="middle" class="body">scrypt accounts · GitHub/ORCID · sessions · configurations · workspaces · experiments + events</text>
+  <text x="700" y="290" text-anchor="middle" class="body">Control Center · RBAC · audit events · diagnostics · dependency-aware builds · health checks</text>
+
+  <path d="M300 308 L245 350" class="arrow"/><path d="M560 308 L530 350" class="arrow"/>
+  <path d="M840 308 L870 350" class="arrow"/><path d="M1100 308 L1155 350" class="arrow"/>
+
+  <text x="22" y="430" class="layer">APPLICATIONS</text>
+  <rect x="115" y="350" width="260" height="130" rx="14" fill="#fff4da" stroke="#d6a33c" stroke-width="2" filter="url(#shadow)"/>
+  <text x="245" y="385" text-anchor="middle" class="box-title">CryoLauncher</text>
+  <text x="245" y="414" text-anchor="middle" class="body">Modular run planning</text>
+  <text x="245" y="438" text-anchor="middle" class="body">models · logs · results</text>
+  <text x="245" y="462" text-anchor="middle" class="small">ISSM · Icepack · flowline · L96</text>
+
+  <rect x="400" y="350" width="260" height="130" rx="14" fill="#e2f1e7" stroke="#57916c" stroke-width="2" filter="url(#shadow)"/>
+  <text x="530" y="385" text-anchor="middle" class="box-title">ICESEE</text>
+  <text x="530" y="414" text-anchor="middle" class="body">Ensemble state and</text>
+  <text x="530" y="438" text-anchor="middle" class="body">parameter estimation</text>
+  <text x="530" y="462" text-anchor="middle" class="small">Filter variants · MPI ensembles</text>
+
+  <rect x="740" y="350" width="260" height="130" rx="14" fill="#e8e6f5" stroke="#7770a9" stroke-width="2" filter="url(#shadow)"/>
+  <text x="870" y="385" text-anchor="middle" class="box-title">LIVIST</text>
+  <text x="870" y="414" text-anchor="middle" class="body">Living Ice Sheet</text>
+  <text x="870" y="438" text-anchor="middle" class="body">Temperature explorer</text>
+  <text x="870" y="462" text-anchor="middle" class="small">Radar · boreholes · geospatial data</text>
+
+  <rect x="1025" y="350" width="260" height="130" rx="14" fill="#f4e7e2" stroke="#ad7965" stroke-width="2" filter="url(#shadow)"/>
+  <text x="1155" y="385" text-anchor="middle" class="box-title">Frozen Legacies</text>
+  <text x="1155" y="414" text-anchor="middle" class="body">Historical radar catalog</text>
+  <text x="1155" y="438" text-anchor="middle" class="body">and interpretation tools</text>
+  <text x="1155" y="462" text-anchor="middle" class="small">Manifests · adapters · GeoJSON</text>
+
+  <path d="M245 480 L245 515 L1155 515" class="bus"/><path d="M530 480 L530 515" class="bus"/>
+  <path d="M870 480 L870 515" class="bus"/><path d="M1155 480 L1155 515" class="bus"/>
+  <path d="M700 515 L700 550" class="arrow"/>
+
+  <text x="22" y="615" class="layer">SHARED SERVICES</text>
+  <rect x="170" y="550" width="1060" height="112" rx="14" fill="#e8f0f3" stroke="#678b9c" stroke-width="2" filter="url(#shadow)"/>
+  <text x="700" y="584" text-anchor="middle" class="box-title">Application, data, execution, and container abstractions</text>
+  <text x="700" y="614" text-anchor="middle" class="body">experiment lifecycle · frontend panels · dataset manifests/adapters · backend-independent results/status</text>
+  <text x="700" y="642" text-anchor="middle" class="body">FastAPI relay · connector/direct SSH drivers · Docker publication · Spack/Apptainer environments</text>
+
+  <path d="M350 662 L350 710" class="arrow"/><path d="M700 662 L700 710" class="arrow"/><path d="M1050 662 L1050 710" class="arrow"/>
+  <text x="22" y="785" class="layer">EXECUTION</text>
+  <rect x="170" y="710" width="300" height="126" rx="14" fill="#edf3f5" stroke="#7896a5" stroke-width="2" filter="url(#shadow)"/>
+  <text x="320" y="750" text-anchor="middle" class="box-title">Local</text>
+  <text x="320" y="781" text-anchor="middle" class="body">Python · notebooks · MPI</text>
+  <text x="320" y="808" text-anchor="middle" class="small">Interactive and lightweight workflows</text>
+
+  <rect x="550" y="710" width="300" height="126" rx="14" fill="#edf3f5" stroke="#7896a5" stroke-width="2" filter="url(#shadow)"/>
+  <text x="700" y="750" text-anchor="middle" class="box-title">Remote HPC</text>
+  <text x="700" y="781" text-anchor="middle" class="body">Direct SSH or outbound connector</text>
+  <text x="700" y="808" text-anchor="middle" class="small">rsync · archives · Slurm · logs · outputs</text>
+
+  <rect x="930" y="710" width="300" height="126" rx="14" fill="#edf3f5" stroke="#7896a5" stroke-width="2" filter="url(#shadow)"/>
+  <text x="1080" y="750" text-anchor="middle" class="box-title">AWS (integration in progress)</text>
+  <text x="1080" y="781" text-anchor="middle" class="body">S3 · IAM · ECR · networking · Batch</text>
+  <text x="1080" y="808" text-anchor="middle" class="small">Discovery/provisioning/lifecycle modules</text>
+
+  <rect x="170" y="860" width="1060" height="42" rx="12" fill="#dce9ee" stroke="#5d8293" stroke-width="2"/>
+  <text x="700" y="888" text-anchor="middle" class="body">Reproducible environments and artifacts: Spack locks · Docker/Apptainer images · run records · data catalogs</text>
+</svg>

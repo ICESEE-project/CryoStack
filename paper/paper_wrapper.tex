@@ -1,0 +1,38 @@
+\documentclass[10pt]{article}
+\usepackage[letterpaper,margin=0.85in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{newtxtext}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage[backend=bibtex,style=authoryear,natbib=true,maxcitenames=2]{biblatex}
+\addbibresource{paper.bib}
+\usepackage[citations,contentBlocks,texMathDollars]{markdown}
+
+\definecolor{cryo}{HTML}{1B6075}
+\hypersetup{colorlinks=true,linkcolor=cryo,citecolor=cryo,urlcolor=cryo}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+\setcounter{secnumdepth}{0}
+\renewcommand{\familydefault}{\sfdefault}
+\setkeys{Gin}{width=\linewidth,totalheight=0.68\textheight,keepaspectratio}
+
+\title{\textbf{CryoStack: A modular cyberinfrastructure stack for cryosphere data, models, data assimilation, and heterogeneous computing}}
+\author{Brian Kyanjo\thanks{Corresponding author: bkyanjo3@gatech.edu}\quad and\quad Alexander A. Robel\\
+\small School of Earth and Atmospheric Sciences, Georgia Institute of Technology}
+\date{2 September 2026}
+
+\begin{document}
+\maketitle
+\begin{abstract}
+CryoStack unifies scientific applications, per-user workspaces and experiment
+histories, data catalogs, structured result contracts, and heterogeneous
+execution resources for reproducible cryosphere computing. This software paper
+describes the implemented architecture, including remote HPC execution through
+a connector-mediated relay and an AWS Batch path for one model, and clearly
+identifies the integration and production-hardening work that remains.
+\end{abstract}
+\markdownInput{output/paper_body.md}
+\printbibliography[heading=none]
+\end{document}
