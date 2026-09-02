@@ -34,39 +34,61 @@ from cryostack_src.models.stack import (
 from cryostack_src.remote.runtime import expand_remote_home, require_remote_base_dir
 
 
-def _issm_container_launcher_shim(*, run_dir: str) -> str:
-    """Shell block that drops an in-container ``srun`` shim into the run dir.
+def _issm_container_mpi_env() -> str:
+    """``apptainer exec --env`` flags that keep ISSM's in-container ``mpiexec``
+    a local, single-node launch.
 
-    ISSM's cluster class inside the ICESEE-Container image writes its solver
-    launch line as ``srun --cpu-bind=none --mpi=pmi2 -n <np> <cmd>`` (its
-    bundled ``generic`` class has no ``mpiexec`` branch on Linux), but the SIF
-    ships no Slurm client, so that line fails with ``srun: not found``. This
-    shim, placed first on ``PATH`` for the in-container MATLAB process, re-runs
-    the same command as ``mpiexec -np <np> <cmd>`` -- preserving the task count
-    ISSM itself passed (``-n N``, ``--ntasks N`` or ``--ntasks=N``) -- without
-    binding any host Slurm/PMIx libraries.
+    ISSM's ``generic`` cluster inside the ICESEE-Container writes its solver
+    launch line as ``mpiexec -np <md.cluster.np> <ISSM_DIR>/bin/issm.exe ...``
+    -- verified against both ``/opt/ISSM/bin/generic.m`` and the ICESEE
+    ``issm_utils/slurm_cluster/generic.m`` in the image: neither has an
+    ``srun`` branch on Linux. That ``mpiexec`` is Spack OpenMPI 5 / PRRTE 4.
+
+    Under a multi-node ``sbatch`` the ``apptainer exec`` inherits ``SLURM_*``,
+    so PRRTE's ``slurm`` PLM tries to ``srun prted`` on the other node -- but
+    the SIF ships no Slurm/SSH client, so the launch dies with *"No available
+    launching agents were found"* (and, once a stray ``srun`` shim was on
+    ``PATH``, *"No executable was specified on the prterun command line"*).
+
+    The SIF has no cross-node launcher, so ISSM's self-launched MPI is
+    single-node by construction. Pin PRRTE to the batch node:
+
+    * ``PRTE_MCA_ras=^slurm`` -- ignore the multi-node allocation; use only
+      the node ``mpiexec`` runs on;
+    * ``PRTE_MCA_plm=ssh`` -- a same-node launch is a plain fork, so no
+      ``srun`` / ``ssh`` binary is ever exec'd;
+    * ``PRTE_MCA_rmaps_default_mapping_policy=:oversubscribe`` -- ``md.cluster.np``
+      (2 for every stock ISSM example) may exceed a small node's core count.
+
+    True multi-node ISSM needs the ICESEE-Spack backend (real ``srun`` on the
+    host) -- see the note emitted by the submit path.
     """
-    shim = f"{run_dir}/.cryostack_launcher/srun"
     return (
-        f'mkdir -p "{run_dir}/.cryostack_launcher"\n'
-        f"cat > \"{shim}\" <<'CRYOSTACK_SRUN'\n"
-        "#!/bin/sh\n"
-        'np="${SLURM_NTASKS:-1}"\n'
-        "while [ $# -gt 0 ]; do\n"
-        '  case "$1" in\n'
-        '    -n|--ntasks) np="$2"; shift 2 ;;\n'
-        '    --ntasks=*) np="${1#--ntasks=}"; shift ;;\n'
-        '    -n*) np="${1#-n}"; shift ;;\n'
-        "    -N|--nodes|--ntasks-per-node|--cpus-per-task) shift 2 ;;\n"
-        "    --) shift; break ;;\n"
-        "    -*) shift ;;\n"
-        "    *) break ;;\n"
-        "  esac\n"
-        "done\n"
-        'exec mpiexec -np "$np" "$@"\n'
-        "CRYOSTACK_SRUN\n"
-        f'chmod +x "{shim}"'
+        "--env PRTE_MCA_ras=^slurm "
+        "--env PRTE_MCA_plm=ssh "
+        "--env PRTE_MCA_rmaps_default_mapping_policy=:oversubscribe "
     )
+
+
+def _issm_container_single_node_note(*, backend: str, model: str, nodes) -> list[str]:
+    """One advisory line when a container ISSM run asks for more than one node.
+
+    ISSM's ``md.cluster.np`` (the example owns it) is the sole MPI rank count;
+    the ``#SBATCH -N`` request does not feed it and the in-container solver
+    cannot span nodes. Surfaced, not enforced -- the run still proceeds on the
+    batch node.
+    """
+    try:
+        n = int(nodes)
+    except (TypeError, ValueError):
+        n = 1
+    if backend == "container" and model == "issm" and n > 1:
+        return [
+            "[remote] NOTE: container ISSM self-launches MPI on the batch node "
+            f"only (md.cluster.np ranks); the requested -N {n} is not used by "
+            "the solver. Use the ICESEE-Spack backend for multi-node ISSM."
+        ]
+    return []
 
 
 _ENV_NAME_RE = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
@@ -435,6 +457,9 @@ echo "{spack_path}"
 
     elif backend == "container":
         messages.append("[connector] ICESEE-Container backend selected")
+        messages += _issm_container_single_node_note(
+            backend=backend, model=model, nodes=slurm_nodes
+        )
     else:
         raise RuntimeError(f"Unsupported backend: {backend}")
 
@@ -534,11 +559,10 @@ source "{spack_path}/scripts/activate.sh"
             run_block = f'''
 mkdir -p "{remote_exec_dir}"
 {_stack_setup}
-{_issm_container_launcher_shim(run_dir=remote_run_dir)}
 {matlab_log_line}
-apptainer exec {matlab_env_flag}\
+apptainer exec {matlab_env_flag}{_issm_container_mpi_env()}\
 -B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution,"{remote_run_dir}":"{remote_run_dir}"{_stack_binds} \
-"{sif_path}" with-issm matlab -nodesktop -nosplash -r "setenv('PATH', ['{remote_run_dir}/.cryostack_launcher:' getenv('PATH')]); cd('/opt/ISSM/examples'); ICESEE_RUN_DIR='{remote_run_dir}'; setenv('ICESEE_RUN_DIR','{remote_run_dir}'); run('{target_m}'); run('{remote_run_dir}/postprocess_icesee.m'); exit"
+"{sif_path}" with-issm matlab -nodesktop -nosplash -r "cd('/opt/ISSM/examples'); ICESEE_RUN_DIR='{remote_run_dir}'; setenv('ICESEE_RUN_DIR','{remote_run_dir}'); run('{target_m}'); run('{remote_run_dir}/postprocess_icesee.m'); exit"
 '''
         else:
             if run_file_name.endswith(".py"):
@@ -796,6 +820,9 @@ def submit_remote_icesheets(
     elif backend == "container":
         messages.append("[remote] ICESEE-Container backend selected")
         messages.append("[remote] Container setup will be handled inside the submitted Slurm job.")
+        messages += _issm_container_single_node_note(
+            backend=backend, model=model, nodes=slurm_nodes
+        )
     else:
         raise RuntimeError(f"Unsupported backend: {backend}")
     
@@ -958,11 +985,10 @@ apptainer exec \
                 run_block = f'''
 mkdir -p "{remote_exec_dir}"
 {_stack_setup}
-{_issm_container_launcher_shim(run_dir=remote_run_dir)}
 {matlab_log_line}
-apptainer exec {matlab_env_flag}\
+apptainer exec {matlab_env_flag}{_issm_container_mpi_env()}\
 -B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution,"{remote_run_dir}":"{remote_run_dir}"{_stack_binds} \
-"{sif_path}" with-issm matlab -nodesktop -nosplash -r "setenv('PATH', ['{remote_run_dir}/.cryostack_launcher:' getenv('PATH')]); cd('/opt/ISSM/examples'); ICESEE_RUN_DIR='{remote_run_dir}'; setenv('ICESEE_RUN_DIR','{remote_run_dir}'); run('{target_m}'); run('{remote_run_dir}/postprocess_icesee.m'); exit"
+"{sif_path}" with-issm matlab -nodesktop -nosplash -r "cd('/opt/ISSM/examples'); ICESEE_RUN_DIR='{remote_run_dir}'; setenv('ICESEE_RUN_DIR','{remote_run_dir}'); run('{target_m}'); run('{remote_run_dir}/postprocess_icesee.m'); exit"
 '''
             elif model == "icepack":
                 if run_file_name.endswith(".py"):

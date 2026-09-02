@@ -151,7 +151,8 @@ def test_custom_icesee_main_resolved_once_recorded_and_pinned(render, monkeypatc
     assert f',"{_RUN_DIR}/.stack/icesee":"/opt/ICESEE"' in sbatch
     assert f'"{_RUN_DIR}":"{_RUN_DIR}"' in sbatch          # existing run-dir bind kept
     assert "/opt/ISSM/examples" in sbatch and "/opt/ISSM/execution" in sbatch
-    assert ".cryostack_launcher" in sbatch                # launcher shim kept
+    assert "--env PRTE_MCA_ras=^slurm" in sbatch          # solver pinned to the node
+    assert ".cryostack_launcher" not in sbatch            # no stray srun shim
 
 
 def test_custom_icesee_main_persists_to_manifest_v2(render, tmp_path):
