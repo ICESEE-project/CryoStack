@@ -23,6 +23,12 @@ from .permissions import Permission, PermissionError
 from .registry import ToolRegistry, default_registry
 from .tools import ToolResult, ToolSpec, tool
 from .trace import Trace, TraceEvent
+from .trace_store import (
+    AGENT_PROVENANCE_KEY,
+    TraceStore,
+    assert_no_agent_chatter,
+    run_manifest_stamp,
+)
 
 __all__ = [
     "Permission", "PermissionError",
@@ -30,4 +36,6 @@ __all__ = [
     "ToolSpec", "ToolResult", "tool",
     "ToolRegistry", "default_registry",
     "Trace", "TraceEvent",
+    "TraceStore", "run_manifest_stamp", "assert_no_agent_chatter",
+    "AGENT_PROVENANCE_KEY",
 ]

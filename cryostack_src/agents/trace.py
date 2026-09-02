@@ -16,7 +16,7 @@ import json
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 #: key names whose values are replaced with "***" anywhere in a trace payload
 _SECRET_KEYS = frozenset({
@@ -68,10 +68,14 @@ class Trace:
     """An append-only list of :class:`TraceEvent`. Not thread-safe by design —
     one trace belongs to one agent turn / one session."""
 
-    def __init__(self, *, trace_id: str | None = None, user_id: str | None = None) -> None:
+    def __init__(self, *, trace_id: str | None = None, user_id: str | None = None,
+                 sink: "Callable[[TraceEvent], None] | None" = None) -> None:
         self.trace_id = trace_id or uuid.uuid4().hex
         self.user_id = user_id
         self._events: list[TraceEvent] = []
+        #: an append-only sink (e.g. TraceStore) — called once per event, after
+        #: redaction. Never called with a mutable reference to internal state.
+        self._sink = sink
 
     def append(self, kind: str, payload: dict | None = None) -> TraceEvent:
         ev = TraceEvent(
@@ -81,6 +85,8 @@ class Trace:
             payload=redact(dict(payload or {})),
         )
         self._events.append(ev)
+        if self._sink is not None:
+            self._sink(ev)
         return ev
 
     # -- convenience wrappers -----------------------------------------
