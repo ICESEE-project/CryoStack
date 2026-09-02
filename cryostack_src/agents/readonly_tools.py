@@ -261,14 +261,11 @@ def inspect_results(ctx, *, run_id: str) -> dict:
     mgr = _require_manager(ctx)
     _get_owned_run(mgr, run_id)
     pkg = mgr.result_package_for_run(run_id)
-    return {
-        "run_id": run_id,
-        "status": pkg.status,
-        "readable": bool(getattr(pkg, "is_readable", lambda: False)()),
-        "schema": getattr(pkg, "schema", None),
-        "solutions": list(getattr(pkg, "available_solutions", lambda: [])()),
-        "figure_count": len(getattr(pkg, "figures", lambda: [])()),
-    }
+    from cryostack_src.models.results_common import describe_package
+    summary = describe_package(pkg)
+    summary["run_id"] = run_id
+    summary["solutions"] = [s["name"] for s in summary.get("solutions", [])]
+    return summary
 
 
 @tool(name="list_result_fields",

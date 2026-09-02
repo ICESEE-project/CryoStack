@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any, Protocol, runtime_checkable
 
 METADATA_NAME = "metadata.json"
 
@@ -111,3 +112,109 @@ def legacy_artifacts(outputs: Path | None, *, model_mat_name: str | None = None)
     )
     return {"model_mat": model_mat, "figures": figures, "mats": mats,
             "native": native, "other": other}
+
+
+# ── the shared result contract (P2) ──────────────────────────────────
+@runtime_checkable
+class ResultPackageProtocol(Protocol):
+    """The model-neutral surface every model's result package implements.
+
+    ISSM (:class:`cryostack_src.models.issm.results.ResultPackage`) and Icepack
+    (:class:`cryostack_src.models.icepack.results.IcepackResultPackage`) both
+    satisfy this. The workspace layer and the agent tools depend on *this*, not
+    on a concrete class."""
+
+    @property
+    def status(self) -> str: ...
+    def is_readable(self) -> bool: ...
+    def available_solutions(self) -> list[str]: ...
+    def available_fields(self, solution: str, *, preferred: bool = True) -> list[str]: ...
+    def field_metadata(self, solution: str, field: str) -> Any: ...
+    def recommended_plots(self, solution: str | None = None) -> list[dict]: ...
+    def figures(self) -> list[Path]: ...
+    def legacy_artifacts(self) -> dict: ...
+
+
+@runtime_checkable
+class VisualizerProtocol(Protocol):
+    """The deterministic-plotting surface. ``cryostack_src.visualization.issm``
+    and ``.icepack`` both satisfy it."""
+
+    def recommended_plots(self, pkg: Any, solution: str | None = None) -> list[dict]: ...
+    def render_field(self, pkg: Any, solution: str, field: str,
+                     timestep: int | None = None, *, outdir: Any = None) -> Any: ...
+    def render_timeseries(self, pkg: Any, solution: str, field: str, *,
+                          outdir: Any = None) -> Any: ...
+
+
+#: callables a package must expose to be contract-conformant (checked by tests).
+#: ``status`` is a property, checked separately.
+RESULT_CONTRACT_METHODS = (
+    "is_readable", "available_solutions", "available_fields",
+    "field_metadata", "recommended_plots", "figures", "legacy_artifacts",
+)
+
+
+def describe_package(pkg: ResultPackageProtocol) -> dict:
+    """A model-neutral summary of any conformant result package."""
+    readable = bool(getattr(pkg, "is_readable", lambda: False)())
+    out: dict[str, Any] = {
+        "status": getattr(pkg, "status", "unknown"),
+        "readable": readable,
+        "schema": getattr(pkg, "schema", None),
+        "model": getattr(pkg, "model", None),
+        "figure_count": len(_call(pkg, "figures") or []),
+        "solutions": [],
+    }
+    if readable:
+        for sol in _call(pkg, "available_solutions") or []:
+            try:
+                fields = pkg.available_fields(sol)
+            except Exception:
+                fields = []
+            out["solutions"].append({"name": sol, "fields": list(fields)})
+    return out
+
+
+def _call(obj: Any, name: str):
+    fn = getattr(obj, name, None)
+    if not callable(fn):
+        return None
+    try:
+        return fn()
+    except Exception:
+        return None
+
+
+def resolve_result_reader(model: str):
+    """Return the ``discover_results`` callable for ``model``. Falls back to the
+    ISSM reader, which reports *legacy / missing* rather than crashing on an
+    unknown layout."""
+    from cryostack_src.models import get_model_adapter
+
+    try:
+        adapter = get_model_adapter(model or "issm")
+    except ValueError:
+        adapter = get_model_adapter("issm")
+    reader = getattr(adapter, "discover_results", None)
+    if reader is not None:
+        return reader
+    from cryostack_src.models.issm.results import discover_results
+    return discover_results
+
+
+def resolve_visualizer(model: str):
+    """Return the visualization module for ``model`` if the capabilities
+    registry says it has a deterministic visualizer, else ``None``."""
+    from cryostack_src.models.capabilities import MODEL_CAPABILITIES
+
+    name = (model or "").strip().lower()
+    cap = MODEL_CAPABILITIES.get(name)
+    if cap is None or not cap.visualization:
+        return None
+    from importlib import import_module
+
+    try:
+        return import_module(f"cryostack_src.visualization.{name}")
+    except ImportError:
+        return None

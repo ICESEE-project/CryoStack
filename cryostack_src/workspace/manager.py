@@ -54,28 +54,14 @@ class _FixedChoice:
 # these yet (Icepack, for now) simply return nothing and the Results tab
 # degrades gracefully.
 def _result_reader_for(model: str):
-    from cryostack_src.models import get_model_adapter
-
-    try:
-        adapter = get_model_adapter(model or "issm")
-    except ValueError:
-        adapter = get_model_adapter("issm")
-    reader = getattr(adapter, "discover_results", None)
-    if reader is not None:
-        return reader
-    from cryostack_src.models.issm.results import discover_results
-    return discover_results  # neutral: reports legacy/missing for other models
+    # P2: the model-neutral result contract owns this dispatch now.
+    from cryostack_src.models.results_common import resolve_result_reader
+    return resolve_result_reader(model)
 
 
 def _visualizer_for(model: str):
-    name = (model or "issm").strip().lower()
-    if name == "issm":
-        from cryostack_src.visualization import issm as _viz
-        return _viz
-    if name == "icepack":
-        from cryostack_src.visualization import icepack as _viz
-        return _viz
-    return None  # no deterministic visualizer for this model yet
+    from cryostack_src.models.results_common import resolve_visualizer
+    return resolve_visualizer(model)
 
 
 class StagedExample:
