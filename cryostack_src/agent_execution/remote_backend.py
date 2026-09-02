@@ -284,14 +284,15 @@ class RemoteSubmitBackend:
             raise SubmitBlocked("B4", msgs)
 
     def _preflight(self, plan, profile):
+        from cryostack_src.models import get_model_capabilities
         matlab_license = None
-        if plan.backend == "container" and plan.model == "issm":
+        if plan.backend == "container" and get_model_capabilities(plan.model).requires_matlab:
             matlab_license = profile.matlab_license_config()
             if matlab_license is None:
                 raise SubmitBlocked(
                     "preflight",
-                    f"ISSM runs MATLAB in the container but {profile.name} has "
-                    "no MATLAB licence configured")
+                    f"{plan.model.upper()} runs MATLAB in the container but "
+                    f"{profile.name} has no MATLAB licence configured")
         return matlab_license
 
     def _check_datasets(self, plan, mgr) -> None:

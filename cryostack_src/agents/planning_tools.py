@@ -128,12 +128,13 @@ def validate_run_plan(ctx, *, plan: dict) -> dict:
             findings.append(PlanFinding("warning", "identity",
                                         f"{profile.name} requires an active VPN."))
 
-    # 4. model/backend preflight facts
-    if p.model == "issm" and p.backend == "container" and not profile.has_matlab_license:
+    # 4. model/backend preflight facts (capability-driven, not model-name)
+    if (get_model_capabilities(p.model).requires_matlab
+            and p.backend == "container" and not profile.has_matlab_license):
         findings.append(PlanFinding(
             "error", "preflight",
-            f"ISSM runs MATLAB in the container but {profile.name} has no "
-            "MATLAB licence configured."))
+            f"{p.model.upper()} runs MATLAB in the container but {profile.name} "
+            "has no MATLAB licence configured."))
     if p.execution_mode == "cloud" and not get_model_capabilities(p.model).cloud_supported:
         findings.append(PlanFinding(
             "error", "preflight",
@@ -230,7 +231,8 @@ def estimate_execution_requirements(ctx, *, plan: dict) -> dict:
         "slurm_account_required": profile.account_required,
         "vpn_required": profile.requires_vpn,
         "mfa_required": profile.requires_mfa,
-        "matlab_required": p.model == "issm" and p.backend == "container",
+        "matlab_required": (get_model_capabilities(p.model).requires_matlab
+                            and p.backend == "container"),
         "matlab_licence_configured": bool(profile.has_matlab_license),
         "remote_identity_check": (
             f"`{profile.verification_command}` must equal your configured HPC "
