@@ -263,6 +263,28 @@ configuring the same resource never collide on one key. Keys live under
 `~/.ssh/cryostack/`. An older cluster-only key is reported but never read or
 adopted automatically.
 
+**Execution backends.** A model runs on one of two remote backends, selected
+in the gateway:
+
+- **ICESEE-Spack** — a source build activated on the allocation. MATLAB (for
+  ISSM) is site-provided. This is the path for **multi-node** runs: ISSM's
+  `generic` cluster launches its solver with `mpiexec`, and the host `srun`
+  is available, so PRRTE can place ranks across the allocation.
+- **ICESEE-Container** — a digest-pinned Apptainer image. The Slurm job runs
+  **one** `apptainer exec` on the batch node; ISSM's `solve()` then
+  self-launches `mpiexec` (Spack OpenMPI 5 / PRRTE 4) *inside* the image. The
+  image ships no Slurm or SSH client, so that launch is confined to the batch
+  node by three `apptainer exec --env` flags (`PRTE_MCA_ras=^slurm`,
+  `PRTE_MCA_plm=ssh`, `PRTE_MCA_rmaps_default_mapping_policy=:oversubscribe`).
+  **Container ISSM is therefore single-node.** `md.cluster.np` (2 for every
+  stock ISSM example) is the MPI rank count and is owned by the example, not
+  by the Slurm panel; a container ISSM run requesting `-N > 1` logs an
+  advisory and still runs on the batch node. Validated end-to-end on Georgia
+  Tech PACE (`SquareIceShelf`, `solve` → `outbin` → `postprocess_icesee.m` →
+  `cryostack.issm.results` → Results preview). Multi-node containerized MPI is
+  a deliberate, unaddressed limitation — use the Spack backend. Do not
+  reintroduce the removed `srun` shim (`cryostack_src/models/submission.py`).
+
 ## Results and visualization
 
 **Result package.** A completed run exports a transport-neutral package —

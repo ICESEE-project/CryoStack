@@ -181,3 +181,15 @@ def test_single_node_container_issm_has_no_advisory(render):
 def test_single_node_note_matrix(backend, model, nodes, expect_note):
     note = _issm_container_single_node_note(backend=backend, model=model, nodes=nodes)
     assert bool(note) is expect_note
+
+
+# ── the documented state stays in sync with the code (issue closure) ────
+def test_developer_guide_documents_the_single_node_container_issm_limit():
+    guide = " ".join(
+        (_REPO_ROOT / "icesee_jupyter_book" / "docs" / "developer_guide.md")
+        .read_text().split()
+    )
+    assert "Container ISSM is therefore single-node." in guide
+    assert "PRTE_MCA_ras=^slurm" in guide
+    assert "Do not reintroduce the removed `srun` shim" in guide
+    assert "use the Spack backend" in guide
