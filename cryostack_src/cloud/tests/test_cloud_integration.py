@@ -140,6 +140,71 @@ def test_full_cloud_lifecycle_offline(tmp_path, canonical, monkeypatch):
     assert pkg.schema == "cryostack.issm.results"
 
 
+def test_controller_lifecycle_lands_results_in_the_user_cache(tmp_path, canonical, monkeypatch):
+    """C6-E: CloudRunController submit -> auto-poll -> auto-retrieve, driven
+    offline, ends with the structured package in *this user's* run cache and
+    readable by the same Results UI reader."""
+    import asyncio
+
+    from cryostack_src.frontend.cryolauncher.cloud_run_controller import (
+        CloudRunController, COMPLETED,
+    )
+
+    mgr = _mgr(tmp_path / "ws-ctl", canonical)
+    staged = mgr.stage_example_for_run(source_example=str(canonical))
+    s3 = FakeS3(s3_store={})
+
+    bridge = CloudBridge(
+        provider="aws", region="us-east-2",
+        results_sync=lambda **kw: mgr.sync_cloud_results(aws=s3, **kw),
+    )
+    # AWS Batch submit + describe-jobs, both offline
+    monkeypatch.setattr(
+        "cryostack_src.cloud.drivers.aws.submit.run_aws",
+        lambda cfg, args: (0, json.dumps({"jobId": "batch-e6"}), ""))
+    states = iter(["SUBMITTED", "RUNNING", "SUCCEEDED", "SUCCEEDED"])
+    monkeypatch.setattr(
+        legacy_batch, "run_aws",
+        lambda cfg, args: (0, json.dumps({"jobs": [{"status": next(states),
+                                                    "container": {"exitCode": 0}}]}), ""))
+
+    registered = {}
+
+    def _register(*, handle, result):
+        run = mgr.register_run(RunInfo(
+            id=handle.run_id, name=handle.run_id, model="issm", backend="aws",
+            execution_mode="cloud", status="submitted", jobid=handle.job_id,
+            metadata={"cloud_run": handle.s3_run, "region": "us-east-2"}))
+        mgr.select_run(run.id)
+        registered["run"] = run
+
+    logs = []
+    ctl = CloudRunController(
+        bridge_factory=lambda: bridge,
+        register_run=_register,
+        sync_results=bridge.results,
+        on_state=lambda s: None,
+        on_log=logs.append,
+        on_results_ready=lambda: logs.append("READY"),
+        poll_interval=0.0,
+        to_thread=lambda fn: asyncio.sleep(0, result=fn()),
+        sleep=lambda s: asyncio.sleep(0),
+    )
+    asyncio.run(ctl.run_once(
+        staged_source=str(staged.path), model="issm", run_target="runme.m",
+        bucket=BUCKET, matlab_license_configured=True, s3=s3,
+        aws=lambda args: (0, json.dumps({"jobId": "batch-e6"}), ""),
+    ))
+
+    assert ctl.state == COMPLETED
+    assert "READY" in logs
+    run = registered["run"]
+    mgr.invalidate_result_package_cache(run.id)
+    pkg = mgr.result_package_for_run(run.id)
+    assert pkg.schema == "cryostack.issm.results"
+    assert pkg.status not in ("missing", "legacy")
+
+
 def test_no_billable_job_when_the_run_is_gated(tmp_path, canonical):
     mgr = _mgr(tmp_path / "ws2", canonical)
     staged = mgr.stage_example_for_run(source_example=str(canonical))

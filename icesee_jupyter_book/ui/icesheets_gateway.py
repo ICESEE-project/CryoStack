@@ -2434,12 +2434,24 @@ def build_icesheets_ui():
                 print(message)
 
         def _cloud_results_ready() -> None:
+            # outputs are already in this user's local run cache (cloud_outputs);
+            # re-read the shared ResultPackage for the selected run and render an
+            # initial plot -- the same panel every backend uses, no cloud path.
             try:
-                visualization_panel.controller.refresh()
+                workspace_history_panel.refresh_button.click()
             except Exception:
                 pass
+            try:
+                visualization_panel.controller.preview()
+            except Exception:
+                try:
+                    visualization_panel.controller.refresh()
+                except Exception:
+                    pass
             with results_out:
-                print("[cloud] Results retrieved. Open 'Preview Results'.")
+                print("[cloud] Outputs retrieved into your run cache and "
+                      "rendered in Results. Use Download Results / Download "
+                      "Figures to export.")
 
         _cloud["controller"] = CloudRunController(
             bridge_factory=current_cloud_bridge,
