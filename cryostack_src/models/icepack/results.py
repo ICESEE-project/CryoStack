@@ -91,7 +91,13 @@ class IcepackResultPackage:
         return dict(self._meta)
 
     def _fields_meta(self) -> list[dict]:
-        return list(self._meta.get("fields") or [])
+        # tolerate a partially-corrupt metadata.json: drop entries that are not
+        # a dict or have no usable name, rather than KeyError later.
+        out = []
+        for f in (self._meta.get("fields") or []):
+            if isinstance(f, dict) and isinstance(f.get("name"), str) and f["name"]:
+                out.append(f)
+        return out
 
     @property
     def status(self) -> str:
@@ -166,10 +172,22 @@ class IcepackResultPackage:
         import numpy as np
         h5py = _h5py()
         path = self.outputs / "mesh" / "mesh.h5"
-        with h5py.File(path, "r") as fh:
-            x = np.asarray(fh["x"][()]).reshape(-1)
-            y = np.asarray(fh["y"][()]).reshape(-1)
-            el = np.asarray(fh["elements"][()]).astype("int64")
+        try:
+            with h5py.File(path, "r") as fh:
+                missing = [k for k in ("x", "y", "elements") if k not in fh]
+                if missing:
+                    raise ResultError(
+                        f"mesh file {path.name} is missing {', '.join(missing)}")
+                x = np.asarray(fh["x"][()]).reshape(-1)
+                y = np.asarray(fh["y"][()]).reshape(-1)
+                el = np.asarray(fh["elements"][()]).astype("int64")
+        except (OSError, KeyError, ValueError) as err:
+            raise ResultError(f"could not read mesh {path.name}: {err}") from err
+        if x.size != y.size or x.size == 0:
+            raise ResultError(
+                f"mesh has mismatched / empty coordinates (x={x.size}, y={y.size})")
+        if el.ndim != 2 or el.shape[1] != 3:
+            raise ResultError("mesh connectivity is not 2-D triangular")
         return {
             "x": x, "y": y, "z": np.zeros_like(x),
             "elements": el,
@@ -191,12 +209,24 @@ class IcepackResultPackage:
         path = self.outputs / info.path
         if not path.is_file():
             raise ResultError(f"field data not found: {path}")
-        with h5py.File(path, "r") as fh:
-            vx = np.asarray(fh["values"][()]).reshape(-1)
-            if info.rank == "vector":
-                vy = np.asarray(fh["values_y"][()]).reshape(-1)
-                return vx, vy
-            return vx
+        try:
+            with h5py.File(path, "r") as fh:
+                if "values" not in fh:
+                    raise ResultError(f"{path.name} has no 'values' dataset")
+                vx = np.asarray(fh["values"][()]).reshape(-1)
+                if info.rank == "vector":
+                    if "values_y" not in fh:
+                        raise ResultError(
+                            f"vector field {field!r} has no 'values_y' dataset")
+                    vy = np.asarray(fh["values_y"][()]).reshape(-1)
+                    if vy.size != vx.size:
+                        raise ResultError(
+                            f"vector field {field!r} components disagree "
+                            f"(x={vx.size}, y={vy.size})")
+                    return vx, vy
+                return vx
+        except (OSError, KeyError, ValueError) as err:
+            raise ResultError(f"could not read field {field!r}: {err}") from err
 
     def load_field_magnitude(self, field: str, *, solution: str = SOLUTION):
         self._require_readable()
@@ -204,11 +234,15 @@ class IcepackResultPackage:
         h5py = _h5py()
         info = self.field_metadata(field)
         path = self.outputs / info.path
-        with h5py.File(path, "r") as fh:
-            if "magnitude" in fh:
-                return np.asarray(fh["magnitude"][()]).reshape(-1)
-            v = self.load_field(field)
-            return np.hypot(*v) if isinstance(v, tuple) else np.abs(v)
+        if path.is_file():
+            try:
+                with h5py.File(path, "r") as fh:
+                    if "magnitude" in fh:
+                        return np.asarray(fh["magnitude"][()]).reshape(-1)
+            except (OSError, KeyError, ValueError):
+                pass
+        v = self.load_field(field)          # already hardened
+        return np.hypot(*v) if isinstance(v, tuple) else np.abs(v)
 
     # -- recommendations ------------------------------------------------
     def recommended_plots(self, solution: str | None = None) -> list[dict]:
