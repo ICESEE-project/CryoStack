@@ -1,17 +1,19 @@
-"""Prototype "Run Assistant" panel (A9).
+"""Run Assistant panel — preview/beta (A9 + PASS 4 task 3).
 
-A deliberately small UI over :class:`cryostack_src.agents.RunAssistant`. It:
+A small UI over :class:`cryostack_src.agents.RunAssistant`. It shows the
+proposed configuration and the validation result, and gates an **Approve
+plan** control behind an explicit human acknowledgement. There is **no Submit
+button** — a real submit backend is not wired yet — so approving only hands
+the plan to the host's ``on_approve`` callback (which persists it for a human
+to act on).
 
-* takes a natural-language question, runs the assistant loop, shows the
-  transcript and every tool call it made;
-* renders the proposed run plan (model, example, overrides, the approvals it
-  will need) when one was produced;
-* shows an **Approve** control that is disabled until a *valid* plan exists and
-  a human ticks the acknowledgement box. Approving only calls the host's
-  ``on_approve`` callback with the plan dict — this panel never validates the
-  approval, advances the lifecycle, or submits anything.
+Design rules honoured:
 
-Presentation + wiring only. All policy lives in the agents package.
+* reuses the shared ``cryostack-*`` style vocabulary (no new visual system);
+* the safety boundary is explicit in the copy and the layout;
+* the panel is self-contained — any assistant error is caught and shown here,
+  never raised into the gateway;
+* nothing here submits, approves-for-execution, or advances a lifecycle.
 """
 from __future__ import annotations
 
@@ -26,70 +28,83 @@ from cryostack_src.agents import AssistantResult, RunAssistant
 from cryostack_src.agents.context import ToolContext
 
 
-def _h(text: str) -> str:
+def _h(text: Any) -> str:
     return html.escape(str(text))
 
 
-def _plan_summary_html(plan: dict) -> str:
-    rows = [
-        ("Model", plan.get("model")),
-        ("Example", plan.get("example")),
-        ("Execution", f"{plan.get('execution_mode')} / {plan.get('backend')}"),
-        ("Compute resource", plan.get("compute_resource")),
-        ("Run target", plan.get("run_target") or "(model default)"),
-    ]
+def _kv(label: str, value: str) -> str:
+    return (f"<tr><th style='text-align:left;padding:2px 14px 2px 0;"
+            f"white-space:nowrap;vertical-align:top'>{_h(label)}</th>"
+            f"<td style='padding:2px 0'>{value}</td></tr>")
+
+
+def _proposed_config_html(plan: dict) -> str:
     over = plan.get("parameter_overrides") or {}
-    rows.append(("Scientific overrides",
-                 ", ".join(f"{k} = {v}" for k, v in over.items()) or "none"))
-    body = "".join(
-        f"<tr><th style='text-align:left;padding-right:12px;"
-        f"vertical-align:top'>{_h(k)}</th><td>{_h(v)}</td></tr>"
-        for k, v in rows)
-    approvals = plan.get("approvals_required") or []
-    errs = [f for f in plan.get("findings", []) if f.get("level") == "error"]
-    warn = [f for f in plan.get("findings", []) if f.get("level") == "warning"]
-    tail = ""
-    if approvals:
-        tail += ("<div class='cryostack-help'>Approvals required before this "
-                 "can run: <b>" + _h(", ".join(approvals)) + "</b></div>")
-    if errs:
-        tail += ("<div class='cryostack-help' style='color:#b00'>Validation "
-                 "errors: " + _h("; ".join(f["message"] for f in errs)) + "</div>")
-    if warn:
-        tail += ("<div class='cryostack-help'>Warnings: "
-                 + _h("; ".join(f["message"] for f in warn)) + "</div>")
-    return (f"<div class='cryostack-group-title'>Proposed run plan</div>"
-            f"<table>{body}</table>{tail}"
-            f"<div class='cryostack-help'>Plan digest "
+    s = plan.get("slurm") or {}
+    ds = plan.get("datasets") or []
+    rows = [
+        _kv("Model", _h(plan.get("model", "-"))),
+        _kv("Example", _h(plan.get("example", "-"))),
+        _kv("Resource", _h(plan.get("compute_resource", "-"))),
+        _kv("Backend", _h(f"{plan.get('execution_mode','-')} / {plan.get('backend','-')}")),
+        _kv("Scientific changes",
+            ", ".join(f"{_h(k)} = {_h(v)}" for k, v in over.items())
+            or "<span class='cryostack-help'>none</span>"),
+        _kv("Slurm resources",
+            _h(f"{s.get('nodes','?')} node(s), {s.get('tasks','?')} task(s), "
+               f"{s.get('tasks_per_node','?')}/node, "
+               f"{s.get('wall_time') or '(resource default)'}"
+               + (f", account {s.get('account')}" if s.get('account') else ""))),
+        _kv("Datasets", ", ".join(_h(d) for d in ds)
+            or "<span class='cryostack-help'>none</span>"),
+    ]
+    return ("<div class='cryostack-group-title'>Proposed configuration</div>"
+            f"<table style='border-collapse:collapse'>{''.join(rows)}</table>"
+            f"<div class='cryostack-help'>plan digest "
             f"<code>{_h((plan.get('digest') or '')[:16])}…</code></div>")
 
 
+def _validation_html(plan: dict) -> str:
+    findings = plan.get("findings") or []
+    if not findings and plan.get("validated"):
+        body = "<div>✓ no issues found</div>"
+    else:
+        lines = []
+        for f in findings:
+            mark = {"error": "✗", "warning": "!", "info": "✓"}.get(f["level"], "·")
+            colour = {"error": "#b00", "warning": "#a60"}.get(f["level"], "inherit")
+            lines.append(f"<div style='color:{colour}'>{mark} "
+                         f"{_h(f['message'])}</div>")
+        body = "".join(lines) or "<div class='cryostack-help'>not validated</div>"
+    approvals = plan.get("approvals_required") or []
+    tail = ("<div class='cryostack-help'>Before this can run: "
+            + _h(", ".join(approvals)) + "</div>") if approvals else ""
+    return "<div class='cryostack-group-title'>Validation</div>" + body + tail
+
+
 def _transcript_html(result: AssistantResult) -> str:
-    parts = [f"<div class='cryostack-group-title'>Assistant</div>"]
+    parts = []
     for step in result.steps:
         if step.text:
-            parts.append(f"<p>{_h(step.text)}</p>")
+            parts.append(f"<div>{_h(step.text)}</div>")
         for call, res in zip(step.tool_calls, step.tool_results):
             status = "ok" if res["ok"] else f"refused — {_h(res['error'])}"
-            parts.append(
-                f"<div class='cryostack-help'>· tool <code>{_h(call['name'])}</code>"
-                f" ({_h(json.dumps(call['arguments']))}) → {status}</div>")
+            parts.append(f"<div class='cryostack-help'>· "
+                         f"<code>{_h(call['name'])}</code> → {status}</div>")
     if result.text and (not result.steps or not result.steps[-1].text):
-        parts.append(f"<p>{_h(result.text)}</p>")
+        parts.append(f"<div>{_h(result.text)}</div>")
     return "".join(parts)
 
 
 @dataclass
 class AgentPanel:
     container: W.VBox
-    #: last assistant result (None until a question is asked)
     last_result: AssistantResult | None = None
-    #: the plan the human may approve (None unless valid)
     approvable_plan: dict | None = None
-    _submit: Callable[[str], AssistantResult] = field(default=None, repr=False)
+    _submit: Callable[[str], Any] = field(default=None, repr=False)
     _approve: Callable[[], Any] = field(default=None, repr=False)
 
-    def ask(self, text: str) -> AssistantResult:
+    def ask(self, text: str) -> Any:
         return self._submit(text)
 
     def approve(self) -> Any:
@@ -102,65 +117,110 @@ def build_agent_panel(
     build_context: Callable[[], ToolContext],
     on_approve: Callable[[dict], Any] | None = None,
 ) -> AgentPanel:
+    _beta = ("<span style='font-size:11px;font-weight:600;letter-spacing:.04em;"
+             "padding:1px 7px;border:1px solid currentColor;border-radius:10px;"
+             "opacity:.7;margin-left:6px'>BETA</span>")
+    header = W.HTML(
+        f"<div class='cryostack-group-title'>Run Assistant {_beta}</div>"
+        "<div class='cryostack-help'>Describe the run you want. The assistant "
+        "builds a plan and validates it. It <b>cannot approve or submit</b> — "
+        "you do that. The manual Basic / Advanced workflow above is unchanged.</div>")
     question = W.Textarea(
-        placeholder="e.g. set up the synthetic ice shelf on PACE at 260 K",
-        layout=W.Layout(width="100%", height="70px"))
-    ask_btn = W.Button(description="Ask the assistant", button_style="primary")
+        placeholder="e.g. run SquareIceShelf on PACE, account gts-mylab",
+        layout=W.Layout(width="100%", height="64px"))
+    ask_btn = W.Button(description="Ask", button_style="primary")
     transcript = W.HTML()
-    plan_box = W.HTML()
+    config_box = W.HTML()
+    validation_box = W.HTML()
     ack = W.Checkbox(value=False, indent=False,
-                     description="I have reviewed this plan and approve it")
-    approve_btn = W.Button(description="Submit for approval", disabled=True)
-    approve_out = W.HTML()
+                     description="I have reviewed this plan")
+    revise_btn = W.Button(description="Revise plan")
+    approve_btn = W.Button(description="Approve plan", disabled=True)
+    outcome = W.HTML()
 
-    ack.layout.display = "none"
-    approve_btn.layout.display = "none"
+    for w in (config_box, validation_box, ack, revise_btn, approve_btn):
+        w.layout.display = "none"
 
-    panel = AgentPanel(container=W.VBox([
-        W.HTML("<div class='cryostack-group-title'>CryoStack Run Assistant</div>"
-               "<div class='cryostack-help'>The assistant can look things up and "
-               "build a run plan. It cannot approve or submit a run — you do "
-               "that.</div>"),
-        question, ask_btn, transcript, plan_box, ack, approve_btn, approve_out,
-    ], layout=W.Layout(width="100%", gap="8px")))
+    panel = AgentPanel(container=W.VBox(
+        [header, question, ask_btn, transcript, config_box, validation_box,
+         ack, W.HBox([revise_btn, approve_btn], layout=W.Layout(gap="10px")),
+         outcome],
+        layout=W.Layout(width="100%", gap="8px")))
 
-    def _refresh_approve_state() -> None:
-        ok = panel.approvable_plan is not None
-        ack.layout.display = "" if ok else "none"
-        approve_btn.layout.display = "" if ok else "none"
-        approve_btn.disabled = not (ok and ack.value)
+    def _has_errors(plan: dict) -> bool:
+        return any(f.get("level") == "error" for f in (plan.get("findings") or []))
 
-    def _submit(text: str) -> AssistantResult:
-        approve_out.value = ""
-        ctx = build_context()
-        result = assistant.handle(ctx, text)
+    def _refresh_controls() -> None:
+        plan = panel.approvable_plan
+        show = plan is not None
+        for w in (config_box, validation_box, ack, revise_btn, approve_btn):
+            w.layout.display = "" if show else "none"
+        approve_btn.disabled = not (show and ack.value and not _has_errors(plan))
+
+    def _submit(text: str) -> Any:
+        outcome.value = ""
+        try:
+            ctx = build_context()
+            result = assistant.handle(ctx, text)
+        except Exception as err:  # the assistant must never break the gateway
+            transcript.value = ("<div class='cryostack-help' style='color:#b00'>"
+                                f"assistant unavailable: {_h(type(err).__name__)}"
+                                "</div>")
+            panel.approvable_plan = None
+            _refresh_controls()
+            return None
         panel.last_result = result
         transcript.value = _transcript_html(result)
-        if result.proposed_plan is not None:
-            plan_box.value = _plan_summary_html(result.proposed_plan)
-        else:
-            plan_box.value = ""
-        panel.approvable_plan = (
-            result.proposed_plan if result.plan_is_valid else None)
+        plan = result.proposed_plan
+        if plan is not None:
+            config_box.value = _proposed_config_html(plan)
+            validation_box.value = _validation_html(plan)
+        panel.approvable_plan = plan
         ack.value = False
-        _refresh_approve_state()
+        _refresh_controls()
         return result
 
     def _approve() -> Any:
-        if panel.approvable_plan is None or not ack.value:
-            approve_out.value = ("<div class='cryostack-help' style='color:#b00'>"
-                                 "Review and tick the box first.</div>")
+        plan = panel.approvable_plan
+        if plan is None or not ack.value or _has_errors(plan):
+            outcome.value = ("<div class='cryostack-help' style='color:#b00'>"
+                             "Review the plan and tick the box first.</div>")
             return None
-        out = on_approve(panel.approvable_plan) if on_approve else None
-        approve_out.value = ("<div class='cryostack-help'>Plan sent to the "
-                             "approval queue. It will not run until a human "
-                             "approves it there.</div>")
-        return out
+        try:
+            ref = on_approve(plan) if on_approve else None
+        except Exception as err:
+            outcome.value = ("<div class='cryostack-help' style='color:#b00'>"
+                             f"could not record the approval: {_h(err)}</div>")
+            return None
+        outcome.value = (
+            "<div class='cryostack-help'>Plan recorded for approval"
+            + (f" (<code>{_h(ref)}</code>)" if ref else "")
+            + ". It will not run until a human approves it — there is no "
+            "automatic submission.</div>")
+        return ref
 
-    ask_btn.on_click(lambda _btn: _submit(question.value))
-    approve_btn.on_click(lambda _btn: _approve())
-    ack.observe(lambda _ch: _refresh_approve_state(), names="value")
+    def _revise(_=None) -> None:
+        panel.approvable_plan = None
+        outcome.value = ""
+        _refresh_controls()
+        question.focus()
+
+    ask_btn.on_click(lambda _b: _submit(question.value))
+    approve_btn.on_click(lambda _b: _approve())
+    revise_btn.on_click(_revise)
+    ack.observe(lambda _c: _refresh_controls(), names="value")
 
     panel._submit = _submit
     panel._approve = _approve
     return panel
+
+
+def build_agent_accordion(**kwargs) -> W.Accordion:
+    """The gateway mounts this: a collapsed Accordion so the manual workflow
+    stays primary and the agent is opt-in."""
+    panel = build_agent_panel(**kwargs)
+    acc = W.Accordion(children=[panel.container])
+    acc.set_title(0, "🤖 Run Assistant (Beta)")
+    acc.selected_index = None                 # collapsed by default
+    acc._cryostack_agent_panel = panel        # for tests / callers
+    return acc

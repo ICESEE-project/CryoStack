@@ -69,6 +69,7 @@ from icesee_jupyter_book.ui.shared_validation import (
     validate_slurm_resources,
 )
 from icesee_jupyter_book.ui.shared_observer_guard import UIRefreshCoordinator
+from icesee_jupyter_book.ui.shared_agent_panel import build_agent_accordion
 from cryostack_src import perf
 
 from icesee_jupyter_book.ui.experiment_bridge import (
@@ -377,6 +378,45 @@ def build_backend_check_cmd(backend: str, model: str, remote_base: str, remote_t
         sif_path=sif_path,
         backend=backend,
     )
+
+def _build_agent_accordion(workspace_manager):
+    """Construct the Run Assistant (Beta) accordion for the IceSheets gateway.
+
+    * context: the authenticated CryoStack user, hard-capped at PLAN, scoped to
+      this gateway's ``workspace_manager``;
+    * assistant: the deterministic ``RuleBasedAdapter`` (no network / no key)
+      unless a provider adapter is wired elsewhere;
+    * on_approve: records + persists a digest-bound ``Approval`` in the user's
+      own ``AgentStore``. There is no submit step -- no ``SubmitBackend`` is
+      wired -- so an approved plan simply waits.
+    """
+    from cryostack_src.agents import (
+        AgentStore, Permission, RuleBasedAdapter, RunAssistant, RunPlan,
+        build_tool_context,
+    )
+    from cryostack_src.workspace.identity import resolve_workspace_user
+
+    def _context():
+        return build_tool_context(
+            application="icesheets", max_permission=Permission.PLAN,
+            workspace_manager=workspace_manager)
+
+    def _on_approve(plan_dict: dict) -> str:
+        user = resolve_workspace_user(require_authenticated=True)
+        store = AgentStore(user=user)
+        mp = store.plans.create(RunPlan.from_dict(plan_dict))
+        mp.mark_validated(mp.plan)
+        mp.submit_for_approval()
+        mp.approve(user)
+        store.plans.save(mp)
+        return mp.plan_id
+
+    return build_agent_accordion(
+        assistant=RunAssistant(llm=RuleBasedAdapter()),
+        build_context=_context,
+        on_approve=_on_approve,
+    )
+
 
 def build_icesheets_ui():
     _perf_t0 = _time.perf_counter()
@@ -2964,6 +3004,19 @@ def build_icesheets_ui():
             with log_out:
                 print("[settings] restore skipped:", type(_b2_err).__name__, _b2_err)
 
+        # Run Assistant (Beta) -- opt-in via CRYOSTACK_AGENT_PANEL. Collapsed by
+        # default; the manual Basic/Advanced workflow is untouched. Any failure
+        # building it is swallowed so the gateway always renders.
+        agent_panel_widgets: list = []
+        if os.environ.get("CRYOSTACK_AGENT_PANEL", "").strip().lower() in (
+                "1", "true", "yes", "on"):
+            try:
+                agent_panel_widgets = [_build_agent_accordion(workspace_manager)]
+            except Exception as _agent_err:  # never block the gateway
+                with log_out:
+                    print("[agent] Run Assistant panel unavailable:",
+                          type(_agent_err).__name__, _agent_err)
+
         page = W.VBox(
             [
                 shared_styles,
@@ -2976,6 +3029,7 @@ def build_icesheets_ui():
 
                 app_menu,
                 header,
+                *agent_panel_widgets,
                 row,
                 workspace_height_sync,
                 # actions_card,
