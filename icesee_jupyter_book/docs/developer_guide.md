@@ -285,6 +285,27 @@ in the gateway:
   a deliberate, unaddressed limitation — use the Spack backend. Do not
   reintroduce the removed `srun` shim (`cryostack_src/models/submission.py`).
 
+**Cloud execution (AWS Batch).**
+
+- *Implemented:* an end-to-end ISSM path — config + preflight, a user-owned
+  working copy staged to `s3://<bucket>/runs/<safe-user>/<run-id>/`,
+  `aws batch submit-job` (Fargate), lifecycle status/logs/terminate.
+  Submission is non-blocking (`cloud_run_controller.CloudRunController`, the
+  same asyncio worker pattern as the auto-tail log worker): the UI returns at
+  once, the run auto-polls, and on completion the outputs sync into the user's
+  run cache and render through the same Results panel every backend uses. All
+  AWS calls go through the `aws` CLI; CryoStack stores no credentials.
+  Job-definition selection is controlled (the model default or a known
+  CryoStack name only). A license-neutral **infrastructure smoke test**
+  (`cryostack_src.cloud.smoke`) checks identity + S3 + Batch + ECR reachability
+  without submitting a job.
+- *Requires qualification:* budget/quota/cleanup automation, failure-recovery
+  tests, IAM tightening, and one real run on a controlled account.
+- *Manual checkpoint:* `overnight/CLOUD_AWS_ACCEPTANCE.md` — provisioning and
+  the first paid run are human-authorised.
+- *Not enabled:* a real ISSM cloud run still needs a MATLAB license configured
+  for the `aws` compute profile; preflight blocks it honestly until then.
+
 ## Results and visualization
 
 **Result package.** A completed run exports a transport-neutral package —
