@@ -638,3 +638,14 @@ audits.
 Next: 3 mount panel, 6 replay/inspect CLI, 7 observability, 8 LLM adapter
 boundary, 9 eval harness, 10 model-conditionals audit, 11 icepack hardening,
 14 acceptance command, 15 tomorrow lab, 16 adversarial review.
+
+### PASS 4 tasks 6-9 (coordinator, in-process)
+| Task | Commit | What |
+|---|---|---|
+| 6 replay/inspect | 83effbb | python -m cryostack_src.agents.inspect; renders plan/trace/permission-decisions; no --run |
+| 7 observability | c7be8b8 | perf.event() + agent milestones under CRYOSTACK_PERF; static labels only |
+| 8 LLM boundary | 960379e | AGENT_LLM_PROVIDER_CONTRACT.md; assert_declarative_tools; RuleBasedAdapter; Anthropic/OpenAI skeletons (no SDK/key/network) |
+| 9 eval harness | e15b8e3 | eval.py 8 deterministic scenarios; invariant: never submitted, no approve/execute tool |
+
+Remaining: 3 mount panel, 10 model-conditionals audit, 11 icepack hardening,
+14 acceptance command, 15 tomorrow lab, 16 adversarial review, final report.
