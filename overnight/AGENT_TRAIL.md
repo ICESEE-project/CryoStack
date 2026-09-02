@@ -617,3 +617,24 @@ assistant. 58 agent tests green.
 
 Next: P1 ModelCapabilities registry, P2 result-contract generalization,
 P3 run/experiment abstraction (backward-compat gate), then R1/R2/R3.
+
+---
+
+## PASS 4 — integration, hardening, demo readiness (from beda9f3)
+
+Coordinator in-process; 2 read-only subagents for the cloud + ICESEE-results
+audits.
+
+| Task | Commit | What |
+|---|---|---|
+| 1 audit PASS 3 | 5453605 | AUDIT_pass4_agent_integration.md — 12 findings, no redesign |
+| 13 cloud-agent audit | e771e35 | AUDIT_agent_cloud.md (subagent) — job-def/MATLAB-bool caller-supplied at driver; S3 no per-user isolation |
+| 12 ICESEE results | e771e35 | AUDIT_icesee_results_contract.md (subagent) — evidence-backed core; no diagnostics persisted; contract stays OWNER_CHECKPOINT |
+| 2 persist plans/traces | 550f35e | store.py AgentStore/PlanRepository; .cryostack/agents/{plans,traces}; owner bound to path; digest re-verified on load; scan_for_secrets; 21 tests |
+| 4 SubmitBackend audit | 7b8e806 | AUDIT_agent_submit_backend.md — exact composition, 9 invariants (8 HIGH) |
+| 4 SubmitBackend impl | a35c5e9 | cryostack_src/agent_execution/ RemoteSubmitBackend (composes B3->B4->preflight->stage->submit->register), DryRunSubmitBackend; 15 tests; NOT wired |
+| 5 approval integrity | f1645bc | AUDIT_agent_approval_integrity.md; fingerprint.py RunInputFingerprint; Approval.input_fingerprint; 2 tools; backend blocks on drift; 11 tests |
+
+Next: 3 mount panel, 6 replay/inspect CLI, 7 observability, 8 LLM adapter
+boundary, 9 eval harness, 10 model-conditionals audit, 11 icepack hardening,
+14 acceptance command, 15 tomorrow lab, 16 adversarial review.
