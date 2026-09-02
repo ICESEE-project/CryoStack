@@ -4,8 +4,10 @@
 integration-ready platform we can inspect and test today.** No redesign of the
 green PASS-3 core.
 
-**Start HEAD:** `beda9f3` (PASS 3 accepted). **End HEAD:** see §2 (final commit
-after the adversarial-review reconciliation).
+**Start HEAD:** `beda9f3` (PASS 3 accepted). **End HEAD:** `4756750`
+(this report is committed on top). 30 PASS-4 commits (24 feature/fix + 6
+overnight docs) + 2 `chore:` commits untracking pre-existing WIP files that a
+stray `git add -A` swept in (see §6).
 Branch `gatech_vm_backend`. Prior passes: `overnight/MORNING_REPORT_pass1-2.md`,
 `overnight/MORNING_REPORT_pass3.md`.
 
@@ -384,16 +386,26 @@ on those two.
 
 ---
 
-## Tests & builds at checkpoint
+## Tests & builds — FINAL
 
 * Python (`cryostack_src` + `icesee_jupyter_book` + `bin` +
-  `icesee_hpc_connector` + `deployment`): **1237 passed, 1 skipped**
-  (+~124 this pass). Green before every commit.
+  `icesee_hpc_connector` + `deployment`): **1278 passed, 1 skipped**
+  (+~165 this pass; agent + agent_execution suites 208). Green before every
+  commit.
 * `node --test deployment/tests/connect_page.test.mjs`: **18/18**.
-* `jupyter-book build` + `bin/build_application_docs.sh`: **clean**.
+* `jupyter-book build icesee_jupyter_book/`: **build succeeded**.
+* `bin/build_application_docs.sh` (CryoLauncher / ICESEE / Frozen Legacies):
+  **all build succeeded**.
 * `python -m cryostack_src.acceptance --offline`: **15 PASS / 0 FAIL / 2 MANUAL**.
 * Firedrake / icepack still not importable here — Icepack exporter stays
   mock-tested.
+* `git status`: clean except **pre-existing untracked files** — the two
+  `external/` vendored repos (`FrozenLegacies`, `living-ice-sheet-temperature`),
+  and the WIP that was untracked at session start (`advertising/`,
+  `icesee_jupyter_book/{guides,legacy_pages}/`, and the stub
+  `cryostack_src/workspace/{deletion,downloads,storage,histroy}.py` +
+  `frontend/.../run_card.py`). Two `git add -A` slips staged these and were
+  reverted with `chore:` commits — they are **not** part of PASS 4.
 
 Nothing in this pass weakened authentication, B1/B2/B3/B4, connector-v2
 ownership, credential handling, Slurm validation, tested-container gates, or a

@@ -2,7 +2,7 @@
 
 **Branch:** `gatech_vm_backend`
 **PASS 4 start HEAD:** `beda9f3` (PASS 3 accepted)
-**PASS 4 status:** tasks 1–15 COMPLETE; task 16 (adversarial review) in progress
+**PASS 4 status:** COMPLETE (tasks 1-16 + reconciliation)
 **Coordinating agent:** main (this session). Read-only subagents: cloud audit,
 ICESEE-results audit, + 3 adversarial reviewers (security / scientific-integrity
 / software-architecture).
