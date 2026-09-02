@@ -87,6 +87,12 @@ class RunPlan:
     findings: tuple[PlanFinding, ...] = ()
     approvals_required: tuple[str, ...] = ()
     validated: bool = False
+    #: field name -> where the value came from: "requested" (explicit in the
+    #: request, as understood by the assistant) or "default" (filled by
+    #: CryoStack / the compute profile / the example). Advisory only -- it is
+    #: display provenance for the human review surface and is NOT part of the
+    #: digest, so it can never change what an approval binds to.
+    provenance: dict = field(default_factory=dict)
 
     # -- construction ---------------------------------------------------
     def __post_init__(self) -> None:
@@ -143,6 +149,7 @@ class RunPlan:
             "findings": [f.to_dict() for f in self.findings],
             "approvals_required": list(self.approvals_required),
             "validated": self.validated,
+            "provenance": dict(self.provenance),
             "digest": self.digest(),
         }
 
@@ -167,6 +174,7 @@ class RunPlan:
             ),
             approvals_required=tuple(d.get("approvals_required") or ()),
             validated=bool(d.get("validated", False)),
+            provenance=dict(d.get("provenance") or {}),
         )
 
     # -- helpers for the approval layer -----------------------------

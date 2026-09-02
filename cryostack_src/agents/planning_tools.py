@@ -40,9 +40,13 @@ from .tools import tool
           "slurm": {"type": "dict", "required": False},
       })
 def prepare_run_plan(ctx, *, model: str, example: str, compute_resource: str,
-                     execution_mode: str = "remote", backend: str = "spack",
+                     execution_mode: str = "", backend: str = "",
                      run_target: str = "", parameter_overrides: dict | None = None,
                      datasets: list | None = None, slurm: dict | None = None) -> dict:
+    execution_mode_explicit = bool(str(execution_mode).strip())
+    backend_explicit = bool(str(backend).strip())
+    execution_mode = (str(execution_mode).strip().lower() or "remote")
+    backend = (str(backend).strip().lower() or "spack")
     model = str(model).strip().lower()
     adapter = get_model_adapter(model)          # raises ValueError on unknown
     profile = get_compute_profile(compute_resource)
@@ -51,28 +55,55 @@ def prepare_run_plan(ctx, *, model: str, example: str, compute_resource: str,
     if ex is None:
         raise ValueError(f"no example {example!r} for model {model!r}")
 
+    run_target_explicit = bool(run_target)
     if not run_target:
         run_target = _default_run_target(ex, adapter)
 
     sd = profile.scheduler_defaults
+    _slurm_in = slurm or {}
     slurm_req = SlurmRequest(**{
-        "job_name": (slurm or {}).get("job_name", f"{model.upper()}"),
-        "nodes": int((slurm or {}).get("nodes", 1)),
-        "tasks": int((slurm or {}).get("tasks", 1)),
-        "tasks_per_node": int((slurm or {}).get("tasks_per_node", 1)),
-        "wall_time": (slurm or {}).get("wall_time") or sd.wall_time,
-        "memory": (slurm or {}).get("memory", ""),
-        "account": (slurm or {}).get("account", ""),
+        "job_name": _slurm_in.get("job_name", f"{model.upper()}"),
+        "nodes": int(_slurm_in.get("nodes", 1)),
+        "tasks": int(_slurm_in.get("tasks", 1)),
+        "tasks_per_node": int(_slurm_in.get("tasks_per_node", 1)),
+        "wall_time": _slurm_in.get("wall_time") or sd.wall_time,
+        "memory": _slurm_in.get("memory", ""),
+        "account": _slurm_in.get("account", ""),
     })
+
+    # Display provenance for the human review surface: "requested" (explicit in
+    # the call the assistant built from the request) vs "default" (filled here
+    # from the compute profile / the example / a fallback). Advisory only --
+    # NOT part of the digest.
+    def _src(explicit: bool) -> str:
+        return "requested" if explicit else "default"
+
+    provenance = {
+        "model": "requested",
+        "example": "requested",
+        "compute_resource": "requested",
+        "execution_mode": _src(execution_mode_explicit),
+        "backend": _src(backend_explicit),
+        "run_target": _src(bool(run_target_explicit)),
+        "parameter_overrides": _src(bool(parameter_overrides)),
+        "datasets": _src(bool(datasets)),
+        "slurm.nodes": _src("nodes" in _slurm_in),
+        "slurm.tasks": _src("tasks" in _slurm_in),
+        "slurm.tasks_per_node": _src("tasks_per_node" in _slurm_in),
+        "slurm.wall_time": _src(bool(_slurm_in.get("wall_time"))),
+        "slurm.memory": _src(bool(_slurm_in.get("memory"))),
+        "slurm.account": _src(bool(_slurm_in.get("account"))),
+    }
 
     plan = RunPlan(
         application=ctx.application, model=model, example=example,
-        execution_mode=str(execution_mode).strip().lower(),
-        compute_resource=profile.name, backend=str(backend).strip().lower(),
+        execution_mode=execution_mode,
+        compute_resource=profile.name, backend=backend,
         run_target=run_target,
         parameter_overrides=dict(parameter_overrides or {}),
         datasets=tuple(datasets or ()),
         slurm=slurm_req,
+        provenance=provenance,
     )
     ctx.trace.append("plan", {"digest": plan.digest(), "plan": plan.to_dict()})
     return plan.to_dict()

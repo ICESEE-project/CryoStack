@@ -142,7 +142,11 @@ def test_valid_plan_flow(monkeypatch):
         pytest.skip("example not resolvable")
 
     assert "Proposed configuration" in _html(panel.container)
-    assert "Validation" in _html(panel.container)
+    assert "CryoStack validation" in _html(panel.container)
+    # the human-review surface is built from the canonical plan
+    assert "plan digest" in _html(panel.container)
+    accs = _widgets(panel.container, W.Accordion)
+    assert any("View full configuration" in a.get_title(0) for a in accs)
     approve = _btn(panel.container, "Approve plan")
 
     if not result.plan_is_valid:
@@ -158,6 +162,90 @@ def test_valid_plan_flow(monkeypatch):
     ref = panel.approve()
     assert ref == "plan-42" and sent
     assert "no automatic submission" in _html(panel.container)
+
+
+# ── human-review surface: canonical config, provenance, digest binding ──
+def _plan_dict(**over):
+    from cryostack_src.agents import RunPlan, SlurmRequest
+    base = dict(application="icesheets", model="issm", example="SquareIceShelf",
+                execution_mode="remote", compute_resource="pace", backend="spack",
+                run_target="runme.m",
+                slurm=SlurmRequest(job_name="ISSM", wall_time="01:00:00",
+                                   account="gts"))
+    base.update(over)
+    p = RunPlan(**base)
+    return p.with_findings((), approvals_required=("compute-submission",)).to_dict()
+
+
+class _FakeAsst:
+    """Minimal stand-in: the panel only calls ``assistant.handle``."""
+    def __init__(self, plan):
+        self._plan = plan
+
+    def handle(self, ctx, text):
+        from cryostack_src.agents.assistant import AssistantResult
+        return AssistantResult(text="here is a plan", trace_id="t", steps=[],
+                               proposed_plan=self._plan)
+
+
+def _scripted_panel(plan, on_approve=None):
+    return build_agent_panel(assistant=_FakeAsst(plan),
+                             build_context=_ctx_factory,
+                             on_approve=on_approve or (lambda p: "ref-1"))
+
+
+def test_review_surface_renders_the_canonical_plan_fields():
+    plan = _plan_dict(parameter_overrides={"friction": 100.0})
+    plan["provenance"] = {"example": "requested", "slurm.wall_time": "default",
+                          "backend": "default"}
+    panel = _scripted_panel(plan)
+    panel.ask("run it")
+    blob = _html(panel.container)
+    for needle in ("Proposed configuration", "CryoStack validation",
+                   "Software backend", "Compute profile", "Expected outputs",
+                   "Model overrides", "friction = 100.0"):
+        assert needle in blob, needle
+    # provenance chips appear when the plan records provenance
+    assert "from your request" in blob and "CryoStack default" in blob
+    # the full-config accordion carries the resolved plan verbatim
+    accs = _widgets(panel.container, W.Accordion)
+    full = next(a for a in accs if "View full configuration" in a.get_title(0))
+    assert plan["digest"][:16] in _html(full)
+
+
+def test_approve_binds_only_to_the_displayed_digest():
+    sent = []
+    plan = _plan_dict()
+    panel = _scripted_panel(plan, on_approve=lambda p: sent.append(p) or "ok")
+    panel.ask("run it")
+    for cb in _widgets(panel.container, W.Checkbox):
+        cb.value = True
+    assert _btn(panel.container, "Approve plan").disabled is False
+    # tamper with the displayed plan after review -> digest no longer matches
+    panel.approvable_plan = {**plan, "parameter_overrides": {"friction": 1.0}}
+    assert panel.approve() is None
+    assert sent == []
+    assert "no longer matches its digest" in _html(panel.container)
+
+
+def test_revise_drops_the_proposal_and_disables_approve():
+    plan = _plan_dict()
+    panel = _scripted_panel(plan)
+    panel.ask("run it")
+    for cb in _widgets(panel.container, W.Checkbox):
+        cb.value = True
+    assert _btn(panel.container, "Approve plan").disabled is False
+    _btn(panel.container, "Revise plan").click()
+    assert panel.approvable_plan is None
+    assert _btn(panel.container, "Approve plan").disabled is True
+    assert _btn(panel.container, "Approve plan").layout.display == "none"
+
+
+def test_no_agent_config_or_workspace_execution_path():
+    src = (Path(__file__).resolve().parents[1] / "shared_agent_panel.py").read_text()
+    for banned in ("agent_config", "agent_workspace", "agent_submit",
+                   "SubmitBackend", "agent_cloud", "agent_slurm"):
+        assert banned not in src
 
 
 # ── mounts as a collapsed accordion ─────────────────────────────────
