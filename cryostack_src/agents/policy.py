@@ -18,23 +18,44 @@ from pathlib import Path
 
 from cryostack_src.workspace.identity import WorkspaceIdentityError
 
-#: names whose mere presence in a tool module is a policy violation
+#: names whose mere presence in a tool module is a policy violation. Matched as
+#: bare identifiers, attribute tails, dotted tails, and import paths — see
+#: :func:`_referenced_names`. Chosen to be unambiguous (a plain regex or a dict
+#: key must not trip them).
 PROHIBITED_SYMBOLS = frozenset({
-    # arbitrary remote command execution
+    # arbitrary remote command execution (CryoStack helpers)
     "check_backend", "connector_ssh", "send_command", "ssh_run", "run_ssh",
     "run_shell", "run_subprocess", "bootstrap_passwordless_ssh",
     "remote_install_pubkey_with_password", "connector_install_pubkey_with_password",
+    # arbitrary command execution / dynamic code — module + call forms
+    "subprocess", "Popen", "os.system", "os.popen", "os.spawnv", "os.spawnvp",
+    "posix_spawn", "os.execv", "os.execve", "os.execvp", "os.fork",
+    "socket", "pty", "ctypes", "importlib", "import_module", "runpy",
+    "__import__", "compile_command",
     # secret retrieval / holding
     "deployment_token", "ensure_deployment_token", "current_binding",
-    "_control_headers_for", "matlab_license_config",
-    # identity spoofing
-    "os.environ", "getpass",
+    "_control_headers_for", "matlab_license_config", "matlab_license_value",
+    # identity spoofing / environment access
+    "os.environ", "os.getenv", "os.putenv", "os.setenv", "getpass", "getuser",
 })
 
-#: modules whose tool functions are subject to the source scan
+#: builtins that are dangerous ONLY when *called as a bare name* (``eval(x)``),
+#: not as an attribute (``re.compile(...)``). Checked separately.
+_PROHIBITED_BUILTIN_CALLS = frozenset({"eval", "exec", "compile", "__import__"})
+
+#: prohibited names a module is nonetheless permitted to reference. Tiny + justified.
+_ALLOWED_USES: dict[str, frozenset[str]] = {}
+
+#: modules whose source is subject to the prohibited-symbol scan. Kept in sync
+#: with the package by ``test_agent_core`` (asserts every agents/*.py is either
+#: here or in the known-core allowlist).
 TOOL_MODULES = ("readonly_tools", "planning_tools", "planning", "approval",
                 "assistant", "execution", "trace", "trace_store", "experiment",
-                "fingerprint", "store", "llm", "llm_adapters", "inspect")
+                "fingerprint", "store", "llm", "llm_adapters", "inspect", "eval",
+                "registry", "context", "tools", "permissions")
+
+#: agents/*.py deliberately NOT scanned (pure plumbing, no capability surface)
+_UNSCANNED_OK = frozenset({"__init__", "policy"})
 
 
 def _referenced_names(source: str) -> set[str]:
@@ -44,32 +65,64 @@ def _referenced_names(source: str) -> set[str]:
     except SyntaxError:  # pragma: no cover
         return names
     for node in ast.walk(tree):
-        if isinstance(node, ast.Name):
-            names.add(node.id)
-        elif isinstance(node, ast.Attribute):
-            names.add(node.attr)
+        if isinstance(node, ast.Attribute):
+            if node.attr not in _PROHIBITED_BUILTIN_CALLS:    # re.compile is fine
+                names.add(node.attr)
+            if isinstance(node.value, ast.Name):
+                names.add(f"{node.value.id}.{node.attr}")     # e.g. os.environ
+        elif isinstance(node, ast.ImportFrom):
+            mod = node.module or ""
+            for a in node.names:
+                names.add(f"{mod}.{a.name}" if mod else a.name)   # os.environ
+                names.add(a.name)
         elif isinstance(node, ast.alias):
-            names.add((node.asname or node.name).split(".")[0])
-            names.add(node.name)
+            full = node.name
+            names.add(full)
+            names.add(full.split(".")[0])
+            names.add(full.split(".")[-1])
+            if node.asname:
+                names.add(node.asname)
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id in _PROHIBITED_BUILTIN_CALLS:
+                names.add(node.func.id)                        # eval( / exec( / ...
+        elif isinstance(node, ast.Name):
+            # a bare Name matters only if it is itself a prohibited helper name
+            if node.id in PROHIBITED_SYMBOLS:
+                names.add(node.id)
     return names
 
 
 def scan_tool_module(path: str | Path) -> list[str]:
-    """Return the prohibited symbols referenced by the module at ``path``."""
-    src = Path(path).read_text(encoding="utf-8")
+    """Return the prohibited symbols referenced by the module at ``path``,
+    minus that module's tiny :data:`_ALLOWED_USES` allowance."""
+    p = Path(path)
+    src = p.read_text(encoding="utf-8")
     used = _referenced_names(src)
-    return sorted(PROHIBITED_SYMBOLS & used)
+    hits = (PROHIBITED_SYMBOLS | _PROHIBITED_BUILTIN_CALLS) & used
+    hits -= _ALLOWED_USES.get(p.stem, frozenset())
+    return sorted(hits)
 
 
 def assert_tool_modules_are_clean() -> None:
     here = Path(__file__).parent
+    listed = set(TOOL_MODULES) | _UNSCANNED_OK
+    present = {f.stem for f in here.glob("*.py")}
+    unlisted = present - listed
+    if unlisted:
+        raise AssertionError(
+            "agents/ modules not in policy.TOOL_MODULES (add them, or to "
+            f"_UNSCANNED_OK with a reason): {sorted(unlisted)}")
+
     violations: dict[str, list[str]] = {}
     for name in TOOL_MODULES:
         f = here / f"{name}.py"
-        if f.is_file():
-            bad = scan_tool_module(f)
-            if bad:
-                violations[name] = bad
+        if not f.is_file():
+            raise AssertionError(
+                f"policy.TOOL_MODULES names {name!r} but agents/{name}.py "
+                "does not exist")
+        bad = scan_tool_module(f)
+        if bad:
+            violations[name] = bad
     if violations:
         raise AssertionError(
             "agent tool modules reference prohibited symbols: "

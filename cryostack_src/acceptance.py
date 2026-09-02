@@ -98,16 +98,34 @@ def _agent_readonly():
 
 @check("agent: no SubmitBackend implementation inside cryostack_src/agents")
 def _agent_no_backend():
+    import ast
     agents = _REPO / "cryostack_src" / "agents"
     hits = []
     for p in agents.glob("*.py"):
-        txt = p.read_text()
-        if "def submit(" in txt and "job id" in txt.lower() and p.name != "execution.py":
-            hits.append(p.name)
+        tree = ast.parse(p.read_text())
+        # (a) no agents module imports the backend package
+        for node in ast.walk(tree):
+            mod = None
+            if isinstance(node, ast.Import):
+                mod = " ".join(a.name for a in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                mod = node.module or ""
+            if mod and "agent_execution" in mod:
+                hits.append(f"{p.name} imports agent_execution")
+        # (b) no class in agents/ structurally satisfies SubmitBackend
+        #     (a submit(self, plan, *, ctx, ...) method) except the Protocol itself
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef) and node.name != "SubmitBackend":
+                for m in node.body:
+                    if isinstance(m, ast.FunctionDef) and m.name == "submit":
+                        args = [a.arg for a in m.args.args] + \
+                               [a.arg for a in m.args.kwonlyargs]
+                        if "plan" in args and "ctx" in args:
+                            hits.append(f"{p.name}:{node.name}.submit looks like a backend")
     return (_ok("agent: no SubmitBackend implementation inside cryostack_src/agents")
             if not hits else
             _fail("agent: no SubmitBackend implementation inside cryostack_src/agents",
-                  f"suspicious files: {hits}"))
+                  "; ".join(hits)))
 
 
 @check("agent: approve-A / mutate / execute is rejected")
@@ -382,8 +400,8 @@ def run_all() -> list[CheckResult]:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         prog="python -m cryostack_src.acceptance", description=__doc__)
-    ap.add_argument("--offline", action="store_true",
-                    help="the only supported mode; nothing is submitted")
+    ap.add_argument("--offline", action="store_true", required=True,
+                    help="the only supported mode; asserts nothing is submitted")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
 
