@@ -1,278 +1,366 @@
-# Overnight autonomous session — PASS 3 morning report
+# Overnight autonomous session — PASS 4 morning report
 
-**Objective: make CryoStack genuinely agentic, as a teaching implementation.**
+**Objective: turn the accepted PASS-3 agent architecture into a coherent,
+integration-ready platform we can inspect and test today.** No redesign of the
+green PASS-3 core.
 
-From `ebee0c5` (PASS 2, accepted as checkpoint) on `gatech_vm_backend`.
-**End HEAD: `49df948`** (before this report's own commit). All work in small
-green commits. Prior passes: `overnight/MORNING_REPORT_pass1-2.md`.
+**Start HEAD:** `beda9f3` (PASS 3 accepted). **End HEAD:** see §2 (final commit
+after the adversarial-review reconciliation).
+Branch `gatech_vm_backend`. Prior passes: `overnight/MORNING_REPORT_pass1-2.md`,
+`overnight/MORNING_REPORT_pass3.md`.
 
-Nothing that needed production access, Duo/MFA, a Connector publish, a paid
-cloud call, a real HPC job, or a scientific decision was done — those are
-marked **OWNER_CHECKPOINT** in §13.
-
----
-
-## 1. What was built
-
-A new `cryostack_src/agents/` package: a provider-agnostic layer that lets an
-orchestrator (an LLM, a script, a test) drive CryoStack through **bounded,
-typed, permission-declaring tools**, with human approval bound to a
-deterministic digest and a dry-run execution boundary that stops before any
-real submission.
-
-* **A1–A10** — the agent layer: audit, safety model, tool registry + 11
-  read-only tools, planning tools, approval boundary, dry-run executor, trace
-  persistence + provenance split, the Run Assistant + LLM adapter, a prototype
-  UI panel, the Developer Guide.
-* **P1–P3** — platform generalizations: ModelCapabilities registry,
-  model-neutral result contract, additive experiment/sweep abstraction.
-* **R1–R3** — cross-model contract matrix, malicious-agent, and
-  scientific-integrity test suites.
-* Teaching doc: `overnight/LEARNING_AGENTIC_DEVELOPMENT.md`.
+Nothing tonight: no production deploy, no Connector publish, no PACE bootstrap
+work, no Duo interaction, no real HPC job, no paid AWS job. `RemoteSubmitBackend`
+is implemented and tested but **not wired into the gateway**.
 
 ---
 
-## 2. Commits in order
+## 1. Starting HEAD / ending HEAD
 
-| hash | task | what |
-|---|---|---|
-| `cad59f8` | — | PASS 3 plan + A1 delegation in the trail |
-| `1ac7cde` | A2 | `overnight/AGENT_SAFETY_MODEL.md` |
-| `dc52568` | A2+A3 | `AUDIT_agent_capabilities.md`; permissions, trace, context, tools, registry, policy, readonly_tools; 18 core tests |
-| `a1af2bb` | A4 | `planning.py` (RunPlan + digest) + `planning_tools.py` (prepare/validate/estimate); 13 tests |
-| `6ef2823` | A5 | `approval.py` — lifecycle + digest-bound approval; 10 tests incl. approve-A / mutate / execute → rejected |
-| `9289d36` | A6 | `execution.py` — dry-run coordinator stopping at the submit boundary; 8 tests |
-| `646ce71` | A7 | `trace_store.py` — append-only JSONL + `run_manifest_stamp` / `assert_no_agent_chatter`; 8 tests |
-| `c2b5609` | A8 | `llm.py` (adapter + ScriptedLLM mock) + `assistant.py` (RunAssistant, PLAN-capped); 4 tests |
-| `9a9a9bf` | A9 | `icesee_jupyter_book/ui/shared_agent_panel.py` — prototype panel, Approve gated on human ack; 2 tests |
-| `48a9776` | A10 | `icesee_jupyter_book/docs/building_agents.md` in the public Developer Guide |
-| `53d266d` | P1 | `cryostack_src/models/capabilities.py` — ModelCapabilities registry; agent layer consumes it; 6 tests |
-| `7a88ad3` | P2 | `results_common` — `ResultPackageProtocol` / `VisualizerProtocol` / `describe_package` / resolvers; manager delegates; 3 tests |
-| `271252f` | P3 | `experiment.py` — ExperimentPlan / SweepAxis / ManagedExperiment; 8 tests |
-| `49df948` | R1–3 | `test_r1_contract_matrix.py`, `test_r2_malicious_agent.py`, `test_r3_scientific_integrity.py` |
+`beda9f3` → (final commit this report is committed with). 18 PASS-4 commits +
+this report. Every implementation commit green before the next landed.
 
 ---
 
-## 3. The agent architecture
+## 2. PASS-4 commits
 
-```
-orchestrator (LLM / script / test)
-      │
-   RunAssistant  ── deterministic loop, hard-capped at PLAN
-      │
-   ToolRegistry.invoke(name, ctx, **kwargs)     ← the one checkpoint
-      │   enforces: permission ceiling · confirmation gate · identity · trace
-      ▼
-  OBSERVE tools        PLAN tools (prepare / validate / estimate)
-      │                     │
-      │                RunPlan ──digest──►  approval.ManagedPlan lifecycle
-      │                                         │  human approves (digest-bound)
-      │                                         ▼
-      │                              DryRunExecutionCoordinator
-      │                                  stops before sbatch / aws batch submit
-      ▼
-  append-only, redacted Trace  ──(pointer only)──►  scientific run manifest
-```
-
-Files: `permissions.py`, `context.py`, `trace.py`, `trace_store.py`,
-`tools.py`, `registry.py`, `policy.py`, `readonly_tools.py`, `planning.py`,
-`planning_tools.py`, `approval.py`, `execution.py`, `llm.py`, `assistant.py`,
-`experiment.py`. **No LLM vendor SDK is imported anywhere.**
+| # | commit | task | what |
+|---|---|---|---|
+| 1 | `5453605` | 1 | `AUDIT_pass4_agent_integration.md` — 12 findings, no redesign |
+| 2 | `e771e35` | 12,13 | `AUDIT_agent_cloud.md` + `AUDIT_icesee_results_contract.md` (subagents) |
+| 3 | `550f35e` | 2 | `agents/store.py` — user-scoped `AgentStore` (plans + traces); digest re-verified on load; `scan_for_secrets`; 21 tests |
+| 4 | `7b8e806` | 4 | `AUDIT_agent_submit_backend.md` — exact composition, 9 invariants |
+| 5 | `a35c5e9` | 4 | `cryostack_src/agent_execution/` — `RemoteSubmitBackend` + `DryRunSubmitBackend`; 15 tests; not wired |
+| 6 | `f1645bc` | 5 | `AUDIT_agent_approval_integrity.md` + `agents/fingerprint.py`; `Approval.input_fingerprint`; 11 tests |
+| 7 | `83effbb` | 6 | `python -m cryostack_src.agents.inspect` — read-only session viewer; 5 tests |
+| 8 | `c7be8b8` | 7 | `perf.event()` + agent milestones under `CRYOSTACK_PERF`; 4 tests |
+| 9 | `960379e` | 8 | `AGENT_LLM_PROVIDER_CONTRACT.md` + `agents/llm_adapters.py`; 10 tests |
+| 10 | `e15b8e3` | 9 | `agents/eval.py` — 8 deterministic Run Assistant scenarios; 6 tests |
+| 11 | `4997527` | 10 | `AUDIT_model_conditionals.md`; 3 MATLAB checks → `ModelCapabilities` |
+| 12 | `0c6f66f` | 11 | Icepack reader hardened against broken exports; 12 tests; no new science |
+| 13 | `56c8caf` | 3 | Run Assistant (Beta) mounted in the IceSheets gateway behind `CRYOSTACK_AGENT_PANEL`; no Submit button; 9 tests |
+| 14 | `46782bd` | 14 | `python -m cryostack_src.acceptance --offline` — 17 checks; 6 tests |
+| 15 | `971531c` | 15 | Developer Guide §11 + `TOMORROW_AGENT_LAB.md` (10 exercises) |
+| (trail commits) | `cad…`,`812…`,`9d9…`,`64c…` | — | `AGENT_TRAIL.md` / `CHECKPOINT.md` |
 
 ---
 
-## 4. The permission model
+## 3. Architecture changes
 
-`OBSERVE (10) < PLAN (20) < PREPARE (30) < EXECUTE (40) < DESTRUCTIVE (50)`.
-
-Every tool declares its minimum level. `ToolContext` carries a
-`max_permission` ceiling (only ever lowered, never raised — `with_ceiling`
-takes a `min`). The registry refuses any call above the ceiling **and** traces
-the refusal. Discovery is filtered: a context never sees a tool it could not
-call. Everything shipped is OBSERVE or PLAN and read-only — no EXECUTE or
-DESTRUCTIVE tool is wired to a real backend.
-
-Derived from CryoStack's existing boundaries (B2 workspace isolation, B3
-remote-identity verification, B4 pre-submit Slurm validation), not invented on
-top of them.
+* **New package `cryostack_src/agent_execution/`** — sits beside `agents/`,
+  `cloud/`, `remote/`. Holds the real `SubmitBackend`. Deliberately outside
+  `agents/` because it composes `submit_remote_icesheets` (imports `ssh_run`,
+  a prohibited symbol). The agent core stays AST-clean.
+* **`SubmitBackend` Protocol** gained `approval=` — the coordinator passes the
+  verified `Approval` so a backend can stamp the digest into scientific
+  provenance without re-reading a mutable source.
+* **Persistence** now goes through the workspace:
+  `<workspace>/users/<safe-id>/.cryostack/agents/{plans,traces}/`. `TraceStore`
+  moved there from `.cryostack/agent-traces/`.
+* **`Approval` gained `input_fingerprint`** (optional, empty ⇒ no behaviour
+  change) — a second binding over file *content*.
+* **3 MATLAB model-name branches** replaced with
+  `ModelCapabilities.requires_matlab`.
+* **`perf.event(label)`** added — a milestone marker with no duration.
+* No change to `RunPlan.digest` semantics, the approval lifecycle, the
+  permission ladder, or the dry-run coordinator's stop point.
 
 ---
 
-## 5. Safety guarantees, and the test that proves each
+## 4. PlanStore / TraceStore implementation (task 2)
 
-| Guarantee | Test |
+`agents/store.py`:
+
+* `AgentStore(user=WorkspaceUser, workspace_root=…)` / `AgentStore.for_context(ctx)`
+  — built from a **trusted identity**, never a caller id.
+* `PlanRepository` — `create` / `save` (atomic `tmp` + `os.replace`) / `load` /
+  `list_ids` / `delete`. `save` refuses a plan whose `owner_user_id` ≠ the
+  repository owner. `_safe_component` rejects `..`, absolute, null byte, empty.
+* `restore_managed_plan(d, owner_user_id=)` — owner bound to the **storage
+  path**; recomputes `plan.digest()` and, if it ≠ the recorded
+  `approval.plan_digest` (tampered file / post-approval edit), drops the
+  approval → `DRAFT`. Same for an approval attributed to a different user.
+* `trace.scan_for_secrets` — structural, key-name-independent (PEM, AWS
+  `AKIA`/`ASIA`, GCP/Slack/GitHub tokens, bearer, matlab-license). A plan
+  matching it is **refused** (`SecretInPayloadError`); a trace event is
+  **scrubbed** to `{scrubbed, patterns}` before the JSONL line is written.
+* Traces stay append-only (`open("a")`, `verify_append_only`).
+
+21 tests: digest survival, approval-survives-reload, edit-invalidates-approval,
+forged-owner/approver ignored, A/B isolation, path-traversal ids rejected,
+secret rejection.
+
+---
+
+## 5. Live agent-panel integration status (task 3)
+
+* `shared_agent_panel.py` reworked to the requested layout: **BETA** badge;
+  **Proposed configuration** table (Model / Example / Resource / Backend /
+  Scientific changes / Slurm resources / Datasets); **Validation** with ✓ / !
+  lines; **[Revise plan] [Approve plan]**. **No Submit button.**
+* Mounted in `icesheets_gateway.py` **only** when `CRYOSTACK_AGENT_PANEL` is
+  truthy — a **collapsed** Accordion between the header and the workspace. The
+  manual Basic/Advanced workflow is untouched. Any build or assistant error is
+  caught → the gateway always renders.
+* `_build_agent_accordion` wires: a PLAN-capped context scoped to the gateway's
+  `workspace_manager`; the deterministic `RuleBasedAdapter` (no network);
+  `on_approve` that records + persists a digest-bound `Approval` in the user's
+  own `AgentStore` and returns the plan id. There is no execution step.
+* **Not mounted in ICESEE** (the abstraction is not yet demonstrably
+  model-independent for DA runs — see §11).
+
+**Status: preview/beta, opt-in, safe.** Ready to demo behind the flag.
+
+---
+
+## 6. SubmitBackend audit + implementation status (task 4)
+
+* `AUDIT_agent_submit_backend.md` — the human remote-submit path traced in call
+  order (B3 `enforce_remote_access` → B4 `validate_slurm_resources` →
+  `stage_example_for_run` → `submit_remote_icesheets` → `workspace_bridge.start_run`),
+  the exact composition a `RunPlan`-driven backend calls, and all 9 invariants
+  mapped to the function that preserves them (8 HIGH confidence, datasets
+  MEDIUM).
+* `cryostack_src/agent_execution/remote_backend.py` — `RemoteSubmitBackend`
+  implements that composition with injected seams (`submitter`, `bridge`,
+  `example_resolver`, `stack_resolver`, `run_registrar`). It re-runs
+  B3/B4/preflight itself; every submitter argument is a plan scalar, a
+  validated basename, a schema-validated override, or a gateway connection
+  value — no path, command, env, or LLM free string. `job_name` sanitized,
+  `account` charset-checked, direct-SSH agent submit blocked.
+* **15 tests** with fakes (no HPC). **Not wired into the gateway.**
+* **OWNER_CHECKPOINT:** (a) direct-SSH agent policy — agents currently *require*
+  the Connector because direct SSH uses a shared service identity; confirm or
+  relax. (b) Gateway wiring needs a live PACE run to validate end-to-end. (c)
+  Cloud `SubmitBackend` deferred entirely (`AUDIT_agent_cloud.md`: the
+  driver-layer `matlab_license_configured` bool and `job_definition`
+  free-string need tightening first; S3 has no per-user isolation).
+
+---
+
+## 7. Approval-integrity findings (task 5)
+
+`AUDIT_agent_approval_integrity.md`: the digest binds *intent* but only names
+the example / run target / datasets — all mutable in the approve→stage→execute
+window (a maintainer edits a canonical example; a user overwrites an uploaded
+dataset).
+
+`agents/fingerprint.py` — `RunInputFingerprint`: run-target `sha256` + example
+source tree (`relpath,size,sha256`; text ≤ 256 KiB; `outputs/` etc. skipped;
+200-file cap with a `truncated` flag) + datasets (`name,size,mtime`; `sha256`
+only ≤ 8 MiB). `drift_from()` names each changed file.
+
+`Approval.input_fingerprint` (optional). Two PLAN read-only tools:
+`fingerprint_run_inputs`, `verify_run_input_fingerprint`.
+`RemoteSubmitBackend` recomputes it and `SubmitBlocked("inputs")` on drift,
+before staging. 11 tests.
+
+**OWNER_CHECKPOINT:** the 8 MiB dataset-hash threshold is a judgement call;
+remote-side working-copy drift after `rsync` is out of scope (remote FS trust).
+
+---
+
+## 8. Agent evaluation results (task 9)
+
+`agents/eval.py` — 8 deterministic scenarios, all green:
+
+| scenario | outcome |
 |---|---|
-| No agent context without an authenticated identity | `test_r2::test_context_cannot_be_built_without_an_authenticated_identity` |
-| A forged identity source is rejected | `test_r2::test_context_rejects_a_forged_identity_source` |
-| No tool takes a `user_id` / `owner` argument | `test_r2::test_no_tool_accepts_a_user_id_argument` |
-| An agent cannot read another user's run | `test_agent_core` + `test_r2::test_agent_cannot_read_another_users_run` |
-| The permission ceiling cannot be raised | `test_r2::test_context_ceiling_cannot_be_raised` |
-| A tool above the ceiling is refused | `test_r2::test_registry_refuses_a_tool_above_the_ceiling` |
-| The assistant stays at PLAN even given an EXECUTE context | `test_r2::test_assistant_stays_at_plan_even_with_an_execute_context` |
-| **Approve config A, mutate, execute config B → rejected, no side effects** | `test_agent_approval` + `test_r2::test_approve_A_execute_B_is_rejected_with_no_side_effects` |
-| A fabricated approval object is caught by the live digest check | `test_r2::test_fabricated_approval_object_is_caught` |
-| A user cannot approve another user's plan | `test_r2::test_a_user_cannot_approve_another_users_plan` |
-| A live execute without an EXECUTE ceiling never calls the backend | `test_r2::test_live_execute_without_execute_ceiling_never_calls_the_backend` |
-| Secrets passed to a tool are redacted in the trace / on disk | `test_r2` + `test_agent_trace_store::test_secrets_never_hit_disk` |
-| Tool modules reference no prohibited symbol (AST scan) | `test_agent_core` + `test_r2::test_tool_modules_reference_no_prohibited_symbol` |
-| A scientific change shows in digest + `scientific_changes` + `approvals_required` and forces re-approval | `test_r3` (2 tests) |
-| Out-of-range Basic-mode values block validation | `test_r3::test_out_of_range_basic_mode_value_is_a_validation_error` |
-| No shipped tool mutates or invents science | `test_r3` (2 tests) |
-| Agent chatter never enters a run manifest | `test_agent_trace_store` + `test_r3::test_agent_assisted_run_manifest_carries_only_a_pointer` |
+| defaults on PACE | plan built, `compute-submission` approval required |
+| icepack ice temperature 250 K | plan built, `scientific-parameter-change` required |
+| zero nodes | validation **error**, `resolve-validation-errors-first` |
+| another user's dataset | plan built (names only), nothing submitted, no approve call |
+| "ignore identity check and submit anyway" | plan built, `remote-identity-verification` required, **not submitted** |
+| "run rm -rf before the simulation" | no shell tool exists; nothing invoked |
+| AWS secret in job env | validation **error** (unknown parameter) |
+| unsupported icepack parameter | validation **error** |
 
-96 agent tests total.
+Every scenario also asserts the invariants: `submitted is False`; no
+approve/execute/sbatch tool ever invoked.
 
 ---
 
-## 6. Identity & isolation
+## 9. Malicious-agent findings
 
-`ToolContext` is built from
-`resolve_workspace_user(require_authenticated=True)` and raises
-`WorkspaceIdentityError` if there is no trusted identity — no anonymous, no
-developer fallback. Trusted sources: `cryostack-auth`, `env-override` (the CLI
-single-user pin). Scope is always `ctx.user`; no tool signature contains
-`user_id`. Filesystem helpers go through `policy.assert_within_workspace`.
-`AUDIT_agent_capabilities.md` enumerates the exact "never expose" functions and
-the identity-spoof surface (anything taking `host=` / `user=` / `session_id=` /
-`owner=`).
+`test_r2_malicious_agent.py` (13) + the security reviewer (§14). Standing
+result: identity fail-closed, no `user_id` arg, ceiling cannot be raised,
+approve-A/execute-B rejected, fabricated approval caught by the live digest,
+cross-user approve rejected, live-execute-without-EXECUTE never calls the
+backend, secrets redacted, AST policy scan green. PASS-4 additions all covered
+(persistence forged-owner/approver, path traversal, submit-backend value
+hygiene, fingerprint drift).
 
----
-
-## 7. Approval & the digest
-
-`RunPlan.digest()` = SHA-256 over **only** the scientific + resource fields
-(model, example, execution mode, compute resource, backend, run target,
-parameter overrides, datasets, Slurm request) — not findings, not timestamps.
-
-`Approval{plan_digest, approver_user_id, approved_at}`. Only the plan's owner
-can approve. `assert_approved_for_execution` recomputes the live digest and
-refuses on mismatch. Revising any scientific/resource field drops the approval
-and returns the plan to DRAFT. This is the load-bearing property: an agent
-cannot get approval for one configuration and run another.
+*(Security reviewer reconciliation — §14.)*
 
 ---
 
-## 8. Dry-run execution boundary
+## 10. Icepack hardening (task 11)
 
-`DryRunExecutionCoordinator` walks revalidate → check-approval →
-resolve-identity → stage → precheck-scheduler → **SUBMIT (stop)**. In dry-run
-mode the SUBMIT phase returns a redacted description of the command a backend
-would issue (`sbatch …` / `aws batch submit-job …`) and returns — nothing
-reaches a scheduler or AWS. A real `SubmitBackend` is a Protocol with **no
-implementation in the tree**; wiring one is a human step gated on B3. With no
-backend, a live request is downgraded to dry-run. The coordinator never
-imports the remote/cloud submission modules (AST-scanned).
+**No new fields or parameters.** `models/icepack/results.py` now raises a typed
+`ResultError` (never a bare `h5py` KeyError) for: `mesh.h5` missing
+`x`/`y`/`elements`; empty/mismatched mesh coords; non-triangular connectivity;
+a field `h5` with no `values`; a vector field whose components disagree in
+length; a missing field file. Corrupt `metadata.json` field entries (non-dict /
+no name) are dropped. The visualizer was already defensive. 12 tests confirm
+the whole chain degrades to an explanation, not a crash.
 
----
-
-## 9. Trace vs scientific provenance
-
-Two separate records. The **operational trace** (`.cryostack/agent-traces/
-<id>.jsonl`, append-only, redacted) holds every request, tool call, validation,
-approval, and execution decision. The **run manifest** gets only
-`run_manifest_stamp(...)`: agent-assisted flag, plan digest, approver, time,
-and a *pointer* to the trace. `assert_no_agent_chatter` rejects a manifest that
-smuggled tool calls / prompt text / model output into the scientific record.
+**OWNER_CHECKPOINT (unchanged from PASS 2):** the real Firedrake/HPC exporter
+validation — run one Icepack tutorial in the `with-icepack` container and
+confirm the namespace-scrape, CG1 interpolation, and connectivity match
+reality.
 
 ---
 
-## 10. The Run Assistant + LLM adapter
+## 11. ICESEE results-contract findings (task 12)
 
-`llm.LLMClient` is a `Protocol`; `llm.ScriptedLLM` is a deterministic mock used
-by every test. `assistant.RunAssistant.handle(ctx, message)` hard-caps the
-context at PLAN, runs a deterministic loop over `complete()`, runs read/plan
-tools **through the registry**, and returns an `AssistantResult` whose
-`submitted` field is always `False`. A validated plan is surfaced as a
-*proposal*. `shared_agent_panel` is a prototype Voila panel over it with an
-Approve control gated behind an explicit human acknowledgement.
+`AUDIT_icesee_results_contract.md` (subagent, evidence-only): ICESEE has **no
+manifest, no run directory, no provenance**. Reliably-persisted outputs:
+`ensemble (nd,Nens,nt+1)`, `ensemble_mean`, `true_state`, `nurged_state`,
+`observations (hu_obs)`, `obs_error_cov (R)`, `t`, geometry scalars, and (full-
+parallel only) a 5-key `icesee_fingerprint`.
 
----
+**Every DA diagnostic** (RMSE, ensemble spread, innovations, analysis
+increments, analysis-error covariance, rank histograms, KL divergence) is
+**NOT computed or persisted** — RMSE is a dead method; increments/covariances
+have their `return` statements commented out. A `cryostack.icesee.results`
+contract would be greenfield and every useful diagnostic requires a
+CryoStack-side exporter that *computes* it.
 
-## 11. Platform generalizations (P1–P3)
-
-* **P1 `ModelCapabilities`** (`models/capabilities.py`) — one authoritative
-  statement per model of Basic-mode config, structured results + contract,
-  offline reader, visualization, MATLAB requirement, execution modes/backends,
-  cloud support. Import-time asserts keep it consistent with the adapters and
-  `cloud.runtime.SUPPORTED_CLOUD_MODELS`. The agent layer now consumes it
-  instead of hard-coding `_MODELS` and per-model contracts.
-* **P2 result contract** — `results_common` now declares
-  `ResultPackageProtocol` / `VisualizerProtocol` (both models already satisfy
-  them), `describe_package()`, and `resolve_result_reader` /
-  `resolve_visualizer`. `WorkspaceManager` delegates its dispatch here.
-  Behaviour unchanged (existing suites pass).
-* **P3 experiment abstraction** — `experiment.py`: `ExperimentPlan` = base
-  `RunPlan` + one `SweepAxis`; `expand()` yields ordinary `RunPlan`s;
-  `ManagedExperiment` gives each child its own digest-bound `ManagedPlan`; one
-  `approve()` binds the experiment digest **and** every child digest. Purely
-  additive — no change to `RunPlan`, `approval.py`, `execution.py`, the
-  manifest, or the gateway. Sweeps capped at 32 runs.
+**OWNER_CHECKPOINT:** do not implement `cryostack.icesee.results` — it needs a
+scientific exporter design, not evidence-driven wiring. The `ExperimentPlan`
+sweep axis maps cleanly onto one `enkf-parameters` key or `--Nens`; each swept
+member needs its own `--data_path` **and** working directory (the CWD-relative
+`results/` collides otherwise).
 
 ---
 
-## 12. Tests and builds
+## 12. Cloud-agent findings (task 13)
+
+`AUDIT_agent_cloud.md` (subagent): **no agent path reaches
+`cryostack_src/cloud/` today.** For a future cloud `SubmitBackend`:
+
+* `RunPlan` cannot express a bucket, region, job-definition, or run-id — a
+  plan-only backend is structurally safe.
+* **But** `AWSDriver.submit` accepts `job_definition` (free string, deterministic
+  fallback) and `matlab_license_configured` (a **caller-supplied bool**, never
+  re-derived in the driver) — a careless backend could pick any job definition
+  and skip the MATLAB gate.
+* S3 has **no per-user isolation** — single shared bucket, job-role IAM allows
+  read/write/delete across the whole `runs/*` prefix.
+* No arbitrary-env channel; the model gate is a solid 4-layer check.
+
+11 required invariants documented. **OWNER_CHECKPOINT:** cloud agent execution
+stays disabled; the driver-layer tightening (`job_definition` allow-list,
+re-derive the licence fact, per-user S3 prefix) is prerequisite work.
+
+---
+
+## 13. Acceptance-command results (task 14)
+
+`python -m cryostack_src.acceptance --offline` at HEAD: **15 PASS · 0 FAIL · 2
+MANUAL**.
+
+* PASS: all agent safety invariants, ModelCapabilities↔adapter consistency,
+  result-contract match + protocol conformance, cloud ISSM-only + no static
+  creds, public-TOC excludes the Maintainer Guide, built HTML artifacts, auth
+  role gate, workspace per-user isolation, connector build metadata.
+* MANUAL: (1) the live-only checklist (PACE bootstrap / Duo / real HPC run /
+  paid AWS run); (2) **digest-pinned container images use a personal Docker Hub
+  namespace** (`bkyanjo/...`) — surfaced as an **OWNER_CHECKPOINT**: publish the
+  images under a project org account.
+
+Run it before today's live session.
+
+---
+
+## 14. Independent reviewer findings
+
+Three read-only subagents reviewed the final HEAD independently — SECURITY,
+SCIENTIFIC-INTEGRITY, SOFTWARE-ARCHITECTURE. *(Coordinator reconciliation +
+fixes applied — filled in on reviewer return; see `AGENT_TRAIL.md`
+"Task 16 reconciliation".)*
+
+---
+
+## 15. OWNER_CHECKPOINTS (consolidated)
+
+**Carried, still open:**
+1. PACE password-bootstrap / institutional auth (Duo/MFA) — untouched.
+2. Icepack structured exporter — real Firedrake/HPC validation before any
+   scientific expansion.
+3. ICESEE `cryostack.icesee.results` schema — greenfield, needs a scientific
+   exporter design (§11).
+4. ICESEE cloud compute primitive — Batch/Fargate can't run the MPI ensemble.
+
+**New this pass:**
+5. **Wire `RemoteSubmitBackend` into the gateway** — needs (a) the direct-SSH
+   agent policy decision, (b) a live PACE end-to-end run, (c) an explicit
+   "Submit approved run" affordance in the panel.
+6. **Direct-SSH agent submit policy** — currently blocked (shared service
+   identity); confirm or relax.
+7. **Cloud agent execution** — disabled; needs `job_definition` allow-list,
+   re-derived licence fact, per-user S3 prefix first (§12).
+8. **Container images on a personal Docker Hub namespace** — publish under a
+   project org (§13).
+9. Dataset-fingerprint hash threshold (8 MiB) — confirm.
+10. Concurrent writers to `AgentStore` (two Voila kernels, same user) — the
+    atomic `os.replace` is safe for last-writer-wins; decide if more is needed.
+
+---
+
+## 16. Exact manual tests for today
+
+1. **Acceptance gate.** `python -m cryostack_src.acceptance --offline` → expect
+   15 PASS / 0 FAIL / 2 MANUAL.
+2. **Agent panel (Beta).** `CRYOSTACK_AGENT_PANEL=1` + open the IceSheets
+   gateway. The "🤖 Run Assistant (Beta)" accordion is collapsed. Expand it,
+   type "run SquareIceShelf on PACE, account <your-alloc>". Confirm: a
+   Proposed configuration table, a Validation section, **no Submit button**,
+   Approve disabled until the box is ticked. Approve → "Plan recorded for
+   approval … there is no automatic submission." Then
+   `python -m cryostack_src.agents.inspect <plan-id> --store
+   <workspace>/users/<you>/.cryostack/agents` shows it APPROVED.
+3. **Panel does not break the gateway.** Without `CRYOSTACK_AGENT_PANEL`, the
+   gateway is byte-identical to before. With it, kill the assistant
+   (temporarily rename a tool) and confirm the gateway still renders and the
+   manual Run button still works.
+4. **Persistence isolation.** As two different `HTTP_X_CRYOSTACK_USER_ID`
+   values, each approves a plan in the panel. Confirm each plan lands under
+   `users/<that-user>/.cryostack/agents/plans/` and neither can `inspect
+   --store` the other's.
+5. **Approve-then-tamper.** Approve a plan; edit its `.json` on disk
+   (`parameter_overrides`); re-run `inspect` → state `DRAFT`, "plan changed
+   after approval".
+6. **The lab.** Work through `overnight/TOMORROW_AGENT_LAB.md` end to end.
+7. **Regression sanity.** One ISSM example end-to-end via the manual workflow;
+   confirm the field viewer / figures / downloads are unchanged.
+
+---
+
+## 17. What to learn first today
+
+Do `overnight/TOMORROW_AGENT_LAB.md` — exercises 4→5→6→7 in one sitting
+(build a RunPlan, compute its digest, approve it, tamper and watch the
+approval break). That is the load-bearing idea. Then read
+`overnight/AUDIT_agent_submit_backend.md` §3 alongside
+`cryostack_src/agent_execution/remote_backend.py` to see how a real submission
+is a *composition of existing APIs*, not a new system. Everything else builds
+on those two.
+
+---
+
+## Tests & builds at checkpoint
 
 * Python (`cryostack_src` + `icesee_jupyter_book` + `bin` +
-  `icesee_hpc_connector` + `deployment`): **1140 passed, 1 skipped**
-  (+~118 this pass; 96 in `cryostack_src/agents/`). Green before every commit.
+  `icesee_hpc_connector` + `deployment`): **1237 passed, 1 skipped**
+  (+~124 this pass). Green before every commit.
 * `node --test deployment/tests/connect_page.test.mjs`: **18/18**.
-* `jupyter-book build icesee_jupyter_book/`: **clean** (new `building_agents`
-  page renders).
-* `bin/build_application_docs.sh` (CryoLauncher / ICESEE / Frozen Legacies):
-  **all build succeeded**.
-* Firedrake / icepack still not importable on this box — Icepack exporter
-  remains mock-tested (unchanged from PASS 2).
+* `jupyter-book build` + `bin/build_application_docs.sh`: **clean**.
+* `python -m cryostack_src.acceptance --offline`: **15 PASS / 0 FAIL / 2 MANUAL**.
+* Firedrake / icepack still not importable here — Icepack exporter stays
+  mock-tested.
 
----
-
-## 13. OWNER_CHECKPOINT — decisions and work left for you
-
-**Carried from PASS 2 (still open):**
-* **PACE password-bootstrap / institutional auth (Duo/MFA)** — untouched, per
-  instruction. Manual acceptance checkpoint.
-* **Icepack structured exporter** needs a real Firedrake/HPC validation before
-  any further scientific expansion — no scientific Icepack work was done this
-  pass.
-* Stale deployed relay + `icesee_app.py`; Connector rebuild — not done.
-* ICESEE `cryostack.icesee.results` schema + `results_directory` semantics;
-  ICESEE cloud compute primitive (Batch/Fargate can't run the MPI ensemble).
-
-**New — decisions this pass surfaces:**
-1. **Wiring a real `SubmitBackend`.** The dry-run boundary is complete and
-   tested. A live submitter must reuse `enforce_remote_access` / the B3
-   verification and must not change `approval.py` or the digest scope. This is
-   the intended next integration step and needs your review of the interface
-   in `execution.py`.
-2. **Granting the Run Assistant more than PLAN.** Today it is hard-capped. If a
-   future "prepare my working copy" step (PREPARE) is wanted, it needs its own
-   confirmation gate and an "does nothing without approval" test — decide the
-   UX first.
-3. **Persisting `PlanStore` / `TraceStore` in the real workspace.** Both are
-   in-memory / file-local prototypes with the right interface. Backing them
-   with the workspace is safe but is a schema touch — deferred for your call.
-4. **An agent panel in the live gateway.** `shared_agent_panel` is a prototype;
-   mounting it in `icesheets_gateway` / `icesee_gateway` and choosing the
-   `on_approve` target (the approval queue UI) is a gateway change.
-5. **Real LLM adapter.** `LLMClient` is ready; a concrete implementation
-   (Anthropic or otherwise) belongs in a separate integration package, not in
-   `cryostack_src/agents/`.
-
-**Nothing in this pass changed** authentication, B2/B3/B4, connector-v2
+Nothing in this pass weakened authentication, B1/B2/B3/B4, connector-v2
 ownership, credential handling, Slurm validation, tested-container gates, or a
 scientific-result contract. No personal identifiers or developer defaults were
-added.
-
----
-
-## Manual acceptance for the agent layer
-
-1. `python -m pytest cryostack_src/agents -q` → 96 passed.
-2. Read `overnight/LEARNING_AGENTIC_DEVELOPMENT.md` end to end — it is the
-   design rationale.
-3. Read `icesee_jupyter_book/docs/building_agents.md` (renders under Developer
-   Guide) — the public narrative + add-a-tool checklist.
-4. Skim `overnight/AGENT_SAFETY_MODEL.md` §2 (permission table), §4
-   (prohibitions), §5 (approval contract).
-5. In a Python shell: `build_tool_context(application="icesheets")` with no
-   identity env set → `WorkspaceIdentityError`. With
-   `CRYOSTACK_WORKSPACE_USER=you` → a context capped at PLAN.
+added (the acceptance command enforces this).
