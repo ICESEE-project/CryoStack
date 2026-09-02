@@ -182,15 +182,21 @@ approve/execute/sbatch tool ever invoked.
 
 ## 9. Malicious-agent findings
 
-`test_r2_malicious_agent.py` (13) + the security reviewer (§14). Standing
-result: identity fail-closed, no `user_id` arg, ceiling cannot be raised,
-approve-A/execute-B rejected, fabricated approval caught by the live digest,
-cross-user approve rejected, live-execute-without-EXECUTE never calls the
-backend, secrets redacted, AST policy scan green. PASS-4 additions all covered
-(persistence forged-owner/approver, path traversal, submit-backend value
-hygiene, fingerprint drift).
+`test_r2_malicious_agent.py` (13) + `test_agent_policy_scan.py` (24) + the
+security reviewer. Standing result: identity fail-closed, no `user_id` arg,
+ceiling cannot be raised, approve-A/execute-B rejected, fabricated approval
+caught by the live digest, cross-user approve rejected,
+live-execute-without-EXECUTE never calls the backend, secrets redacted, AST
+policy scan green. PASS-4 additions all covered (persistence
+forged-owner/approver, path traversal, submit-backend value hygiene,
+fingerprint drift, optimistic-lock clobber).
 
-*(Security reviewer reconciliation — §14.)*
+**Security reviewer (task 16): no P0, no agent/LLM-reachable bypass.** Its two
+P1s were fixed: the `policy.py` prohibited-symbol scan had a dead
+`"os.environ"` rule and no stdlib exec primitives — now catches
+`subprocess`/`socket`/`ctypes`/`os.environ`/`os.getenv`/`__import__`/bare
+`eval|exec` and `from os import environ as e` (24 tests). Details +
+OWNER_CHECKPOINTs in `AUDIT_pass4_adversarial_review.md`.
 
 ---
 
@@ -275,10 +281,31 @@ Run it before today's live session.
 
 ## 14. Independent reviewer findings
 
-Three read-only subagents reviewed the final HEAD independently — SECURITY,
-SCIENTIFIC-INTEGRITY, SOFTWARE-ARCHITECTURE. *(Coordinator reconciliation +
-fixes applied — filled in on reviewer return; see `AGENT_TRAIL.md`
-"Task 16 reconciliation".)*
+Three read-only subagents reviewed the final HEAD independently. **No P0 from
+any of them.**
+
+* **SECURITY** — "no agent/LLM-reachable bypass of the identity, approval, or
+  submission boundary." 2 P1 (broken `policy.py` static scan), fixed. 10 P2 —
+  6 fixed, 4 OWNER_CHECKPOINT (sign approvals; `inspect --store` containment;
+  unused call-site guards; `ConnectionContext` stability).
+* **SCIENTIFIC-INTEGRITY** — "the intent digest + digest-bound approval
+  machinery is solid; residual exposure is entirely in content the digest only
+  names." 2 P1 (fingerprint blind to binary science; NaN passes bound checks),
+  fixed. Provenance wiring (`assert_no_agent_chatter`, `approved_at`) fixed.
+* **SOFTWARE-ARCHITECTURE** — "sound and safe to mount as a Beta." Concentrated
+  on the `SubmitBackend` seam (signature bug + undefined error contract) and
+  PASS-3 follow-through — all fixed except the package-split (long-term) and
+  experiment persistence (documented as in-memory-only).
+
+**Fixes applied:** 8 commits (`8bddbcd`, `f3e745d`, `1f4759a`, `114d36c`,
+`165b420` + tests), +37 agent tests (171 → 208). Full reconciliation, every
+decision, and the OWNER_CHECKPOINTs: `overnight/AUDIT_pass4_adversarial_review.md`.
+
+Coordinator decisions that did **not** follow a recommendation (documented in
+that file): declined to rename `agent_execution`/`inspect.py` (churn, no safety
+gain); declined to sign approvals tonight (needs key-management design; threat
+is bounded); declined to make the input fingerprint *mandatory* (breaks the
+legitimate maintainer-edits-a-canonical-example workflow — owner policy call).
 
 ---
 
@@ -295,16 +322,24 @@ fixes applied — filled in on reviewer return; see `AGENT_TRAIL.md`
 **New this pass:**
 5. **Wire `RemoteSubmitBackend` into the gateway** — needs (a) the direct-SSH
    agent policy decision, (b) a live PACE end-to-end run, (c) an explicit
-   "Submit approved run" affordance in the panel.
+   "Submit approved run" affordance in the panel, (d) `ConnectionContext` will
+   grow more fields.
 6. **Direct-SSH agent submit policy** — currently blocked (shared service
    identity); confirm or relax.
 7. **Cloud agent execution** — disabled; needs `job_definition` allow-list,
    re-derived licence fact, per-user S3 prefix first (§12).
 8. **Container images on a personal Docker Hub namespace** — publish under a
-   project org (§13).
-9. Dataset-fingerprint hash threshold (8 MiB) — confirm.
-10. Concurrent writers to `AgentStore` (two Voila kernels, same user) — the
-    atomic `os.replace` is safe for last-writer-wins; decide if more is needed.
+   project org (§13). The acceptance command flags this as MANUAL.
+9. Dataset-fingerprint hash threshold (8 MiB) — confirm; content-addressed
+   dataset storage would be the real fix.
+10. **Make the input fingerprint mandatory at approval?** — the gateway now
+    binds one by default; requiring it would break a maintainer legitimately
+    editing a canonical example. Owner policy call.
+11. **Sign approvals** (HMAC/signature) so a self-consistent hand-written
+    `plans/<id>.json` cannot mint an approval — needs a key-management design.
+12. **`ExperimentRepository`** — experiments are in-memory only this pass
+    (documented). Add persistence + a `restore_managed_experiment` re-check.
+13. Rename `agents/inspect.py` (shadows stdlib) / `agent_execution` — cosmetic.
 
 ---
 

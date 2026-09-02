@@ -662,3 +662,17 @@ Remaining: 3 mount panel, 10 model-conditionals audit, 11 icepack hardening,
 ### Task 16 — adversarial review (3 read-only subagents dispatched)
 - SECURITY REVIEWER (aed161ae) · SCIENTIFIC-INTEGRITY REVIEWER (a7b09d8b) ·
   SOFTWARE-ARCHITECTURE REVIEWER (adda0d16). Coordinator reconciles on return.
+
+### Task 16 reconciliation (coordinator)
+3 read-only reviewers returned; no P0. Full reconciliation:
+overnight/AUDIT_pass4_adversarial_review.md. Fixes:
+| commit | what |
+|---|---|
+| 8bddbcd | security P1: rebuilt policy.py prohibited-symbol scan (dead os.environ rule + missing stdlib exec primitives); TOOL_MODULES completeness; acceptance _agent_no_backend -> AST; --offline required |
+| f3e745d | ARCH P1: SubmitError base + coordinator catches it; DryRunSubmitBackend signature; dead imports |
+| 1f4759a | ARCH P1: ToolSpec.result_kind (no more tool-name string match); build_default_registry (fatal on failed import) |
+| 114d36c | SCI/security: NaN guards; fingerprint binary science + data/ + truncation; chatter keys + wiring + approved_at; backend re-validates overrides; panel validated gate; gateway binds fingerprint; trace basic-auth/url-cred patterns |
+| 165b420 | ARCH P2: canonical_digest helper (was 4x); RunPlan capability check at construction; PlanRepository optimistic lock |
+
++37 agent tests (171 -> 208). Full suite green. OWNER_CHECKPOINTs in the
+reconciliation doc + MORNING_REPORT sections 14/15.
