@@ -126,7 +126,7 @@ def build_agent_panel(
         "builds a plan and validates it. It <b>cannot approve or submit</b> — "
         "you do that. The manual Basic / Advanced workflow above is unchanged.</div>")
     question = W.Textarea(
-        placeholder="e.g. run SquareIceShelf on PACE, account gts-mylab",
+        placeholder="e.g. run SquareIceShelf on PACE, account <your-allocation>",
         layout=W.Layout(width="100%", height="64px"))
     ask_btn = W.Button(description="Ask", button_style="primary")
     transcript = W.HTML()
