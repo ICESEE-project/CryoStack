@@ -218,19 +218,21 @@ def test_unknown_run_is_missing_not_error(tmp_path):
     assert pkg.available_solutions() == []
 
 
-def test_non_issm_model_degrades_gracefully(tmp_path):
-    """Icepack has no result reader / visualizer yet -- the Results tab must
-    not crash, it just offers nothing."""
+def test_icepack_figures_only_package_degrades_gracefully(tmp_path):
+    """An Icepack run whose structured export produced no fields (or a figures-
+    only run): the Results tab must not crash, it just offers no field plots."""
     m = _mgr(USER_A, tmp_path / "ws")
     run = m.register_run(RunInfo(
         id="ip-1", name="ip-1", model="icepack", backend="c",
         execution_mode="remote", status="completed", created=datetime.now(), jobid="j"))
     m.select_run(run.id)
-    _drop_package(run.workspace_directory)
+    figs = run.workspace_directory / "cache" / "outputs" / "figures"
+    figs.mkdir(parents=True)
+    (figs / "velocity.png").write_bytes(b"\x89PNG")
 
     assert m.recommended_plots_for_run(run.id) == []
     result = m.render_run_plot(run.id, solution="X", field="Y")
-    assert result.ok is False and "icepack" in result.reason
+    assert result.ok is False and result.reason        # unsupported, not a crash
 
 
 def test_another_user_cannot_read_the_package(tmp_path):

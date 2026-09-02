@@ -21,6 +21,7 @@ every field to CG1 and written plain arrays. Deterministic plotting lives in
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from cryostack_src.models.results_common import (
@@ -44,6 +45,24 @@ _FIELD_ORDER = ("velocity", "thickness", "surface", "bed", "accumulation",
 
 class ResultError(RuntimeError):
     """A requested field / mesh could not be read."""
+
+
+@dataclass(frozen=True)
+class FieldInfo:
+    """Compatible with the shared Results panel's use of ISSM ``FieldInfo``
+    (``.location`` / ``.transient`` / ``.available_timesteps``)."""
+    name: str
+    solution: str
+    location: str                       # "nodal" for tier-1 Icepack
+    rank: str                           # "scalar" | "vector"
+    transient: bool                     # always False for tier 1
+    path: str
+    units: str | None = None
+    exported_space: str | None = None
+    source_space: str | None = None
+    linearised: bool = False
+    available_timesteps: tuple[int, ...] | None = None
+    components: tuple[str, ...] = ()
 
 
 class IcepackResultPackage:
@@ -110,11 +129,30 @@ class IcepackResultPackage:
         idx = {n: i for i, n in enumerate(_FIELD_ORDER)}
         return sorted(names, key=lambda n: (idx.get(n, len(idx)), names.index(n)))
 
-    def field_metadata(self, field: str, solution: str = SOLUTION) -> dict:
+    def field_metadata(self, solution_or_field: str, field: str | None = None) -> FieldInfo:
+        """``field_metadata("icepack", "thickness")`` (shared-panel call order)
+        or ``field_metadata("thickness")``."""
+        name = field if field is not None else solution_or_field
         for f in self._fields_meta():
-            if f["name"] == field:
-                return dict(f)
-        raise ResultError(f"no exported field {field!r}")
+            if f["name"] == name:
+                return FieldInfo(
+                    name=name, solution=SOLUTION,
+                    location=f.get("location", "nodal"),
+                    rank=f.get("rank", "scalar"),
+                    transient=bool(f.get("timestep") is not None
+                                   or f.get("available_timesteps")),
+                    path=f.get("path", f"fields/icepack/{name}.h5"),
+                    units=f.get("units"),
+                    exported_space=f.get("exported_space"),
+                    source_space=f.get("source_space"),
+                    linearised=bool(f.get("linearised")),
+                    available_timesteps=(
+                        tuple(f["available_timesteps"])
+                        if f.get("available_timesteps") else None
+                    ),
+                    components=tuple(f.get("components", ())),
+                )
+        raise ResultError(f"no exported field {name!r}")
 
     def timesteps(self, solution: str = SOLUTION) -> list[int]:
         return [0]                    # tier 1: final state only
@@ -150,12 +188,12 @@ class IcepackResultPackage:
         import numpy as np
         h5py = _h5py()
         info = self.field_metadata(field)
-        path = self.outputs / info["path"]
+        path = self.outputs / info.path
         if not path.is_file():
             raise ResultError(f"field data not found: {path}")
         with h5py.File(path, "r") as fh:
             vx = np.asarray(fh["values"][()]).reshape(-1)
-            if info.get("rank") == "vector":
+            if info.rank == "vector":
                 vy = np.asarray(fh["values_y"][()]).reshape(-1)
                 return vx, vy
             return vx
@@ -165,7 +203,7 @@ class IcepackResultPackage:
         import numpy as np
         h5py = _h5py()
         info = self.field_metadata(field)
-        path = self.outputs / info["path"]
+        path = self.outputs / info.path
         with h5py.File(path, "r") as fh:
             if "magnitude" in fh:
                 return np.asarray(fh["magnitude"][()]).reshape(-1)
@@ -182,7 +220,7 @@ class IcepackResultPackage:
             out.append({
                 "solution": SOLUTION, "field": name,
                 "kind": "map", "location": "nodal",
-                "rank": info.get("rank", "scalar"),
+                "rank": info.rank,
                 "transient": False, "timestep": None,
             })
         return out

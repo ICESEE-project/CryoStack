@@ -148,8 +148,9 @@ def test_exporter_declared_failure_states_pass_through(tmp_path):
 
 def test_field_units_are_carried_through(tmp_path):
     p = _structured(tmp_path)
-    assert p.field_metadata("thickness")["units"] == "meters"
-    assert p.field_metadata("velocity")["rank"] == "vector"
+    thk = p.field_metadata("thickness")
+    assert thk.units == "meters" and thk.location == "nodal" and thk.transient is False
+    assert p.field_metadata("icepack", "velocity").rank == "vector"   # panel call order
 
 
 def test_workspace_manager_resolves_the_icepack_reader():

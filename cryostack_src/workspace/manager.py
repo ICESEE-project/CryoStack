@@ -72,6 +72,9 @@ def _visualizer_for(model: str):
     if name == "issm":
         from cryostack_src.visualization import issm as _viz
         return _viz
+    if name == "icepack":
+        from cryostack_src.visualization import icepack as _viz
+        return _viz
     return None  # no deterministic visualizer for this model yet
 
 
