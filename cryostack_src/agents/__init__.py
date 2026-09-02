@@ -23,6 +23,12 @@ from .permissions import Permission, PermissionError
 from .registry import ToolRegistry, default_registry
 from .tools import ToolResult, ToolSpec, tool
 from .assistant import AssistantResult, RunAssistant
+from .experiment import (
+    ExperimentApproval,
+    ExperimentPlan,
+    ManagedExperiment,
+    SweepAxis,
+)
 from .llm import (
     LLMClient,
     LLMMessage,
@@ -48,4 +54,5 @@ __all__ = [
     "AGENT_PROVENANCE_KEY",
     "LLMClient", "LLMMessage", "LLMResponse", "LLMToolCall", "ScriptedLLM",
     "RunAssistant", "AssistantResult",
+    "ExperimentPlan", "SweepAxis", "ManagedExperiment", "ExperimentApproval",
 ]
