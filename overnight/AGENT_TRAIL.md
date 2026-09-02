@@ -547,3 +547,53 @@ End HEAD `7347bd9`. Python 1033 passed / 1 skipped. Node 18/18. Book + app docs
 clean. Morning deliverables: `MORNING_REPORT.md` (10-point), `CHECKPOINT.md`,
 5 `AUDIT_*.md`. Stopped at every science/design/production checkpoint — see
 MORNING_REPORT §9.
+
+---
+
+# PASS 3 — AGENTIC CRYOSTACK (from HEAD ebee0c5)
+
+Operator brief: begin making CryoStack genuinely agentic, as a *teaching*
+implementation. Agents assist scientific workflows without silently changing
+scientific intent. Architecture + bounded tools + auditability + dry-run first.
+NO unrestricted shell/HPC/cloud for an LLM. AUTONOMY RULE: mark OWNER_CHECKPOINT
+and keep going.
+
+## PASS 3 decomposition (coordinator plan)
+- **A1** (delegate, read-only) — inventory clean-Python-API operations across
+  the whole platform, classify each (READ_ONLY / LOCAL_MUTATION /
+  REMOTE_MUTATION / COMPUTE_SUBMISSION / DESTRUCTIVE / SECRET_BEARING /
+  UNSAFE_FOR_AGENT) -> `AUDIT_agent_capabilities.md`.
+- **A2** (coordinator) — `AGENT_SAFETY_MODEL.md` + machine-enforced Permission
+  objects/tests, derived from existing CryoStack boundaries.
+- **A3** (coordinator) — `cryostack_src/agents/`: ToolSpec / ToolContext /
+  ToolResult / ToolRegistry / Permission. Provider-agnostic. Safe read-only
+  tools over existing APIs. Strong user-isolation tests.
+- **A4** — planning tools: RunPlan (structured), prepare/validate/estimate.
+  Reuse B4 validation + Basic-mode specs. No submission.
+- **A5** — approval boundary: plan lifecycle + digest-bound approval;
+  approve(A) -> mutate -> execute is REJECTED.
+- **A6** — dry-run execution coordinator: real staging/validation up to (not
+  including) sbatch / AWS submit; structured trace.
+- **A7** — append-only agent trace; secrets never logged; agent operational
+  trace vs scientific run provenance separated.
+- **A8** — CryoStack Run Assistant (bounded; understands -> inspects -> plans
+  -> validates -> explains -> requests approval; NO autonomous submit). LLM
+  adapter interface + deterministic mock.
+- **A9** — small agent UI panel (reuse CryoStack components).
+- **A10** — Developer Guide "Building Agents in CryoStack".
+- **P1** ModelCapabilities registry · **P2** result-contract generalization ·
+  **P3** run/experiment abstraction (only if strong backward-compat).
+- **R1/R2/R3** — cross-model contract matrix / malicious-agent / scientific-
+  integrity tests.
+- `LEARNING_AGENTIC_DEVELOPMENT.md` — the teaching doc.
+
+## PASS 3 delegation
+
+### Agent A1 — agent-capability audit
+- **objective:** classify every platform operation exposed as a clean Python
+  API for agent-safety.
+- **why delegated:** broad read-only inventory across ~15 subsystems; the
+  coordinator needs the classified list to design A2/A3 but should not spend
+  its context reading every module.
+- **boundaries:** READ ONLY. No edits, no commits. file:line evidence.
+- (findings appended on return)
