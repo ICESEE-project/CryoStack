@@ -649,3 +649,16 @@ boundary, 9 eval harness, 10 model-conditionals audit, 11 icepack hardening,
 
 Remaining: 3 mount panel, 10 model-conditionals audit, 11 icepack hardening,
 14 acceptance command, 15 tomorrow lab, 16 adversarial review, final report.
+
+### PASS 4 tasks 3, 10, 11, 14, 15 (coordinator)
+| Task | Commit | What |
+|---|---|---|
+| 10 model conditionals | 4997527 | AUDIT_model_conditionals.md; 3 MATLAB checks -> ModelCapabilities.requires_matlab |
+| 11 icepack hardening | 0c6f66f | results.py raises typed ResultError for broken exports; 12 tests; no new science |
+| 3 mount panel | 56c8caf | shared_agent_panel reworked to mockup; gateway mount behind CRYOSTACK_AGENT_PANEL; NO submit; 9 tests |
+| 14 acceptance command | 46782bd | python -m cryostack_src.acceptance --offline; 17 checks PASS/FAIL/MANUAL; found Docker-namespace OWNER_CHECKPOINT |
+| 15 docs for tomorrow | 971531c | building_agents.md section 11; TOMORROW_AGENT_LAB.md (10 exercises) |
+
+### Task 16 — adversarial review (3 read-only subagents dispatched)
+- SECURITY REVIEWER (aed161ae) · SCIENTIFIC-INTEGRITY REVIEWER (a7b09d8b) ·
+  SOFTWARE-ARCHITECTURE REVIEWER (adda0d16). Coordinator reconciles on return.
