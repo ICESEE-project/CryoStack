@@ -113,6 +113,9 @@ from cryostack_src.frontend.cryolauncher.cloud_environment import (
 from cryostack_src.frontend.cryolauncher.cloud_runtime import (
     build_cloud_runtime_callbacks,
 )
+from cryostack_src.frontend.cryolauncher.cloud_connect_runtime import (
+    build_aws_connect_callbacks,
+)
 from cryostack_src.frontend.cryolauncher.cloud_run_controller import (
     CloudRunController,
     cloud_run_plan_summary,
@@ -2474,6 +2477,33 @@ def build_icesheets_ui():
         on_cloud_logs = cloud_runtime.logs
         on_cloud_terminate = cloud_runtime.terminate
         on_cloud_results = cloud_runtime.results
+
+        # -- "Connect AWS Account" onboarding (C7.2) --------------------
+        # Bring-your-own-AWS-account: the connection is owned by the
+        # authenticated CryoStack user; a fresh AWSOnboarding per call keeps
+        # nothing user-controlled in the identity path.
+        def _aws_onboarding_factory():
+            from cryostack_src.cloud.connect import AWSOnboarding
+
+            return AWSOnboarding(
+                user=workspace_manager.owner,
+                region=(cloud_environment.region.value or "us-east-2").strip(),
+            )
+
+        aws_connect = build_aws_connect_callbacks(
+            widgets=cloud_environment,
+            onboarding_factory=_aws_onboarding_factory,
+            log_output=log_out,
+        )
+        cloud_environment.connect_button.on_click(aws_connect.connect)
+        cloud_environment.verify_button.on_click(aws_connect.verify)
+        cloud_environment.recheck_button.on_click(aws_connect.recheck)
+        cloud_environment.disconnect_button.on_click(aws_connect.disconnect)
+        try:
+            aws_connect.refresh()          # render any existing connection
+        except Exception as _err:          # noqa: BLE001 - never block panel build
+            with log_out:
+                print("[cloud][connect] state unavailable:", _err)
 
         # -- C6: non-blocking submit + auto-poll + auto-retrieve -----------
         def _cloud_log(message: str) -> None:

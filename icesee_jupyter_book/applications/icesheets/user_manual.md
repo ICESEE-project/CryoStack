@@ -281,11 +281,39 @@ example**, in your personal dataset area.
 </p>
 <p>
   <b>Cloud</b> <span class="cryostack-status dev">In development</span>
-  &nbsp;— AWS Batch execution. Infrastructure provisioning and the run
-  contract exist, but real cloud execution has not been accepted. Do not
-  depend on Cloud for production work yet.
+  &nbsp;— run on <b>your own</b> AWS account and credits. You connect the
+  account once (<b>Connect AWS Account</b> → <b>Open AWS Setup</b> → create the
+  CryoStack access role → <b>Verify</b>), CryoStack prepares the required
+  infrastructure, and you review an estimated cost before launching. CryoStack
+  uses <b>temporary role access</b> and never stores your AWS access keys — you
+  are never asked to paste an access key, a secret, or a CLI profile. Real
+  cloud execution has not yet been accepted end-to-end; do not depend on Cloud
+  for production work yet.
 </p>
 :::
+
+### Connect AWS Account
+
+1. In <b>Cloud Environment → AWS ACCOUNT</b>, click <b>Connect AWS Account</b>.
+2. Click <b>Open AWS Setup</b>. A CloudFormation <i>Quick Create</i> page opens
+   in your AWS console, pre-filled with a unique <i>ExternalId</i> and the
+   CryoStack principal. Review it and create the stack — it adds one IAM role,
+   <code>CryoStackExecutionRole</code>, with least-privilege access scoped to
+   <code>cryostack-*</code> resources.
+3. Copy the role ARN from the stack's <b>Outputs</b> tab
+   (<code>arn:aws:iam::&lt;account&gt;:role/CryoStackExecutionRole</code>),
+   paste it back into CryoStack, and click <b>Verify connection</b>.
+4. CryoStack assumes the role with your ExternalId, confirms the account, and
+   shows <b>● Connected</b> with your account ID and <i>Access: Temporary
+   role</i>. From here, <b>Prepare cloud</b> derives the bucket
+   (<code>cryostack-runs-&lt;account-id&gt;</code>), queue and job definition
+   automatically.
+
+<b>Disconnect</b> removes the stored connection metadata only. There are no
+credentials to revoke — STS sessions are short-lived and are never stored.
+Running <code>aws configure</code> or setting up a CLI profile is <b>not</b>
+required for this path; that is a developer-only workflow (see the Developer
+Guide).
 
 **Backend** (under Remote):
 

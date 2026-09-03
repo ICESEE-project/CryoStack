@@ -1,0 +1,295 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "CryoStack cross-account access role. Grants CryoStack least-privilege access to run scientific experiments on AWS Batch in your account, assumable only with your unique ExternalId. (template 2026-09-03)",
+  "Parameters": {
+    "ExternalId": {
+      "Type": "String",
+      "NoEcho": true,
+      "MinLength": 8,
+      "AllowedPattern": "[\\w+=,.@:/-]+",
+      "Description": "The unique ExternalId shown in CryoStack. Do not change it."
+    },
+    "CryoStackPrincipalArn": {
+      "Type": "String",
+      "AllowedPattern": "arn:aws[a-z-]*:(iam|sts)::\\d{12}:.+",
+      "Description": "The CryoStack AWS principal allowed to assume this role. Pre-filled by CryoStack; do not change it."
+    }
+  },
+  "Resources": {
+    "CryoStackExecutionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": "CryoStackExecutionRole",
+        "Description": "Assumed by CryoStack to run experiments on AWS Batch.",
+        "MaxSessionDuration": 3600,
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Ref": "CryoStackPrincipalArn"
+                }
+              },
+              "Action": "sts:AssumeRole",
+              "Condition": {
+                "StringEquals": {
+                  "sts:ExternalId": {
+                    "Ref": "ExternalId"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "CryoStackExecutionAccess",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "CryoStackRunsBuckets",
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:CreateBucket",
+                    "s3:GetBucketLocation",
+                    "s3:ListBucket",
+                    "s3:PutBucketVersioning",
+                    "s3:PutBucketPublicAccessBlock",
+                    "s3:PutEncryptionConfiguration",
+                    "s3:PutLifecycleConfiguration"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:s3:::cryostack-runs-*"
+                  }
+                },
+                {
+                  "Sid": "CryoStackRunsObjects",
+                  "Effect": "Allow",
+                  "Action": [
+                    "s3:GetObject",
+                    "s3:PutObject",
+                    "s3:DeleteObject",
+                    "s3:AbortMultipartUpload",
+                    "s3:ListMultipartUploadParts"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:s3:::cryostack-runs-*/*"
+                  }
+                },
+                {
+                  "Sid": "CryoStackEcrAuth",
+                  "Effect": "Allow",
+                  "Action": "ecr:GetAuthorizationToken",
+                  "Resource": "*"
+                },
+                {
+                  "Sid": "CryoStackEcrRepos",
+                  "Effect": "Allow",
+                  "Action": [
+                    "ecr:CreateRepository",
+                    "ecr:DescribeRepositories",
+                    "ecr:DescribeImages",
+                    "ecr:ListImages",
+                    "ecr:BatchCheckLayerAvailability",
+                    "ecr:BatchGetImage",
+                    "ecr:GetDownloadUrlForLayer",
+                    "ecr:InitiateLayerUpload",
+                    "ecr:UploadLayerPart",
+                    "ecr:CompleteLayerUpload",
+                    "ecr:PutImage",
+                    "ecr:SetRepositoryPolicy",
+                    "ecr:GetRepositoryPolicy"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:ecr:*:${AWS::AccountId}:repository/cryostack-*"
+                  }
+                },
+                {
+                  "Sid": "CryoStackBatchRead",
+                  "Effect": "Allow",
+                  "Action": [
+                    "batch:DescribeComputeEnvironments",
+                    "batch:DescribeJobQueues",
+                    "batch:DescribeJobDefinitions",
+                    "batch:DescribeJobs",
+                    "batch:ListJobs"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Sid": "CryoStackBatchProvision",
+                  "Effect": "Allow",
+                  "Action": [
+                    "batch:CreateComputeEnvironment",
+                    "batch:UpdateComputeEnvironment",
+                    "batch:DeleteComputeEnvironment",
+                    "batch:CreateJobQueue",
+                    "batch:UpdateJobQueue",
+                    "batch:DeleteJobQueue",
+                    "batch:RegisterJobDefinition",
+                    "batch:DeregisterJobDefinition",
+                    "batch:TagResource"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:batch:*:${AWS::AccountId}:compute-environment/cryostack-*"
+                    },
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:batch:*:${AWS::AccountId}:job-queue/cryostack-*"
+                    },
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:batch:*:${AWS::AccountId}:job-definition/cryostack-*"
+                    }
+                  ]
+                },
+                {
+                  "Sid": "CryoStackBatchRun",
+                  "Effect": "Allow",
+                  "Action": [
+                    "batch:SubmitJob"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:batch:*:${AWS::AccountId}:job-queue/cryostack-*"
+                    },
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:batch:*:${AWS::AccountId}:job-definition/cryostack-*"
+                    }
+                  ]
+                },
+                {
+                  "Sid": "CryoStackBatchTerminate",
+                  "Effect": "Allow",
+                  "Action": [
+                    "batch:TerminateJob",
+                    "batch:CancelJob"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:batch:*:${AWS::AccountId}:job/*"
+                  }
+                },
+                {
+                  "Sid": "CryoStackLogsRead",
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:GetLogEvents",
+                    "logs:FilterLogEvents",
+                    "logs:DescribeLogStreams",
+                    "logs:DescribeLogGroups"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/cryostack/*"
+                  }
+                },
+                {
+                  "Sid": "CryoStackLogsGroup",
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogGroup",
+                    "logs:PutRetentionPolicy"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/cryostack/*"
+                  }
+                },
+                {
+                  "Sid": "CryoStackServiceRoles",
+                  "Effect": "Allow",
+                  "Action": [
+                    "iam:CreateRole",
+                    "iam:GetRole",
+                    "iam:TagRole",
+                    "iam:ListRolePolicies",
+                    "iam:ListAttachedRolePolicies",
+                    "iam:GetRolePolicy",
+                    "iam:PutRolePolicy",
+                    "iam:DeleteRolePolicy",
+                    "iam:AttachRolePolicy",
+                    "iam:DetachRolePolicy"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cryostack-*"
+                  }
+                },
+                {
+                  "Sid": "CryoStackPassRole",
+                  "Effect": "Allow",
+                  "Action": "iam:PassRole",
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cryostack-*"
+                  },
+                  "Condition": {
+                    "StringEquals": {
+                      "iam:PassedToService": [
+                        "batch.amazonaws.com",
+                        "ecs-tasks.amazonaws.com"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "Sid": "CryoStackBatchServiceLinkedRole",
+                  "Effect": "Allow",
+                  "Action": "iam:CreateServiceLinkedRole",
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/batch.amazonaws.com/*"
+                  },
+                  "Condition": {
+                    "StringEquals": {
+                      "iam:AWSServiceName": "batch.amazonaws.com"
+                    }
+                  }
+                },
+                {
+                  "Sid": "CryoStackNetworkDiscovery",
+                  "Effect": "Allow",
+                  "Action": [
+                    "ec2:DescribeVpcs",
+                    "ec2:DescribeSubnets",
+                    "ec2:DescribeSecurityGroups",
+                    "ec2:DescribeRouteTables",
+                    "ec2:DescribeAvailabilityZones"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Sid": "CryoStackIdentityAndPricing",
+                  "Effect": "Allow",
+                  "Action": [
+                    "sts:GetCallerIdentity",
+                    "pricing:GetProducts"
+                  ],
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "app",
+            "Value": "cryostack"
+          },
+          {
+            "Key": "managed-by",
+            "Value": "cryostack-quick-create"
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "RoleArn": {
+      "Description": "Paste this back into CryoStack to verify the connection.",
+      "Value": {
+        "Fn::GetAtt": [
+          "CryoStackExecutionRole",
+          "Arn"
+        ]
+      }
+    }
+  }
+}

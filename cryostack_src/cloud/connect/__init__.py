@@ -49,23 +49,44 @@ from .assume_role import (
     AssumeRoleError,
     assume_role,
 )
+from .cloudformation import (
+    EXECUTION_ROLE_NAME,
+    execution_role_template,
+    quick_create_url,
+    render_template,
+)
 from .context import AWSExecutionContext
+from .defaults import CloudDefaults, default_runs_bucket, derive_cloud_defaults
 from .external_id import generate_external_id
 from .models import AWSConnection, account_id_from_role_arn
+from .onboarding import AWSOnboarding, OnboardingConfigError
+from .principal import PrincipalNotConfiguredError, cryostack_principal_arn
 from .redaction import assert_no_aws_secrets, redact_aws_secrets
 from .store import AWSConnectionStore
-from .verify import verify_connection
+from .verify import VerificationResult, verify_connection
 
 __all__ = [
     "AWSConnection",
     "AWSConnectionStore",
     "AWSExecutionContext",
+    "AWSOnboarding",
     "AssumeRoleError",
+    "CloudDefaults",
     "DEFAULT_SESSION_SECONDS",
+    "EXECUTION_ROLE_NAME",
+    "OnboardingConfigError",
+    "PrincipalNotConfiguredError",
+    "VerificationResult",
     "account_id_from_role_arn",
     "assert_no_aws_secrets",
     "assume_role",
+    "cryostack_principal_arn",
+    "default_runs_bucket",
+    "derive_cloud_defaults",
+    "execution_role_template",
     "generate_external_id",
+    "quick_create_url",
     "redact_aws_secrets",
+    "render_template",
     "verify_connection",
 ]

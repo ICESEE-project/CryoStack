@@ -287,6 +287,18 @@ in the gateway:
 
 **Cloud execution (AWS Batch).**
 
+- *Auth model — two modes.* **Developer / operator mode** uses ambient AWS CLI
+  credentials + an optional named profile (`aws configure`); it is the local
+  development and acceptance path only. **End-user mode** ("Bring your AWS
+  account") is a cross-account IAM role (`CryoStackExecutionRole`) assumed via
+  `sts:AssumeRole` with a per-connection `ExternalId`; CryoStack holds only
+  *temporary* STS credentials for one operation and persists only non-secret
+  connection metadata (`cryostack_src/cloud/connect/`). Never document
+  `aws configure` for normal users — keep CLI/profile guidance in Developer /
+  Maintainer scope. The onboarding template + Quick Create URL builder live in
+  `cryostack_src/cloud/connect/cloudformation.py`; the CryoStack principal ARN
+  is deployment config (`CRYOSTACK_AWS_PRINCIPAL_ARN`), never hardcoded, and
+  the hosted template URL is `CRYOSTACK_CF_TEMPLATE_URL`.
 - *Implemented:* an end-to-end ISSM path — config + preflight, a user-owned
   working copy staged to `s3://<bucket>/runs/<safe-user>/<run-id>/`,
   `aws batch submit-job` (Fargate), lifecycle status/logs/terminate.
