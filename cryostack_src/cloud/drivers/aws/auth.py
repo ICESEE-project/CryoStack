@@ -31,10 +31,22 @@ networking, Batch execution, and frontend logic.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 
 from ...models import CloudAccount
 from .models import AWSConfig
+
+#: env vars that carry an ambient credential source; dropped when an
+#: assumed-role ``AWSConfig.credentials`` is supplied so the temporary
+#: credentials are the only ones the CLI can see.
+_AMBIENT_CRED_ENV = (
+    "AWS_PROFILE",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "AWS_SECURITY_TOKEN",
+)
 
 
 class AWSCredentialsError(
@@ -51,7 +63,8 @@ def aws_command(
 
     command = ["aws"]
 
-    if config.profile:
+    # assumed-role temporary credentials win and never combine with a profile
+    if config.profile and not config.credentials:
         command.extend([
             "--profile",
             config.profile,
@@ -71,10 +84,23 @@ def run_aws(
     arguments: list[str],
 ) -> tuple[int, str, str]:
 
+    env = None
+    if config.credentials:
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in _AMBIENT_CRED_ENV
+        }
+        # only the three standard STS env vars are honoured
+        for key in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"):
+            if config.credentials.get(key):
+                env[key] = config.credentials[key]
+
     process = subprocess.run(
         aws_command(config) + arguments,
         capture_output=True,
         text=True,
+        env=env,
     )
 
     return (

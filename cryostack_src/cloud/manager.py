@@ -27,6 +27,14 @@ High-level CryoStack cloud manager.
 
 CloudManager is the public cloud API used by execution backends and
 frontends. Provider-specific behavior remains inside cloud drivers.
+
+Credential source (mutually exclusive, resolved per call):
+
+* ``profile`` / ambient  -- developer / operator mode;
+* ``credentials``        -- end-user assumed-role mode: the temporary
+  ``AWS_ACCESS_KEY_ID`` / ``AWS_SECRET_ACCESS_KEY`` / ``AWS_SESSION_TOKEN``
+  triple from :func:`cryostack_src.cloud.connect.assume_role`. It is passed
+  straight through to the driver and never stored or logged here.
 """
 
 from __future__ import annotations
@@ -48,6 +56,7 @@ class CloudManager:
         provider: str,
         region: str,
         profile: str | None = None,
+        credentials: dict[str, str] | None = None,
         submitter=None,
     ) -> CloudDriver:
 
@@ -62,6 +71,7 @@ class CloudManager:
             return AWSDriver(
                 region=region,
                 profile=profile,
+                credentials=credentials,
                 submitter=submitter,
             )
 
@@ -79,12 +89,14 @@ class CloudManager:
         provider: str,
         region: str,
         profile: str | None = None,
+        credentials: dict[str, str] | None = None,
     ):
 
         return self.driver(
             provider=provider,
             region=region,
             profile=profile,
+            credentials=credentials,
         ).account()
 
     def capabilities(
@@ -93,12 +105,14 @@ class CloudManager:
         provider: str,
         region: str,
         profile: str | None = None,
+        credentials: dict[str, str] | None = None,
     ):
 
         return self.driver(
             provider=provider,
             region=region,
             profile=profile,
+            credentials=credentials,
         ).capabilities()
 
     def prepare_storage(
@@ -107,6 +121,7 @@ class CloudManager:
         provider: str,
         region: str,
         profile: str | None = None,
+        credentials: dict[str, str] | None = None,
         bucket: str | None = None,
     ):
 
@@ -114,6 +129,7 @@ class CloudManager:
             provider=provider,
             region=region,
             profile=profile,
+            credentials=credentials,
         ).prepare_storage(
             bucket=bucket,
         )
@@ -124,12 +140,14 @@ class CloudManager:
         provider: str,
         region: str,
         profile: str | None = None,
+        credentials: dict[str, str] | None = None,
     ):
 
         return self.driver(
             provider=provider,
             region=region,
             profile=profile,
+            credentials=credentials,
         ).network()
 
     def iam(
@@ -138,12 +156,14 @@ class CloudManager:
         provider: str,
         region: str,
         profile: str | None = None,
+        credentials: dict[str, str] | None = None,
     ):
 
         return self.driver(
             provider=provider,
             region=region,
             profile=profile,
+            credentials=credentials,
         ).iam()
 
     def registry(
@@ -152,12 +172,14 @@ class CloudManager:
         provider: str,
         region: str,
         profile: str | None = None,
+        credentials: dict[str, str] | None = None,
     ):
 
         return self.driver(
             provider=provider,
             region=region,
             profile=profile,
+            credentials=credentials,
         ).registry()
 
     def batch(
@@ -166,12 +188,14 @@ class CloudManager:
         provider: str,
         region: str,
         profile: str | None = None,
+        credentials: dict[str, str] | None = None,
     ):
 
         return self.driver(
             provider=provider,
             region=region,
             profile=profile,
+            credentials=credentials,
         ).batch()
 
     def bootstrap(
@@ -180,6 +204,7 @@ class CloudManager:
         provider: str,
         region: str,
         profile: str | None = None,
+        credentials: dict[str, str] | None = None,
         bucket: str | None = None,
     ):
 
@@ -187,6 +212,7 @@ class CloudManager:
             provider=provider,
             region=region,
             profile=profile,
+            credentials=credentials,
         ).bootstrap(
             bucket=bucket,
         )
@@ -197,6 +223,7 @@ class CloudManager:
         provider: str,
         region: str,
         profile: str | None = None,
+        credentials: dict[str, str] | None = None,
         include_icepack: bool = False,
     ):
 
@@ -204,6 +231,7 @@ class CloudManager:
             provider=provider,
             region=region,
             profile=profile,
+            credentials=credentials,
         ).prepare_batch(
             include_icepack=include_icepack,
         )
@@ -218,6 +246,7 @@ class CloudManager:
         provider: str,
         region: str,
         profile: str | None = None,
+        credentials: dict[str, str] | None = None,
         submitter=None,
         **kwargs,
     ):
@@ -226,6 +255,7 @@ class CloudManager:
             provider=provider,
             region=region,
             profile=profile,
+            credentials=credentials,
             submitter=submitter,
         ).submit(
             **kwargs
@@ -238,12 +268,14 @@ class CloudManager:
         region: str,
         job_id: str,
         profile: str | None = None,
+        credentials: dict[str, str] | None = None,
     ):
 
         return self.driver(
             provider=provider,
             region=region,
             profile=profile,
+            credentials=credentials,
         ).status(
             job_id
         )
@@ -255,12 +287,14 @@ class CloudManager:
         region: str,
         job_id: str,
         profile: str | None = None,
+        credentials: dict[str, str] | None = None,
     ):
 
         return self.driver(
             provider=provider,
             region=region,
             profile=profile,
+            credentials=credentials,
         ).logs(
             job_id
         )
@@ -272,12 +306,14 @@ class CloudManager:
         region: str,
         job_id: str,
         profile: str | None = None,
+        credentials: dict[str, str] | None = None,
     ):
 
         return self.driver(
             provider=provider,
             region=region,
             profile=profile,
+            credentials=credentials,
         ).terminate(
             job_id
         )

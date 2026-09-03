@@ -113,12 +113,16 @@ class AWSDriver(
         *,
         region: str = "us-east-2",
         profile: str | None = None,
+        credentials: dict[str, str] | None = None,
         submitter=None,
     ) -> None:
 
+        #: ``credentials`` (assumed-role temporary env) is end-user mode and
+        #: wins over ``profile``; both absent is developer/ambient mode.
         self.config = AWSConfig(
             region=region,
             profile=profile,
+            credentials=credentials,
         )
 
         #
