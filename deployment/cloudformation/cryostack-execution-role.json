@@ -1,6 +1,6 @@
 {
   "AWSTemplateFormatVersion": "2010-09-09",
-  "Description": "CryoStack cross-account access role. Grants CryoStack least-privilege access to run scientific experiments on AWS Batch in your account, assumable only with your unique ExternalId. (template 2026-09-03)",
+  "Description": "CryoStack cross-account access role. Grants CryoStack least-privilege access to run scientific experiments on AWS Batch in your account, assumable only with your unique ExternalId. (template 2026-09-04)",
   "Parameters": {
     "ExternalId": {
       "Type": "String",
@@ -86,11 +86,16 @@
                   "Resource": "*"
                 },
                 {
+                  "Sid": "CryoStackEcrListRepositories",
+                  "Effect": "Allow",
+                  "Action": "ecr:DescribeRepositories",
+                  "Resource": "*"
+                },
+                {
                   "Sid": "CryoStackEcrRepos",
                   "Effect": "Allow",
                   "Action": [
                     "ecr:CreateRepository",
-                    "ecr:DescribeRepositories",
                     "ecr:DescribeImages",
                     "ecr:ListImages",
                     "ecr:BatchCheckLayerAvailability",

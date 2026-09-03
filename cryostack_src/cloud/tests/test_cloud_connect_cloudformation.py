@@ -73,6 +73,7 @@ def test_no_administrator_access_and_no_star_star(template):
         if "*" in resources:
             assert stmt["Sid"] in {
                 "CryoStackEcrAuth",
+                "CryoStackEcrListRepositories",
                 "CryoStackBatchRead",
                 "CryoStackNetworkDiscovery",
                 "CryoStackIdentityAndPricing",
@@ -92,8 +93,33 @@ def test_s3_is_scoped_to_cryostack_runs(template):
 
 def test_ecr_repo_actions_are_scoped_to_cryostack_repositories(template):
     sids = {s["Sid"]: s for s in _all_statements(template)}
-    assert "cryostack-*" in sids["CryoStackEcrRepos"]["Resource"]["Fn::Sub"]
-    assert "repository/cryostack-*" in sids["CryoStackEcrRepos"]["Resource"]["Fn::Sub"]
+    repos = sids["CryoStackEcrRepos"]
+    assert "repository/cryostack-*" in repos["Resource"]["Fn::Sub"]
+    # every repository-specific ECR action stays scoped; only the account-wide
+    # LISTING call (ecr:DescribeRepositories with no filter) is on Resource "*"
+    scoped = repos["Action"] if isinstance(repos["Action"], list) else [repos["Action"]]
+    assert "ecr:DescribeRepositories" not in scoped
+    for must_stay_scoped in ("ecr:CreateRepository", "ecr:PutImage",
+                             "ecr:DescribeImages", "ecr:BatchGetImage",
+                             "ecr:UploadLayerPart", "ecr:PutLifecyclePolicy"):
+        assert must_stay_scoped in scoped
+
+    lst = sids["CryoStackEcrListRepositories"]
+    assert lst["Action"] == "ecr:DescribeRepositories"
+    assert lst["Resource"] == "*"
+
+
+def test_ecr_describe_repositories_is_the_only_ecr_action_moved_to_star(template):
+    """Regression for the Account-B Prepare failure:
+    `AccessDeniedException ... ecr:DescribeRepositories on arn:...:repository/*`.
+    The unfiltered discovery call needs Resource "*"; nothing else changed."""
+    star_ecr = set()
+    for s in _all_statements(template):
+        acts = s["Action"] if isinstance(s["Action"], list) else [s["Action"]]
+        res = s["Resource"] if isinstance(s["Resource"], list) else [s["Resource"]]
+        if "*" in res:
+            star_ecr.update(a for a in acts if a.startswith("ecr:"))
+    assert star_ecr == {"ecr:GetAuthorizationToken", "ecr:DescribeRepositories"}
 
 
 def test_batch_submit_describe_terminate_are_all_present(template):

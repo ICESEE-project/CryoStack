@@ -46,7 +46,7 @@ from urllib.parse import quote, urlencode
 
 EXECUTION_ROLE_NAME = "CryoStackExecutionRole"
 DEFAULT_STACK_NAME = "cryostack-access"
-TEMPLATE_VERSION = "2026-09-03"
+TEMPLATE_VERSION = "2026-09-04"
 
 # names CryoStack provisions inside the user's account (kept in sync with
 # cryostack_src.cloud.drivers.aws.batch_config)
@@ -109,7 +109,8 @@ def _permissions_policy() -> dict:
                 ],
                 "Resource": sub(f"arn:{partition}:s3:::cryostack-runs-*/*"),
             },
-            # -- ECR: auth token is un-scopable; everything else -> cryostack-*
+            # -- ECR: the auth token and the account-wide repository *listing*
+            #    are un-scopable; every repository-specific action -> cryostack-*
             {
                 "Sid": "CryoStackEcrAuth",
                 "Effect": "Allow",
@@ -117,11 +118,20 @@ def _permissions_policy() -> dict:
                 "Resource": "*",
             },
             {
+                # `ecr:DescribeRepositories` is called without a repository
+                # filter during discovery (registry.py:list_repositories),
+                # which AWS authorises against arn:...:repository/* -- a
+                # `repository/cryostack-*` scope denies it. Read-only.
+                "Sid": "CryoStackEcrListRepositories",
+                "Effect": "Allow",
+                "Action": "ecr:DescribeRepositories",
+                "Resource": "*",
+            },
+            {
                 "Sid": "CryoStackEcrRepos",
                 "Effect": "Allow",
                 "Action": [
                     "ecr:CreateRepository",
-                    "ecr:DescribeRepositories",
                     "ecr:DescribeImages",
                     "ecr:ListImages",
                     "ecr:BatchCheckLayerAvailability",
