@@ -102,3 +102,36 @@ def test_optional_resources_are_skipped_not_failed():
     skipped = [c.name for c in r.checks if c.status == "SKIP"]
     assert {"Batch job queue", "Batch job definition", "ECR image"} <= set(skipped)
     assert r.ok                                     # skips do not fail the report
+
+
+def test_byo_credentials_win_over_profile_in_the_config(monkeypatch):
+    """C7.5: a connected BYO account probes its OWN infrastructure -- the
+    assumed-role temp credentials are used and no --profile is added."""
+    captured = {}
+
+    def fake_run(cmd, capture_output, text, env):
+        captured["cmd"] = cmd
+        captured["env"] = env
+
+        class R:
+            returncode = 0
+            stdout = json.dumps({"Account": "774888247882"})
+            stderr = ""
+
+        return R()
+
+    monkeypatch.setattr(
+        "cryostack_src.cloud.drivers.aws.auth.subprocess.run", fake_run)
+    monkeypatch.setenv("AWS_PROFILE", "dev")
+
+    creds = {"AWS_ACCESS_KEY_ID": "ASIA_B", "AWS_SECRET_ACCESS_KEY": "s",
+             "AWS_SESSION_TOKEN": "t"}
+    report = run_infrastructure_smoke_test(
+        **_kw(profile="dev", credentials=creds))
+
+    assert "--profile" not in captured["cmd"]
+    assert captured["env"]["AWS_ACCESS_KEY_ID"] == "ASIA_B"
+    assert "AWS_PROFILE" not in captured["env"]
+    # identity resolves to the BYO account
+    assert any(c.status == "PASS" and "774888247882" in c.detail
+               for c in report.checks if c.name == "AWS identity")

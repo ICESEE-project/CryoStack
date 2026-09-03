@@ -95,10 +95,10 @@ class CloudCostEstimate:
             "vcpu": self.vcpu,
             "memory_gib": self.memory_gib,
             "expected_runtime_minutes": self.expected_runtime_minutes,
-            "compute_usd": round(self.compute_usd, 4),
-            "memory_usd": round(self.memory_usd, 4),
-            "storage_usd": round(self.storage_usd, 4),
-            "estimated_total_usd": round(self.estimated_total_usd, 4),
+            "compute_usd": round(self.compute_usd, 6),
+            "memory_usd": round(self.memory_usd, 6),
+            "storage_usd": round(self.storage_usd, 6),
+            "estimated_total_usd": round(self.estimated_total_usd, 6),
             "display_total": self.display_total(),
             "source": self.source,
             "source_timestamp": self.source_timestamp,
@@ -108,7 +108,7 @@ class CloudCostEstimate:
         }
 
 
-def _format_usd(value: float) -> str:
+def format_usd(value: float) -> str:
     """<$0.01 / $0.04 / $1.20 / $12 -- rounded, no fake precision."""
     v = max(0.0, float(value))
     if v < 0.01:
@@ -118,3 +118,7 @@ def _format_usd(value: float) -> str:
     if v < 100:
         return f"${v:.1f}"
     return f"${v:.0f}"
+
+
+#: internal alias kept for existing imports
+_format_usd = format_usd

@@ -90,7 +90,7 @@ def test_results_retrieval_lands_the_structured_package(monkeypatch, tmp_path):
     in the outputs/{metadata.json,...} shape the Results UI reads."""
     landed = tmp_path / "cache" / "cloud_outputs"
 
-    def fake_sync(*, s3_uri, region=None, profile=None):
+    def fake_sync(*, s3_uri, region=None, profile=None, credentials=None):
         assert s3_uri.endswith("/runs/cloud-x")
         landed.mkdir(parents=True, exist_ok=True)
         (landed / "metadata.json").write_text(json.dumps({"schema": "cryostack.issm.results"}))

@@ -94,10 +94,19 @@ def run_infrastructure_smoke_test(
     job_definition: str = "",
     ecr_repository: str = "",
     profile: str | None = None,
+    credentials: dict | None = None,
     aws=None,
 ) -> SmokeReport:
-    """Probe the AWS infrastructure a cloud run needs. Never submits a job."""
-    config = AWSConfig(region=region, profile=profile)
+    """Probe the AWS infrastructure a cloud run needs. Never submits a job.
+
+    ``credentials`` (assumed-role temporary env, BYO-AWS) wins over ``profile``
+    so a connected user's smoke test probes *their* account.
+    """
+    config = AWSConfig(
+        region=region,
+        profile=None if credentials else profile,
+        credentials=credentials,
+    )
     invoke = aws or (lambda args: run_aws(config, args))
     report = SmokeReport()
 

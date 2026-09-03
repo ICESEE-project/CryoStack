@@ -308,6 +308,25 @@ in the gateway:
   developer mode, unchanged. `CloudBridge` / `CloudBackend` / `CloudManager`
   take a `credentials` kwarg; when set it wins and `run_aws` scrubs ambient
   `AWS_*` from the child env.
+- *Interactive BYO run lifecycle (C7.5).* `CloudRunController` takes an
+  `execution_provider` (`_resolve_cloud_execution`); when set, **every** AWS
+  operation of the run — stage/submit, each status poll, terminate, and the S3
+  result sync — is performed with a **fresh** `CloudExecution` (a fresh
+  `sts:AssumeRole` for a connected BYO account) and never falls back to
+  ambient/profile. `run_once` asserts the fresh session's account matches the
+  reviewed `_account_id` before staging (`_assert_same_account` → fail closed).
+  `Review & Launch` submits `review.config` verbatim (no rebuilt
+  `CloudRunConfig`) and re-checks the C7.4 digest — which includes the account
+  id — so a config or account change after Review blocks the launch.
+  `current_cloud_bridge()` auto-resolves BYO credentials for the manual
+  status/log/terminate/results buttons and `resolve_workspace_run_status`
+  (BYO runs carry a non-secret `account_id` in metadata for re-attach after a
+  refresh; no STS credentials are persisted). The **CLOUD RUN** card
+  (`cloud_active_run_runtime.py`) renders `on_run_view` state changes and ticks
+  elapsed time + `live_cost_usd(cost_public, elapsed)` once a second — purely
+  local, no pricing call during the run; AWS status polling keeps its
+  `CRYOSTACK_CLOUD_POLL_SECONDS` (default 20 s) cadence. `sync_cloud_results`
+  gained a `credentials` param (scrubs ambient `AWS_*`, drops `--profile`).
 - *Cost & runtime estimate (`cryostack_src/cloud/estimate/`, `cryostack_src/cloud/review.py`).*
   `resolve_fargate_prices(region)` queries the AWS Price List API from
   `us-east-1` and selects the priced region by `regionCode` attribute;

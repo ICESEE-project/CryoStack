@@ -680,11 +680,37 @@ def build_icesheets_ui():
         # timestep count) -- see cryostack_src/models/icepack/parameters.py.
         icepack_basic_panel = build_icepack_basic_panel()
 
+        def _resolve_cloud_execution():
+            """Fresh per-operation credential context for the authenticated
+            user: BYO-AWS assumed role (fresh sts:AssumeRole), or developer
+            mode (ambient/profile). Never persisted. Raises CloudAccessError
+            for a broken BYO connection -- callers fail closed."""
+            from cryostack_src.cloud.connect import resolve_cloud_execution
+
+            return resolve_cloud_execution(
+                user=workspace_manager.owner,
+                region_hint=aws_region.value.strip() or DEFAULT_CLOUD_REGION,
+                profile_hint=aws_profile.value.strip() or None,
+                model="issm",           # cloud execution is ISSM-only for now
+            )
+
         def current_cloud_bridge(*, credentials=None, region=None):
+            """A CloudBridge for a cloud operation.
+
+            When ``credentials`` is not supplied and the authenticated user has
+            a connected BYO-AWS account, this performs a FRESH sts:AssumeRole
+            and binds the bridge to those temporary credentials -- there is no
+            fallback to the CryoStack host's ambient credentials for a
+            connected account. Developer mode (no connection record) keeps the
+            existing profile/ambient bridge.
+            """
             selected_run = workspace_manager.selected_run()
             selected_metadata = selected_run.metadata if selected_run and selected_run.execution_mode == "cloud" else {}
-            # BYO-AWS assumed-role credentials (when supplied) win over any
-            # profile; developer mode keeps the existing profile/ambient path.
+            if credentials is None:
+                _ex = _resolve_cloud_execution()          # may raise CloudAccessError
+                if getattr(_ex, "is_byo", False):
+                    credentials = _ex.credentials
+                    region = region or _ex.region
             return CloudBridge(
                 provider="aws",
                 region=(
@@ -702,18 +728,6 @@ def build_icesheets_ui():
                 ),
                 credentials=credentials,
                 results_sync=workspace_manager.sync_cloud_results,
-            )
-
-        def _resolve_cloud_execution():
-            """Fresh per-operation credential context for the authenticated
-            user: BYO-AWS assumed role, or developer mode. Never persisted."""
-            from cryostack_src.cloud.connect import resolve_cloud_execution
-
-            return resolve_cloud_execution(
-                user=workspace_manager.owner,
-                region_hint=aws_region.value.strip() or DEFAULT_CLOUD_REGION,
-                profile_hint=aws_profile.value.strip() or None,
-                model="issm",           # cloud execution is ISSM-only for now
             )
 
         # -- Cloud run state chip: Not configured -> Checking -> Ready ->
@@ -775,28 +789,64 @@ def build_icesheets_ui():
                     "job_queue": meta.get("job_queue"),
                     "job_definition": meta.get("job_definition"),
                     "provider": "aws",
+                    # C7.5: non-secret -- lets a page refresh re-check this run
+                    # with a fresh AssumeRole for the right account. No STS
+                    # credentials are ever persisted.
+                    "account_id": getattr(handle, "account_id", "") or "",
+                    "example": getattr(handle, "example", "") or "",
+                    "vcpu": getattr(handle, "vcpu", 0) or 0,
+                    "memory_gib": getattr(handle, "memory_gib", 0) or 0,
+                    "expected_runtime_minutes": getattr(
+                        handle, "expected_runtime_minutes", 0) or 0,
+                    "cost_estimate": getattr(handle, "cost_public", {}) or {},
                 },
             )
 
-        def _submit_cloud_run(staged_dir, md_provenance):
+        def _submit_cloud_run(staged_dir, md_provenance, *, review=None):
             """Validate + preflight + stage the user-owned working copy
             (synchronous, local, fast), then hand the run to the
             CloudRunController -- staging to S3, submit-job, polling and result
             retrieval all run off the event loop. Never billable on a config
-            error."""
+            error.
+
+            When ``review`` (a CloudRunReview from Review & Launch) is given,
+            **its** ``config`` is the run configuration -- no second
+            CloudRunConfig is built -- and its drift digest + launch gate are
+            re-checked here so a change since Review cannot launch.
+            """
             _model = model_dd.value
-            _job_def, _jd_warnings = resolve_job_definition(
-                _model, batch_job_def.value.strip(), allow_list=_CLOUD_JOB_DEFS,
-            )
-            _cfg = resolve_cloud_config(
-                provider="aws",
-                region=aws_region.value.strip(),
-                bucket=cloud_bucket.value.strip(),
-                profile=aws_profile.value.strip(),
-                model=_model,
-                job_queue=batch_job_queue.value.strip(),
-                job_definition=_job_def,
-            )
+            _jd_warnings: list[str] = []
+            if review is not None:
+                # the reviewed config IS the run config
+                if not review.can_launch:
+                    status_chip.value = status_html("fail")
+                    _set_cloud_state("failed")
+                    with log_out:
+                        print("[cloud][ERROR] The reviewed run is blocked:")
+                        for _r in review.blocked_reasons:
+                            print("  -", _r)
+                    return None
+                if _cloud_review_digest() != review.digest:
+                    status_chip.value = status_html("fail")
+                    _set_cloud_state("failed")
+                    with log_out:
+                        print("[cloud][ERROR] The run configuration changed since "
+                              "you reviewed it. Open Review & Launch again.")
+                    return None
+                _cfg = review.config
+            else:
+                _job_def, _jd_warnings = resolve_job_definition(
+                    _model, batch_job_def.value.strip(), allow_list=_CLOUD_JOB_DEFS,
+                )
+                _cfg = resolve_cloud_config(
+                    provider="aws",
+                    region=aws_region.value.strip(),
+                    bucket=cloud_bucket.value.strip(),
+                    profile=aws_profile.value.strip(),
+                    model=_model,
+                    job_queue=batch_job_queue.value.strip(),
+                    job_definition=_job_def,
+                )
             _lic = get_compute_profile("aws").has_matlab_license
             _problems = validate_cloud_config(_cfg, model=_model)
             _problems += cloud_run_preflight(
@@ -836,6 +886,17 @@ def build_icesheets_ui():
                 ))
 
             status_chip.value = status_html("running")
+            _submit_extra = {}
+            if review is not None:
+                _submit_extra = {
+                    "_account_id": review.account_id,
+                    "_example": review.example,
+                    "_vcpu": review.vcpu,
+                    "_memory_gib": review.memory_gib,
+                    "_expected_runtime_minutes": review.expected_runtime_minutes,
+                    "_cost_public": review.cost.to_public_dict(),
+                    "_review_digest": review.digest,
+                }
             _cloud["controller"].submit(
                 staged_source=str(staged_dir),
                 model=_model,
@@ -852,6 +913,7 @@ def build_icesheets_ui():
                 _region=_cfg.region,
                 _profile=_cfg.profile,
                 _md_provenance=md_provenance,
+                **_submit_extra,
             )
             return None
 
@@ -2029,7 +2091,10 @@ def build_icesheets_ui():
             # submit-job -> register a real cloud run in the Workspace.
             # =========================================================
             if mode == "cloud":
-                _cloud_result = _submit_cloud_run(effective_example_dir, md_run_provenance)
+                _submit_cloud_run(
+                    effective_example_dir, md_run_provenance,
+                    review=_cloud.pop("pending_review", None),
+                )
                 return
 
             # ICESEE-Spack scientific runs are blocked unless the live
@@ -2468,17 +2533,27 @@ def build_icesheets_ui():
         def _smoke_worker():
             from cryostack_src.cloud import run_infrastructure_smoke_test
             _cfg = _smoke_state["cfg"]
+            # a connected BYO account probes ITS own infrastructure with a
+            # fresh assumed-role session; developer mode keeps the profile.
+            _ex = _resolve_cloud_execution()
+            _byo = getattr(_ex, "credentials", None) if getattr(_ex, "is_byo", False) else None
             return run_infrastructure_smoke_test(
-                region=_cfg.region, bucket=_cfg.bucket,
+                region=(_ex.region if _byo else _cfg.region), bucket=_cfg.bucket,
                 user_prefix=_smoke_state["user_prefix"],
                 job_queue=_cfg.job_queue, job_definition=_cfg.job_definition,
-                ecr_repository=_smoke_state["ecr"], profile=_cfg.profile,
+                ecr_repository=_smoke_state["ecr"],
+                profile=None if _byo else _cfg.profile,
+                credentials=_byo,
             )
 
         # forward-declared: the review callbacks are built after cloud_runtime,
         # but _update_environment (Test / Prepare success) must refresh the
         # compact RUN ESTIMATE line once infrastructure is Ready.
         _review_holder = {"refresh": lambda: None}
+        # forward-declared: the active-run card is wired after the Workspace
+        # tabs exist (it navigates to Run Log / Results); the CloudRunController
+        # only needs the render hook now.
+        _active_run_holder = {"render": lambda **_v: None}
 
         cloud_runtime = build_cloud_runtime_callbacks(
             runtime_status=STATUS,
@@ -2574,6 +2649,10 @@ def build_icesheets_ui():
             on_state=_set_cloud_state,
             on_log=_cloud_log,
             on_results_ready=_cloud_results_ready,
+            # every AWS op of a connected BYO run uses a fresh sts:AssumeRole
+            # for the reviewed account -- no ambient/profile fallback.
+            execution_provider=_resolve_cloud_execution,
+            on_run_view=lambda **v: _active_run_holder["render"](**v),
             poll_interval=float(os.environ.get("CRYOSTACK_CLOUD_POLL_SECONDS", "20")),
         )
 
@@ -2719,7 +2798,9 @@ def build_icesheets_ui():
             widgets=cloud_environment,
             review_builder=_build_cloud_review,
             digest_builder=_cloud_review_digest,
-            launch_handler=lambda _review: on_run(None),
+            launch_handler=lambda review: (
+                _cloud.__setitem__("pending_review", review), on_run(None)
+            ),
             log_output=log_out,
         )
         _review_holder["refresh"] = _cloud_review.refresh_estimate
@@ -2737,11 +2818,18 @@ def build_icesheets_ui():
 
         def resolve_workspace_run_status(run):
             if run.execution_mode == "cloud":
-                bridge = CloudBridge(
-                    provider="aws",
-                    region=run.metadata.get("region") or "us-east-2",
-                    profile=run.metadata.get("profile") or None,
-                )
+                # a BYO run (account id recorded) re-checks status through a
+                # FRESH assumed-role context for that account; a developer-mode
+                # run keeps its profile. current_cloud_bridge picks the path.
+                if run.metadata.get("account_id"):
+                    bridge = current_cloud_bridge(
+                        region=run.metadata.get("region") or None)
+                else:
+                    bridge = CloudBridge(
+                        provider="aws",
+                        region=run.metadata.get("region") or "us-east-2",
+                        profile=run.metadata.get("profile") or None,
+                    )
             else:
                 bridge = RemoteBridge(
                     mode=run.metadata.get("access_mode") or "direct",
@@ -3307,6 +3395,12 @@ def build_icesheets_ui():
                     s3_run=str(meta.get("cloud_run") or run.remote_directory or ""),
                     model=run.model, region=meta.get("region") or "",
                     profile=meta.get("profile"),
+                    account_id=meta.get("account_id") or "",
+                    example=meta.get("example") or "",
+                    vcpu=meta.get("vcpu") or 0,
+                    memory_gib=meta.get("memory_gib") or 0,
+                    expected_runtime_minutes=meta.get("expected_runtime_minutes") or 0,
+                    cost_public=meta.get("cost_estimate") or {},
                     state={"submitted": "queued"}.get(run.status, run.status),
                 )
 
@@ -3367,6 +3461,44 @@ def build_icesheets_ui():
             visualization_panel=visualization_panel.container,
         )
         _workspace_tabs["w"] = output_workspace.tabs
+
+        # -- CLOUD RUN active-run surface (C7.5) --------------------------
+        # The card's [View log] / [View results] route into the SAME Workspace
+        # tabs + tail/preview machinery the Runs panel uses -- no second log
+        # viewer, no second results path.
+        from cryostack_src.frontend.cryolauncher.cloud_active_run_runtime import (
+            build_active_run_callbacks,
+        )
+
+        def _run_id_for_job(job_id):
+            job_id = str(job_id or "")
+            if not job_id:
+                return None
+            for run in workspace_manager.list_runs():
+                if str(getattr(run, "jobid", "")) == job_id:
+                    return run.id
+            return None
+
+        def _open_active_run(tab):
+            rid = _run_id_for_job(STATUS.get("batch_job_id"))
+            if rid:
+                workspace_manager.select_run(rid)
+            _switch_workspace_tab(tab)
+            if tab == "log":
+                if rid:
+                    workspace_manager.tail(rid)
+                else:
+                    on_cloud_logs()
+            else:
+                on_results_preview()
+
+        _active_run = build_active_run_callbacks(
+            widgets=cloud_environment,
+            on_view_log=lambda: _open_active_run("log"),
+            on_view_results=lambda: _open_active_run("results"),
+            on_terminate=on_cloud_terminate_confirm,
+        )
+        _active_run_holder["render"] = _active_run.render
 
         workspace_ui = build_workspace_explorer(
             run_settings=run_settings_panel,

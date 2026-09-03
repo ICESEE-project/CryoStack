@@ -68,6 +68,7 @@ class CloudBridge:
             s3_uri=s3_uri,
             region=kwargs.pop("region", self.region),
             profile=kwargs.pop("profile", self.profile),
+            credentials=kwargs.pop("credentials", self.credentials),
             **kwargs,
         )
 

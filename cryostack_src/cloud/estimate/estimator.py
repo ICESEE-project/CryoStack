@@ -137,6 +137,26 @@ def estimate_cloud_cost(
     return estimate
 
 
+def live_cost_usd(cost_public: dict, elapsed_seconds: float) -> float | None:
+    """Estimated accumulated cost after ``elapsed_seconds``, computed purely
+    from a retained ``CloudCostEstimate.to_public_dict()`` -- **no AWS Pricing
+    call**.
+
+    The C7.4 estimate is linear in time (rates x hours), so the accumulated
+    cost is ``total x elapsed / expected``. Returns ``None`` when the estimate
+    was unavailable at launch -- the caller shows "Unavailable", never a
+    fabricated number.
+    """
+    if not (cost_public or {}).get("available"):
+        return None
+    total = float(cost_public.get("estimated_total_usd") or 0.0)
+    expected_min = float(cost_public.get("expected_runtime_minutes") or 0.0)
+    if expected_min <= 0:
+        return None
+    elapsed_min = max(0.0, float(elapsed_seconds)) / 60.0
+    return total * (elapsed_min / expected_min)
+
+
 def _elapsed_helper(model: _Priced):
     def estimate_for_elapsed(elapsed_seconds: float) -> float:
         compute, memory, storage = model.for_minutes(

@@ -110,6 +110,17 @@ class CloudEnvironmentWidgets:
     review_back_button: W.Button
     launch_button: W.Button
 
+    # -- CLOUD RUN active-run surface (C7.5) ---------------------------
+    #: compact live status card, hidden until a run is launched
+    active_run_section: W.VBox
+    active_run_title: W.HTML
+    active_run_status: W.HTML
+    active_run_detail: W.HTML
+    active_run_actions: W.HBox
+    active_run_log_button: W.Button
+    active_run_results_button: W.Button
+    active_run_terminate_button: W.Button
+
 
 def _status_row(
     label: str,
@@ -536,6 +547,129 @@ def _review_minutes(minutes: float) -> str:
     return f"{m:.0f}" if m >= 1 else f"{m:.1f}"
 
 
+# ---------------------------------------------------------------------------
+# CLOUD RUN active-run surface (C7.5)
+# ---------------------------------------------------------------------------
+#: CryoStack run state -> (badge state, user-facing label)
+_RUN_STATE_LABELS = {
+    "staging": ("running", "Staging…"),
+    "submitting": ("running", "Submitting…"),
+    "queued": ("running", "Queued"),
+    "running": ("running", "Running"),
+    "completed": ("done", "Completed"),
+    "failed": ("fail", "Failed"),
+    "cancelled": ("idle", "Cancelled"),
+}
+
+
+def _build_active_run_section() -> dict:
+    """The compact CLOUD RUN status card shown while a launched run is active
+    (and on its terminal state). No AWS plumbing on this surface."""
+
+    title = W.HTML()
+    status = W.HTML()
+    detail = W.HTML()
+
+    log_button = secondary_button("View log", icon="file-text")
+    results_button = primary_button("View results", icon="chart-area")
+    terminate_button = W.Button(description="Terminate", icon="stop",
+                                button_style="danger",
+                                layout=W.Layout(width="auto"))
+    actions = W.HBox([log_button, results_button, terminate_button],
+                     layout=W.Layout(gap="8px", flex_wrap="wrap"))
+
+    section = W.VBox(
+        [
+            W.HTML("<div style='font-size:12px;font-weight:700;color:#172033;"
+                   "letter-spacing:.02em;'>CLOUD RUN</div>"),
+            title, status, detail, actions,
+        ],
+        layout=W.Layout(
+            width="100%", gap="5px", padding="12px",
+            border="1px solid #cbd6e4", background_color="#ffffff",
+            display="none",
+        ),
+    )
+    return {
+        "active_run_section": section,
+        "active_run_title": title,
+        "active_run_status": status,
+        "active_run_detail": detail,
+        "active_run_actions": actions,
+        "active_run_log_button": log_button,
+        "active_run_results_button": results_button,
+        "active_run_terminate_button": terminate_button,
+    }
+
+
+def show_active_run(widgets: "CloudEnvironmentWidgets", visible: bool) -> None:
+    widgets.active_run_section.layout.display = "flex" if visible else "none"
+
+
+def set_active_run_view(
+    widgets: "CloudEnvironmentWidgets",
+    *,
+    model: str = "",
+    example: str = "",
+    state: str = "",
+    account_id: str = "",
+    region: str = "",
+    resource_text: str = "",
+    elapsed_text: str = "",
+    cost_text: str = "",
+    expected_text: str = "",
+) -> None:
+    """Render the CLOUD RUN card. ``cost_text`` is a pre-formatted string
+    ("<$0.01" / "$0.04" / "Unavailable") -- this function never prices."""
+    badge_state, label = _RUN_STATE_LABELS.get(state, ("running", state or "…"))
+    terminal = state in ("completed", "failed", "cancelled")
+    running = state in ("staging", "submitting", "queued", "running")
+
+    widgets.active_run_title.value = (
+        f"<div style='font-size:12px;color:#66758d;'>"
+        f"{escape_text(model.upper())} &middot; {escape_text(example)}</div>"
+    )
+    pulse = (
+        "<span aria-hidden='true' style='display:inline-block;width:7px;"
+        "height:7px;border-radius:50%;background:#2f6feb;margin-right:6px;"
+        "animation:cryostackPulse 1.4s ease-in-out infinite;'></span>"
+        "<style>@keyframes cryostackPulse{0%,100%{opacity:.3}50%{opacity:1}}</style>"
+        if running else ""
+    )
+    widgets.active_run_status.value = (
+        f"<div role='status' style='font-size:12px;'>{pulse}"
+        f"{status_badge(badge_state, label=label)}</div>"
+    )
+
+    rows = [("AWS", f"Account {escape_text(account_id or '—')} &middot; "
+                    f"{escape_text(region or '—')}"),
+            ("Resources", escape_text(resource_text or "—"))]
+    if not terminal:
+        rows.append(("Elapsed", escape_text(elapsed_text or "00:00")))
+        rows.append(("Estimated cost so far",
+                     f"{escape_text(cost_text or '—')} "
+                     "<span style='color:#96a1b4;'>(estimate)</span>"))
+        rows.append(("Expected runtime", escape_text(expected_text or "—")))
+    body = "".join(
+        f"<tr><td style='padding:1px 12px 1px 0;color:#8a94a6;white-space:nowrap;'>"
+        f"{k}</td><td style='color:#66758d;'>{v}</td></tr>"
+        for k, v in rows
+    )
+    note = (
+        "<div style='font-size:10px;color:#96a1b4;margin-top:4px;'>Estimated AWS "
+        "usage cost. Promotional credits and billing are managed by AWS.</div>"
+        if not terminal else ""
+    )
+    widgets.active_run_detail.value = (
+        f"<table style='font-size:11px;border-collapse:collapse;'>{body}</table>{note}"
+    )
+
+    widgets.active_run_terminate_button.layout.display = (
+        "none" if terminal else "inline-flex"
+    )
+    widgets.active_run_results_button.disabled = state != "completed"
+
+
 def build_cloud_environment_card(
     *,
     region: str = "us-east-2",
@@ -784,6 +918,7 @@ def build_cloud_environment_card(
 
     aws_account = _build_aws_account_section()
     run_estimate = _build_run_estimate_section()
+    active_run = _build_active_run_section()
 
     infra_heading = W.HTML(
         value=(
@@ -803,6 +938,7 @@ def build_cloud_environment_card(
             actions,
             run_estimate["run_estimate_section"],
             run_estimate["review_panel"],
+            active_run["active_run_section"],
             advanced,
         ],
         layout=W.Layout(
@@ -864,4 +1000,13 @@ def build_cloud_environment_card(
         review_notice=run_estimate["review_notice"],
         review_back_button=run_estimate["review_back_button"],
         launch_button=run_estimate["launch_button"],
+
+        active_run_section=active_run["active_run_section"],
+        active_run_title=active_run["active_run_title"],
+        active_run_status=active_run["active_run_status"],
+        active_run_detail=active_run["active_run_detail"],
+        active_run_actions=active_run["active_run_actions"],
+        active_run_log_button=active_run["active_run_log_button"],
+        active_run_results_button=active_run["active_run_results_button"],
+        active_run_terminate_button=active_run["active_run_terminate_button"],
     )

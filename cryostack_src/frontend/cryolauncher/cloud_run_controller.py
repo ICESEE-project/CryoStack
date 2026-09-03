@@ -110,8 +110,16 @@ _FAILURE_RULES: tuple[tuple[str, str], ...] = (
     (r"job definition .* does not exist|jobdefinition .* not found|"
      r"invalid job definition|revision .* is not valid",
      "The Batch job definition does not exist. Prepare cloud compute first."),
-    (r"matlab licens", "ISSM cloud runs need a MATLAB license on the cloud "
-                       "profile. Infrastructure can still be tested with the smoke test."),
+    (r"could not access your aws account|connection is not verified|"
+     r"connection could not be refreshed|reconnect the aws account|"
+     r"assumed session belongs to a different aws account|"
+     r"account for this connection changed|account mismatch|"
+     r"missing its role arn or externalid",
+     "Your AWS connection could not be refreshed. Re-check the connected AWS "
+     "account in Cloud Environment → AWS ACCOUNT and try again."),
+    (r"matlab licens", "ISSM could not start because a usable MATLAB license "
+                       "was not available from the cloud environment. "
+                       "Infrastructure can still be tested with the smoke test."),
     (r"execution descriptor failed|failed to upload the staged run|"
      r"staged run directory does not exist|run target .* is not present",
      "Could not stage the run inputs to S3. Check the working copy and the run target."),
@@ -222,6 +230,21 @@ class _RunHandle:
     region: str = ""
     profile: str | None = None
     metadata: dict = field(default_factory=dict)
+    # -- C7.5: BYO-AWS + review context for the active-run surface --------
+    #: the connected AWS account this run belongs to ("" = developer mode)
+    account_id: str = ""
+    example: str = ""
+    #: canonical resource shape, for display only
+    vcpu: float = 0.0
+    memory_gib: float = 0.0
+    expected_runtime_minutes: float = 0.0
+    #: retained non-secret CloudCostEstimate.to_public_dict() -- for the live
+    #: accumulated-cost display; NO pricing call is made during the run.
+    cost_public: dict = field(default_factory=dict)
+    #: the review digest this run was launched from (drift audit only)
+    review_digest: str = ""
+    #: monotonic seconds when the run left STAGING (set by the ticker owner)
+    started_at: float = 0.0
 
 
 class CloudRunController:
@@ -230,12 +253,14 @@ class CloudRunController:
     def __init__(
         self,
         *,
-        bridge_factory: Callable[[], Any],
+        bridge_factory: Callable[..., Any],
         register_run: Callable[..., Any],
         sync_results: Callable[..., Any],
         on_state: Callable[[str], None],
         on_log: Callable[[str], None],
         on_results_ready: Callable[[], None] = lambda: None,
+        execution_provider: Callable[[], Any] | None = None,
+        on_run_view: Callable[..., None] | None = None,
         poll_interval: float = 15.0,
         to_thread: Callable[..., Any] = asyncio.to_thread,
         sleep: Callable[[float], Any] = asyncio.sleep,
@@ -246,6 +271,13 @@ class CloudRunController:
         self._on_state = on_state
         self._on_log = on_log
         self._on_results_ready = on_results_ready
+        #: () -> CloudExecution. When set, EVERY AWS operation for this run
+        #: (stage, submit, poll, logs, terminate, result sync) is performed
+        #: with a FRESH context from this -- a fresh sts:AssumeRole for a
+        #: connected BYO account. It raises CloudAccessError for a broken
+        #: connection; there is no ambient/profile fallback.
+        self._execution_provider = execution_provider
+        self._on_run_view = on_run_view
         self._poll_interval = max(0.0, float(poll_interval))
         self._to_thread = to_thread
         self._sleep_fn = sleep
@@ -268,12 +300,60 @@ class CloudRunController:
             self._on_state(state)
         except Exception:
             pass
+        self._emit_view()
+
+    def _emit_view(self) -> None:
+        if self._on_run_view is None:
+            return
+        h = self._handle
+        try:
+            self._on_run_view(
+                state=h.state, model=h.model, example=h.example,
+                account_id=h.account_id, region=h.region,
+                vcpu=h.vcpu, memory_gib=h.memory_gib,
+                expected_runtime_minutes=h.expected_runtime_minutes,
+                cost_public=dict(h.cost_public), job_id=h.job_id,
+                terminal=is_terminal(h.state),
+            )
+        except Exception:
+            pass
 
     def _log(self, message: str) -> None:
         try:
             self._on_log(message)
         except Exception:
             pass
+
+    # -- credential context: fresh per AWS operation --------------------
+    def _resolve_execution(self):
+        """Fresh CloudExecution for one AWS operation. Raises CloudAccessError
+        for a broken BYO connection -- callers fail closed, never fall back."""
+        if self._execution_provider is None:
+            return None
+        return self._execution_provider()
+
+    def _bridge(self, execution=None):
+        """A CloudBridge bound to the current credential context.
+
+        BYO-AWS: assumed-role temporary credentials (fresh). Developer mode
+        (no execution provider): the existing ambient/profile bridge.
+        """
+        if self._execution_provider is None:
+            return self._bridge_factory()
+        ex = execution if execution is not None else self._resolve_execution()
+        creds = getattr(ex, "credentials", None)
+        region = getattr(ex, "region", None) or self._handle.region or None
+        return self._bridge_factory(credentials=creds, region=region)
+
+    def _assert_same_account(self, execution) -> None:
+        """A run launched for account A must never touch account B."""
+        want = (self._handle.account_id or "").strip()
+        got = (getattr(execution, "account_id", "") or "").strip()
+        if want and got and want != got:
+            raise RuntimeError(
+                "account mismatch: this run was reviewed for AWS account "
+                f"{want} but the connected account is now {got}. Not submitting."
+            )
 
     # -- submit --------------------------------------------------------
     def submit(self, **submit_kwargs) -> None:
@@ -294,6 +374,14 @@ class CloudRunController:
             region=submit_kwargs.pop("_region", "") or "",
             profile=submit_kwargs.pop("_profile", None),
             metadata=dict(submit_kwargs.pop("_md_provenance", None) or {}),
+            account_id=(submit_kwargs.pop("_account_id", "") or "").strip(),
+            example=(submit_kwargs.pop("_example", "") or "").strip(),
+            vcpu=float(submit_kwargs.pop("_vcpu", 0) or 0),
+            memory_gib=float(submit_kwargs.pop("_memory_gib", 0) or 0),
+            expected_runtime_minutes=float(
+                submit_kwargs.pop("_expected_runtime_minutes", 0) or 0),
+            cost_public=dict(submit_kwargs.pop("_cost_public", None) or {}),
+            review_digest=(submit_kwargs.pop("_review_digest", "") or ""),
         )
         self._task = self._spawn(self.run_once(**submit_kwargs))
 
@@ -302,10 +390,15 @@ class CloudRunController:
         tests ``asyncio.run`` it directly)."""
         try:
             self._set_state(STAGING)
+            # fresh credential context for the WHOLE submit (stage + submit-job);
+            # for a connected BYO account this is a fresh sts:AssumeRole and it
+            # must resolve to the account the run was reviewed for.
+            execution = await self._to_thread(self._resolve_execution)
+            self._assert_same_account(execution)
             self._set_state(SUBMITTING)
             self._log("[cloud] Staging inputs to S3 and submitting to AWS Batch…")
             result = await self._to_thread(
-                lambda: self._bridge_factory().submit(**submit_kwargs)
+                lambda: self._bridge(execution).submit(**submit_kwargs)
             )
             job_id = getattr(result, "job_id", None)
             meta = getattr(result, "metadata", {}) or {}
@@ -352,7 +445,7 @@ class CloudRunController:
         while not is_terminal(self._handle.state):
             try:
                 status = await self._to_thread(
-                    lambda: self._bridge_factory().status(job_id=job_id))
+                    lambda: self._bridge().status(job_id=job_id))
                 state = getattr(status, "state", "") or normalize_aws_state(
                     getattr(status, "raw_state", ""))
                 reason = getattr(status, "reason", "") or ""
@@ -376,11 +469,15 @@ class CloudRunController:
     async def _retrieve_results(self) -> None:
         self._log("[cloud] Job completed. Retrieving outputs from S3…")
         try:
+            execution = await self._to_thread(self._resolve_execution)
+            creds = getattr(execution, "credentials", None)
+            region = getattr(execution, "region", None) or self._handle.region or None
             path = await self._to_thread(
                 lambda: self._sync_results(
                     s3_uri=self._handle.s3_run,
-                    region=self._handle.region or None,
-                    profile=self._handle.profile,
+                    region=region,
+                    profile=None if creds else self._handle.profile,
+                    credentials=creds,
                 )
             )
             self._log(f"[cloud] Outputs synced to {path}")
@@ -402,8 +499,10 @@ class CloudRunController:
     async def _terminate_worker(self, job_id: str) -> None:
         try:
             self._log(f"[cloud] Requesting termination of job {job_id}…")
+            # a BYO run terminates through a FRESH context for the SAME account,
+            # never through host ambient credentials.
             await self._to_thread(
-                lambda: self._bridge_factory().terminate(job_id=job_id))
+                lambda: self._bridge().terminate(job_id=job_id))
             self._set_state(CANCELLED)      # stops the poll loop on its next check
             self._log("[cloud] Termination requested.")
         except Exception as error:  # noqa: BLE001
@@ -419,13 +518,21 @@ class CloudRunController:
 
     def attach(self, *, job_id: str, s3_run: str, model: str = "",
                region: str = "", profile: str | None = None,
+               account_id: str = "", example: str = "",
+               vcpu: float = 0.0, memory_gib: float = 0.0,
+               expected_runtime_minutes: float = 0.0, cost_public: dict | None = None,
                state: str = QUEUED) -> None:
         """Re-attach to a run that already exists (e.g. selected from run
         history after a kernel restart) and resume polling if it is not
-        terminal."""
+        terminal. Status/log/terminate/retrieve then use a FRESH context for
+        the recorded ``account_id`` (BYO) -- no persisted STS credentials."""
         self._handle = _RunHandle(
             job_id=str(job_id), s3_run=str(s3_run), model=model,
             region=region, profile=profile, state=state,
+            account_id=(account_id or "").strip(), example=example,
+            vcpu=float(vcpu or 0), memory_gib=float(memory_gib or 0),
+            expected_runtime_minutes=float(expected_runtime_minutes or 0),
+            cost_public=dict(cost_public or {}),
         )
         self._set_state(state)
         if not is_terminal(state):

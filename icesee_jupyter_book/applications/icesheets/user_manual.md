@@ -322,6 +322,17 @@ example**, in your personal dataset area.
    Launch is always an explicit action; if you change the example, resources
    or a model parameter after opening the review, CryoStack asks you to review
    the updated estimate again before launching.
+7. A <b>CLOUD RUN</b> card then shows live status
+   (<i>Staging → Queued → Running → Completed</i>), the AWS account and region,
+   the resources, an elapsed timer, an estimated cost so far, and the expected
+   runtime. It updates while the run proceeds without blocking the interface.
+   All of the run's AWS work (staging, submission, status, logs, termination,
+   result retrieval) uses a short-lived role session in <b>your</b> account.
+   <b>View log</b> opens the run's log in the Workspace Run Log tab (the same
+   live-tail view every run uses); <b>View results</b> (enabled on completion)
+   opens the Workspace Results tab. <b>Terminate</b> stops a running job (with a
+   confirm step). On completion, CryoStack retrieves the outputs into your run
+   cache automatically and Results renders them.
 
 Cost figures are <b>estimates</b>. AWS charges apply to your AWS account; AWS
 promotional/free-tier credits, billing rules and payment methods are managed by

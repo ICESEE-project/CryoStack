@@ -119,6 +119,11 @@ Connect the account once from **Cloud Environment → AWS ACCOUNT**:
 4. **Review & Launch** — check the expected runtime, resources and estimated
    AWS cost, then **Launch cloud run**. Launch is always explicit; changing the
    run configuration after opening the review requires reviewing it again.
+5. **Monitor** — the **CLOUD RUN** card shows live status, elapsed time and an
+   estimated cost so far. **View log** and **View results** open the existing
+   Workspace Run Log / Results tabs.
+6. **Results** — outputs sync into your run cache automatically on completion
+   and render in Results; **Download Results** exports them.
 
 Cost figures are estimates. AWS controls credits and billing; if a price is
 unavailable CryoStack says so and still lets you launch.

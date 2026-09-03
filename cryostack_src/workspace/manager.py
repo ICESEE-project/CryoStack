@@ -983,6 +983,7 @@ class WorkspaceManager:
         s3_uri: str,
         region: str | None = None,
         profile: str | None = None,
+        credentials: dict | None = None,
         aws=None,
     ) -> Path:
         """Pull a cloud run's ``outputs/`` into this user's local run cache in
@@ -1004,7 +1005,9 @@ class WorkspaceManager:
             self.delete(outputs_dir)
         outputs_dir.mkdir(parents=True, exist_ok=True)
         args = []
-        if profile:
+        # assumed-role temporary credentials (BYO-AWS) win over a profile and
+        # the ambient environment -- exactly as cloud.drivers.aws.auth.run_aws.
+        if profile and not credentials:
             args.extend(["--profile", profile])
         if region:
             args.extend(["--region", region])
@@ -1019,7 +1022,15 @@ class WorkspaceManager:
             err = (result[2] if isinstance(result, tuple) else getattr(result, "stderr", "")) or ""
             out = (result[1] if isinstance(result, tuple) else getattr(result, "stdout", "")) or ""
         else:
-            proc = subprocess.run(["aws", *args], capture_output=True, text=True)
+            env = None
+            if credentials:
+                _drop = ("AWS_PROFILE", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY",
+                         "AWS_SESSION_TOKEN", "AWS_SECURITY_TOKEN")
+                env = {k: v for k, v in os.environ.items() if k not in _drop}
+                for k in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"):
+                    if credentials.get(k):
+                        env[k] = credentials[k]
+            proc = subprocess.run(["aws", *args], capture_output=True, text=True, env=env)
             code, err, out = proc.returncode, proc.stderr, proc.stdout
         if code != 0:
             raise RuntimeError((err or out).strip() or "cloud results sync failed")

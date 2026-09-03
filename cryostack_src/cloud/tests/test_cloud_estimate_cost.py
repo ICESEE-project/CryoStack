@@ -88,5 +88,8 @@ def test_public_dict_is_rounded_and_carries_no_secret():
                             expected_runtime_minutes=5, prices=OHIO)
     pub = e.to_public_dict()
     assert isinstance(pub["estimated_total_usd"], float)
-    assert len(str(pub["estimated_total_usd"]).split(".")[-1]) <= 4
+    # the DATA keeps enough precision for a sub-cent live-cost tick; the
+    # DISPLAY (format_usd / display_total) is what rounds to cents.
+    assert len(str(pub["estimated_total_usd"]).split(".")[-1]) <= 6
+    assert e.display_total() in ("<$0.01", "$0.01")
     assert "AWS_SECRET_ACCESS_KEY" not in str(pub)

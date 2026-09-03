@@ -37,11 +37,12 @@ Cloud estimation.
 
 from __future__ import annotations
 
-from .estimator import estimate_cloud_cost
+from .estimator import estimate_cloud_cost, live_cost_usd
 from .models import (
     CloudCostEstimate,
     FargatePrices,
     RuntimeEstimate,
+    format_usd,
 )
 from .pricing import PRICE_CACHE_TTL_SECONDS, resolve_fargate_prices
 from .runtime import KNOWN_EXAMPLE_RUNTIMES, estimate_runtime
@@ -54,5 +55,7 @@ __all__ = [
     "RuntimeEstimate",
     "estimate_cloud_cost",
     "estimate_runtime",
+    "format_usd",
+    "live_cost_usd",
     "resolve_fargate_prices",
 ]
