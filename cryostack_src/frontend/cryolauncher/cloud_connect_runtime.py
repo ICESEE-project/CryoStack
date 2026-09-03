@@ -46,7 +46,8 @@ def build_aws_connect_callbacks(
     widgets,                          # CloudEnvironmentWidgets
     onboarding_factory: Callable,     # () -> AWSOnboarding  (per-user, fresh)
     log_output=None,
-    on_connected: Callable | None = None,   # (summary: dict) -> None
+    on_connected: Callable | None = None,   # (summary) -> None  [connected only]
+    on_state: Callable | None = None,       # (summary) -> None  [every state]
     to_thread: Callable = asyncio.to_thread,
     spawn: Callable = _spawn,
 ) -> AWSConnectCallbacks:
@@ -68,6 +69,8 @@ def build_aws_connect_callbacks(
     def _render(summary: dict, *, setup_url: str | None = None,
                 form_open: bool | None = None) -> None:
         set_aws_account_view(widgets, summary, setup_url=setup_url, form_open=form_open)
+        if on_state is not None:
+            on_state(summary)
         if summary.get("status") == "connected" and on_connected is not None:
             on_connected(summary)
 

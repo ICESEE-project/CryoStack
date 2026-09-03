@@ -101,7 +101,9 @@
                     "ecr:CompleteLayerUpload",
                     "ecr:PutImage",
                     "ecr:SetRepositoryPolicy",
-                    "ecr:GetRepositoryPolicy"
+                    "ecr:GetRepositoryPolicy",
+                    "ecr:GetLifecyclePolicy",
+                    "ecr:PutLifecyclePolicy"
                   ],
                   "Resource": {
                     "Fn::Sub": "arn:${AWS::Partition}:ecr:*:${AWS::AccountId}:repository/cryostack-*"
@@ -194,6 +196,12 @@
                   "Resource": {
                     "Fn::Sub": "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/cryostack/*"
                   }
+                },
+                {
+                  "Sid": "CryoStackIamListRoles",
+                  "Effect": "Allow",
+                  "Action": "iam:ListRoles",
+                  "Resource": "*"
                 },
                 {
                   "Sid": "CryoStackServiceRoles",

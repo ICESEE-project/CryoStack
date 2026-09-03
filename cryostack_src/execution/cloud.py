@@ -67,12 +67,15 @@ class CloudBackend(
         provider: str = "aws",
         region: str = "us-east-2",
         profile: str | None = None,
+        credentials: dict[str, str] | None = None,
         submitter=None,
     ) -> None:
 
         self.provider = provider
         self.region = region
-        self.profile = profile
+        #: assumed-role temporary credentials (BYO-AWS mode); win over profile
+        self.credentials = credentials
+        self.profile = None if credentials else profile
 
         self._submitter = submitter
 
@@ -89,6 +92,7 @@ class CloudBackend(
             provider=self.provider,
             region=self.region,
             profile=self.profile,
+            credentials=self.credentials,
             submitter=self._submitter,
             **kwargs,
         )
@@ -224,6 +228,7 @@ class CloudBackend(
                 if profile is not None
                 else self.profile
             ),
+            credentials=self.credentials,
             job_id=job_id,
         )
 
@@ -303,6 +308,7 @@ class CloudBackend(
                 if profile is not None
                 else self.profile
             ),
+            credentials=self.credentials,
             job_id=job_id,
         )
 
@@ -326,6 +332,7 @@ class CloudBackend(
                 if profile is not None
                 else self.profile
             ),
+            credentials=self.credentials,
             job_id=job_id,
         )
 

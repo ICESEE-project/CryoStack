@@ -223,6 +223,28 @@ def test_verify_requires_a_role_arn(tmp_path, card):
     assert "role arn" in card.aws_account_detail.value.lower()
 
 
+def test_on_state_fires_for_every_state_so_the_gateway_can_toggle_test_button(tmp_path, card):
+    """C7.3: once connected, Prepare -- not Test connection -- is the normal
+    action; disconnecting must restore Test connection."""
+    spawn = _DeferredSpawn()
+    seen = []
+    cbs = build_aws_connect_callbacks(
+        widgets=card,
+        onboarding_factory=_factory(tmp_path, runner=FakeAWS("774888247882")),
+        log_output=_Out(), spawn=spawn, to_thread=lambda fn: _immediate(fn),
+        on_state=lambda s: seen.append(s.get("status")),
+    )
+    cbs.connect()
+    card.role_arn_input.value = ROLE_B
+    cbs.verify()
+    spawn.run()
+    assert "connected" in seen
+
+    seen.clear()
+    cbs.disconnect()
+    assert seen and seen[-1] == "disconnected"
+
+
 def test_disconnect_returns_to_the_disconnected_view(tmp_path, card):
     spawn = _DeferredSpawn()
     cbs = build_aws_connect_callbacks(

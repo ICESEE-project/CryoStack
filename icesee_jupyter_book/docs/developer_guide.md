@@ -299,6 +299,23 @@ in the gateway:
   `cryostack_src/cloud/connect/cloudformation.py`; the CryoStack principal ARN
   is deployment config (`CRYOSTACK_AWS_PRINCIPAL_ARN`), never hardcoded, and
   the hosted template URL is `CRYOSTACK_CF_TEMPLATE_URL`.
+- *Credential routing (`cryostack_src/cloud/connect/execution.py`).*
+  `resolve_cloud_execution()` picks the path per operation: a connected
+  `AWSConnection` → a **fresh** `sts:AssumeRole` every time (nothing cached),
+  region from the connection, bucket `cryostack-runs-<account-id>`, `profile`
+  forced to `None`; **no ambient-credential fallback** — a broken connection
+  raises `CloudAccessError` and the op fails closed. No connection record →
+  developer mode, unchanged. `CloudBridge` / `CloudBackend` / `CloudManager`
+  take a `credentials` kwarg; when set it wins and `run_aws` scrubs ambient
+  `AWS_*` from the child env.
+- *CryoStack-provisioned IAM roles are `cryostack-*`* (`cryostack-batch-service-role`,
+  `cryostack-ecs-execution-role`, `cryostack-job-role`) so they sit inside the
+  cross-account role's `role/cryostack-*` scope and never collide with the
+  PascalCase `CryoStackExecutionRole` the user creates. `iam.py` no longer
+  matches `CryoStackExecutionRole` when discovering the ECS task-execution
+  role. The C7.2 template was audited against every API call `bootstrap` +
+  `prepare_batch` make; delta added: `iam:ListRoles`, `ecr:GetLifecyclePolicy`,
+  `ecr:PutLifecyclePolicy` (checked-in artifact regenerated).
 - *Implemented:* an end-to-end ISSM path — config + preflight, a user-owned
   working copy staged to `s3://<bucket>/runs/<safe-user>/<run-id>/`,
   `aws batch submit-job` (Fargate), lifecycle status/logs/terminate.

@@ -680,22 +680,40 @@ def build_icesheets_ui():
         # timestep count) -- see cryostack_src/models/icepack/parameters.py.
         icepack_basic_panel = build_icepack_basic_panel()
 
-        def current_cloud_bridge():
+        def current_cloud_bridge(*, credentials=None, region=None):
             selected_run = workspace_manager.selected_run()
             selected_metadata = selected_run.metadata if selected_run and selected_run.execution_mode == "cloud" else {}
+            # BYO-AWS assumed-role credentials (when supplied) win over any
+            # profile; developer mode keeps the existing profile/ambient path.
             return CloudBridge(
                 provider="aws",
                 region=(
-                    selected_metadata.get("region")
+                    region
+                    or selected_metadata.get("region")
                     or aws_region.value.strip()
                     or DEFAULT_CLOUD_REGION
                 ),
                 profile=(
-                    selected_metadata.get("profile")
-                    or aws_profile.value.strip()
-                    or None
+                    None if credentials else (
+                        selected_metadata.get("profile")
+                        or aws_profile.value.strip()
+                        or None
+                    )
                 ),
+                credentials=credentials,
                 results_sync=workspace_manager.sync_cloud_results,
+            )
+
+        def _resolve_cloud_execution():
+            """Fresh per-operation credential context for the authenticated
+            user: BYO-AWS assumed role, or developer mode. Never persisted."""
+            from cryostack_src.cloud.connect import resolve_cloud_execution
+
+            return resolve_cloud_execution(
+                user=workspace_manager.owner,
+                region_hint=aws_region.value.strip() or DEFAULT_CLOUD_REGION,
+                profile_hint=aws_profile.value.strip() or None,
+                model="issm",           # cloud execution is ISSM-only for now
             )
 
         # -- Cloud run state chip: Not configured -> Checking -> Ready ->
@@ -2467,6 +2485,7 @@ def build_icesheets_ui():
             set_cloud_status=set_cloud_status,
             bucket_value=lambda: cloud_bucket.value.strip(),
             results_output=results_out,
+            execution_resolver=_resolve_cloud_execution,
             on_status_result=_cloud_status_result,
             smoke_button=cloud_smoke_btn,
             set_chip=_set_cloud_state,
@@ -2490,10 +2509,22 @@ def build_icesheets_ui():
                 region=(cloud_environment.region.value or "us-east-2").strip(),
             )
 
+        def _on_aws_account_state(summary: dict) -> None:
+            """Once the account is verified, Prepare cloud -- not Test
+            connection -- is the normal-user action. Re-check lives in the AWS
+            ACCOUNT block."""
+            connected = (summary or {}).get("status") == "connected"
+            cloud_environment.test_button.layout.display = (
+                "none" if connected else "inline-flex"
+            )
+            if connected:
+                _set_cloud_state("connected")
+
         aws_connect = build_aws_connect_callbacks(
             widgets=cloud_environment,
             onboarding_factory=_aws_onboarding_factory,
             log_output=log_out,
+            on_state=_on_aws_account_state,
         )
         cloud_environment.connect_button.on_click(aws_connect.connect)
         cloud_environment.verify_button.on_click(aws_connect.verify)

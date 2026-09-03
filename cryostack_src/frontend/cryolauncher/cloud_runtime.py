@@ -243,6 +243,7 @@ def build_cloud_runtime_callbacks(
     set_cloud_status,
     bucket_value,
     results_output,
+    execution_resolver=None,
     on_status_result=None,
     smoke_button=None,
     set_chip=None,
@@ -290,9 +291,23 @@ def build_cloud_runtime_callbacks(
         spawn=spawn,
     )
 
+    # -- credential context: BYO-AWS assumed role, or developer mode -----
+    def _resolved_bridge():
+        """Bridge for an environment op. In BYO-AWS mode this performs a FRESH
+        AssumeRole (raising CloudAccessError, surfaced as a clean failure, if
+        the connection is broken) and never falls back to ambient credentials.
+        """
+        if execution_resolver is None:
+            return bridge_factory(), None
+        ex = execution_resolver()                 # may raise CloudAccessError
+        creds = getattr(ex, "credentials", None)
+        region = getattr(ex, "region", None)
+        return bridge_factory(credentials=creds, region=region), ex
+
     # -- Test connection ----------------------------------------------
     def _check_worker():
-        return bridge_factory().check_environment()
+        bridge, _ = _resolved_bridge()
+        return bridge.check_environment()
 
     def _check_success(capabilities) -> None:
         _update_environment(capabilities)
@@ -310,7 +325,12 @@ def build_cloud_runtime_callbacks(
 
     # -- Prepare cloud ----------------------------------------------
     def _prepare_worker():
-        return bridge_factory().prepare_environment(bucket=bucket_value() or None)
+        bridge, ex = _resolved_bridge()
+        if ex is not None and getattr(ex, "is_byo", False):
+            bucket = ex.bucket(developer_fallback=(bucket_value() or ""))
+        else:
+            bucket = bucket_value()
+        return bridge.prepare_environment(bucket=bucket or None)
 
     def _prepare_success(result) -> None:
         capabilities = result.get("capabilities") if isinstance(result, dict) else None

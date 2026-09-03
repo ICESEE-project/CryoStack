@@ -305,9 +305,14 @@ example**, in your personal dataset area.
    paste it back into CryoStack, and click <b>Verify connection</b>.
 4. CryoStack assumes the role with your ExternalId, confirms the account, and
    shows <b>● Connected</b> with your account ID and <i>Access: Temporary
-   role</i>. From here, <b>Prepare cloud</b> derives the bucket
-   (<code>cryostack-runs-&lt;account-id&gt;</code>), queue and job definition
-   automatically.
+   role</i>.
+5. Click <b>Prepare cloud</b>. Using temporary role access, CryoStack derives
+   the storage bucket (<code>cryostack-runs-&lt;account-id&gt;</code>), queue
+   and job definition and creates whatever is missing <b>in your account</b> —
+   S3 storage, the container repository, and the Batch compute environment.
+   The panel shows <b>Storage / Containers / Compute</b> moving to <b>Ready</b>.
+   Prepare cloud is safe to run again; existing resources are reused, not
+   recreated. Detailed provisioning output goes to the Run Log.
 
 <b>Disconnect</b> removes the stored connection metadata only. There are no
 credentials to revoke — STS sessions are short-lived and are never stored.

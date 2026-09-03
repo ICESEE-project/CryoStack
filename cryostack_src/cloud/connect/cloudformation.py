@@ -133,6 +133,8 @@ def _permissions_policy() -> dict:
                     "ecr:PutImage",
                     "ecr:SetRepositoryPolicy",
                     "ecr:GetRepositoryPolicy",
+                    "ecr:GetLifecyclePolicy",
+                    "ecr:PutLifecyclePolicy",
                 ],
                 "Resource": sub(
                     f"arn:{partition}:ecr:*:{account}:repository/cryostack-*"
@@ -213,6 +215,13 @@ def _permissions_policy() -> dict:
                 "Resource": sub(
                     f"arn:{partition}:logs:*:{account}:log-group:/cryostack/*"
                 ),
+            },
+            # -- IAM: discover existing roles (ListRoles is account-level) --
+            {
+                "Sid": "CryoStackIamListRoles",
+                "Effect": "Allow",
+                "Action": "iam:ListRoles",
+                "Resource": "*",
             },
             # -- IAM: create + pass ONLY the cryostack-* service roles ----
             {

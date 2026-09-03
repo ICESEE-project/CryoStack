@@ -57,6 +57,13 @@ from .cloudformation import (
 )
 from .context import AWSExecutionContext
 from .defaults import CloudDefaults, default_runs_bucket, derive_cloud_defaults
+from .execution import (
+    MODE_BYO,
+    MODE_DEVELOPER,
+    CloudAccessError,
+    CloudExecution,
+    resolve_cloud_execution,
+)
 from .external_id import generate_external_id
 from .models import AWSConnection, account_id_from_role_arn
 from .onboarding import AWSOnboarding, OnboardingConfigError
@@ -71,7 +78,12 @@ __all__ = [
     "AWSExecutionContext",
     "AWSOnboarding",
     "AssumeRoleError",
+    "CloudAccessError",
     "CloudDefaults",
+    "CloudExecution",
+    "MODE_BYO",
+    "MODE_DEVELOPER",
+    "resolve_cloud_execution",
     "DEFAULT_SESSION_SECONDS",
     "EXECUTION_ROLE_NAME",
     "OnboardingConfigError",

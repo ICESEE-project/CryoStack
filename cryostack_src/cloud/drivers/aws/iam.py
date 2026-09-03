@@ -149,27 +149,31 @@ def discover_iam_resources(
         config
     )
 
+    # NOTE: the legacy PascalCase ``CryoStackExecutionRole`` is deliberately
+    # NOT in the execution-role list. In a BYO-AWS account that name belongs to
+    # the user's cross-account trust role (C7.2); matching it here would make
+    # CryoStack pass that role to Batch as the ECS task-execution role. The
+    # CryoStack-provisioned roles are ``cryostack-*`` (see iam_provision.py).
     batch_role = find_role(
         roles,
         [
+            "cryostack-batch-service-role",
             "AWSBatchServiceRole",
-            "CryoStackBatchServiceRole",
         ],
     )
 
     execution_role = find_role(
         roles,
         [
+            "cryostack-ecs-execution-role",
             "ecsTaskExecutionRole",
-            "CryoStackExecutionRole",
         ],
     )
 
     job_role = find_role(
         roles,
         [
-            "CryoStackJobRole",
-            "CryoStackBatchJobRole",
+            "cryostack-job-role",
         ],
     )
 

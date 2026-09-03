@@ -18,18 +18,23 @@ class CloudBridge:
         provider: str = "aws",
         region: str = "us-east-2",
         profile: str | None = None,
+        credentials: dict[str, str] | None = None,
         submitter: Callable[..., Any] | None = None,
         results_sync: Callable[..., Any] | None = None,
     ) -> None:
         self.provider = provider
         self.region = region
-        self.profile = profile
+        #: assumed-role temporary credentials (BYO-AWS mode). When set they
+        #: win over ``profile`` and no ambient credentials are consulted.
+        self.credentials = credentials
+        self.profile = None if credentials else profile
         self.submitter = submitter
         self.results_sync = results_sync
         self.backend = CloudBackend(
             provider=provider,
             region=region,
-            profile=profile,
+            profile=self.profile,
+            credentials=credentials,
             submitter=submitter,
         )
         self.manager = CloudManager()
@@ -71,6 +76,7 @@ class CloudBridge:
             provider=self.provider,
             region=self.region,
             profile=self.profile,
+            credentials=self.credentials,
         )
 
     def prepare_environment(self, *, bucket: str | None = None):
@@ -78,5 +84,6 @@ class CloudBridge:
             provider=self.provider,
             region=self.region,
             profile=self.profile,
+            credentials=self.credentials,
             bucket=bucket,
         )

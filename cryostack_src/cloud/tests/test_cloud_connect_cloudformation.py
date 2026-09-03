@@ -76,6 +76,7 @@ def test_no_administrator_access_and_no_star_star(template):
                 "CryoStackBatchRead",
                 "CryoStackNetworkDiscovery",
                 "CryoStackIdentityAndPricing",
+                "CryoStackIamListRoles",
             }, stmt["Sid"]
 
 
@@ -101,6 +102,61 @@ def test_batch_submit_describe_terminate_are_all_present(template):
         a = stmt["Action"]
         actions.update([a] if isinstance(a, str) else a)
     assert {"batch:SubmitJob", "batch:DescribeJobs", "batch:TerminateJob"} <= actions
+
+
+def test_provisioning_permission_audit_actions_are_all_granted(template):
+    """C7.3 IAM audit: every AWS action the connected role's Prepare cloud
+    performs (bootstrap + prepare_batch) must be in the template policy."""
+    granted = set()
+    for stmt in _all_statements(template):
+        a = stmt["Action"]
+        granted.update([a] if isinstance(a, str) else a)
+
+    required = {
+        # S3 (storage.py)
+        "s3:CreateBucket", "s3:ListBucket", "s3:PutEncryptionConfiguration",
+        "s3:PutBucketPublicAccessBlock",
+        # EC2 discovery (network.py)
+        "ec2:DescribeVpcs", "ec2:DescribeSubnets", "ec2:DescribeSecurityGroups",
+        # IAM (iam.py / iam_provision.py)
+        "iam:ListRoles", "iam:CreateRole", "iam:PutRolePolicy",
+        "iam:AttachRolePolicy", "iam:PassRole",
+        # ECR (registry*.py / registry_delivery.py)
+        "ecr:GetAuthorizationToken", "ecr:CreateRepository",
+        "ecr:DescribeRepositories", "ecr:DescribeImages", "ecr:BatchGetImage",
+        "ecr:PutImage", "ecr:InitiateLayerUpload", "ecr:UploadLayerPart",
+        "ecr:CompleteLayerUpload", "ecr:GetLifecyclePolicy",
+        "ecr:PutLifecyclePolicy",
+        # Batch (batch.py / batch_provision.py)
+        "batch:DescribeComputeEnvironments", "batch:DescribeJobQueues",
+        "batch:DescribeJobDefinitions", "batch:CreateComputeEnvironment",
+        "batch:UpdateComputeEnvironment", "batch:CreateJobQueue",
+        "batch:UpdateJobQueue", "batch:RegisterJobDefinition",
+        # Batch service-linked role (managed CE, no explicit --service-role)
+        "iam:CreateServiceLinkedRole",
+        # CloudWatch Logs (batch_provision.py)
+        "logs:CreateLogGroup", "logs:PutRetentionPolicy",
+        # STS
+        "sts:GetCallerIdentity",
+    }
+    missing = required - granted
+    assert not missing, f"template is missing provisioning permissions: {sorted(missing)}"
+
+
+def test_provisioned_role_names_are_inside_the_iam_scope():
+    """The cryostack-* roles iam_provision.py creates must match the template's
+    role/cryostack-* scope; the PascalCase cross-account role must not."""
+    from cryostack_src.cloud.connect.cloudformation import EXECUTION_ROLE_NAME
+    from cryostack_src.cloud.drivers.aws.iam_provision import (
+        BATCH_SERVICE_ROLE_NAME,
+        ECS_EXECUTION_ROLE_NAME,
+        JOB_ROLE_NAME,
+    )
+
+    for name in (BATCH_SERVICE_ROLE_NAME, ECS_EXECUTION_ROLE_NAME, JOB_ROLE_NAME):
+        assert name.startswith("cryostack-"), name
+    # the cross-account role is deliberately OUTSIDE role/cryostack-*
+    assert not EXECUTION_ROLE_NAME.startswith("cryostack-")
 
 
 def test_cloudwatch_log_reads_are_scoped_to_the_cryostack_group(template):

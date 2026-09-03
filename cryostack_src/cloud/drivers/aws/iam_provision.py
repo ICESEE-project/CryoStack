@@ -47,6 +47,15 @@ from .iam_policies import (
 )
 from .models import AWSConfig
 
+# CryoStack-provisioned IAM role names. Kept as ``cryostack-*`` (kebab) so they
+# match the least-privilege ``role/cryostack-*`` scope of the cross-account
+# CryoStackExecutionRole users create in C7.2 -- and so they never collide with
+# that PascalCase cross-account role name (which must stay outside this scope
+# and must never be mistaken for the ECS task-execution role: see iam.py).
+BATCH_SERVICE_ROLE_NAME = "cryostack-batch-service-role"
+ECS_EXECUTION_ROLE_NAME = "cryostack-ecs-execution-role"
+JOB_ROLE_NAME = "cryostack-job-role"
+
 
 @dataclass
 class AWSIAMProvisionResult:
@@ -209,7 +218,7 @@ def ensure_iam_resources(
 
         create_role(
             config,
-            name="CryoStackBatchServiceRole",
+            name=BATCH_SERVICE_ROLE_NAME,
             trust_policy=(
                 batch_service_trust_policy()
             ),
@@ -217,9 +226,7 @@ def ensure_iam_resources(
 
         attach_managed_policy(
             config,
-            role_name=(
-                "CryoStackBatchServiceRole"
-            ),
+            role_name=BATCH_SERVICE_ROLE_NAME,
             policy_arn=(
                 "arn:aws:iam::aws:policy/"
                 "service-role/"
@@ -246,7 +253,7 @@ def ensure_iam_resources(
 
         create_role(
             config,
-            name="CryoStackExecutionRole",
+            name=ECS_EXECUTION_ROLE_NAME,
             trust_policy=(
                 ecs_execution_trust_policy()
             ),
@@ -254,9 +261,7 @@ def ensure_iam_resources(
 
         attach_managed_policy(
             config,
-            role_name=(
-                "CryoStackExecutionRole"
-            ),
+            role_name=ECS_EXECUTION_ROLE_NAME,
             policy_arn=(
                 "arn:aws:iam::aws:policy/"
                 "service-role/"
@@ -283,7 +288,7 @@ def ensure_iam_resources(
 
         create_role(
             config,
-            name="CryoStackJobRole",
+            name=JOB_ROLE_NAME,
             trust_policy=(
                 job_trust_policy()
             ),
@@ -291,7 +296,7 @@ def ensure_iam_resources(
 
         put_inline_policy(
             config,
-            role_name="CryoStackJobRole",
+            role_name=JOB_ROLE_NAME,
             policy_name=(
                 "CryoStackRunStorage"
             ),
