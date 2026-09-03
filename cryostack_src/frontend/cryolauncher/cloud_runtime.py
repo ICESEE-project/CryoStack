@@ -249,6 +249,7 @@ def build_cloud_runtime_callbacks(
     set_chip=None,
     smoke_precheck=None,
     smoke_worker=None,
+    on_environment_update=None,      # (capabilities) -> None  -- after Test / Prepare
     to_thread: Callable = asyncio.to_thread,
     spawn: Callable = _spawn,
 ) -> CloudRuntimeCallbacks:
@@ -274,6 +275,11 @@ def build_cloud_runtime_callbacks(
                 state="done" if ready else "fail",
                 label=ready_label if ready else missing_label,
             )
+        if on_environment_update is not None:
+            try:
+                on_environment_update(capabilities)
+            except Exception:  # noqa: BLE001 - the estimate line must never break env UX
+                pass
 
     _ops = build_cloud_environment_ops(
         buttons={

@@ -313,6 +313,21 @@ example**, in your personal dataset area.
    The panel shows <b>Storage / Containers / Compute</b> moving to <b>Ready</b>.
    Prepare cloud is safe to run again; existing resources are reused, not
    recreated. Detailed provisioning output goes to the Run Log.
+6. Once everything is <b>Ready</b>, a <b>RUN ESTIMATE</b> appears — expected
+   runtime, the resources the run will request (e.g. 2 vCPU · 8 GiB), and an
+   estimated AWS cost. Click <b>Review &amp; Launch</b> to see the full
+   <b>Review cloud run</b> card (experiment, account, resources, expected
+   runtime, estimated cost with its basis and price-check time, and
+   infrastructure readiness), then click <b>Launch cloud run</b> to start.
+   Launch is always an explicit action; if you change the example, resources
+   or a model parameter after opening the review, CryoStack asks you to review
+   the updated estimate again before launching.
+
+Cost figures are <b>estimates</b>. AWS charges apply to your AWS account; AWS
+promotional/free-tier credits, billing rules and payment methods are managed by
+AWS (check your AWS Billing &amp; Cost Management console for your credit
+balance). If a price cannot be retrieved, CryoStack shows "Cost estimate
+unavailable" and still lets you launch.
 
 <b>Disconnect</b> removes the stored connection metadata only. There are no
 credentials to revoke — STS sessions are short-lived and are never stored.

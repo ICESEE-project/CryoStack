@@ -2475,6 +2475,11 @@ def build_icesheets_ui():
                 ecr_repository=_smoke_state["ecr"], profile=_cfg.profile,
             )
 
+        # forward-declared: the review callbacks are built after cloud_runtime,
+        # but _update_environment (Test / Prepare success) must refresh the
+        # compact RUN ESTIMATE line once infrastructure is Ready.
+        _review_holder = {"refresh": lambda: None}
+
         cloud_runtime = build_cloud_runtime_callbacks(
             runtime_status=STATUS,
             log_output=log_out,
@@ -2491,6 +2496,7 @@ def build_icesheets_ui():
             set_chip=_set_cloud_state,
             smoke_precheck=_smoke_precheck,
             smoke_worker=_smoke_worker,
+            on_environment_update=lambda _caps: _review_holder["refresh"](),
         )
         on_cloud_status = cloud_runtime.status
         on_cloud_logs = cloud_runtime.logs
@@ -2575,6 +2581,151 @@ def build_icesheets_ui():
         # + ECR reachability, no job submitted) shares the same non-blocking
         # coordinator as Test connection / Prepare cloud.
         cloud_smoke_btn.on_click(cloud_runtime.smoke_test)
+
+        # -- RUN ESTIMATE + Review & Launch (C7.4) --------------------------
+        from cryostack_src.cloud.estimate import (
+            estimate_cloud_cost,
+            estimate_runtime,
+            resolve_fargate_prices,
+        )
+        from cryostack_src.cloud.review import (
+            InfrastructureReadiness,
+            build_cloud_run_review,
+            review_digest,
+        )
+        from cryostack_src.frontend.cryolauncher.cloud_review_runtime import (
+            build_cloud_review_callbacks,
+        )
+
+        def _cloud_example_name() -> str:
+            return Path(example_dir.value or "").name or "example"
+
+        def _cloud_run_config():
+            """THE canonical resolved cloud config -- resources included. The
+            Review card and the submit path both read this; no second copy."""
+            _job_def, _ = resolve_job_definition(
+                "issm", batch_job_def.value.strip(), allow_list=_CLOUD_JOB_DEFS,
+            )
+            return resolve_cloud_config(
+                provider="aws",
+                region=aws_region.value.strip(),
+                bucket=cloud_bucket.value.strip(),
+                profile=aws_profile.value.strip(),
+                model="issm",
+                job_queue=batch_job_queue.value.strip(),
+                job_definition=_job_def,
+            )
+
+        def _cloud_run_history():
+            """Durations (minutes) of this user's past successful cloud runs of
+            the same example -- best effort; empty -> the estimator falls back."""
+            out = []
+            try:
+                for run in workspace_manager.list_runs():
+                    if run.execution_mode != "cloud" or (run.model or "").lower() != "issm":
+                        continue
+                    if str(run.status).lower() not in ("completed", "succeeded"):
+                        continue
+                    if run.finished is None or run.created is None:
+                        continue
+                    name = (run.name or "") + " " + str(run.metadata.get("example", ""))
+                    if _cloud_example_name().lower() not in name.lower():
+                        continue
+                    mins = (run.finished - run.created).total_seconds() / 60.0
+                    if 0 < mins < 24 * 60:
+                        out.append(mins)
+            except Exception:  # noqa: BLE001
+                pass
+            return out
+
+        def _cloud_review_digest() -> str:
+            return review_digest(
+                config=_cloud_run_config(),
+                model="issm",
+                example=_cloud_example_name(),
+                run_target=(Path(run_target.value or "runme.m").name),
+                account_id=_cloud_account_id_for_review(),
+                scientific_overrides=(md_panel.overrides() if model_dd.value == "issm" else {}),
+            )
+
+        def _cloud_account_id_for_review() -> str:
+            try:
+                s = _aws_onboarding_factory().summary()
+                return s.get("account_id", "") if s.get("status") == "connected" else ""
+            except Exception:  # noqa: BLE001
+                return ""
+
+        def _build_cloud_review():
+            cfg = _cloud_run_config()
+            region = cfg.region
+            account_id = _cloud_account_id_for_review()
+
+            # fresh account verification (BYO) -- never uses stored STS creds
+            account_fresh = False
+            creds = None
+            try:
+                _ex = _resolve_cloud_execution()
+                account_fresh = _ex.is_byo
+                creds = _ex.credentials
+                if _ex.is_byo:
+                    region = _ex.region
+                    account_id = _ex.account_id or account_id
+                    cfg = _cloud_run_config()
+                    cfg.region = region
+                    if _ex.defaults:
+                        cfg.bucket = _ex.defaults.bucket
+            except Exception as _acc_err:  # noqa: BLE001 - fail closed, not crash
+                account_fresh = False
+
+            # readiness
+            try:
+                caps = current_cloud_bridge(
+                    credentials=creds, region=region
+                ).check_environment()
+            except Exception:  # noqa: BLE001
+                caps = None
+            infra = InfrastructureReadiness(
+                account=bool(getattr(caps, "authenticated", False)) and account_fresh,
+                storage=bool(getattr(caps, "storage_ready", False)),
+                container=bool(getattr(caps, "registry_ready", False)),
+                compute=bool(getattr(caps, "batch_ready", False)),
+            )
+
+            rt = estimate_runtime(
+                model="issm", example=_cloud_example_name(),
+                time_limit_minutes=cfg.time_limit_minutes,
+                history_provider=_cloud_run_history,
+            )
+            prices = resolve_fargate_prices(region)          # ambient; account-neutral
+            cost = estimate_cloud_cost(
+                region=region, vcpu=cfg.vcpu, memory_gib=cfg.memory_gib,
+                expected_runtime_minutes=rt.minutes, ephemeral_gib=cfg.ephemeral_gib,
+                prices=prices, runtime_source=rt.source,
+            )
+            _lic = get_compute_profile("aws").has_matlab_license
+            return build_cloud_run_review(
+                config=cfg, model="issm", example=_cloud_example_name(),
+                run_target=(Path(run_target.value or "runme.m").name),
+                account_id=account_id, region=region,
+                infrastructure=infra, runtime=rt, cost=cost,
+                account_freshly_verified=account_fresh,
+                config_problems=validate_cloud_config(cfg, model="issm"),
+                preflight_problems=cloud_run_preflight(
+                    model="issm", matlab_license_configured=_lic),
+                scientific_overrides=(md_panel.overrides() if model_dd.value == "issm" else {}),
+            )
+
+        _cloud_review = build_cloud_review_callbacks(
+            widgets=cloud_environment,
+            review_builder=_build_cloud_review,
+            digest_builder=_cloud_review_digest,
+            launch_handler=lambda _review: on_run(None),
+            log_output=log_out,
+        )
+        _review_holder["refresh"] = _cloud_review.refresh_estimate
+        cloud_environment.review_button.on_click(_cloud_review.review)
+        cloud_environment.review_back_button.on_click(_cloud_review.back)
+        cloud_environment.launch_button.on_click(_cloud_review.launch)
 
         def tail_selected_workspace_run():
             selected = workspace_manager.selected_run()

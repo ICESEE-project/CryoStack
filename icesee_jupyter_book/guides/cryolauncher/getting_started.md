@@ -116,7 +116,12 @@ Connect the account once from **Cloud Environment → AWS ACCOUNT**:
 2. Paste the role ARN back and **Verify connection**.
 3. **Prepare cloud** — CryoStack derives the storage bucket, queue and job
    definition and provisions what is missing.
-4. Review the estimated cost, then **Launch**.
+4. **Review & Launch** — check the expected runtime, resources and estimated
+   AWS cost, then **Launch cloud run**. Launch is always explicit; changing the
+   run configuration after opening the review requires reviewing it again.
+
+Cost figures are estimates. AWS controls credits and billing; if a price is
+unavailable CryoStack says so and still lets you launch.
 
 CryoStack uses temporary role access and **never stores your AWS access
 keys**. You are never asked for an access key, a secret, an AWS password, or a

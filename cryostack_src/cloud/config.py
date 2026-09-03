@@ -43,10 +43,12 @@ job definition). ``profile`` is a local CLI selector, not a credential.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from cryostack_src.cloud.drivers.aws.batch_config import (
+    DEFAULT_ISSM_JOB_CONFIG,
     JOB_QUEUE_NAME,
+    FargateJobConfig,
     job_definition_name,
 )
 from cryostack_src.cloud.s3_uri import S3LocationError, parse_s3_location
@@ -69,8 +71,33 @@ class CloudRunConfig:
     profile: str | None = None
     job_queue: str = ""
     job_definition: str = ""
+    #: the resolved Fargate resource shape -- THE canonical source of truth for
+    #: what the run asks AWS for. The Review card and the submit path both read
+    #: this; nothing derives a second copy.
+    fargate: FargateJobConfig = field(default_factory=lambda: DEFAULT_ISSM_JOB_CONFIG)
     #: the raw user input that could not be normalized (validation reports it)
     bucket_error: str = ""
+
+    # -- canonical resource accessors --------------------------------
+    @property
+    def vcpu(self) -> float:
+        return float(self.fargate.vcpu)
+
+    @property
+    def memory_gib(self) -> float:
+        return int(self.fargate.memory_mib) / 1024
+
+    @property
+    def time_limit_minutes(self) -> int:
+        return int(self.fargate.timeout_seconds) // 60
+
+    @property
+    def ephemeral_gib(self) -> int:
+        return int(self.fargate.ephemeral_gib)
+
+    def resource_summary(self) -> str:
+        """``2 vCPU · 8 GiB`` -- for the compact estimate line."""
+        return f"{self.vcpu:g} vCPU · {self.memory_gib:g} GiB"
 
     def provenance(self) -> dict:
         """The non-secret subset safe to record in run metadata."""
@@ -94,6 +121,7 @@ def resolve_cloud_config(
     model: str = "",
     job_queue: str = "",
     job_definition: str = "",
+    fargate: FargateJobConfig | None = None,
 ) -> CloudRunConfig:
     """Fill deterministic defaults and normalize the S3 location.
 
@@ -119,6 +147,7 @@ def resolve_cloud_config(
         profile=(profile or "").strip() or None,
         job_queue=(job_queue or "").strip() or JOB_QUEUE_NAME,
         job_definition=(job_definition or "").strip() or job_definition_name(model),
+        fargate=fargate or DEFAULT_ISSM_JOB_CONFIG,
     )
 
 

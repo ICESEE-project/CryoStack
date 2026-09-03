@@ -308,6 +308,22 @@ in the gateway:
   developer mode, unchanged. `CloudBridge` / `CloudBackend` / `CloudManager`
   take a `credentials` kwarg; when set it wins and `run_aws` scrubs ambient
   `AWS_*` from the child env.
+- *Cost & runtime estimate (`cryostack_src/cloud/estimate/`, `cryostack_src/cloud/review.py`).*
+  `resolve_fargate_prices(region)` queries the AWS Price List API from
+  `us-east-1` and selects the priced region by `regionCode` attribute;
+  results are cached ~6 h; any failure → `available=False` (never a fabricated
+  price, never blocks Launch). `estimate_runtime()` prefers previous
+  successful CryoStack runs → a curated `KNOWN_EXAMPLE_RUNTIMES` table → the
+  configured time limit, each labelled. `estimate_cloud_cost()` returns a
+  `CloudCostEstimate` with an `estimate_for_elapsed()` helper C7.5 reuses.
+  `build_cloud_run_review()` renders from the **canonical**
+  `CloudRunConfig.fargate` (same values the submit path uses — no second
+  copy); `review_digest()` fingerprints the billable scientific + resource
+  config so a change after the review opens forces a re-review before Launch.
+  Launch gating: fresh AssumeRole verification + all infra Ready + supported
+  model + config valid + preflight (ISSM needs a cloud-reachable MATLAB
+  license — blocked honestly otherwise). Pricing uses ambient/host credentials
+  by default (public, account-neutral data) — never the stored STS session.
 - *CryoStack-provisioned IAM roles are `cryostack-*`* (`cryostack-batch-service-role`,
   `cryostack-ecs-execution-role`, `cryostack-job-role`) so they sit inside the
   cross-account role's `role/cryostack-*` scope and never collide with the

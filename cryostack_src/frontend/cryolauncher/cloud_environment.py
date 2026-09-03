@@ -98,6 +98,18 @@ class CloudEnvironmentWidgets:
     #: connected -> remove the (non-secret) connection metadata
     disconnect_button: W.Button
 
+    # -- RUN ESTIMATE + Review & Launch (C7.4) --------------------------
+    #: compact "expected runtime · resources · estimated cost" block
+    run_estimate_section: W.VBox
+    run_estimate_line: W.HTML
+    review_button: W.Button
+    #: the REVIEW CLOUD RUN surface (hidden until Review & Launch)
+    review_panel: W.VBox
+    review_body: W.HTML
+    review_notice: W.HTML
+    review_back_button: W.Button
+    launch_button: W.Button
+
 
 def _status_row(
     label: str,
@@ -363,6 +375,167 @@ def escape_attr(value: str) -> str:
     return escape(str(value or ""), quote=True)
 
 
+# ---------------------------------------------------------------------------
+# RUN ESTIMATE + Review & Launch (C7.4)
+# ---------------------------------------------------------------------------
+_BILLING_NOTE = (
+    "This is an estimate. AWS charges apply to your AWS account. AWS "
+    "promotional/free-tier credits, billing rules and payment methods are "
+    "managed by AWS &mdash; check your AWS Billing &amp; Cost Management "
+    "console for your credit balance. CryoStack cannot guarantee a run is "
+    "covered by those credits."
+)
+
+
+def _build_run_estimate_section() -> dict:
+    """The compact RUN ESTIMATE block shown once infrastructure is Ready, plus
+    the (hidden) REVIEW CLOUD RUN surface."""
+
+    heading = W.HTML(
+        value=(
+            "<div style='font-size:12px;font-weight:700;color:#172033;"
+            "letter-spacing:.02em;margin-top:2px;'>RUN ESTIMATE</div>"
+        ),
+    )
+    run_estimate_line = W.HTML(
+        value=(
+            "<div style='font-size:11px;color:#96a1b4;'>"
+            "Prepare the cloud environment to see an estimate.</div>"
+        ),
+    )
+    review_button = primary_button("Review & Launch", icon="clipboard-check")
+
+    run_estimate_section = W.VBox(
+        [heading, run_estimate_line, review_button],
+        layout=W.Layout(width="100%", gap="5px", padding="6px 0", display="none"),
+    )
+
+    # -- the review surface (hidden until Review & Launch) -----------
+    review_body = W.HTML()
+    review_notice = W.HTML(
+        value=(
+            f"<div style='font-size:10.5px;color:#66758d;line-height:1.5;"
+            f"background:#f6f8fb;border:1px solid #e4e9f0;border-radius:6px;"
+            f"padding:8px;margin:6px 0;'>{_BILLING_NOTE}</div>"
+        ),
+    )
+    review_back_button = secondary_button("Back", icon="arrow-left")
+    launch_button = primary_button("Launch cloud run", icon="cloud-upload-alt")
+
+    review_panel = W.VBox(
+        [
+            W.HTML(
+                "<div style='font-size:13px;font-weight:700;color:#172033;'>"
+                "REVIEW CLOUD RUN</div>"
+            ),
+            review_body,
+            review_notice,
+            W.HBox([review_back_button, launch_button], layout=W.Layout(gap="8px")),
+        ],
+        layout=W.Layout(
+            width="100%", gap="6px", padding="12px",
+            border="1px solid #cbd6e4", background_color="#ffffff",
+            display="none",
+        ),
+    )
+
+    return {
+        "run_estimate_section": run_estimate_section,
+        "run_estimate_line": run_estimate_line,
+        "review_button": review_button,
+        "review_panel": review_panel,
+        "review_body": review_body,
+        "review_notice": review_notice,
+        "review_back_button": review_back_button,
+        "launch_button": launch_button,
+    }
+
+
+def set_run_estimate_view(
+    widgets: "CloudEnvironmentWidgets",
+    *,
+    visible: bool,
+    runtime_text: str = "",
+    resource_text: str = "",
+    cost_text: str = "",
+    unavailable: bool = False,
+) -> None:
+    """Render the compact RUN ESTIMATE line. Shown only when infrastructure is
+    Ready; hidden otherwise."""
+    widgets.run_estimate_section.layout.display = "flex" if visible else "none"
+    if not visible:
+        return
+    cost = (
+        "<span style='color:#96a1b4;'>Cost estimate unavailable</span>"
+        if unavailable
+        else f"<b style='font-size:13px;color:#172033;'>{escape_text(cost_text)}</b>"
+    )
+    widgets.run_estimate_line.value = (
+        "<div style='font-size:11px;color:#66758d;line-height:1.7;'>"
+        f"Expected runtime&nbsp;&nbsp;{escape_text(runtime_text)}<br>"
+        f"Resources&nbsp;&nbsp;{escape_text(resource_text)}<br>"
+        f"Estimated cost&nbsp;&nbsp;{cost}"
+        "</div>"
+    )
+
+
+def _yn(ready: bool) -> str:
+    color = "#2f8f4e" if ready else "#b23c3c"
+    return f"<span style='color:{color};'>{'Ready' if ready else 'Not ready'}</span>"
+
+
+def set_review_panel(widgets: "CloudEnvironmentWidgets", review) -> None:
+    """Render the REVIEW CLOUD RUN body from a ``CloudRunReview`` (no secrets)."""
+    r = review
+    infra = r.infrastructure
+    basis = "".join(f"<div>{escape_text(line)}</div>" for line in r.estimate_basis_lines())
+    blocked = ""
+    if not r.can_launch:
+        items = "".join(f"<li>{escape_text(x)}</li>" for x in r.blocked_reasons)
+        blocked = (
+            "<div style='font-size:11px;color:#b23c3c;background:#fdf1f1;"
+            "border:1px solid #f0d5d5;border-radius:6px;padding:8px;margin-top:6px;'>"
+            f"<b>Launch is blocked:</b><ul style='margin:4px 0 0 16px;padding:0;'>{items}</ul>"
+            "</div>"
+        )
+    widgets.review_body.value = f"""
+      <table style="font-size:11px;color:#66758d;border-collapse:collapse;width:100%;">
+        <tr><td colspan="2" style="padding-top:4px;font-weight:700;color:#172033;">Experiment</td></tr>
+        <tr><td style="padding:1px 12px 1px 0;width:130px;">Model</td><td>{escape_text(r.model.upper())}</td></tr>
+        <tr><td style="padding:1px 12px 1px 0;">Example</td><td>{escape_text(r.example)}</td></tr>
+        <tr><td colspan="2" style="padding-top:6px;font-weight:700;color:#172033;">AWS</td></tr>
+        <tr><td style="padding:1px 12px 1px 0;">Account</td><td><code>{escape_text(r.account_id)}</code></td></tr>
+        <tr><td style="padding:1px 12px 1px 0;">Region</td><td>{escape_text(r.region)}</td></tr>
+        <tr><td colspan="2" style="padding-top:6px;font-weight:700;color:#172033;">Resources</td></tr>
+        <tr><td style="padding:1px 12px 1px 0;">vCPU</td><td>{r.vcpu:g}</td></tr>
+        <tr><td style="padding:1px 12px 1px 0;">Memory</td><td>{r.memory_gib:g} GiB</td></tr>
+        <tr><td style="padding:1px 12px 1px 0;">Time limit</td><td>{r.time_limit_minutes} min</td></tr>
+        <tr><td style="padding:1px 12px 1px 0;">Expected runtime</td><td>~{_review_minutes(r.expected_runtime_minutes)} min</td></tr>
+        <tr><td colspan="2" style="padding-top:6px;font-weight:700;color:#172033;">Estimated cost</td></tr>
+        <tr><td style="padding:1px 12px 1px 0;"></td>
+            <td><b style="font-size:14px;color:#172033;">{escape_text(r.cost_summary())}</b></td></tr>
+        <tr><td style="padding:1px 12px 1px 0;vertical-align:top;">Estimate basis</td>
+            <td style="font-size:10.5px;color:#8a94a6;">{basis}</td></tr>
+        <tr><td colspan="2" style="padding-top:6px;font-weight:700;color:#172033;">Infrastructure</td></tr>
+        <tr><td style="padding:1px 12px 1px 0;">Account</td><td>{_yn(infra.account)}</td></tr>
+        <tr><td style="padding:1px 12px 1px 0;">Storage</td><td>{_yn(infra.storage)}</td></tr>
+        <tr><td style="padding:1px 12px 1px 0;">Container</td><td>{_yn(infra.container)}</td></tr>
+        <tr><td style="padding:1px 12px 1px 0;">Compute</td><td>{_yn(infra.compute)}</td></tr>
+      </table>
+      {blocked}
+    """
+    widgets.launch_button.disabled = not r.can_launch
+
+
+def show_review_panel(widgets: "CloudEnvironmentWidgets", visible: bool) -> None:
+    widgets.review_panel.layout.display = "flex" if visible else "none"
+
+
+def _review_minutes(minutes: float) -> str:
+    m = float(minutes)
+    return f"{m:.0f}" if m >= 1 else f"{m:.1f}"
+
+
 def build_cloud_environment_card(
     *,
     region: str = "us-east-2",
@@ -610,6 +783,7 @@ def build_cloud_environment_card(
     )
 
     aws_account = _build_aws_account_section()
+    run_estimate = _build_run_estimate_section()
 
     infra_heading = W.HTML(
         value=(
@@ -627,6 +801,8 @@ def build_cloud_environment_card(
             infra_heading,
             status_panel,
             actions,
+            run_estimate["run_estimate_section"],
+            run_estimate["review_panel"],
             advanced,
         ],
         layout=W.Layout(
@@ -679,4 +855,13 @@ def build_cloud_environment_card(
         verify_button=aws_account["verify_button"],
         recheck_button=aws_account["recheck_button"],
         disconnect_button=aws_account["disconnect_button"],
+
+        run_estimate_section=run_estimate["run_estimate_section"],
+        run_estimate_line=run_estimate["run_estimate_line"],
+        review_button=run_estimate["review_button"],
+        review_panel=run_estimate["review_panel"],
+        review_body=run_estimate["review_body"],
+        review_notice=run_estimate["review_notice"],
+        review_back_button=run_estimate["review_back_button"],
+        launch_button=run_estimate["launch_button"],
     )
