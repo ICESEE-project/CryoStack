@@ -271,14 +271,49 @@ def test_failure_classifies_and_marks_failed():
     assert "[cloud][detail] AccessDenied calling sts" in h["log"].text
 
 
-def test_prepare_failure_marks_every_row_failed():
+def test_prepare_early_stage_failure_does_not_falsely_fail_downstream_rows():
+    # bootstrap aborts on storage; Containers/Compute were never attempted and
+    # must NOT read as an independent failure (they show neutral "Not prepared").
+    partial = {
+        "success": False,
+        "capabilities": None,
+        "row_status": {"account": "connected", "storage": "failed",
+                       "registry": "not_attempted", "compute": "not_attempted"},
+        "messages": [
+            "AWS account connected.",
+            "[cloud][ERROR] Could not prepare the cloud environment (stage: storage). "
+            "See the detail below and the AWS role's permissions.",
+            "[cloud][detail] An error occurred (AccessDenied) when calling the "
+            "CreateBucket operation",
+        ],
+    }
+    cb, h = _full(bridge_factory=lambda: type("B", (), {
+        "prepare_environment": staticmethod(lambda *, bucket: partial)})())
+    cb.prepare_environment()
+    assert h["rows"].of("account") == ("done", "Connected")
+    assert h["rows"].of("storage") == ("fail", "Failed")
+    assert h["rows"].of("registry") == ("idle", "Not prepared")
+    assert h["rows"].of("compute") == ("idle", "Not prepared")
+    assert h["chip"].kinds[-1] == "failed"
+    # the underlying reason reaches the existing Run Log
+    assert "stage: storage" in h["log"].text
+    assert "AccessDenied" in h["log"].text
+
+
+def test_prepare_unhandled_exception_marks_account_not_all_four():
+    # a raw exception before any structured result (e.g. a broken connection)
+    # -> account Failed, downstream rows neutral, sanitized reason in the log.
     cb, h = _full(bridge_factory=lambda: type("B", (), {
         "prepare_environment": staticmethod(
-            lambda *, bucket: (_ for _ in ()).throw(RuntimeError("NoSuchBucket")))})())
+            lambda *, bucket: (_ for _ in ()).throw(
+                RuntimeError("Your AWS connection could not be refreshed")))})())
     cb.prepare_environment()
-    for k in ("account", "storage", "registry", "compute"):
-        assert h["rows"].of(k) == ("fail", "Failed")
-    assert "S3 bucket is missing" in h["log"].text
+    assert h["rows"].of("account") == ("fail", "Failed")
+    assert h["rows"].of("storage") == ("idle", "Not prepared")
+    assert h["rows"].of("registry") == ("idle", "Not prepared")
+    assert h["rows"].of("compute") == ("idle", "Not prepared")
+    assert "Could not prepare the cloud environment" in h["log"].text
+    assert "could not be refreshed" in h["log"].text.lower()
 
 
 # ── 6-7: exact button restoration ─────────────────────────────────────

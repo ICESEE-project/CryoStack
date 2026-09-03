@@ -2618,9 +2618,14 @@ def build_icesheets_ui():
                 print("[cloud][connect] state unavailable:", _err)
 
         # -- C6: non-blocking submit + auto-poll + auto-retrieve -----------
+        from cryostack_src.frontend.cryolauncher.cloud_runtime import _emit_log
+
         def _cloud_log(message: str) -> None:
-            with log_out:
-                print(message)
+            # CloudRunController drives this from a detached asyncio task, where
+            # `with log_out: print(...)` silently drops output (no kernel
+            # parent-header). append_stdout writes straight to the synced
+            # outputs traitlet, so the Run Log actually shows the run.
+            _emit_log(log_out, message)
 
         def _cloud_results_ready() -> None:
             # outputs are already in this user's local run cache (cloud_outputs);

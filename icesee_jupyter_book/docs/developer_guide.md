@@ -308,6 +308,20 @@ in the gateway:
   developer mode, unchanged. `CloudBridge` / `CloudBackend` / `CloudManager`
   take a `credentials` kwarg; when set it wins and `run_aws` scrubs ambient
   `AWS_*` from the child env.
+- *Run Log emission from background tasks.* Cloud Test/Prepare/Smoke and the
+  run lifecycle write the Workspace Run Log from a **detached asyncio task**.
+  `with output: print(...)` silently drops there — `ipywidgets.Output` binds
+  its capture to the kernel's parent-message header at `__enter__`, which a
+  task resumed on a later event-loop iteration no longer has. Use
+  `cloud_runtime._emit_log(widget, *lines)` (it calls `Output.append_stdout`,
+  writing straight to the synced `outputs` traitlet, and redacts credential
+  material). This is why a failed Prepare once left the Run Log empty.
+- *Prepare readiness.* `AWSDriver.bootstrap` aborts on the first failing stage
+  and returns a structured partial result (`row_status` per row:
+  `connected`/`ready`/`failed`/`not_attempted`, plus sanitized messages) rather
+  than raising — so Storage/Containers/Compute that were never reached show a
+  neutral "Not prepared", never an independent failure. An unhandled exception
+  before any structured result marks only the **account** row failed.
 - *Interactive BYO run lifecycle (C7.5).* `CloudRunController` takes an
   `execution_provider` (`_resolve_cloud_execution`); when set, **every** AWS
   operation of the run — stage/submit, each status poll, terminate, and the S3

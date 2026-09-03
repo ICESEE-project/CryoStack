@@ -29,6 +29,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -36,13 +37,50 @@ from cryostack_src.frontend.cryolauncher.cloud_run_controller import (
     classify_cloud_failure,
 )
 
+# Redact anything that looks like AWS credential material or a CryoStack
+# ExternalId before it can reach the Run Log. `run_aws` keeps credentials in
+# the child env (never argv), so this is defence-in-depth for a CLI error that
+# echoes something unexpected.
+_SECRET_RE = re.compile(
+    r"(ASIA[0-9A-Z]{6,}|AKIA[0-9A-Z]{6,}"
+    r"|(?:aws[_-])?(?:session|security)[_ -]?token[\"'=:\s]+\S+"
+    r"|x-amz-security-token[\"'=:\s]+\S+"
+    r"|\b(?:FwoG|IQoJ|FQoG|Fwo)[A-Za-z0-9+/=_-]{16,}"
+    r"|cryostack:[\w.\-]+:[\w\-]{8,})",
+    re.IGNORECASE,
+)
+
+
+def _sanitize(text: object) -> str:
+    return _SECRET_RE.sub("<redacted>", str(text if text is not None else ""))
+
+
+def _emit_log(log_output, *lines: object) -> None:
+    """Append lines to the Run Log widget, sanitised.
+
+    Uses ``ipywidgets.Output.append_stdout`` -- which writes straight to the
+    synced ``outputs`` traitlet -- so output reliably appears even when this
+    runs inside a detached asyncio task. ``with output: print(...)`` does NOT:
+    its capture binds to the kernel's parent-message header at ``__enter__``,
+    which a task resumed on a later event-loop iteration no longer has, so the
+    text is silently dropped (this is why a failed Prepare left the Run Log
+    empty). Falls back to ``print`` for the plain sinks used in tests.
+    """
+    if log_output is None:
+        return
+    text = "".join(f"{_sanitize(line)}\n" for line in lines)
+    append = getattr(log_output, "append_stdout", None)
+    if callable(append):
+        append(text)
+    else:
+        with log_output:
+            print(text, end="")
+
 
 def _report(log_output, error, *, prefix="[cloud][ERROR]"):
-    """Print a short actionable line plus the full detail for the log."""
+    """Emit a short actionable line plus the full detail into the Run Log."""
     short, detail = classify_cloud_failure(error)
-    with log_output:
-        print(prefix, short)
-        print("[cloud][detail]", detail)
+    _emit_log(log_output, f"{prefix} {short}", f"[cloud][detail] {detail}")
 
 
 def _spawn(coro):
@@ -68,13 +106,19 @@ _BUSY = {
         "account": "Checking…", "storage": "Checking…",
         "registry": "Checking…", "compute": "Checking…"}),
 }
-#: op -> the rows that operation actually checks (marked Failed on failure).
-#: 'test' only establishes identity, so it must not claim the other rows failed.
-_FAILURE_ROWS = {
-    "test": ("account",),
-    "prepare": ("account", "storage", "registry", "compute"),
-    "smoke": ("account", "storage", "registry", "compute"),
+#: op -> the ONE row whose failure is what an unhandled exception here means.
+#: An exception before any worker result is a credential/connection failure
+#: (fresh AssumeRole, config), i.e. the "account" row. Storage / Containers /
+#: Compute were never attempted, so they must NOT read as failed -- they are
+#: reset to a neutral "not prepared" instead. (`prepare` normally returns a
+#: structured per-row result and never reaches this path -- see
+#: ``AWSDriver.bootstrap``.)
+_EXCEPTION_ROW = {
+    "test": "account",
+    "prepare": "account",
+    "smoke": "account",
 }
+_DOWNSTREAM_ROWS = ("storage", "registry", "compute")
 
 
 @dataclass
@@ -143,9 +187,17 @@ def build_cloud_environment_ops(
             b.disabled = o["disabled"]
 
     def _mark_rows_failed(op: str) -> None:
-        for key in _FAILURE_ROWS.get(op, ()):
-            if key in rows:
-                set_row(rows[key], state="fail", label="Failed")
+        """Reflect an *unhandled exception* -- not a normal provisioning
+        result. Mark only the row the failure actually belongs to; for Prepare,
+        downstream rows that were never attempted are shown neutral, never
+        "Failed". (Test connection touches only the account row.)"""
+        failed = _EXCEPTION_ROW.get(op)
+        if failed and failed in rows:
+            set_row(rows[failed], state="fail", label="Failed")
+        if op == "prepare":
+            for key in _DOWNSTREAM_ROWS:
+                if key != failed and key in rows:
+                    set_row(rows[key], state="idle", label="Not prepared")
 
     def _run_op(
         op: str,
@@ -166,10 +218,9 @@ def build_cloud_environment_ops(
             if problems:
                 if log_output is not None:
                     log_output.clear_output()
-                    with log_output:
-                        print(f"[cloud][{op}] fix the configuration first:")
-                        for p in problems:
-                            print("  -", p)
+                    _emit_log(log_output,
+                              f"[cloud][{op}] fix the configuration first:",
+                              *[f"  - {p}" for p in problems])
                 return
         _inflight["op"] = op
         _capture_buttons()                       # exact pre-operation state
@@ -261,21 +312,43 @@ def build_cloud_runtime_callbacks(
         "compute": cloud_environment.compute_status,
     }
 
-    def _update_environment(capabilities) -> None:
-        """Reflect the REAL returned capabilities -- never hardcode Ready."""
-        states = (
-            ("account", getattr(capabilities, "authenticated", False), "Connected", "Not connected"),
-            ("storage", getattr(capabilities, "storage_ready", False), "Ready", "Not prepared"),
-            ("registry", getattr(capabilities, "registry_ready", False), "Ready", "Not prepared"),
-            ("compute", getattr(capabilities, "batch_ready", False), "Ready", "Not prepared"),
-        )
-        for key, ready, ready_label, missing_label in states:
-            set_cloud_status(
-                _rows[key],
-                state="done" if ready else "fail",
-                label=ready_label if ready else missing_label,
+    #: structured per-row status (from AWSDriver.bootstrap) -> (badge, label)
+    _ROW_STATUS = {
+        "connected": ("done", "Connected"),
+        "not_connected": ("fail", "Not connected"),
+        "ready": ("done", "Ready"),
+        "failed": ("fail", "Failed"),
+        "not_attempted": ("idle", "Not prepared"),
+    }
+
+    def _update_environment(capabilities, *, row_status: dict | None = None) -> None:
+        """Reflect the REAL returned state -- never hardcode Ready.
+
+        ``row_status`` (when a structured Prepare result carries it) says
+        exactly what each row is: a stage that failed is "failed", a stage that
+        was never reached is "not_attempted" (shown neutral, NOT as a failure).
+        Otherwise fall back to the discovered capabilities.
+        """
+        if row_status:
+            for key in ("account", "storage", "registry", "compute"):
+                mapped = _ROW_STATUS.get(row_status.get(key))
+                if mapped and key in _rows:
+                    state, label = mapped
+                    set_cloud_status(_rows[key], state=state, label=label)
+        else:
+            states = (
+                ("account", getattr(capabilities, "authenticated", False), "Connected", "Not connected"),
+                ("storage", getattr(capabilities, "storage_ready", False), "Ready", "Not prepared"),
+                ("registry", getattr(capabilities, "registry_ready", False), "Ready", "Not prepared"),
+                ("compute", getattr(capabilities, "batch_ready", False), "Ready", "Not prepared"),
             )
-        if on_environment_update is not None:
+            for key, ready, ready_label, missing_label in states:
+                set_cloud_status(
+                    _rows[key],
+                    state="done" if ready else "fail",
+                    label=ready_label if ready else missing_label,
+                )
+        if on_environment_update is not None and capabilities is not None:
             try:
                 on_environment_update(capabilities)
             except Exception:  # noqa: BLE001 - the estimate line must never break env UX
@@ -317,10 +390,8 @@ def build_cloud_runtime_callbacks(
 
     def _check_success(capabilities) -> None:
         _update_environment(capabilities)
-        with log_output:
-            print("[cloud] Environment check")
-            for message in getattr(capabilities, "messages", []) or []:
-                print(message)
+        _emit_log(log_output, "[cloud] Environment check",
+                  *(getattr(capabilities, "messages", []) or []))
         authed = bool(getattr(capabilities, "authenticated", False))
         if set_chip:
             set_chip("connected" if authed else "failed")
@@ -339,13 +410,15 @@ def build_cloud_runtime_callbacks(
         return bridge.prepare_environment(bucket=bucket or None)
 
     def _prepare_success(result) -> None:
-        capabilities = result.get("capabilities") if isinstance(result, dict) else None
-        if capabilities is not None:
+        is_dict = isinstance(result, dict)
+        row_status = result.get("row_status") if is_dict else None
+        capabilities = result.get("capabilities") if is_dict else None
+        if row_status:
+            _update_environment(capabilities, row_status=row_status)
+        elif capabilities is not None:
             _update_environment(capabilities)
-        with log_output:
-            for message in (result.get("messages", []) if isinstance(result, dict) else []):
-                print(message)
-        ok = bool(result.get("success")) if isinstance(result, dict) else False
+        _emit_log(log_output, *(result.get("messages", []) if is_dict else []))
+        ok = bool(result.get("success")) if is_dict else False
         if set_chip:
             set_chip("ready" if ok else "failed")
         status_widget.value = status_html("done" if ok else "fail")
@@ -363,12 +436,13 @@ def build_cloud_runtime_callbacks(
     }
 
     def _smoke_success(report) -> None:
-        with log_output:
-            for line in report.lines():
-                print(line)
-            print("[cloud] infrastructure ready"
-                  if report.infrastructure_ready
-                  else "[cloud] infrastructure NOT ready - see the failures above")
+        _emit_log(
+            log_output,
+            *report.lines(),
+            "[cloud] infrastructure ready"
+            if report.infrastructure_ready
+            else "[cloud] infrastructure NOT ready - see the failures above",
+        )
         # map each check to its row using its REAL status
         seen = {}
         for check in report.checks:
@@ -399,11 +473,10 @@ def build_cloud_runtime_callbacks(
 
     def on_smoke_test(_=None):
         if smoke_worker is None:
-            with log_output:
-                print("[cloud] the infrastructure smoke test is not configured here.")
+            _emit_log(log_output,
+                      "[cloud] the infrastructure smoke test is not configured here.")
             return
-        with log_output:
-            print("[cloud] Cloud infrastructure smoke test "
+        _emit_log(log_output, "[cloud] Cloud infrastructure smoke test "
                   "(no job submitted, no ISSM run)…")
         _ops.smoke_test(smoke_worker, _smoke_success, precheck=smoke_precheck)
 

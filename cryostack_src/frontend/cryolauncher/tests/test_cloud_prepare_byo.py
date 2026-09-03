@@ -184,7 +184,11 @@ def test_broken_byo_connection_fails_closed_without_calling_the_bridge():
     spawn.run()
     # the bridge was never constructed with fallback ambient credentials
     assert "credentials_at_prepare" not in _Bridge.last
-    assert "fail" in env.storage_status.value.lower()
+    # the connection (account) is what failed; storage/containers/compute were
+    # never attempted and must not read as an independent failure
+    assert "fail" in env.account_status.value.lower()
+    assert env.storage_status.value == "idle:Not prepared"
+    assert env.compute_status.value == "idle:Not prepared"
 
 
 def test_check_connection_also_routes_through_the_assumed_role():

@@ -35,7 +35,26 @@ completed.
 
 from __future__ import annotations
 
+import re
+
 from ..base import CloudDriver
+
+# Defence-in-depth: strip anything that looks like AWS credential material or a
+# CryoStack ExternalId from a raw error before it is carried in a result the UI
+# will print. `run_aws` keeps credentials in the child env (never argv), so this
+# only matters if a CLI error echoes something unexpected.
+_SECRET_TEXT_RE = re.compile(
+    r"(ASIA[0-9A-Z]{6,}|AKIA[0-9A-Z]{6,}"
+    r"|(?:aws[_-])?(?:session|security)[_ -]?token[\"'=:\s]+\S+"
+    r"|x-amz-security-token[\"'=:\s]+\S+"
+    r"|\b(?:FwoG|IQoJ|FQoG|Fwo)[A-Za-z0-9+/=_-]{16,}"
+    r"|cryostack:[\w.\-]+:[\w\-]{8,})",
+    re.IGNORECASE,
+)
+
+
+def _redact(text: str) -> str:
+    return _SECRET_TEXT_RE.sub("<redacted>", text or "")
 
 from .auth import (
     AWSCredentialsError,
@@ -283,6 +302,33 @@ class AWSDriver(
 
         messages: list[str] = []
 
+        # Per-row readiness for the UI: "connected"/"not_connected" for account,
+        # "ready"/"failed"/"not_attempted" for the rest. Preparation aborts on
+        # the first failing stage; stages that were never reached stay
+        # "not_attempted" so the UI never shows them as an independent failure.
+        row_status: dict[str, str] = {
+            "account": "not_connected",
+            "storage": "not_attempted",
+            "registry": "not_attempted",
+            "compute": "not_attempted",
+        }
+
+        def _partial(*, capabilities=None) -> dict:
+            return {
+                "success": False,
+                "provider": self.name,
+                "region": self.config.region,
+                "account": account,
+                "storage": None,
+                "network": None,
+                "iam": None,
+                "registry": None,
+                "batch": None,
+                "capabilities": capabilities,
+                "row_status": dict(row_status),
+                "messages": list(messages),
+            }
+
         #
         # ---------------------------------------------------------
         # Account
@@ -291,160 +337,123 @@ class AWSDriver(
         account = self.account()
 
         if not account.authenticated:
+            messages.append("AWS account is not connected.")
+            return _partial(capabilities=self.capabilities())
 
-            return {
-                "success": False,
-                "provider": self.name,
-                "region": self.config.region,
-                "account": account,
-                "storage": None,
-                "network": None,
-                "iam": None,
-                "registry": None,
-                "batch": None,
-                "capabilities": self.capabilities(),
-                "messages": [
-                    "AWS account is not connected.",
-                ],
-            }
+        row_status["account"] = "connected"
+        messages.append("AWS account connected.")
 
-        messages.append(
-            "AWS account connected."
-        )
-
-        #
-        # ---------------------------------------------------------
-        # Storage
-        # ---------------------------------------------------------
-        #
+        # From here, one abort point: a stage raising stops preparation, records
+        # a sanitized reason, and returns the partial state. `AWSCredentialsError`
+        # keeps its dedicated message; any other error is classified.
+        #: which UI row a mid-preparation failure belongs to
+        _STAGE_ROW = {
+            "storage": "storage",
+            "network": "compute", "iam": "compute", "batch": "compute",
+            "registry": "registry",
+        }
+        stage = "storage"
         try:
 
-            storage = self.prepare_storage(
-                bucket=bucket,
+            #
+            # ---------------------------------------------------------
+            # Storage
+            # ---------------------------------------------------------
+            #
+            storage = self.prepare_storage(bucket=bucket)
+            row_status["storage"] = "ready"
+            messages.append(
+                "CryoStack S3 storage created."
+                if storage.created
+                else "CryoStack S3 storage already exists."
+            )
+
+            #
+            # ---------------------------------------------------------
+            # Network
+            # ---------------------------------------------------------
+            #
+            stage = "network"
+            network = self.network()
+            if (
+                network.vpc_id
+                and network.subnet_ids
+                and network.security_group_ids
+            ):
+                messages.append("AWS networking discovered.")
+            else:
+                messages.append("AWS networking is incomplete.")
+
+            #
+            # ---------------------------------------------------------
+            # IAM
+            # ---------------------------------------------------------
+            #
+            stage = "iam"
+            iam_result = ensure_iam_resources(
+                self.config,
+                bucket=storage.bucket,
+            )
+            iam = iam_result.resources
+            if iam_result.created:
+                messages.append(
+                    "Created IAM resources: " + ", ".join(iam_result.created)
+                )
+            if iam_result.reused:
+                messages.append(
+                    "Reused IAM resources: " + ", ".join(iam_result.reused)
+                )
+
+            #
+            # ---------------------------------------------------------
+            # Registry
+            # ---------------------------------------------------------
+            #
+            stage = "registry"
+            registry_result = self.prepare_registry(include_icepack=False)
+            registry = registry_result.resources
+            if registry_result.created:
+                messages.append(
+                    "Created ECR repositories: "
+                    + ", ".join(registry_result.created)
+                )
+            if registry_result.reused:
+                messages.append(
+                    "Reused ECR repositories: "
+                    + ", ".join(registry_result.reused)
+                )
+            row_status["registry"] = "ready"
+
+            #
+            # ---------------------------------------------------------
+            # Batch (Fargate) provisioning
+            # ---------------------------------------------------------
+            #
+            stage = "batch"
+            batch_result = self.prepare_batch(
+                network=network,
+                iam=iam,
+                registry=registry,
             )
 
         except AWSCredentialsError:
-
-            return {
-                "success": False,
-                "provider": self.name,
-                "region": self.config.region,
-                "account": account,
-                "storage": None,
-                "network": None,
-                "iam": None,
-                "registry": None,
-                "batch": None,
-                "capabilities": None,
-                "messages": [
-                    "AWS credentials are not available.",
-                ],
-            }
-
-        if storage.created:
-
+            row_status[_STAGE_ROW.get(stage, "compute")] = "failed"
             messages.append(
-                "CryoStack S3 storage created."
+                "[cloud][ERROR] AWS access was lost while preparing the cloud "
+                "environment. Re-check the connected AWS account and try again."
             )
+            return _partial()
 
-        else:
-
+        except Exception as error:  # noqa: BLE001 -- surfaced + carried to the Run Log
+            row_status[_STAGE_ROW.get(stage, "compute")] = "failed"
             messages.append(
-                "CryoStack S3 storage already exists."
+                f"[cloud][ERROR] Could not prepare the cloud environment "
+                f"(stage: {stage}). See the detail below and the AWS role's "
+                f"permissions."
             )
-
-        #
-        # ---------------------------------------------------------
-        # Network
-        # ---------------------------------------------------------
-        #
-        network = self.network()
-
-        if (
-            network.vpc_id
-            and network.subnet_ids
-            and network.security_group_ids
-        ):
-
-            messages.append(
-                "AWS networking discovered."
-            )
-
-        else:
-
-            messages.append(
-                "AWS networking is incomplete."
-            )
-
-        #
-        # ---------------------------------------------------------
-        # IAM
-        # ---------------------------------------------------------
-        #
-        iam_result = ensure_iam_resources(
-            self.config,
-            bucket=storage.bucket,
-        )
-
-        iam = iam_result.resources
-
-        if iam_result.created:
-
-            messages.append(
-                "Created IAM resources: "
-                + ", ".join(
-                    iam_result.created
-                )
-            )
-
-        if iam_result.reused:
-
-            messages.append(
-                "Reused IAM resources: "
-                + ", ".join(
-                    iam_result.reused
-                )
-            )
-
-        #
-        # ---------------------------------------------------------
-        # Registry
-        # ---------------------------------------------------------
-        #
-        registry_result = self.prepare_registry(
-            include_icepack=False,
-        )
-
-        registry = registry_result.resources
-
-        if registry_result.created:
-
-            messages.append(
-                "Created ECR repositories: "
-                + ", ".join(
-                    registry_result.created
-                )
-            )
-
-        if registry_result.reused:
-
-            messages.append(
-                "Reused ECR repositories: "
-                + ", ".join(
-                    registry_result.reused
-                )
-            )
-
-        #
-        # ---------------------------------------------------------
-        # Batch (Fargate) provisioning
-        # ---------------------------------------------------------
-        #
-        batch_result = self.prepare_batch(
-            network=network,
-            iam=iam,
-            registry=registry,
-        )
+            # raw detail is carried verbatim; the Run Log emitter sanitizes it
+            messages.append(f"[cloud][detail] {_redact(str(error))[:1500]}")
+            return _partial()
 
         batch = batch_result.resources
 
@@ -496,6 +505,19 @@ class AWSDriver(
             and capabilities.batch_ready
         )
 
+        # every stage completed without raising; reflect the recalculated
+        # capability state per row (a stage can still be "incomplete" without
+        # having raised -- e.g. discovery found no usable VPC).
+        row_status["account"] = "connected" if capabilities.authenticated else "not_connected"
+        row_status["storage"] = "ready" if capabilities.storage_ready else "failed"
+        row_status["registry"] = "ready" if capabilities.registry_ready else "failed"
+        row_status["compute"] = (
+            "ready"
+            if (capabilities.network_ready and capabilities.iam_ready
+                and capabilities.batch_ready)
+            else "failed"
+        )
+
         return {
             "success": success,
             "provider": self.name,
@@ -507,6 +529,7 @@ class AWSDriver(
             "registry": registry,
             "batch": batch,
             "capabilities": capabilities,
+            "row_status": dict(row_status),
             "messages": messages,
         }
 
