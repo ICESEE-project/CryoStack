@@ -50,6 +50,16 @@ class _Out:
         self.text += s
 
 
+class _Layout:
+    def __init__(self):
+        self.display = "none"
+
+
+class _SectionW:
+    def __init__(self):
+        self.layout = _Layout()
+
+
 class _Env:
     def __init__(self):
         self.account_status = _HtmlW()
@@ -58,6 +68,8 @@ class _Env:
         self.compute_status = _HtmlW()
         self.test_button = _Btn("Test connection")
         self.prepare_button = _Btn("Prepare cloud")
+        self.run_estimate_section = _SectionW()
+        self.run_estimate_line = _HtmlW()
 
 
 class _Caps:

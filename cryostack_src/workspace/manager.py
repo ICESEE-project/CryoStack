@@ -27,6 +27,21 @@ _SAFE_RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 _SAFE_EXAMPLE_NAME = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 
 
+def _file_source_materializer(suffix: str):
+    """Resolve the materializer for a single-FILE example source, dispatched
+    by file TYPE (never by filename) -- ``None`` for an unsupported type.
+
+    Lazily imported so this generic, model-neutral module carries no
+    top-level dependency on any one model adapter (same pattern already used
+    for the result-reader/visualizer dispatch below).
+    """
+    if suffix.lower() == ".ipynb":
+        from cryostack_src.models.icepack.notebook import materialize_notebook_workspace
+
+        return materialize_notebook_workspace
+    return None
+
+
 class WorkspacePermissionError(RuntimeError):
     """A file operation was attempted outside the caller's managed workspace."""
 
@@ -534,11 +549,24 @@ class WorkspaceManager:
     ) -> StagedExample:
         """Materialise a user-owned working copy of ``source_example`` for a run.
 
-        Generic, model-neutral filesystem staging:
+        Generic, model-neutral filesystem staging. ``source_example`` is
+        either:
 
-        * canonical example  -> a fresh copy under
+        * a **directory** (every model's usual shape) --
+          canonical example  -> a fresh copy under
           ``<owner_root>/.cryostack/working/<name>`` (rebuilt each run);
-        * user-owned example -> operated on in place.
+          user-owned example -> operated on in place; or
+        * a **single file** whose type has a registered materializer (today:
+          ``.ipynb`` -- an Icepack canonical notebook, which ships as one
+          loose file rather than a directory). The materializer builds a
+          fresh directory-shaped working copy under
+          ``<owner_root>/.cryostack/working/<stem>`` and returns the
+          entrypoint filename it produced (e.g. ``run.py``), which OVERRIDES
+          the caller's ``entrypoint`` argument -- there is no generic
+          default entrypoint for a bare single-file source. An unsupported
+          file type raises the same "Example directory not found" a caller
+          already gets for a bad path -- this is a file-TYPE dispatch, never
+          a per-filename special case.
 
         ``extra_files`` are written into the copy and any datasets the example
         references are copied into ``data/<as>``. ``entrypoint_transform`` (an
@@ -546,10 +574,20 @@ class WorkspaceManager:
         rewrite the entrypoint. The canonical example is never modified.
         """
         src = Path(source_example).expanduser().resolve()
-        if not src.exists() or not src.is_dir():
-            raise ValueError(f"Example directory not found: {src}")
 
-        if self._is_user_owned_path(src):
+        if src.is_file():
+            materializer = _file_source_materializer(src.suffix)
+            if materializer is None:
+                raise ValueError(f"Example directory not found: {src}")
+            target = (self._working_root / self._safe_example_name(src.stem)).resolve()
+            if target.exists():
+                shutil.rmtree(target)
+            target.mkdir(parents=True, exist_ok=True)
+            entrypoint = materializer(src, dest_dir=target)
+            from_canonical = True
+        elif not src.exists() or not src.is_dir():
+            raise ValueError(f"Example directory not found: {src}")
+        elif self._is_user_owned_path(src):
             target, from_canonical = src, False
         else:
             target = (self._working_root / self._safe_example_name(src.name)).resolve()

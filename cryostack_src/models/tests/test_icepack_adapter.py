@@ -54,9 +54,20 @@ def test_example_entrypoints_is_open_ended_unlike_issm():
     (["a.m", "b.py"], "b.py"),                        # .py beats a stray .m
     (["only.geo"], "only.geo"),
     ([], ""),
+    # Icepack Cloud Execution checkpoint: a materialized notebook working
+    # copy stages BOTH the original notebook and the generated run.py --
+    # run.py (never hand-maintained, always this exact name) wins even
+    # though a bare .ipynb would otherwise be preferred.
+    (["00-meshes-functions.ipynb", "run.py"], "run.py"),
+    (["run.py", "00-meshes-functions.ipynb", ".cryostack-example.json"], "run.py"),
 ])
 def test_choose_run_target_prefers_python(names, expected):
     assert icepack.choose_run_target(names) == expected
+
+
+def test_order_run_targets_puts_run_py_first_even_over_a_notebook():
+    ordered = icepack.order_run_targets(["00-meshes-functions.ipynb", "run.py", "mesh.geo"])
+    assert ordered[0] == "run.py"
 
 
 # ── run-command shapes (spack + apptainer) ───────────────────────────

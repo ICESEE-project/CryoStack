@@ -324,3 +324,73 @@ def test_launch_cloud_run_callback_is_not_on_run_itself():
     for forbidden in ("cluster_host", "cluster_user", "enforce_remote_access",
                       "on_run(", "mode_dd"):
         assert forbidden not in code, forbidden
+
+
+# ── Icepack notebook staging: Advanced Editor shows the runnable script ────
+def _find_widget_by_observer(page, handler_name: str):
+    found = {}
+
+    def walk(w):
+        if handler_name not in found:
+            notifiers = getattr(w, "_trait_notifiers", None)
+            if notifiers and "value" in notifiers:
+                for handlers in notifiers["value"].values():
+                    for h in handlers:
+                        if getattr(h, "__name__", "") == handler_name:
+                            found[handler_name] = (w, h)
+        for c in getattr(w, "children", ()):
+            walk(c)
+
+    walk(page)
+    return found.get(handler_name)
+
+
+def test_selecting_an_icepack_notebook_example_materializes_run_py_for_the_editor(
+    monkeypatch, tmp_path
+):
+    """Root cause + item 5: selecting a canonical Icepack tutorial (a bare
+    .ipynb file -- the exact discovery shape that produced "Example
+    directory not found") must leave example_dir pointing at a real
+    directory containing the deterministic run.py, so the Advanced Editor
+    shows/edits the runnable Python representation, not raw notebook JSON --
+    and every downstream consumer (staging) sees an ordinary directory.
+    Skips when this machine has no local Icepack checkout to discover."""
+    from icesee_jupyter_book.core.icesheet_examples import resolve_icepack_root
+
+    root = resolve_icepack_root()
+    if root is None:
+        pytest.skip("no local Icepack checkout on this machine")
+    notebook = root / "notebooks" / "tutorials" / "00-meshes-functions.ipynb"
+    if not notebook.is_file():
+        pytest.skip("00-meshes-functions.ipynb not present in this Icepack checkout")
+
+    monkeypatch.setenv("CRYOSTACK_WORKSPACE_USER", "editor-notebook-user")
+    monkeypatch.setenv("USER", "cloud-wire-service")
+    monkeypatch.setenv("CRYOSTACK_WORKSPACE_ROOT", str(tmp_path / "ws"))
+    monkeypatch.delenv("CRYOSTACK_AWS_PRINCIPAL_ARN", raising=False)
+    monkeypatch.delenv("CRYOSTACK_CF_TEMPLATE_URL", raising=False)
+    import matplotlib
+    matplotlib.use("Agg")
+    from icesee_jupyter_book.ui.icesheets_gateway import build_icesheets_ui
+    page = build_icesheets_ui()
+
+    picker, handler = _find_widget_by_observer(page, "apply_selected_example")
+
+    def freevar(fn, name):
+        idx = fn.__code__.co_freevars.index(name)
+        return fn.__closure__[idx].cell_contents
+
+    model_dd = freevar(handler, "model_dd")
+    example_dir = freevar(handler, "example_dir")
+
+    model_dd.value = "icepack"          # repopulates the picker via refresh_example_picker
+    target = str(notebook.resolve())
+    assert target in [v for _l, v in picker.options]
+
+    picker.value = target               # fires apply_selected_example (real handler)
+
+    staged = Path(example_dir.value)
+    assert staged.is_dir(), "example_dir must be a directory, never the bare .ipynb"
+    assert (staged / "run.py").is_file()
+    assert (staged / notebook.name).is_file()          # the source notebook is kept too
+    assert "import" in (staged / "run.py").read_text()

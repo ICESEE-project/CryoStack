@@ -413,12 +413,24 @@ def build_cloud_runtime_callbacks(
         is_dict = isinstance(result, dict)
         row_status = result.get("row_status") if is_dict else None
         capabilities = result.get("capabilities") if is_dict else None
+        ok = bool(result.get("success")) if is_dict else False
+        if ok:
+            # A lightweight, non-blocking notice -- reusing the RUN ESTIMATE
+            # line itself (no new toast/notification widget) -- shown right
+            # before on_environment_update() below kicks off the async
+            # estimate/review fetch (real AWS pricing, not instant). It is
+            # naturally replaced the moment that fetch finishes and calls
+            # set_run_estimate_view() with the real estimate.
+            cloud_environment.run_estimate_section.layout.display = "flex"
+            cloud_environment.run_estimate_line.value = (
+                "<div style='font-size:11px;color:#66758d;'>"
+                "Cloud environment is ready. Preparing your run estimate…</div>"
+            )
         if row_status:
             _update_environment(capabilities, row_status=row_status)
         elif capabilities is not None:
             _update_environment(capabilities)
         _emit_log(log_output, *(result.get("messages", []) if is_dict else []))
-        ok = bool(result.get("success")) if is_dict else False
         if set_chip:
             set_chip("ready" if ok else "failed")
         status_widget.value = status_html("done" if ok else "fail")

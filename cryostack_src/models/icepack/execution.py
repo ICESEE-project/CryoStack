@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .notebook import RUN_SCRIPT_NAME
+
 #: Icepack examples are notebook/script based rather than a fixed entrypoint file
 EXAMPLE_ENTRYPOINTS: tuple[str, ...] = ()
 _EXAMPLE_GLOBS = ("*.ipynb", "*.py")
@@ -36,18 +38,30 @@ def build_activation_check() -> str:
     return 'python -c "import icepack; print(\'Icepack import successful\')"'
 
 
-#: Icepack examples are Python: notebooks first, then scripts. ``.m`` is only a
-#: last resort (an Icepack example directory should not contain one).
+#: Icepack examples are notebook/script based rather than a fixed entrypoint file
+#: -- notebooks first, then scripts. ``.m`` is only a last resort (an Icepack
+#: example directory should not contain one).
 _RUN_TARGET_ORDER = (".ipynb", ".py", ".m")
 
 
 def order_run_targets(names):
+    # RUN_SCRIPT_NAME ("run.py") is cryostack_src.models.icepack.notebook's
+    # deterministic conversion artifact: when a materialized notebook working
+    # copy is present, its generated run.py -- not the co-staged source
+    # notebook -- is THE canonical execution target. A fixed, project-defined
+    # convention name (exactly like ISSM's "runme.m"), not a per-example
+    # special case: any directory with a file literally named this puts it
+    # first, regardless of what else is present.
     preferred = [n for n in names if n.lower().endswith(_RUN_TARGET_ORDER)]
     others = [n for n in names if not n.lower().endswith(_RUN_TARGET_ORDER)]
+    if RUN_SCRIPT_NAME in preferred:
+        preferred = [RUN_SCRIPT_NAME] + [n for n in preferred if n != RUN_SCRIPT_NAME]
     return preferred + others
 
 
 def choose_run_target(names):
+    if RUN_SCRIPT_NAME in names:
+        return RUN_SCRIPT_NAME
     ordered = order_run_targets(names)
     for suffix in _RUN_TARGET_ORDER:
         for name in ordered:

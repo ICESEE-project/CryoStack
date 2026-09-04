@@ -164,6 +164,7 @@ from cryostack_src.frontend.cryolauncher.icepack_basic_panel import build_icepac
 from cryostack_src.models.icepack.parameters import (
     IcepackOverrideError, IcepackParameterError, entrypoint_transform_for,
 )
+from cryostack_src.models.icepack.notebook import NotebookConversionError
 
 from cryostack_src.frontend.cryolauncher.panels import (
     build_logs_panel,
@@ -1363,7 +1364,35 @@ def build_icesheets_ui():
             example_info.value = _example_summary(ex, selected)
 
             if selected:
-                example_dir.value = selected
+                _selected_path = Path(selected)
+                if model_dd.value == "icepack" and _selected_path.is_file():
+                    # A canonical Icepack example is one loose notebook FILE
+                    # (there is no "example directory" the way ISSM has) --
+                    # materialize the SAME deterministic {notebook, run.py}
+                    # working copy staging itself uses (workspace/manager.py
+                    # :meth:`stage_example_for_run`), so the Advanced Editor
+                    # shows the runnable Python representation -- not raw
+                    # notebook JSON -- and every downstream consumer
+                    # (run-target resolution, Local/Remote/Cloud staging)
+                    # sees an ordinary example directory from here on.
+                    try:
+                        _staged = workspace_manager.stage_example_for_run(
+                            source_example=selected
+                        )
+                        example_dir.value = str(_staged.path)
+                    except NotebookConversionError as _conv_err:
+                        example_dir.value = selected
+                        with log_out:
+                            print("[icepack][ERROR]", _conv_err)
+                    except Exception as _conv_err:                  # noqa: BLE001
+                        example_dir.value = selected
+                        with log_out:
+                            print(
+                                "[stage][ERROR] Could not prepare this notebook "
+                                "example:", type(_conv_err).__name__, _conv_err,
+                            )
+                else:
+                    example_dir.value = selected
 
             editor_panel.controller.refresh()
             refresh_run_target_options()

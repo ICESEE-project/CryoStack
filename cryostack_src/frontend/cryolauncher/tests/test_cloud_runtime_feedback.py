@@ -44,6 +44,19 @@ class _HtmlW:
         self.value = ""
 
 
+class _Layout:
+    def __init__(self):
+        self.display = "none"
+
+
+class _SectionW:
+    """A minimal stand-in for an ipywidgets container: only `.layout.display`
+    is ever touched by the code under test here."""
+
+    def __init__(self):
+        self.layout = _Layout()
+
+
 class _Out:
     """A minimal stand-in for ipywidgets.Output: `with out: print(...)` is
     captured into `out.text`."""
@@ -205,6 +218,7 @@ def _full(**over):
         "registry_status": _HtmlW(), "compute_status": _HtmlW(),
         "test_button": _Btn("Test connection", "plug"),
         "prepare_button": _Btn("Prepare cloud", "cloud", "primary"),
+        "run_estimate_section": _SectionW(), "run_estimate_line": _HtmlW(),
     })()
     rows = _Rows()
     rows.bind("account", env.account_status)
@@ -246,6 +260,58 @@ def test_prepare_success_reflects_the_returned_capabilities():
     assert h["chip"].kinds[-1] == "ready"
     for k in ("account", "storage", "registry", "compute"):
         assert h["rows"].of(k)[0] == "done"
+
+
+# -- item 11: "Cloud environment is ready" notice, reusing RUN ESTIMATE ---
+def test_prepare_success_shows_a_ready_notice_before_the_async_estimate_begins():
+    """'Cloud environment is ready. Preparing your run estimate…' appears in
+    the RUN ESTIMATE line (the existing status mechanism -- no new toast
+    widget) immediately after a successful Prepare, BEFORE the async
+    estimate/review fetch (on_environment_update) does its own work; the
+    real estimate naturally replaces it once rendered."""
+    seen = {}
+
+    def _spy_on_environment_update(_caps):
+        # captures state exactly as the async estimate fetch is STARTING
+        seen["line"] = env.run_estimate_line.value
+        seen["visible"] = env.run_estimate_section.layout.display
+
+    cb, h = _full(
+        bridge_factory=lambda: type("B", (), {
+            "prepare_environment": staticmethod(lambda *, bucket: {
+                "success": True, "messages": [],
+                "capabilities": _Caps(True, storage=True, registry=True, batch=True)})})(),
+        on_environment_update=_spy_on_environment_update,
+    )
+    env = h["env"]
+    cb.prepare_environment()
+
+    assert "Cloud environment is ready" in seen["line"]
+    assert "Preparing your run estimate" in seen["line"]
+    assert seen["visible"] == "flex"
+
+    # once the real estimate renders (the SAME widget, via the existing
+    # set_run_estimate_view helper), the notice is gone -- replaced, not a
+    # separate element left behind
+    from cryostack_src.frontend.cryolauncher.cloud_environment import set_run_estimate_view
+    set_run_estimate_view(env, visible=True, runtime_text="~5 min",
+                          resource_text="2 vCPU", cost_text="$0.04")
+    assert "Cloud environment is ready" not in env.run_estimate_line.value
+    assert "~5 min" in env.run_estimate_line.value
+
+
+def test_prepare_failure_never_shows_the_ready_notice():
+    calls = []
+    cb, h = _full(
+        bridge_factory=lambda: type("B", (), {
+            "prepare_environment": staticmethod(lambda *, bucket: {
+                "success": False, "messages": ["boom"],
+                "capabilities": _Caps(False)})})(),
+        on_environment_update=lambda _c: calls.append(1),
+    )
+    env = h["env"]
+    cb.prepare_environment()
+    assert "Cloud environment is ready" not in env.run_estimate_line.value
 
 
 def test_prepare_partial_result_is_not_forced_to_ready():
