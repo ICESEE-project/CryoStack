@@ -324,6 +324,20 @@ class CloudRunController:
         except Exception:
             pass
 
+    def _log_auth(self, operation: str, execution) -> None:
+        """Temporary, secret-free diagnostic: which credential context is
+        about to be used for one AWS operation -- proves, from the run log
+        itself, that a fresh assumed-role session (not the host's ambient
+        identity) is what reaches AWS for each lifecycle step. Never an ARN,
+        ExternalId, access key, token, or secret -- only the bound account
+        id and whether the context is a temporary role or developer mode."""
+        account = (
+            self._handle.account_id
+            or (getattr(execution, "account_id", "") or "")
+        ).strip() or "none"
+        access = "temporary-role" if getattr(execution, "is_byo", False) else "developer-mode"
+        self._log(f"[cloud][auth] {operation} account={account} access={access}")
+
     # -- credential context: fresh per AWS operation --------------------
     def _resolve_execution(self):
         """Fresh CloudExecution for one AWS operation. Raises CloudAccessError
@@ -439,6 +453,7 @@ class CloudRunController:
             # must resolve to the account the run was reviewed for.
             execution = await self._to_thread(self._resolve_execution)
             self._assert_same_account(execution)
+            self._log_auth("submit", execution)
             self._set_state(SUBMITTING)
             self._log("[cloud] Staging inputs to S3 and submitting to AWS Batch…")
             result = await self._to_thread(
@@ -495,6 +510,7 @@ class CloudRunController:
             try:
                 execution = await self._to_thread(self._resolve_execution)
                 self._assert_same_account(execution)
+                self._log_auth("poll", execution)
             except asyncio.CancelledError:
                 raise
             except Exception as error:  # noqa: BLE001
@@ -532,6 +548,7 @@ class CloudRunController:
         try:
             execution = await self._to_thread(self._resolve_execution)
             self._assert_same_account(execution)
+            self._log_auth("results", execution)
             creds = getattr(execution, "credentials", None)
             region = getattr(execution, "region", None) or self._handle.region or None
             path = await self._to_thread(
@@ -561,10 +578,17 @@ class CloudRunController:
     async def _terminate_worker(self, job_id: str) -> None:
         try:
             self._log(f"[cloud] Requesting termination of job {job_id}…")
-            # a BYO run terminates through a FRESH context for the SAME account,
-            # never through host ambient credentials.
+            # a BYO run terminates through a FRESH context for the SAME
+            # account, never through host ambient credentials. Resolved and
+            # asserted explicitly here (same shape as poll/results) so the
+            # diagnostic log and the AWS call both use this ONE checked
+            # execution -- not a second, separately-resolved one internal to
+            # _bridge()'s own no-argument fallback.
+            execution = await self._to_thread(self._resolve_execution)
+            self._assert_same_account(execution)
+            self._log_auth("terminate", execution)
             await self._to_thread(
-                lambda: self._bridge().terminate(job_id=job_id))
+                lambda: self._bridge(execution).terminate(job_id=job_id))
             self._set_state(CANCELLED)      # stops the poll loop on its next check
             self._log("[cloud] Termination requested.")
         except Exception as error:  # noqa: BLE001

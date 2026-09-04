@@ -35,8 +35,9 @@ termination.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -44,13 +45,44 @@ class AWSConfig:
     """
     AWS connection configuration.
 
-    During development, CryoStack may use a named AWS CLI profile.
-    Future account connections may provide short-lived credentials
-    through IAM role assumption without changing the execution API.
+    Two credential sources are supported, and exactly one is used per call:
+
+    * **developer / operator mode** -- ambient AWS CLI credentials, optionally
+      selected by a named ``profile``;
+    * **end-user assumed-role mode** -- ``credentials`` carries the temporary
+      ``AWS_ACCESS_KEY_ID`` / ``AWS_SECRET_ACCESS_KEY`` / ``AWS_SESSION_TOKEN``
+      from an ``sts:AssumeRole`` call. When present it wins and ``profile`` /
+      ambient credentials are never consulted.
+
+    This mirrors :class:`cryostack_src.cloud.drivers.aws.models.AWSConfig`
+    exactly -- every caller in this codebase actually passes THAT class's
+    instances through here (``AWSDriver.status/logs/terminate`` -> this
+    module), never this bare dataclass; it is kept credential-shaped too so
+    ``run_aws`` below is correct regardless of which one a caller constructs.
     """
 
     region: str = "us-east-2"
     profile: str | None = None
+    credentials: dict[str, str] | None = field(default=None, repr=False)
+
+
+#: env vars that carry an ambient credential source; dropped when an
+#: assumed-role ``AWSConfig.credentials`` is supplied so the temporary
+#: credentials are the only ones the CLI subprocess can see. Must stay in
+#: lockstep with ``cryostack_src/cloud/drivers/aws/auth.py``'s ``run_aws``
+#: -- that is the credentials-aware implementation ``submit_batch_job`` uses;
+#: this module is the one ``AWSDriver.status/logs/terminate`` call, and
+#: previously did NOT read ``config.credentials`` at all (subprocess.run with
+#: no ``env=`` override, i.e. plain ambient-environment passthrough) -- the
+#: exact reason DescribeJobs/Terminate reached AWS as the host's own ambient
+#: identity while SubmitJob correctly used the assumed-role session.
+_AMBIENT_CRED_ENV = (
+    "AWS_PROFILE",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "AWS_SECURITY_TOKEN",
+)
 
 
 def aws_command(
@@ -62,7 +94,9 @@ def aws_command(
 
     command = ["aws"]
 
-    if config.profile:
+    # assumed-role temporary credentials win and never combine with a profile
+    # (matches drivers/aws/auth.py's aws_command exactly)
+    if config.profile and not getattr(config, "credentials", None):
         command.extend([
             "--profile",
             config.profile,
@@ -83,12 +117,34 @@ def run_aws(
 ) -> tuple[int, str, str]:
     """
     Execute an AWS CLI command.
+
+    When ``config.credentials`` carries assumed-role temporary credentials,
+    the subprocess environment is the current environment with every ambient
+    AWS credential var stripped and only the temporary
+    ``AWS_ACCESS_KEY_ID`` / ``AWS_SECRET_ACCESS_KEY`` / ``AWS_SESSION_TOKEN``
+    triple set -- the CLI cannot fall back to a host profile or ambient
+    identity. Developer mode (no ``credentials``) is unchanged: ``env=None``
+    inherits the current process environment exactly as before.
     """
+
+    credentials = getattr(config, "credentials", None)
+    env = None
+    if credentials:
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in _AMBIENT_CRED_ENV
+        }
+        # only the three standard STS env vars are honoured
+        for key in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"):
+            if credentials.get(key):
+                env[key] = credentials[key]
 
     process = subprocess.run(
         aws_command(config) + arguments,
         capture_output=True,
         text=True,
+        env=env,
     )
 
     return (
