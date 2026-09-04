@@ -691,7 +691,9 @@ def build_icesheets_ui():
                 user=workspace_manager.owner,
                 region_hint=aws_region.value.strip() or DEFAULT_CLOUD_REGION,
                 profile_hint=aws_profile.value.strip() or None,
-                model="issm",           # cloud execution is ISSM-only for now
+                # derives job_definition/ecr_repository for whichever model
+                # is currently selected -- cryostack-issm / cryostack-icepack
+                model=(model_dd.value or "issm").strip().lower(),
             )
 
         def current_cloud_bridge(*, credentials=None, region=None):
@@ -2715,28 +2717,32 @@ def build_icesheets_ui():
             return Path(example_dir.value or "").name or "example"
 
         def _cloud_run_config():
-            """THE canonical resolved cloud config -- resources included. The
-            Review card and the submit path both read this; no second copy."""
+            """THE canonical resolved cloud config -- resources included,
+            derived from whichever model is currently selected. The Review
+            card and the submit path both read this; no second copy."""
+            _model = (model_dd.value or "issm").strip().lower()
             _job_def, _ = resolve_job_definition(
-                "issm", batch_job_def.value.strip(), allow_list=_CLOUD_JOB_DEFS,
+                _model, batch_job_def.value.strip(), allow_list=_CLOUD_JOB_DEFS,
             )
             return resolve_cloud_config(
                 provider="aws",
                 region=aws_region.value.strip(),
                 bucket=cloud_bucket.value.strip(),
                 profile=aws_profile.value.strip(),
-                model="issm",
+                model=_model,
                 job_queue=batch_job_queue.value.strip(),
                 job_definition=_job_def,
             )
 
         def _cloud_run_history():
             """Durations (minutes) of this user's past successful cloud runs of
-            the same example -- best effort; empty -> the estimator falls back."""
+            the CURRENTLY SELECTED model + example -- best effort; empty ->
+            the estimator falls back."""
+            _model = (model_dd.value or "issm").strip().lower()
             out = []
             try:
                 for run in workspace_manager.list_runs():
-                    if run.execution_mode != "cloud" or (run.model or "").lower() != "issm":
+                    if run.execution_mode != "cloud" or (run.model or "").lower() != _model:
                         continue
                     if str(run.status).lower() not in ("completed", "succeeded"):
                         continue
@@ -2755,7 +2761,7 @@ def build_icesheets_ui():
         def _cloud_review_digest() -> str:
             return review_digest(
                 config=_cloud_run_config(),
-                model="issm",
+                model=(model_dd.value or "issm").strip().lower(),
                 example=_cloud_example_name(),
                 run_target=(Path(run_target.value or "runme.m").name),
                 account_id=_cloud_account_id_for_review(),
@@ -2770,6 +2776,7 @@ def build_icesheets_ui():
                 return ""
 
         def _build_cloud_review():
+            _model = (model_dd.value or "issm").strip().lower()
             cfg = _cloud_run_config()
             region = cfg.region
             account_id = _cloud_account_id_for_review()
@@ -2806,7 +2813,7 @@ def build_icesheets_ui():
             )
 
             rt = estimate_runtime(
-                model="issm", example=_cloud_example_name(),
+                model=_model, example=_cloud_example_name(),
                 time_limit_minutes=cfg.time_limit_minutes,
                 history_provider=_cloud_run_history,
             )
@@ -2816,16 +2823,19 @@ def build_icesheets_ui():
                 expected_runtime_minutes=rt.minutes, ephemeral_gib=cfg.ephemeral_gib,
                 prices=prices, runtime_source=rt.source,
             )
+            # the MATLAB-license gate is ISSM-only (cloud_run_preflight skips
+            # it for every other model) -- unchanged behaviour, just no
+            # longer computed against a hardcoded "issm".
             _lic = get_compute_profile("aws").has_matlab_license
             return build_cloud_run_review(
-                config=cfg, model="issm", example=_cloud_example_name(),
+                config=cfg, model=_model, example=_cloud_example_name(),
                 run_target=(Path(run_target.value or "runme.m").name),
                 account_id=account_id, region=region,
                 infrastructure=infra, runtime=rt, cost=cost,
                 account_freshly_verified=account_fresh,
-                config_problems=validate_cloud_config(cfg, model="issm"),
+                config_problems=validate_cloud_config(cfg, model=_model),
                 preflight_problems=cloud_run_preflight(
-                    model="issm", matlab_license_configured=_lic),
+                    model=_model, matlab_license_configured=_lic),
                 scientific_overrides=(md_panel.overrides() if model_dd.value == "issm" else {}),
             )
 

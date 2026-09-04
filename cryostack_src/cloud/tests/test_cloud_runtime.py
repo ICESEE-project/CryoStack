@@ -57,9 +57,10 @@ def test_descriptor_is_clean_flags_secrets_and_paths():
 
 
 def test_supported_models():
-    assert SUPPORTED_CLOUD_MODELS == ("issm",)
+    assert SUPPORTED_CLOUD_MODELS == ("issm", "icepack")
     assert is_supported_cloud_model("ISSM") is True
-    assert is_supported_cloud_model("icepack") is False
+    assert is_supported_cloud_model("Icepack") is True
+    assert is_supported_cloud_model("firedrake") is False
 
 
 # ── the runner ───────────────────────────────────────────────────────────
@@ -80,6 +81,31 @@ def test_runner_issm_runs_target_then_postprocess():
     assert "with-issm matlab" in r
     assert "run('${RUN_TARGET}')" in r
     assert "run('${WORKDIR}/postprocess_icesee.m')" in r
+
+
+# -- Icepack Cloud Execution checkpoint -----------------------------------
+def test_runner_icepack_runs_target_then_the_portable_collector():
+    r = build_cloud_runner()
+    assert 'with-icepack python "${WORKDIR}/${RUN_TARGET}"' in r
+    # notebook examples are converted first, same rule as local/remote
+    assert "jupyter nbconvert --to script" in r
+    # the SAME collector script Local/Remote embed, reused verbatim
+    from cryostack_src.models.icepack.postprocess import build_postprocess
+    assert build_postprocess() in r
+    assert 'CRYOSTACK_RUN_DIR="${WORKDIR}"' in r
+    # never the old deliberate block
+    assert "Icepack cloud execution is not supported yet" not in r
+
+
+def test_runner_icepack_postprocess_never_overrides_the_science_exit_code():
+    lines = build_cloud_runner().splitlines()
+    body = [l for l in lines if not l.lstrip().startswith("#")]
+    icepack_block = "\n".join(body[body.index("  icepack)"):body.index("  *)")])
+    assert "rc=$?" in icepack_block                       # captured from the model run
+    # the postprocess invocation's own failure is swallowed by `||`, so it
+    # can never clobber $rc
+    assert 'python3 "${WORKDIR}/cryostack_icepack_postprocess.py" \\' in icepack_block
+    assert "|| log" in icepack_block
 
 
 def test_runner_propagates_true_exit_code_no_swallowing():
@@ -111,8 +137,9 @@ def test_runner_carries_no_license_value():
 
 def test_runner_unsupported_model_errors_clearly():
     r = build_cloud_runner()
-    assert 'fail 64 "Icepack cloud execution is not supported yet"' in r
     assert 'fail 64 "unsupported model: ${CRYOSTACK_MODEL}"' in r
+    # a genuinely unknown model still gets a clear error (icepack no longer does)
+    assert 'unsupported model' in r
 
 
 def test_cloud_run_command_wraps_the_runner():

@@ -29,9 +29,13 @@ def test_issm_with_a_configured_license_passes():
     assert_cloud_run_allowed(model="issm", matlab_license_configured=True)  # no raise
 
 
-def test_icepack_is_blocked_regardless_of_license():
-    reasons = cloud_run_preflight(model="icepack", matlab_license_configured=True)
-    assert reasons and "no supported cloud runtime" in reasons[0]
+def test_icepack_needs_no_matlab_license():
+    """Icepack Cloud Execution checkpoint: the MATLAB-license gate is
+    ISSM-only. Icepack passes preflight regardless of the compute profile's
+    license state -- true whether or not one happens to be configured."""
+    assert cloud_run_preflight(model="icepack", matlab_license_configured=False) == []
+    assert cloud_run_preflight(model="icepack", matlab_license_configured=True) == []
+    assert_cloud_run_allowed(model="icepack", matlab_license_configured=False)  # no raise
 
 
 def test_unknown_model_is_blocked():

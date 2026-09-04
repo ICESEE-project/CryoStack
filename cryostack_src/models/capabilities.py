@@ -102,12 +102,14 @@ _ICEPACK = ModelCapabilities(
     offline_result_reader=True,
     visualization=True,
     requires_matlab=False,
-    execution_modes=("remote",),
+    execution_modes=("remote", "cloud"),
     backends=("spack", "container"),
-    cloud_supported=False,
+    cloud_supported=True,
     notes="Basic-mode ice temperature / timestep count. Container-side "
           "Firedrake exporter; figures-only packages degrade gracefully. "
-          "Cloud (AWS Batch) execution is ISSM-only today.",
+          "Cloud (AWS Batch, Fargate) uses the same tested combined image "
+          "as ISSM, mirrored into its own cryostack-icepack ECR repository; "
+          "no MATLAB license needed.",
 )
 
 MODEL_CAPABILITIES: dict[str, ModelCapabilities] = {

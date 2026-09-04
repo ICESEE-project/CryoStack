@@ -224,12 +224,19 @@ class AWSDriver(
         """
         Idempotently provision AWS Batch on Fargate: a scale-to-zero compute
         environment, a job queue, and the ISSM job definition (+ log group).
+        When ``include_icepack`` is set, the Icepack job definition (+ its
+        own log group) is provisioned the same way, in the SAME compute
+        environment / queue -- one Batch environment, two job definitions,
+        no second cloud execution path.
 
-        The ISSM job definition is pinned to the tested image **by digest**:
-        the tested image is mirrored into ECR (once) and the resulting
-        ``<repo>@sha256:...`` reference feeds the job definition. A failed or
-        unconfigured mirror leaves the job definition untouched -- CryoStack
-        never points Batch at an unverified image.
+        Each model's job definition is pinned to the tested image **by
+        digest**: the (single, combined) tested image is mirrored into that
+        model's own ECR repository (once per repository -- ``cryostack-issm``
+        / ``cryostack-icepack``) and the resulting ``<repo>@sha256:...``
+        reference feeds its job definition. A failed or unconfigured mirror
+        for one model leaves only THAT model's job definition untouched --
+        CryoStack never points Batch at an unverified image, and one model's
+        delivery failure never blocks the other's.
 
         Discovery results for network / IAM may be passed in to avoid
         re-describing. ``image_copier`` overrides the transfer mechanism; by
@@ -237,7 +244,8 @@ class AWSDriver(
         registry-to-registry copy (``docker buildx imagetools create``): no
         image rebuild, no Apptainer conversion, and Batch never depends on a
         mutable tag. The copy runs only when the exact tested image is not
-        already in ECR.
+        already in the target ECR repository. The SAME copier instance is
+        reused for both models' mirror calls.
         """
 
         network = network or self.network()
@@ -246,21 +254,28 @@ class AWSDriver(
         copier = (image_copier if image_copier is not None
                   else buildx_imagetools_copier(self.config))
 
-        delivery = None
-        issm_image = None
-        delivery_messages: list[str] = []
-        try:
-            delivery = mirror_tested_image(
-                self.config, model="issm", copier=copier,
-            )
-            if delivery.verified and delivery.immutable_reference:
-                issm_image = delivery.immutable_reference
-                delivery_messages.extend(delivery.messages)
-        except RegistryDeliveryError as err:
-            delivery_messages.append(
-                f"Tested-image delivery not ready: {err} "
-                "-- ISSM job definition left unchanged."
-            )
+        def _mirror(model: str) -> tuple[object | None, str | None, list[str]]:
+            """Mirror one model's tested image; never lets that model's
+            failure raise -- it degrades to "job definition left unchanged"
+            exactly like the pre-Icepack ISSM-only behaviour did."""
+            try:
+                d = mirror_tested_image(self.config, model=model, copier=copier)
+            except RegistryDeliveryError as err:
+                return None, None, [
+                    f"Tested-image delivery not ready: {err} "
+                    f"-- {model.upper()} job definition left unchanged."
+                ]
+            if d.verified and d.immutable_reference:
+                return d, d.immutable_reference, list(d.messages)
+            return d, None, list(d.messages)
+
+        delivery, issm_image, delivery_messages = _mirror("issm")
+
+        icepack_delivery = None
+        icepack_image = None
+        if include_icepack:
+            icepack_delivery, icepack_image, icepack_messages = _mirror("icepack")
+            delivery_messages.extend(icepack_messages)
 
         from cryostack_src.cloud.runtime import cloud_run_command
 
@@ -274,8 +289,10 @@ class AWSDriver(
             max_vcpus=max_vcpus,
             job_command=cloud_run_command(),
             include_icepack=include_icepack,
+            icepack_image=icepack_image,
         )
         result.image_delivery = delivery
+        result.icepack_image_delivery = icepack_delivery
         result.messages.extend(delivery_messages)
         return result
 
@@ -410,7 +427,11 @@ class AWSDriver(
             # ---------------------------------------------------------
             #
             stage = "registry"
-            registry_result = self.prepare_registry(include_icepack=False)
+            # Prepare Cloud provisions BOTH supported models' ECR repositories
+            # -- cryostack-issm and cryostack-icepack -- from the single
+            # tested combined image (models=("issm","icepack")); idempotent,
+            # never a rebuild.
+            registry_result = self.prepare_registry(include_icepack=True)
             registry = registry_result.resources
             if registry_result.created:
                 messages.append(
@@ -434,6 +455,7 @@ class AWSDriver(
                 network=network,
                 iam=iam,
                 registry=registry,
+                include_icepack=True,
             )
 
         except AWSCredentialsError:

@@ -83,9 +83,20 @@ def test_issm_without_cloud_matlab_license_is_blocked_honestly():
 
 
 def test_unsupported_model_is_blocked():
-    r = _review(model="icepack")
+    r = _review(model="firedrake")
     assert not r.can_launch
     assert any("no supported cloud runtime" in x for x in r.blocked_reasons)
+
+
+def test_icepack_review_can_launch_without_matlab():
+    """Icepack Cloud Execution checkpoint: with infrastructure ready and a
+    fresh account, an Icepack review can launch -- no preflight_problems are
+    even offered (unlike the ISSM test above), because none apply."""
+    cfg = resolve_cloud_config(bucket="cryostack-runs-774888247882",
+                               model="icepack", region="us-east-2")
+    r = _review(config=cfg, model="icepack")
+    assert r.can_launch and not r.blocked_reasons
+    assert r.config.job_definition == "cryostack-icepack"
 
 
 def test_missing_cost_estimate_does_not_block_launch():

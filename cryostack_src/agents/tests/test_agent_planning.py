@@ -122,13 +122,18 @@ def test_issm_container_without_matlab_licence_is_an_error():
     assert not any("MATLAB licence" in f["message"] for f in v.value["findings"])
 
 
-def test_icepack_cloud_is_impossible_to_construct():
-    # PASS-3 audit §2a / PASS-4 review: an impossible plan is rejected at
-    # construction, not merely flagged later.
-    with pytest.raises(ValueError, match="cloud"):
-        RunPlan(application="icesheets", model="icepack", example="x",
+def test_icepack_cloud_is_now_constructible():
+    # Icepack Cloud Execution checkpoint: cryostack_src.models.capabilities
+    # now declares Icepack cloud_supported=True / execution_modes includes
+    # "cloud" (it is genuinely cloud-runnable -- Fargate, no MATLAB license).
+    # RunPlan.__post_init__ reads that SAME registry (PASS-3 audit §2a: an
+    # impossible plan is rejected at construction) -- it now agrees the plan
+    # is possible, with no change to planning.py itself.
+    p = RunPlan(application="icesheets", model="icepack", example="x",
                 execution_mode="cloud", compute_resource="pace",
                 backend="container")
+    assert p.execution_mode == "cloud" and p.model == "icepack"
+    assert p.expected_result_contract == "cryostack.icepack.results"
 
 
 def test_validate_run_plan_still_guards_cloud_support_defensively():

@@ -118,6 +118,46 @@ def test_full_success_returns_ready_row_status(monkeypatch):
                                     "registry": "ready", "compute": "ready"}
 
 
+# -- Icepack Cloud Execution checkpoint -----------------------------------
+def test_bootstrap_prepares_both_models_registry_and_batch(monkeypatch):
+    """Prepare Cloud (bootstrap) must request BOTH models' resources -- this
+    is the ONE call site that opts into Icepack; every other caller of
+    prepare_registry/prepare_batch keeps the old ISSM-only default."""
+    import cryostack_src.cloud.drivers.aws.driver as drv
+    monkeypatch.setattr(drv, "ensure_iam_resources", lambda *a, **k: type("I", (), {
+        "resources": type("R", (), {"job_role": "jr", "ecs_execution_role": "er"})(),
+        "created": [], "reused": ["job_role"]})())
+
+    class _CapsOK(_Caps):
+        storage_ready = True
+        registry_ready = True
+        batch_ready = True
+        network_ready = True
+        iam_ready = True
+
+    seen = {}
+
+    def registry_spy(*, include_icepack=False):
+        seen["registry_include_icepack"] = include_icepack
+        return type("R", (), {"resources": None, "created": [], "reused": ["cryostack-issm"]})()
+
+    def batch_spy(**kw):
+        seen["batch_include_icepack"] = kw.get("include_icepack")
+        return type("B", (), {
+            "resources": type("X", (), {"compute_environment": "ce", "job_queue": "q",
+                                        "issm_job_definition": "jd"})(),
+            "created": [], "updated": [], "reused": [], "skipped": [], "messages": [],
+            "image_delivery": None})()
+
+    d = _driver(registry=registry_spy, batch=batch_spy)
+    d.capabilities = lambda: _CapsOK()
+    result = d.bootstrap(bucket="cryostack-runs-774888247882")
+
+    assert result["success"] is True
+    assert seen["registry_include_icepack"] is True
+    assert seen["batch_include_icepack"] is True
+
+
 def test_redact_helper_scrubs_secret_shaped_text():
     assert _redact("key AKIAIOSFODNN7EXAMPLE here") == "key <redacted> here"
     assert _redact("plain provisioning message") == "plain provisioning message"

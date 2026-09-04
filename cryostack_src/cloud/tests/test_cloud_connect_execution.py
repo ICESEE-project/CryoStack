@@ -114,6 +114,45 @@ def test_byo_derives_the_account_scoped_defaults(tmp_path):
     assert ex.bucket(developer_fallback="ignored") == "cryostack-runs-774888247882"
 
 
+# -- Icepack Cloud Execution checkpoint -----------------------------------
+def test_byo_derives_icepack_specific_defaults_without_a_second_connection(tmp_path):
+    """The SAME verified BYO connection, asked for the Icepack model instead
+    of the (implicit) ISSM default, derives Icepack's own resource names --
+    no separate onboarding, no cross-model leakage into the bucket (which
+    stays account-scoped only, not model-scoped)."""
+    _connect(tmp_path, "alice", ROLE_B, "774888247882")
+    ex = resolve_cloud_execution(
+        user=_user("alice"), workspace_root=tmp_path,
+        runner=FakeAWS("774888247882"), model="icepack",
+    )
+    assert ex.account_id == "774888247882"
+    assert ex.defaults.bucket == "cryostack-runs-774888247882"     # unchanged: account-scoped
+    assert ex.defaults.job_queue == "cryostack-queue"              # shared queue
+    assert ex.defaults.job_definition == "cryostack-icepack"       # model-scoped
+    assert ex.defaults.ecr_repository == "cryostack-icepack"
+
+
+def test_switching_model_never_leaks_the_other_models_job_definition(tmp_path):
+    """Two resolves for the SAME connection, different models -- neither
+    result carries a trace of the other model's resource names."""
+    _connect(tmp_path, "alice", ROLE_B, "774888247882")
+    issm = resolve_cloud_execution(
+        user=_user("alice"), workspace_root=tmp_path,
+        runner=FakeAWS("774888247882"), model="issm",
+    )
+    icepack = resolve_cloud_execution(
+        user=_user("alice"), workspace_root=tmp_path,
+        runner=FakeAWS("774888247882"), model="icepack",
+    )
+    assert issm.defaults.job_definition == "cryostack-issm"
+    assert icepack.defaults.job_definition == "cryostack-icepack"
+    assert issm.defaults.job_definition != icepack.defaults.job_definition
+    assert issm.defaults.ecr_repository != icepack.defaults.ecr_repository
+    # everything account-scoped (not model-scoped) stays identical
+    assert issm.defaults.bucket == icepack.defaults.bucket
+    assert issm.account_id == icepack.account_id == "774888247882"
+
+
 # -- fail closed ------------------------------------------------
 def test_assume_role_failure_never_falls_back_to_ambient(tmp_path):
     _connect(tmp_path, "alice", ROLE_A, "713938953301")

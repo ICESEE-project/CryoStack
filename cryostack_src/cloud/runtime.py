@@ -25,14 +25,18 @@
 """
 CryoStack generic cloud runtime.
 
-One small runner, one execution descriptor. The runner:
+One small runner, one execution descriptor -- the SAME runner for every
+supported model; only the ``case "${CRYOSTACK_MODEL}"`` branch differs. The
+runner:
 
 1. reads its runtime configuration from the environment
    (``CRYOSTACK_S3_RUN`` / ``CRYOSTACK_MODEL`` / ``CRYOSTACK_RUN_TARGET``),
 2. syncs ``<s3-run>/input/`` into a local working directory,
 3. runs the model runtime -- exactly what ``stage_example_for_run`` prepared
-   (injected ``runme.m``, ``cryostack_md_overrides.m``, ``data/<...>`` datasets,
-   ``postprocess_icesee.m``),
+   (ISSM: injected ``runme.m``, ``cryostack_md_overrides.m``, ``data/<...>``
+   datasets, ``postprocess_icesee.m``; Icepack: the selected example's own
+   ``.py``/``.ipynb`` run target, then the portable output collector from
+   :mod:`cryostack_src.models.icepack.postprocess`),
 4. syncs ``<workdir>/outputs/`` back to ``<s3-run>/outputs/`` (best effort,
    even on a failed run), and
 5. exits with the *true* model exit code.
@@ -47,7 +51,7 @@ from __future__ import annotations
 import re
 
 #: models with a complete cloud runtime path today
-SUPPORTED_CLOUD_MODELS: tuple[str, ...] = ("issm",)
+SUPPORTED_CLOUD_MODELS: tuple[str, ...] = ("issm", "icepack")
 
 #: version of the structured-result contract the run must produce
 RESULT_CONTRACT_VERSION = 1
@@ -145,6 +149,9 @@ aws s3 sync "${CRYOSTACK_S3_RUN}/input/" "${WORKDIR}/" --only-show-errors \
 cd "${WORKDIR}" || fail 5 "cannot enter ${WORKDIR}"
 export ICESEE_RUN_DIR="${WORKDIR}"
 log "phase 2/3  run   model=${CRYOSTACK_MODEL}  target=${RUN_TARGET}"
+# captured now (staged inputs just landed) so a model-specific output
+# collector can tell "staged input" from "artifact this run produced"
+export CRYOSTACK_RUN_STARTED="$(date +%s)"
 rc=0
 case "${CRYOSTACK_MODEL}" in
   smoke)
@@ -164,7 +171,36 @@ case "${CRYOSTACK_MODEL}" in
     rc=$?
     ;;
   icepack)
-    fail 64 "Icepack cloud execution is not supported yet"
+    # notebooks are converted to a script first (same rule as the local /
+    # remote Icepack execution path in models/icepack/execution.py); a
+    # single stage, no license, no MATLAB.
+    case "${RUN_TARGET}" in
+      *.ipynb)
+        PY_TARGET="${RUN_TARGET%.ipynb}.py"
+        with-icepack jupyter nbconvert --to script "${WORKDIR}/${RUN_TARGET}" \
+          && with-icepack python "${WORKDIR}/${PY_TARGET}"
+        rc=$?
+        ;;
+      *)
+        with-icepack python "${WORKDIR}/${RUN_TARGET}"
+        rc=$?
+        ;;
+    esac
+    log "icepack model runtime exit code: ${rc}"
+    # portable output collector (models/icepack/postprocess.py, embedded
+    # verbatim below) -- gathers figures / native files into outputs/ and
+    # writes an honest metadata.json. Best effort, even on a failed run
+    # (rc is never overwritten by this step): the science already happened.
+    cat > "${WORKDIR}/cryostack_icepack_postprocess.py" <<'CRYOSTACK_ICEPACK_PP_EOF'
+__CRYOSTACK_ICEPACK_POSTPROCESS_SCRIPT__
+CRYOSTACK_ICEPACK_PP_EOF
+    if command -v python3 >/dev/null 2>&1; then
+      CRYOSTACK_RUN_DIR="${WORKDIR}" CRYOSTACK_EXAMPLE_DIR="${WORKDIR}" \
+      python3 "${WORKDIR}/cryostack_icepack_postprocess.py" \
+        || log "WARNING: Icepack output collection failed (model rc=${rc})"
+    else
+      log "WARNING: python3 not found in the container; skipping Icepack output collection"
+    fi
     ;;
   *)
     fail 64 "unsupported model: ${CRYOSTACK_MODEL}"
@@ -184,9 +220,20 @@ exit "${rc}"
 """
 
 
+_ICEPACK_POSTPROCESS_PLACEHOLDER = "__CRYOSTACK_ICEPACK_POSTPROCESS_SCRIPT__"
+
+
 def build_cloud_runner() -> str:
-    """The generic cloud runner script (identical for every execution mode)."""
-    return _RUNNER
+    """The generic cloud runner script (identical for every execution mode).
+
+    The Icepack branch embeds the SAME portable output collector Local /
+    Remote already use (:func:`cryostack_src.models.icepack.postprocess.
+    build_postprocess`) -- no duplicated collection logic, just a different
+    shell wrapper around the identical script text.
+    """
+    from cryostack_src.models.icepack.postprocess import build_postprocess
+
+    return _RUNNER.replace(_ICEPACK_POSTPROCESS_PLACEHOLDER, build_postprocess())
 
 
 def cloud_run_command() -> list[str]:

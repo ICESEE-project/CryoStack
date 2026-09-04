@@ -225,12 +225,21 @@ def _result_protocol():
 
 
 # ── cloud config invariants ─────────────────────────────────────────
-@check("cloud: execution is ISSM-only and no static credentials")
+#: cloud execution is intentionally allow-listed, never open-ended -- a new
+#: model becomes cloud-runnable only by a deliberate addition here (and in
+#: cryostack_src.cloud.runtime.SUPPORTED_CLOUD_MODELS, which this check
+#: verifies agrees). ISSM: MATLAB, license-gated. Icepack: no license needed
+#: (Icepack Cloud Execution checkpoint).
+_ALLOWED_CLOUD_MODELS = frozenset({"issm", "icepack"})
+
+
+@check("cloud: execution is allow-listed and no static credentials")
 def _cloud_invariants():
     from cryostack_src.cloud.runtime import SUPPORTED_CLOUD_MODELS
-    if SUPPORTED_CLOUD_MODELS != ("issm",):
-        return _fail("cloud: execution is ISSM-only and no static credentials",
-                     f"SUPPORTED_CLOUD_MODELS={SUPPORTED_CLOUD_MODELS}")
+    if set(SUPPORTED_CLOUD_MODELS) != _ALLOWED_CLOUD_MODELS:
+        return _fail("cloud: execution is allow-listed and no static credentials",
+                     f"SUPPORTED_CLOUD_MODELS={SUPPORTED_CLOUD_MODELS} "
+                     f"expected {sorted(_ALLOWED_CLOUD_MODELS)}")
     # no boto3 Session / hardcoded keys under cloud/
     cloud = _REPO / "cryostack_src" / "cloud"
     for p in cloud.rglob("*.py"):
@@ -238,9 +247,9 @@ def _cloud_invariants():
             continue
         t = p.read_text()
         if re.search(r"\b(AKIA|ASIA)[0-9A-Z]{16}\b", t) or "aws_secret_access_key=" in t:
-            return _fail("cloud: execution is ISSM-only and no static credentials",
+            return _fail("cloud: execution is allow-listed and no static credentials",
                          f"possible static credential in {p.relative_to(_REPO)}")
-    return _ok("cloud: execution is ISSM-only and no static credentials")
+    return _ok("cloud: execution is allow-listed and no static credentials")
 
 
 # ── no developer defaults ──────────────────────────────────────────

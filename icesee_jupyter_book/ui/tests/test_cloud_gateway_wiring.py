@@ -171,3 +171,38 @@ def test_a_stranded_aws_connection_shows_connection_issue_not_not_configured(mon
     assert "Cloud: Not configured" not in blob
     # the Role ARN this user already saved must still be on disk, untouched
     assert store.load().role_arn == "arn:aws:iam::713938953301:role/CryoStackExecutionRole"
+
+
+# -- Icepack Cloud Execution checkpoint -----------------------------------
+def test_canonical_cloud_config_derives_the_selected_model():
+    """The functions that build the Review card / drift digest / launch gate
+    no longer hardcode model="issm" -- they read model_dd.value. (The
+    ISSM-only scientific_overrides conditional is intentional and untouched.)"""
+    src = _ICESHEETS.read_text()
+    assert 'model=(model_dd.value or "issm").strip().lower()' in src
+    # the old hardcoded-issm-only comment on _resolve_cloud_execution is gone
+    assert 'model="issm",           # cloud execution is ISSM-only for now' not in src
+
+
+def test_cloud_run_history_and_execution_follow_the_selected_model():
+    src = _ICESHEETS.read_text()
+    assert '(run.model or "").lower() != _model' in src
+    assert "region_hint=aws_region.value.strip() or DEFAULT_CLOUD_REGION" in src
+    # the ISSM-only note is gone from _resolve_cloud_execution
+    assert "cloud execution is ISSM-only for now" not in src
+
+
+def test_gateway_builds_with_icepack_selectable_and_cloud_supported():
+    """Icepack Cloud Execution checkpoint: the model dropdown includes
+    Icepack, and the capabilities registry (which the gateway/agent both
+    read) now agrees Icepack is cloud-capable."""
+    from cryostack_src.models.capabilities import get_model_capabilities
+
+    cap = get_model_capabilities("icepack")
+    assert cap.cloud_supported is True
+    assert "cloud" in cap.execution_modes
+    assert cap.requires_matlab is False
+
+    issm_cap = get_model_capabilities("issm")
+    assert issm_cap.cloud_supported is True
+    assert issm_cap.requires_matlab is True             # ISSM behaviour unchanged

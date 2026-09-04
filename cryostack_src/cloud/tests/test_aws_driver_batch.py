@@ -115,3 +115,61 @@ def test_default_copier_is_buildx_imagetools(monkeypatch, captured):
 
     AWSDriver(region="us-east-2").prepare_batch(network=_NET, iam=_IAM)
     assert made["n"] == 1 and seen["copier_callable"] is True
+
+
+# -- Icepack Cloud Execution checkpoint -----------------------------------
+def test_include_icepack_false_never_mirrors_icepack(monkeypatch, captured):
+    """The default (used by every caller except Prepare Cloud) is unchanged:
+    only ISSM is mirrored."""
+    calls = []
+
+    def spy(config, *, model, copier):
+        calls.append(model)
+        return _delivery(model=model)
+
+    monkeypatch.setattr(driver_mod, "mirror_tested_image", spy)
+    AWSDriver(region="us-east-2").prepare_batch(network=_NET, iam=_IAM)
+    assert calls == ["issm"]
+    assert captured["include_icepack"] is False
+    assert captured["icepack_image"] is None
+
+
+def test_include_icepack_true_mirrors_both_models_with_the_same_copier(monkeypatch, captured):
+    """Prepare Cloud's actual call shape: both models mirrored, one copier
+    instance shared between them (no second buildx activation)."""
+    calls = []
+
+    def spy(config, *, model, copier):
+        calls.append((model, copier))
+        return _delivery(model=model, repository=f"cryostack-{model}",
+                         immutable_reference=f"{model}@sha256:dddd")
+
+    monkeypatch.setattr(driver_mod, "mirror_tested_image", spy)
+    result = AWSDriver(region="us-east-2").prepare_batch(
+        network=_NET, iam=_IAM, include_icepack=True)
+
+    assert [m for m, _ in calls] == ["issm", "icepack"]
+    assert calls[0][1] is calls[1][1]                    # same copier instance
+    assert captured["include_icepack"] is True
+    assert captured["issm_image"] == "issm@sha256:dddd"
+    assert captured["icepack_image"] == "icepack@sha256:dddd"
+    assert result.image_delivery.model == "issm"
+    assert result.icepack_image_delivery.model == "icepack"
+
+
+def test_icepack_delivery_failure_does_not_block_issm(monkeypatch, captured):
+    """One model's mirror failing must never prevent the other's job
+    definition from being (re)pinned -- independent failure domains."""
+    def spy(config, *, model, copier):
+        if model == "icepack":
+            raise RegistryDeliveryError("no copier configured")
+        return _delivery()
+
+    monkeypatch.setattr(driver_mod, "mirror_tested_image", spy)
+    result = AWSDriver(region="us-east-2").prepare_batch(
+        network=_NET, iam=_IAM, include_icepack=True)
+
+    assert captured["issm_image"] == _IMMUTABLE
+    assert captured["icepack_image"] is None
+    assert result.image_delivery.verified is True
+    assert result.icepack_image_delivery is None

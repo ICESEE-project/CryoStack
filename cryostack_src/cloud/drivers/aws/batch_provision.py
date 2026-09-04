@@ -78,6 +78,9 @@ class AWSBatchProvisionResult:
     #: infrastructure state for the mirrored tested image (set by the driver);
     #: never a substitute for the scientific ``container`` provenance block.
     image_delivery: object | None = None
+    #: same, for the Icepack tested-image delivery when requested
+    #: (``include_icepack=True``); ``None`` when Icepack wasn't prepared.
+    icepack_image_delivery: object | None = None
 
 
 def _require_success(code: int, stdout: str, stderr: str, *, what: str) -> str:
@@ -481,14 +484,18 @@ def ensure_batch_resources(
         result.skipped.append(
             "issm_job_definition (needs job role, execution role and an image)")
 
-    if include_icepack and job_role_arn and execution_role_arn and icepack_image:
-        result.log_groups.append(ensure_log_group(config, model="icepack"))
-        _bucket("icepack_job_definition", ensure_job_definition(
-            config, model="icepack", image=icepack_image, job_role_arn=job_role_arn,
-            execution_role_arn=execution_role_arn, region=config.region,
-            job_config=icepack_job_config or DEFAULT_ISSM_JOB_CONFIG,
-            command=job_command,
-        ))
+    if include_icepack:
+        if job_role_arn and execution_role_arn and icepack_image:
+            result.log_groups.append(ensure_log_group(config, model="icepack"))
+            _bucket("icepack_job_definition", ensure_job_definition(
+                config, model="icepack", image=icepack_image, job_role_arn=job_role_arn,
+                execution_role_arn=execution_role_arn, region=config.region,
+                job_config=icepack_job_config or DEFAULT_ISSM_JOB_CONFIG,
+                command=job_command,
+            ))
+        else:
+            result.skipped.append(
+                "icepack_job_definition (needs job role, execution role and an image)")
 
     result.resources = discover_batch_resources(config)
     return result

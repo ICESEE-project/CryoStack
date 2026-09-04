@@ -226,10 +226,45 @@ def test_unsupported_model_is_a_clear_error_before_any_upload(tmp_path, canonica
     s3 = FakeS3()
     with pytest.raises(CloudStagingError) as exc:
         stage_run_inputs(
-            CONFIG, source=staged, model="icepack", run_target="run.py",
+            CONFIG, source=staged, model="firedrake", run_target="run.py",
             bucket=BUCKET, s3=s3)
-    assert "icepack" in str(exc.value)
+    assert "firedrake" in str(exc.value)
     assert s3.calls == []                                      # nothing uploaded
+
+
+# -- Icepack Cloud Execution checkpoint -----------------------------------
+def test_icepack_staging_succeeds(tmp_path):
+    """Icepack staging needs no Basic-mode override machinery -- just its own
+    example tree with a real run target, staged exactly like ISSM's."""
+    example = tmp_path / "IcepackExample"
+    example.mkdir()
+    (example / "run.py").write_text("import icepack\nprint('hello icepack')\n")
+    (example / "mesh.msh").write_text("dummy mesh\n")
+
+    s3 = FakeS3()
+    result = stage_run_inputs(
+        CONFIG, source=example, model="icepack", run_target="run.py",
+        bucket=BUCKET, s3=s3)
+
+    assert isinstance(result, CloudRunStaging)
+    assert result.descriptor["model"] == "icepack"
+    assert result.descriptor["run_target"] == "run.py"
+    files = set(result.staged_files)
+    assert "run.py" in files and "mesh.msh" in files
+    assert "cryostack-run.json" in files
+    (sync,) = s3.synced()
+    assert sync == ["s3", "sync", f"{example}/", f"{result.s3_input}/",
+                    "--only-show-errors"]
+
+
+def test_icepack_staging_rejects_a_missing_run_target_same_as_issm(tmp_path):
+    example = tmp_path / "IcepackExample"
+    example.mkdir()
+    (example / "run.py").write_text("import icepack\n")
+    with pytest.raises(CloudStagingError):
+        stage_run_inputs(
+            CONFIG, source=example, model="icepack", run_target="missing.py",
+            bucket=BUCKET, s3=FakeS3())
 
 
 def test_missing_run_target_is_rejected(tmp_path, canonical):

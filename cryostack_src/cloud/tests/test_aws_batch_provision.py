@@ -333,6 +333,40 @@ def test_missing_image_skips_only_the_job_definition(aws):
     assert any("issm_job_definition" in s for s in result.skipped)
 
 
+# -- Icepack Cloud Execution checkpoint -----------------------------------
+ICEPACK_IMAGE = "123456789012.dkr.ecr.us-east-2.amazonaws.com/cryostack-icepack:tested"
+
+
+def test_include_icepack_provisions_both_job_definitions_and_log_groups(aws):
+    result = _provision(include_icepack=True, icepack_image=ICEPACK_IMAGE)
+    assert set(result.created) == {
+        "compute_environment", "job_queue",
+        "issm_job_definition", "icepack_job_definition"}
+    assert set(result.log_groups) == {
+        "/cryostack/batch/issm", "/cryostack/batch/icepack"}
+    assert aws.count("batch", "register-job-definition") == 2
+    images = {jd["containerProperties"]["image"] for jd in aws.job_defs}
+    assert images == {IMAGE, ICEPACK_IMAGE}
+
+
+def test_include_icepack_is_idempotent_on_a_second_prepare(aws):
+    first = _provision(include_icepack=True, icepack_image=ICEPACK_IMAGE)
+    assert "icepack_job_definition" in first.created
+
+    second = _provision(include_icepack=True, icepack_image=ICEPACK_IMAGE)
+    assert "issm_job_definition" in second.reused
+    assert "icepack_job_definition" in second.reused
+    assert aws.count("batch", "register-job-definition") == 2   # no new revisions
+
+
+def test_include_icepack_missing_image_skips_only_icepack(aws):
+    """ISSM must never be blocked by Icepack's delivery being unready."""
+    result = _provision(include_icepack=True, icepack_image=None)
+    assert "issm_job_definition" in result.created
+    assert any("icepack_job_definition" in s for s in result.skipped)
+    assert aws.count("batch", "register-job-definition") == 1
+
+
 # ── driver end to end: digest pin, one revision, idempotent second run ──
 def test_prepare_batch_pins_digest_and_makes_exactly_one_revision(aws, monkeypatch):
     from types import SimpleNamespace

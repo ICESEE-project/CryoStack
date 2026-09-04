@@ -53,6 +53,14 @@ def staged(tmp_path):
     return d
 
 
+@pytest.fixture
+def staged_icepack(tmp_path):
+    d = tmp_path / "working" / "IcepackExample"
+    d.mkdir(parents=True)
+    (d / "run.py").write_text("import icepack\nprint('hello icepack')\n")
+    return d
+
+
 def test_happy_path_stages_then_submits_and_returns_a_full_record(staged):
     s3, batch = FakeS3(), FakeBatch(job_id="a1b2c3")
     driver = AWSDriver(region="us-east-2")
@@ -84,12 +92,30 @@ def test_preflight_blocks_before_any_s3_upload_or_submit(staged):
     assert batch.calls == []
 
 
+def test_icepack_happy_path_stages_and_submits_without_a_matlab_license(staged_icepack):
+    """Icepack Cloud Execution checkpoint: Icepack stages and submits exactly
+    like ISSM, using ITS OWN job definition/ECR repo, and never needs a
+    MATLAB license -- the license gate is ISSM-only."""
+    s3, batch = FakeS3(), FakeBatch(job_id="ic3pack")
+    driver = AWSDriver(region="us-east-2")
+    out = driver.submit(
+        staged_source=str(staged_icepack), model="icepack", run_target="run.py",
+        bucket=BUCKET, matlab_license_configured=False, s3=s3, aws=batch,
+    )
+    assert out["batch_job_id"] == "ic3pack"
+    assert out["model"] == "icepack"
+    assert out["job_queue"] == "cryostack-queue"
+    assert out["job_definition"] == "cryostack-icepack"
+    assert any(c[:2] == ["s3", "sync"] for c in s3.calls)
+    assert batch.calls and batch.calls[0][:2] == ["batch", "submit-job"]
+
+
 def test_unsupported_model_blocks_before_upload(staged):
     s3, batch = FakeS3(), FakeBatch()
     driver = AWSDriver(region="us-east-2")
     with pytest.raises(CloudRuntimeError):
         driver.submit(
-            staged_source=str(staged), model="icepack", run_target="runme.m",
+            staged_source=str(staged), model="not-a-real-model", run_target="runme.m",
             bucket=BUCKET, matlab_license_configured=True, s3=s3, aws=batch,
         )
     assert s3.calls == [] and batch.calls == []
