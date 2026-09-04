@@ -2632,11 +2632,15 @@ def build_icesheets_ui():
         cloud_environment.verify_button.on_click(aws_connect.verify)
         cloud_environment.recheck_button.on_click(aws_connect.recheck)
         cloud_environment.disconnect_button.on_click(aws_connect.disconnect)
-        # failed-verification recovery: repair the same account, or abandon
-        # this local attempt and connect a different one (C7 live-acceptance
-        # fix -- an "error" connection used to have no reachable action).
+        # failed-verification recovery: repair the same account, or start a
+        # STAGED switch to a different one (C7 live-acceptance fix -- an
+        # "error" connection used to have no reachable action). Change AWS
+        # account never touches the active connection until the replacement
+        # itself verifies -- see cloud_connect_runtime.build_aws_connect_callbacks.
         cloud_environment.retry_button.on_click(aws_connect.retry)
         cloud_environment.change_account_button.on_click(aws_connect.change_account)
+        cloud_environment.change_verify_button.on_click(aws_connect.change_verify)
+        cloud_environment.change_cancel_button.on_click(aws_connect.change_cancel)
         try:
             aws_connect.refresh()          # render any existing connection
         except Exception as _err:          # noqa: BLE001 - never block panel build

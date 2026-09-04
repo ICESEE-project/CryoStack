@@ -127,6 +127,10 @@ def test_recovery_actions_and_new_chip_states_are_wired():
     assert "aws_connect.change_account" in src
     assert "retry_button.on_click(aws_connect.retry)" in src
     assert "change_account_button.on_click(aws_connect.change_account)" in src
+    # Change AWS account is staged: the replacement's own verify/cancel are
+    # wired too, distinct from the active connection's verify/disconnect.
+    assert "change_verify_button.on_click(aws_connect.change_verify)" in src
+    assert "change_cancel_button.on_click(aws_connect.change_cancel)" in src
 
 
 def test_a_stranded_aws_connection_shows_connection_issue_not_not_configured(monkeypatch, tmp_path):

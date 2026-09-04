@@ -111,6 +111,34 @@ def test_role_arn_account_mismatch_is_rejected(tmp_path):
     assert "mismatch" in result.connection.status_reason.lower()
 
 
+def test_pending_replacement_is_isolated_per_user(tmp_path):
+    """Alice's staged "Change AWS account" attempt (and the file it lives
+    in) must be invisible to and unreachable from Bob's store -- same
+    guarantee as the active connection, extended to the pending slot."""
+    from cryostack_src.cloud.connect.onboarding import AWSOnboarding
+
+    alice = AWSOnboarding(
+        user=_user("alice"), workspace_root=tmp_path,
+        template_url="https://x.example/t.json",
+        principal_arn="arn:aws:iam::713938953301:role/cryostack-service",
+    )
+    bob = AWSOnboarding(
+        user=_user("bob"), workspace_root=tmp_path,
+        template_url="https://x.example/t.json",
+        principal_arn="arn:aws:iam::713938953301:role/cryostack-service",
+    )
+
+    alice.begin()
+    alice.begin_change_account()
+
+    assert alice.store.pending_path != bob.store.pending_path
+    assert bob.store.load_pending() is None
+    assert not bob.has_pending_replacement()
+    # Bob starting his own replacement never collides with Alice's
+    bob.begin_change_account()
+    assert alice.store.load_pending().external_id != bob.store.load_pending().external_id
+
+
 def test_change_account_recovery_only_touches_the_acting_users_file(tmp_path):
     """"Change AWS account" (AWSOnboarding.reconnect -- delete + create) must
     never reach across to another CryoStack user's connection file."""

@@ -233,6 +233,123 @@ def test_retry_then_verify_succeeds_and_recovers_the_same_connection(tmp_path):
     assert result.connection.account_id == "713938953301"
 
 
+def test_begin_change_account_stages_without_touching_the_active_connection(tmp_path):
+    """Starting a replacement must not read or modify the active record at
+    all -- the smallest, most direct proof that Change AWS account is not
+    immediately destructive."""
+    ob = _onboarding(tmp_path, runner=FakeAWS(deny=True))
+    ob.begin()
+    ob.verify(role_arn=ROLE_A)                 # active left in "error"
+    active_before = ob.current()
+
+    step = ob.begin_change_account()
+    assert ob.current() == active_before        # untouched, byte-for-byte
+    assert step.connection.status == "pending"
+    assert step.connection.role_arn == ""
+    assert step.connection.external_id != active_before.external_id
+    assert ob.has_pending_replacement()
+    assert ob.pending_replacement_summary()["status"] == "pending"
+
+
+def test_begin_change_account_is_idempotent_across_repeat_calls(tmp_path):
+    """A second click (or a page reload resuming the same attempt) must
+    reuse the SAME pending ExternalId, not mint another one -- otherwise a
+    role already created against the first would stop matching."""
+    ob = _onboarding(tmp_path)
+    first = ob.begin_change_account()
+    second = ob.begin_change_account()
+    assert first.external_id == second.external_id
+    assert ob.store.load_pending().connection_id == first.connection.connection_id
+
+
+def test_verify_pending_replacement_failure_leaves_active_connection_intact(tmp_path):
+    ob = _onboarding(tmp_path, runner=FakeAWS("713938953301"))
+    ob.begin()
+    ob.verify(role_arn=ROLE_A)
+    active_before = ob.current()
+    assert active_before.is_connected
+
+    denying = _onboarding(tmp_path, runner=FakeAWS(deny=True))
+    denying.begin_change_account()
+    result = denying.verify_pending_replacement(role_arn=ROLE_B)
+    assert not result.ok
+
+    assert ob.current() == active_before          # active: untouched
+    pending = ob.store.load_pending()
+    assert pending is not None and pending.status == "error"
+
+
+def test_verify_pending_replacement_success_promotes_atomically(tmp_path):
+    ob = _onboarding(tmp_path, runner=FakeAWS("713938953301"))
+    ob.begin()
+    ob.verify(role_arn=ROLE_A)
+    old_external_id = ob.current().external_id
+
+    switching = _onboarding(tmp_path, runner=FakeAWS("774888247882"))
+    switching.begin_change_account()
+    new_pending_external_id = switching.store.load_pending().external_id
+    result = switching.verify_pending_replacement(role_arn=ROLE_B)
+    assert result.ok
+
+    active = ob.current()
+    assert active.account_id == "774888247882"
+    assert active.external_id == new_pending_external_id
+    assert active.external_id != old_external_id
+    assert ob.store.load_pending() is None         # promoted AND cleared
+
+
+def test_cancel_change_account_only_discards_the_pending_slot(tmp_path):
+    ob = _onboarding(tmp_path, runner=FakeAWS(deny=True))
+    ob.begin()
+    ob.verify(role_arn=ROLE_A)
+    active_before = ob.current()
+
+    ob.begin_change_account()
+    assert ob.has_pending_replacement()
+    ob.cancel_change_account()
+    assert not ob.has_pending_replacement()
+    assert ob.current() == active_before
+
+
+def test_pending_replacement_survives_reading_the_onboarding_object_fresh(tmp_path):
+    """Simulates a page refresh mid-switch: a brand-new AWSOnboarding over
+    the same store must find the SAME pending record (not lose it, not
+    silently fold it into the active connection)."""
+    ob = _onboarding(tmp_path, runner=FakeAWS(deny=True))
+    ob.begin()
+    ob.verify(role_arn=ROLE_A)
+
+    started = _onboarding(tmp_path)
+    step = started.begin_change_account()
+
+    reloaded = _onboarding(tmp_path)
+    assert reloaded.has_pending_replacement()
+    assert reloaded.store.load_pending().external_id == step.external_id
+    # the active connection is exactly what it was before the reload
+    assert reloaded.summary()["status"] == "error"
+
+
+def test_same_account_replacement_still_promotes_with_a_fresh_external_id(tmp_path):
+    """The live-acceptance scenario: the browser is still on the SAME AWS
+    account when Change AWS account is used. CryoStack cannot see the
+    CloudFormation AlreadyExistsException -- only the AssumeRole outcome --
+    so a role that DOES verify for the same account must promote cleanly
+    rather than strand the user, just with a freshly rotated ExternalId."""
+    ob = _onboarding(tmp_path, runner=FakeAWS("774888247882"))
+    ob.begin()
+    ob.verify(role_arn=ROLE_B)
+    old_external_id = ob.current().external_id
+
+    same = _onboarding(tmp_path, runner=FakeAWS("774888247882"))
+    same.begin_change_account()
+    result = same.verify_pending_replacement(role_arn=ROLE_B)
+    assert result.ok
+    active = ob.current()
+    assert active.account_id == "774888247882"
+    assert active.external_id != old_external_id   # rotated, not reused
+    assert same.store.load_pending() is None
+
+
 def test_change_account_via_reconnect_replaces_only_this_users_metadata(tmp_path):
     """"Change AWS account" == reconnect(): a fresh connection_id + external_id
     for THIS user only. It never touches another user's file (isolation is

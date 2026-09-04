@@ -30,6 +30,7 @@ from cryostack_src.workspace.identity import WorkspaceUser
 PRINCIPAL = "arn:aws:iam::713938953301:role/cryostack-service"
 TEMPLATE_URL = "https://cryostack-public.example/cf/execution-role.json"
 ROLE_B = "arn:aws:iam::774888247882:role/CryoStackExecutionRole"
+ROLE_A = "arn:aws:iam::713938953301:role/CryoStackExecutionRole"
 
 
 class _Out:
@@ -372,10 +373,13 @@ def test_retry_then_verify_recovers_a_repaired_connection(tmp_path):
     assert "774888247882" in card.aws_account_detail.value
 
 
-def test_change_account_mints_a_new_external_id_and_clears_the_form(tmp_path, card):
-    """"Change AWS account" abandons the stranded attempt: fresh
-    connection_id/ExternalId, empty Role ARN field, form open for the new
-    account. The old ExternalId must never be reused for the new one."""
+def test_change_account_stages_a_replacement_without_touching_the_active_connection(
+    tmp_path, card
+):
+    """"Change AWS account" must NOT be immediately destructive: starting it
+    mints a fresh ExternalId into a SEPARATE pending slot, and the active
+    connection (its own ExternalId + Role ARN) is untouched -- still visible,
+    still what Retry connection would use."""
     spawn = _DeferredSpawn()
     factory = _factory(tmp_path, runner=FakeAWS(deny=True))
     cbs = build_aws_connect_callbacks(
@@ -383,31 +387,250 @@ def test_change_account_mints_a_new_external_id_and_clears_the_form(tmp_path, ca
         log_output=_Out(), spawn=spawn, to_thread=lambda fn: _immediate(fn),
     )
     cbs.connect()
-    external_id_before = factory().current().external_id
+    card.role_arn_input.value = ROLE_B
+    cbs.verify()
+    spawn.run()
+    assert "Not verified" in card.aws_account_status.value
+    active_before = factory().current()
+
+    cbs.change_account()
+
+    # the active connection is byte-for-byte unchanged
+    active_after = factory().current()
+    assert active_after == active_before
+    assert active_after.role_arn == ROLE_B
+    # the ACTIVE view (still "error") is unaffected -- change_account never
+    # calls _render() for the active summary
+    assert "Not verified" in card.aws_account_status.value
+
+    # the pending replacement is a genuinely separate, fresh record
+    pending = factory().store.load_pending()
+    assert pending is not None
+    assert pending.status == "pending"
+    assert pending.role_arn == ""
+    assert pending.external_id != active_after.external_id
+    assert card.change_account_panel.layout.display == "flex"
+    assert "Open AWS Setup" in card.change_setup_link.value
+
+
+def test_change_account_cancel_discards_the_pending_attempt_only(tmp_path, card):
+    """Cancel / Back to current account: the pending replacement disappears,
+    the active connection (Role ARN + ExternalId) is exactly as it was."""
+    spawn = _DeferredSpawn()
+    factory = _factory(tmp_path, runner=FakeAWS(deny=True))
+    cbs = build_aws_connect_callbacks(
+        widgets=card, onboarding_factory=factory,
+        log_output=_Out(), spawn=spawn, to_thread=lambda fn: _immediate(fn),
+    )
+    cbs.connect()
+    card.role_arn_input.value = ROLE_B
+    cbs.verify()
+    spawn.run()
+    active_before = factory().current()
+
+    cbs.change_account()
+    assert factory().store.load_pending() is not None
+
+    cbs.change_cancel()
+    assert factory().store.load_pending() is None
+    assert factory().current() == active_before
+    assert card.change_account_panel.layout.display == "none"
+    assert card.change_role_arn_input.value == ""
+
+
+def test_change_account_failed_verification_leaves_the_active_connection_intact(
+    tmp_path, card
+):
+    """A wrong/incomplete role for the replacement fails closed: the pending
+    record records the error, the ACTIVE connection is never touched, and
+    Retry connection on the original account still works afterwards."""
+    spawn = _DeferredSpawn()
+    factory = _factory(tmp_path, runner=FakeAWS("774888247882"))
+    cbs = build_aws_connect_callbacks(
+        widgets=card, onboarding_factory=factory,
+        log_output=_Out(), spawn=spawn, to_thread=lambda fn: _immediate(fn),
+    )
+    cbs.connect()
+    card.role_arn_input.value = ROLE_B
+    cbs.verify()
+    spawn.run()
+    assert "Connected" in card.aws_account_status.value
+    active_before = factory().current()
+
+    denying = _factory(tmp_path, runner=FakeAWS(deny=True))
+    cbs2 = build_aws_connect_callbacks(
+        widgets=card, onboarding_factory=denying,
+        log_output=_Out(), spawn=spawn, to_thread=lambda fn: _immediate(fn),
+    )
+    cbs2.change_account()
+    card.change_role_arn_input.value = ROLE_A
+    cbs2.change_verify()
+    spawn.run()
+
+    # active connection: completely unaffected by the failed replacement
+    assert factory().current() == active_before
+    assert "Connected" in card.aws_account_status.value
+    assert "774888247882" in card.aws_account_detail.value
+    # the pending record carries the failure, the panel stays open
+    pending = factory().store.load_pending()
+    assert pending is not None and pending.status == "error"
+    assert card.change_account_panel.layout.display == "flex"
+    assert "trust policy" in card.change_account_status.value.lower()
+
+
+def test_change_account_a_to_b_switch_promotes_atomically_on_success(tmp_path, card):
+    """The only moment the active connection changes: a successful
+    AssumeRole/GetCallerIdentity for the replacement. Before that instant the
+    OLD account (A) is active; after it, B is -- there is no in-between
+    state where neither or both are "active"."""
+    spawn = _DeferredSpawn()
+    factory_a = _factory(tmp_path, runner=FakeAWS("713938953301"))
+    cbs = build_aws_connect_callbacks(
+        widgets=card, onboarding_factory=factory_a,
+        log_output=_Out(), spawn=spawn, to_thread=lambda fn: _immediate(fn),
+    )
+    cbs.connect()
+    card.role_arn_input.value = ROLE_A
+    cbs.verify()
+    spawn.run()
+    assert "Connected" in card.aws_account_status.value
+    assert "713938953301" in card.aws_account_detail.value
+
+    factory_b = _factory(tmp_path, runner=FakeAWS("774888247882"))
+    cbs2 = build_aws_connect_callbacks(
+        widgets=card, onboarding_factory=factory_b,
+        log_output=_Out(), spawn=spawn, to_thread=lambda fn: _immediate(fn),
+    )
+    cbs2.change_account()
+    # mid-flight: A is STILL the active connection
+    assert factory_b().current().account_id == "713938953301"
+
+    card.change_role_arn_input.value = ROLE_B
+    cbs2.change_verify()
+    spawn.run()
+
+    # atomically promoted: B is now active, no pending record remains
+    active = factory_b().current()
+    assert active.account_id == "774888247882"
+    assert active.role_arn == ROLE_B
+    assert factory_b().store.load_pending() is None
+    assert "Connected" in card.aws_account_status.value
+    assert "774888247882" in card.aws_account_detail.value
+    assert card.change_account_panel.layout.display == "none"
+
+
+def test_old_connection_stays_usable_via_retry_until_the_replacement_verifies(
+    tmp_path, card
+):
+    """While a replacement is pending (and un-verified), the ORIGINAL
+    connection is not merely inert -- Retry connection on it still works,
+    proving its ExternalId/Role ARN were never disturbed."""
+    spawn = _DeferredSpawn()
+    factory = _factory(tmp_path, runner=FakeAWS(deny=True))
+    cbs = build_aws_connect_callbacks(
+        widgets=card, onboarding_factory=factory,
+        log_output=_Out(), spawn=spawn, to_thread=lambda fn: _immediate(fn),
+    )
+    cbs.connect()
+    card.role_arn_input.value = ROLE_B
+    cbs.verify()
+    spawn.run()
+    original_external_id = factory().current().external_id
+
+    cbs.change_account()                     # start a replacement, never verified
+    assert factory().store.load_pending() is not None
+
+    # Retry connection on the ORIGINAL still reuses its own ExternalId and
+    # can still be verified successfully
+    working = _factory(tmp_path, runner=FakeAWS("774888247882"))
+    cbs2 = build_aws_connect_callbacks(
+        widgets=card, onboarding_factory=working,
+        log_output=_Out(), spawn=spawn, to_thread=lambda fn: _immediate(fn),
+    )
+    cbs2.retry()
+    assert card.role_arn_input.value == ROLE_B
+    cbs2.verify()
+    spawn.run()
+    assert "Connected" in card.aws_account_status.value
+    active = working().current()
+    assert active.external_id == original_external_id
+    assert active.account_id == "774888247882"
+    # the abandoned pending replacement is still just sitting there, inert
+    assert working().store.load_pending() is not None
+
+
+def test_change_account_while_still_on_the_old_aws_console_session(tmp_path, card):
+    """Reproduces the live-acceptance report: the user clicks Change AWS
+    account but their browser is still signed into the SAME AWS account, so
+    the "new" role ends up belonging to the SAME account. This must promote
+    cleanly (a fresh, valid ExternalId for an account that verified) rather
+    than strand the user -- CryoStack cannot see the CloudFormation
+    AlreadyExistsException itself, only the AssumeRole outcome."""
+    spawn = _DeferredSpawn()
+    factory = _factory(tmp_path, runner=FakeAWS("774888247882"))
+    cbs = build_aws_connect_callbacks(
+        widgets=card, onboarding_factory=factory,
+        log_output=_Out(), spawn=spawn, to_thread=lambda fn: _immediate(fn),
+    )
+    cbs.connect()
+    card.role_arn_input.value = ROLE_B
+    cbs.verify()
+    spawn.run()
+    original_external_id = factory().current().external_id
+
+    # still signed into account B -- Change AWS account, then paste B's role
+    # again (the ONLY role that exists there)
+    same_account = _factory(tmp_path, runner=FakeAWS("774888247882"))
+    cbs2 = build_aws_connect_callbacks(
+        widgets=card, onboarding_factory=same_account,
+        log_output=_Out(), spawn=spawn, to_thread=lambda fn: _immediate(fn),
+    )
+    cbs2.change_account()
+    card.change_role_arn_input.value = ROLE_B
+    cbs2.change_verify()
+    spawn.run()
+
+    # promotes cleanly: still connected to B, just under a NEW ExternalId
+    active = same_account().current()
+    assert active.status == "connected" and active.account_id == "774888247882"
+    assert active.external_id != original_external_id
+    assert same_account().store.load_pending() is None
+    assert "Connected" in card.aws_account_status.value
+
+
+def test_change_account_pending_replacement_survives_a_page_refresh(tmp_path):
+    """A refresh mid-switch must be recoverable: the pending replacement is
+    read back (never silently discarded, never silently promoted), while the
+    active connection renders exactly as it did before the refresh."""
+    card = build_cloud_environment_card()
+    spawn = _DeferredSpawn()
+    cbs = build_aws_connect_callbacks(
+        widgets=card, onboarding_factory=_factory(tmp_path, runner=FakeAWS(deny=True)),
+        log_output=_Out(), spawn=spawn, to_thread=lambda fn: _immediate(fn),
+    )
+    cbs.connect()
     card.role_arn_input.value = ROLE_B
     cbs.verify()
     spawn.run()
     assert "Not verified" in card.aws_account_status.value
 
     cbs.change_account()
-    assert card.role_arn_input.value == ""
-    assert card.connect_form.layout.display == "flex"
-    new_conn = factory().current()
-    assert new_conn.status == "pending"
-    assert new_conn.role_arn == ""
-    assert new_conn.external_id != external_id_before
+    card.change_role_arn_input.value = ROLE_A     # typed, not yet verified
 
-    # and it is usable for a DIFFERENT account
-    fresh_working = _factory(tmp_path, runner=FakeAWS("774888247882"))
-    cbs3 = build_aws_connect_callbacks(
-        widgets=card, onboarding_factory=fresh_working,
-        log_output=_Out(), spawn=spawn, to_thread=lambda fn: _immediate(fn),
+    # "page reload": a fresh card + fresh callbacks over the SAME workspace
+    fresh = build_cloud_environment_card()
+    cbs2 = build_aws_connect_callbacks(
+        widgets=fresh, onboarding_factory=_factory(tmp_path, runner=FakeAWS(deny=True)),
+        log_output=_Out(),
     )
-    card.role_arn_input.value = ROLE_B
-    cbs3.verify()
-    spawn.run()
-    assert "Connected" in card.aws_account_status.value
-    assert "774888247882" in card.aws_account_detail.value
+    cbs2.refresh()
+
+    # active connection: same stranded state as before the refresh
+    assert "Not verified" in fresh.aws_account_status.value
+    assert fresh.recovery_actions.layout.display == "flex"
+    # pending replacement: recovered, not discarded, not silently promoted
+    assert fresh.change_account_panel.layout.display == "flex"
+    assert "Open AWS Setup" in fresh.change_setup_link.value
 
 
 def test_recovery_after_page_refresh_shows_error_not_disconnected(tmp_path):
@@ -451,10 +674,15 @@ def test_recovery_actions_never_render_a_secret(tmp_path, card):
     spawn.run()
     cbs.retry()
     cbs.change_account()
+    card.change_role_arn_input.value = ROLE_A
+    cbs.change_verify()
+    spawn.run()
 
     texts = [
         card.aws_account_status.value, card.aws_account_detail.value,
         card.open_setup_link.value, card.role_arn_input.value,
+        card.change_account_status.value, card.change_setup_link.value,
+        card.change_role_arn_input.value,
     ]
     blob = " ".join(texts).lower()
     assert "secretaccesskey" not in blob

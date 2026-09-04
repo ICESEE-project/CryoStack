@@ -35,6 +35,17 @@ Key behaviours the UI relies on:
   (or :meth:`reconnect`) rotates it.
 * :meth:`verify` always persists a record that is safe to store (no STS
   credentials); it returns the live context for immediate use only.
+
+**Change AWS account is staged, not destructive.** ``begin_change_account()``
+mints a brand-new connection (fresh ExternalId) into a SEPARATE pending slot
+without touching the active connection. ``verify_pending_replacement()`` is
+the only path that can overwrite the active connection, and only when the
+pending one has ITSELF passed AssumeRole + GetCallerIdentity --
+:meth:`AWSConnectionStore.promote_pending`. A failed verification, a page
+refresh, or the user simply never coming back leaves the active connection
+(its Role ARN and ExternalId) exactly as it was. See
+``cloud_connect_runtime.py`` for the Retry / Cancel / Back-to-current-account
+UI this enables.
 """
 
 from __future__ import annotations
@@ -154,10 +165,104 @@ class AWSOnboarding:
         )
 
     def reconnect(self, *, region: str | None = None) -> ConnectStep:
-        """Explicitly rotate: new connection record + new ExternalId."""
+        """Explicitly rotate: new connection record + new ExternalId.
+
+        Immediate and destructive -- the active connection is replaced right
+        away, before anything has verified. Kept for callers that genuinely
+        want that (e.g. tests exercising the primitive in isolation). The
+        "Change AWS account" UI action does NOT call this any more -- see
+        :meth:`begin_change_account` / :meth:`verify_pending_replacement`.
+        """
         self.store.delete()
         self.store.create(region=(region or self.region).strip())
         return self.begin(region=region)
+
+    # -- Change AWS account: staged, non-destructive ----------------------
+    def has_pending_replacement(self) -> bool:
+        return self.store.load_pending() is not None
+
+    def pending_replacement_summary(self) -> dict | None:
+        """A render-ready snapshot of the staged replacement attempt, or
+        ``None`` when there isn't one. Never ``"connected"`` -- a pending
+        replacement that verifies is promoted to active in the same call
+        that verifies it, so a summary is only ever read back as
+        ``pending``/``error``."""
+        conn = self.store.load_pending()
+        if conn is None:
+            return None
+        out = conn.to_public_dict(own=True)
+        out["status"] = conn.status
+        return out
+
+    def begin_change_account(self, *, region: str | None = None) -> ConnectStep:
+        """Start (or resume) a STAGED replacement AWS-account connection.
+
+        Mints a fresh ExternalId into the pending slot ONLY on the first
+        call; a page reload or a repeat click reuses the existing pending
+        record (same "reuse, never silently rotate" rule ``begin()``
+        follows for the active connection) so a role already created
+        against it keeps working. The ACTIVE connection is never read or
+        modified by this call -- it stays exactly as it was until
+        :meth:`verify_pending_replacement` succeeds.
+        """
+        principal = self.principal_arn()          # raise early if unset
+        template_url = self.template_url()
+
+        pending = self.store.load_pending()
+        if pending is None:
+            pending = self.store.create_pending(region=(region or self.region).strip())
+
+        url = quick_create_url(
+            template_url=template_url,
+            external_id=pending.external_id,
+            region=pending.region,
+            principal_arn=principal,
+            stack_name=DEFAULT_STACK_NAME,
+        )
+        return ConnectStep(
+            connection=pending,
+            setup_url=url,
+            stack_name=DEFAULT_STACK_NAME,
+            external_id=pending.external_id,
+            principal_arn=principal,
+        )
+
+    def verify_pending_replacement(self, *, role_arn: str) -> VerificationResult:
+        """Assume the role for the STAGED replacement.
+
+        * On success: the pending connection is atomically PROMOTED to
+          become the active connection (:meth:`AWSConnectionStore.
+          promote_pending`) and the pending slot is cleared. This is the
+          ONLY moment the active connection changes.
+        * On failure: only the pending record is updated (role ARN +
+          error reason) -- the active connection is untouched, so Retry
+          connection on it (the ORIGINAL account) keeps working exactly as
+          before.
+
+        Returns the pending connection's own :class:`VerificationResult` in
+        both cases (its ``.connection`` reflects the STAGED attempt, not
+        necessarily what is active afterwards -- callers that need the new
+        active state should re-read :meth:`summary`).
+        """
+        pending = self.store.load_pending()
+        if pending is None:
+            raise OnboardingConfigError(
+                "No pending AWS account switch to verify. Click Change AWS "
+                "account first."
+            )
+        result = verify_connection(pending, role_arn=role_arn, runner=self._runner)
+        self.store.save_pending(result.connection)
+        if result.ok:
+            self.store.promote_pending()
+        return result
+
+    def cancel_change_account(self) -> None:
+        """Abandon the staged replacement attempt -- "Cancel / Back to
+        current account". The active connection (if any) is completely
+        untouched; nothing was ever sent to AWS by this call or by
+        :meth:`begin_change_account` itself (only the eventual Verify
+        click calls AssumeRole)."""
+        self.store.delete_pending()
 
     def verify(self, *, role_arn: str) -> VerificationResult:
         """Assume the role, confirm identity, persist the (non-secret) result."""

@@ -107,6 +107,21 @@ class CloudEnvironmentWidgets:
     #: different AWS account (mints a fresh ExternalId; no AWS resources of
     #: the previous account are touched)
     change_account_button: W.Button
+    #: -- staged "Change AWS account" (does NOT touch the active connection
+    #: until the replacement itself verifies) ------------------------------
+    #: the whole "connecting a new AWS account" card; hidden until
+    #: change_account_button starts it, hidden again on Cancel or success
+    change_account_panel: W.VBox
+    #: explains the current active connection is untouched + warns about
+    #: reusing the same AWS console session (AlreadyExistsException)
+    change_account_notice: W.HTML
+    #: shows the pending attempt's own verification error, if any
+    change_account_status: W.HTML
+    change_setup_link: W.HTML
+    change_role_arn_input: W.Text
+    change_verify_button: W.Button
+    #: abandon the staged attempt; the active connection is untouched
+    change_cancel_button: W.Button
 
     # -- RUN ESTIMATE + Review & Launch (C7.4) --------------------------
     #: compact "expected runtime · resources · estimated cost" block
@@ -279,6 +294,54 @@ def _build_aws_account_section() -> dict:
         layout=W.Layout(gap="8px", display="none"),
     )
 
+    # -- staged "Change AWS account" card: separate from connect_form so it
+    # can be shown ALONGSIDE the still-active connection's own status ------
+    change_account_notice = W.HTML(
+        value=(
+            "<div style='font-size:11px;color:#66758d;line-height:1.5;'>"
+            "Your current connection above is kept until this new one "
+            "verifies. If your browser is still signed into AWS as the "
+            "<b>same</b> account, use <b>Retry connection</b> instead -- "
+            "creating another CryoStack access role in an account that "
+            "already has one fails with <code>AlreadyExistsException</code>."
+            "</div>"
+        ),
+    )
+    change_setup_link = W.HTML(
+        value=(
+            "<span style='font-size:11px;color:#96a1b4;'>"
+            "Setup link appears after you start…</span>"
+        ),
+    )
+    change_role_arn_input = W.Text(
+        description="Role ARN:",
+        placeholder="arn:aws:iam::<account>:role/CryoStackExecutionRole",
+        layout=W.Layout(width="100%"),
+        style={"description_width": "110px"},
+    )
+    change_account_status = W.HTML()
+    change_verify_button = primary_button("Verify new account", icon="check")
+    change_cancel_button = secondary_button("Cancel — back to current account", icon="ban")
+
+    change_account_panel = W.VBox(
+        [
+            W.HTML(
+                "<div style='font-size:12px;font-weight:700;color:#172033;"
+                "margin-bottom:2px;'>CONNECTING A NEW AWS ACCOUNT</div>"
+            ),
+            change_account_notice,
+            change_setup_link,
+            change_role_arn_input,
+            change_account_status,
+            W.HBox([change_verify_button, change_cancel_button],
+                   layout=W.Layout(gap="8px", flex_wrap="wrap")),
+        ],
+        layout=W.Layout(
+            width="100%", gap="6px", padding="8px",
+            border="1px solid #dfe6ef", display="none",   # revealed on Change AWS account
+        ),
+    )
+
     heading = W.HTML(
         value=(
             "<div style='font-size:12px;font-weight:700;color:#172033;"
@@ -295,6 +358,7 @@ def _build_aws_account_section() -> dict:
             connect_form,
             connect_actions,
             recovery_actions,
+            change_account_panel,
         ],
         layout=W.Layout(width="100%", gap="5px", padding="6px 0"),
     )
@@ -314,6 +378,13 @@ def _build_aws_account_section() -> dict:
         "recovery_actions": recovery_actions,
         "retry_button": retry_button,
         "change_account_button": change_account_button,
+        "change_account_panel": change_account_panel,
+        "change_account_notice": change_account_notice,
+        "change_account_status": change_account_status,
+        "change_setup_link": change_setup_link,
+        "change_role_arn_input": change_role_arn_input,
+        "change_verify_button": change_verify_button,
+        "change_cancel_button": change_cancel_button,
     }
 
 
@@ -406,6 +477,47 @@ def set_aws_account_view(
     widgets.connect_form.layout.display = "none"
     _show_connected_actions(False)
     _show_recovery_actions(False)
+
+
+def set_change_account_panel(
+    widgets: "CloudEnvironmentWidgets",
+    pending_summary: dict | None,
+    *,
+    setup_url: str | None = None,
+    prefill_role_arn: bool = False,
+) -> None:
+    """Render the staged "Connecting a new AWS account" card.
+
+    Independent of :func:`set_aws_account_view` -- the active connection's
+    own status is rendered separately and is NEVER touched by this function.
+    ``pending_summary`` is ``None`` when there is no staged replacement (the
+    panel is hidden); otherwise it is the pending connection's own
+    ``pending``/``error`` summary. ``prefill_role_arn`` restores a Role ARN
+    already saved on the pending attempt (e.g. after a failed Verify, or on
+    a page reload) -- never on a fresh Cancel, which clears the field.
+    """
+    if pending_summary is None:
+        widgets.change_account_panel.layout.display = "none"
+        return
+
+    widgets.change_account_panel.layout.display = "flex"
+
+    if setup_url:
+        widgets.change_setup_link.value = (
+            f"<a href='{escape_attr(setup_url)}' target='_blank' rel='noopener' "
+            "style='font-size:12px;font-weight:600;'>▶ Open AWS Setup</a>"
+        )
+
+    if prefill_role_arn:
+        widgets.change_role_arn_input.value = pending_summary.get("role_arn", "") or ""
+
+    if pending_summary.get("status") == "error":
+        reason = pending_summary.get("status_reason", "") or "Verification failed."
+        widgets.change_account_status.value = (
+            f"<div style='font-size:11px;color:#b23c3c;line-height:1.45;'>{escape_text(reason)}</div>"
+        )
+    else:
+        widgets.change_account_status.value = ""
 
 
 def escape_text(value: str) -> str:
@@ -1028,6 +1140,13 @@ def build_cloud_environment_card(
         recovery_actions=aws_account["recovery_actions"],
         retry_button=aws_account["retry_button"],
         change_account_button=aws_account["change_account_button"],
+        change_account_panel=aws_account["change_account_panel"],
+        change_account_notice=aws_account["change_account_notice"],
+        change_account_status=aws_account["change_account_status"],
+        change_setup_link=aws_account["change_setup_link"],
+        change_role_arn_input=aws_account["change_role_arn_input"],
+        change_verify_button=aws_account["change_verify_button"],
+        change_cancel_button=aws_account["change_cancel_button"],
 
         run_estimate_section=run_estimate["run_estimate_section"],
         run_estimate_line=run_estimate["run_estimate_line"],
