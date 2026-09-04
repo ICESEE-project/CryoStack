@@ -574,3 +574,132 @@ def test_cloud_run_card_terminate_is_a_structurally_distinct_widget_from_the_gen
     assert cloud_terminate_btn in terminate_buttons
     active_run_terminate = next(b for b in terminate_buttons if b is not cloud_terminate_btn)
     assert active_run_terminate is not cloud_terminate_btn
+
+
+# ── C7.5 live-acceptance: "Container Overrides length must be at most 8192" ─
+# Live finding: SubmitJob/staging succeeded for account 774888247882, but the
+# job then failed with this exact AWS message -- traced to the Icepack output
+# collector being embedded VERBATIM into the Batch job definition's command
+# (cryostack_src/cloud/runtime.py), which AWS forwards through an ECS RunTask
+# override on every launch, capped at 8192 characters. The fix stages the
+# collector as an ordinary file alongside run.py
+# (cryostack_src.cloud.runtime.icepack_postprocess_extra_files) instead --
+# this test proves the ACTUAL wired gateway code path
+# (_submit_cloud_run's own "cloud always uploads a user-owned working copy"
+# staging call) passes that exact extra_files entry to
+# WorkspaceManager.stage_example_for_run for an Icepack cloud run, without
+# contacting AWS.
+def test_icepack_cloud_submit_stages_the_postprocess_helper_alongside_run_py(
+    monkeypatch, tmp_path
+):
+    from cryostack_src.cloud.runtime import (
+        ICEPACK_POSTPROCESS_FILENAME,
+        icepack_postprocess_extra_files,
+    )
+
+    launch_handler = _build_gateway_and_launch_handler(
+        monkeypatch, tmp_path, user="icepack-8192-user")
+    submit_fn = _freevar(launch_handler, "_submit_cloud_run")
+
+    model_dd = _freevar(submit_fn, "model_dd")
+    example_dir = _freevar(submit_fn, "example_dir")
+    run_target = _freevar(submit_fn, "run_target")
+    aws_region = _freevar(submit_fn, "aws_region")
+    cloud_bucket = _freevar(submit_fn, "cloud_bucket")
+    aws_profile = _freevar(submit_fn, "aws_profile")
+    batch_job_queue = _freevar(submit_fn, "batch_job_queue")
+    batch_job_def = _freevar(submit_fn, "batch_job_def")
+    workspace_manager = _freevar(submit_fn, "workspace_manager")
+
+    example = tmp_path / "IcepackExample"
+    example.mkdir()
+    (example / "run.py").write_text("print('hello icepack')\n")
+
+    model_dd.value = "icepack"
+    example_dir.value = str(example)
+    run_target.value = "run.py"
+    # enough to pass validate_cloud_config/cloud_run_preflight's pure string
+    # checks -- no AWS is ever contacted by those, or by this test.
+    aws_region.value = "us-east-2"
+    cloud_bucket.value = "cryostack-runs-774888247882"
+    aws_profile.value = ""
+    batch_job_queue.value = "cryostack-queue"
+    batch_job_def.value = "cryostack-icepack"
+
+    captured = {}
+
+    def fake_stage_example_for_run(**kwargs):
+        captured.update(kwargs)
+        raise RuntimeError("stop before any AWS contact -- staging kwargs already captured")
+
+    monkeypatch.setattr(workspace_manager, "stage_example_for_run", fake_stage_example_for_run)
+
+    # _submit_cloud_run(staged_dir, md_provenance, review=None) -- staged_dir
+    # equal to example_dir.value is exactly what triggers its own "cloud
+    # always uploads a user-owned working copy" staging fallback (the path
+    # a plain Advanced-mode Icepack run with no Basic-mode overrides takes --
+    # the live failing job's own shape).
+    submit_fn(example_dir.value, {}, review=None)
+
+    assert "extra_files" in captured, "the staging call never ran (still blocked earlier)"
+    extra = captured["extra_files"]
+    assert extra is not None and ICEPACK_POSTPROCESS_FILENAME in extra
+    assert extra[ICEPACK_POSTPROCESS_FILENAME] == icepack_postprocess_extra_files()[
+        ICEPACK_POSTPROCESS_FILENAME]
+
+
+def test_issm_cloud_submit_never_gets_the_icepack_extra_file(monkeypatch, tmp_path):
+    """ISSM behaviour is untouched: its own staging call never carries the
+    Icepack-only extra_files entry."""
+    from cryostack_src.cloud.runtime import ICEPACK_POSTPROCESS_FILENAME
+
+    launch_handler = _build_gateway_and_launch_handler(
+        monkeypatch, tmp_path, user="issm-8192-user")
+    submit_fn = _freevar(launch_handler, "_submit_cloud_run")
+
+    model_dd = _freevar(submit_fn, "model_dd")
+    example_dir = _freevar(submit_fn, "example_dir")
+    run_target = _freevar(submit_fn, "run_target")
+    aws_region = _freevar(submit_fn, "aws_region")
+    cloud_bucket = _freevar(submit_fn, "cloud_bucket")
+    aws_profile = _freevar(submit_fn, "aws_profile")
+    batch_job_queue = _freevar(submit_fn, "batch_job_queue")
+    batch_job_def = _freevar(submit_fn, "batch_job_def")
+    workspace_manager = _freevar(submit_fn, "workspace_manager")
+
+    example = tmp_path / "SquareIceShelf"
+    example.mkdir()
+    (example / "runme.m").write_text("md=solve(md,'Stressbalance');\n")
+
+    model_dd.value = "issm"
+    example_dir.value = str(example)
+    run_target.value = "runme.m"
+    aws_region.value = "us-east-2"
+    cloud_bucket.value = "cryostack-runs-774888247882"
+    aws_profile.value = ""
+    batch_job_queue.value = "cryostack-queue"
+    batch_job_def.value = "cryostack-issm"
+
+    # ISSM's own preflight gate (MATLAB license) is unrelated to this
+    # checkpoint -- satisfy it so the test reaches the staging call at all.
+    class _LicensedProfile:
+        has_matlab_license = True
+
+    monkeypatch.setattr(
+        "icesee_jupyter_book.ui.icesheets_gateway.get_compute_profile",
+        lambda _name: _LicensedProfile(),
+    )
+
+    captured = {}
+
+    def fake_stage_example_for_run(**kwargs):
+        captured.update(kwargs)
+        raise RuntimeError("stop before any AWS contact -- staging kwargs already captured")
+
+    monkeypatch.setattr(workspace_manager, "stage_example_for_run", fake_stage_example_for_run)
+    submit_fn(example_dir.value, {}, review=None)
+
+    assert "extra_files" in captured, "the staging call never ran (still blocked earlier)"
+    assert not captured["extra_files"]         # None (or empty) for ISSM
+    if captured["extra_files"]:
+        assert ICEPACK_POSTPROCESS_FILENAME not in captured["extra_files"]

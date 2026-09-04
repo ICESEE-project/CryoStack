@@ -282,3 +282,129 @@ def test_accepts_a_plain_path_too(tmp_path, canonical):
         CONFIG, source=str(staged.path), model="issm", run_target="runme.m",
         bucket=BUCKET, s3=FakeS3())
     assert result.run_id.startswith("cloud-")
+
+
+# ── Icepack cloud checkpoint: the output collector rides with run inputs,
+#    never inline in the Batch runner command (fixed "Container Overrides
+#    length must be at most 8192") ──────────────────────────────────────
+class RealFileTransferS3:
+    """A fake ``aws s3 ...`` that performs REAL file copies between local
+    directories keyed by an ``s3://bucket/key`` path -- the same end-to-end
+    guarantee ``aws s3 sync`` gives in production (a file present at the
+    sync source is present, byte-for-byte, at the destination), without
+    contacting AWS. Lets a test prove a file survives staging's upload AND
+    the cloud runner's own download, through the identical transport call
+    both actually use."""
+
+    def __init__(self, root: Path):
+        self.root = root
+        self.calls: list[list[str]] = []
+
+    def _local(self, uri_or_path: str) -> Path:
+        if uri_or_path.startswith("s3://"):
+            return self.root / uri_or_path[len("s3://"):]
+        return Path(uri_or_path)
+
+    def __call__(self, args):
+        a = list(args)
+        self.calls.append(a)
+        if a[:2] == ["s3", "sync"]:
+            src, dst = self._local(a[2]), self._local(a[3])
+            dst.mkdir(parents=True, exist_ok=True)
+            if src.is_dir():
+                for f in src.rglob("*"):
+                    if f.is_file():
+                        target = dst / f.relative_to(src)
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_bytes(f.read_bytes())
+            return (0, "", "")
+        if a[:2] == ["s3", "cp"]:
+            src, dst = self._local(a[2]), self._local(a[3])
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_bytes(src.read_bytes())
+            return (0, "", "")
+        return (0, "", "")
+
+
+def test_icepack_postprocess_helper_is_staged_and_locatable_after_input_sync(tmp_path):
+    """The full contract, end to end, with REAL file transport (no AWS):
+
+    WorkspaceManager.stage_example_for_run(extra_files=...) writes the
+    collector alongside run.py in the LOCAL working copy
+    -> stage_run_inputs uploads that whole tree verbatim to s3://.../input/
+       (the SAME sync stage_run_inputs already performs for every other
+       staged file)
+    -> the cloud runner's own phase 1 (``aws s3 sync .../input/ WORKDIR/``,
+       simulated here with the identical transport) downloads it back down
+
+    and the file the job's Icepack branch looks for
+    (``${WORKDIR}/cryostack_icepack_postprocess.py``) is present, with the
+    real collector source -- not a stub, not merely "some file exists"."""
+    from cryostack_src.cloud.runtime import (
+        ICEPACK_POSTPROCESS_FILENAME,
+        RUN_DESCRIPTOR_NAME,
+        icepack_postprocess_extra_files,
+    )
+    from cryostack_src.models.icepack.postprocess import build_postprocess
+
+    canon = tmp_path / "shipped" / "IcepackExample"
+    canon.mkdir(parents=True)
+    (canon / "run.py").write_text("print('hello icepack')\n")
+
+    mgr = _mgr(tmp_path / "ws", canon)
+    mgr.model.value = "icepack"
+    staged = mgr.stage_example_for_run(
+        source_example=str(canon), entrypoint="run.py",
+        extra_files=icepack_postprocess_extra_files(),
+    )
+    # staged onto disk alongside run.py, in the user's OWN working copy --
+    # exactly the same mechanism as ISSM's postprocess_icesee.m
+    assert (Path(staged.path) / ICEPACK_POSTPROCESS_FILENAME).is_file()
+    assert (Path(staged.path) / ICEPACK_POSTPROCESS_FILENAME).read_text() \
+        == build_postprocess()
+
+    s3 = RealFileTransferS3(tmp_path / "fake-s3")
+    result = stage_run_inputs(
+        CONFIG, source=staged, model="icepack", run_target="run.py",
+        bucket=BUCKET, s3=s3)
+    assert ICEPACK_POSTPROCESS_FILENAME in set(result.staged_files)
+
+    # the cloud runner's own phase 1: sync input/ -> WORKDIR
+    workdir = tmp_path / "workdir"
+    code, _, _ = s3(["s3", "sync", f"{result.s3_input}/", f"{workdir}/",
+                     "--only-show-errors"])
+    assert code == 0
+
+    located = workdir / ICEPACK_POSTPROCESS_FILENAME
+    assert located.is_file(), (
+        "the job cannot locate the staged postprocess helper after "
+        "downloading its inputs from S3"
+    )
+    assert located.read_text() == build_postprocess()
+    assert (workdir / "run.py").is_file()          # run.py travels the same way
+    assert (workdir / RUN_DESCRIPTOR_NAME).is_file()   # the execution descriptor too
+
+
+def test_icepack_run_without_the_collector_still_stages_and_locates_run_py(tmp_path):
+    """A caller that does not pass extra_files (e.g. an older code path)
+    must not be blocked -- run.py itself always stages and locates fine;
+    the runner's own graceful skip (tested in test_cloud_runtime.py) is the
+    other half of this contract."""
+    from cryostack_src.cloud.runtime import ICEPACK_POSTPROCESS_FILENAME
+
+    canon = tmp_path / "shipped" / "IcepackExample2"
+    canon.mkdir(parents=True)
+    (canon / "run.py").write_text("print('hello icepack')\n")
+    mgr = _mgr(tmp_path / "ws", canon)
+    mgr.model.value = "icepack"
+    staged = mgr.stage_example_for_run(source_example=str(canon), entrypoint="run.py")
+    assert not (Path(staged.path) / ICEPACK_POSTPROCESS_FILENAME).exists()
+
+    s3 = RealFileTransferS3(tmp_path / "fake-s3")
+    result = stage_run_inputs(
+        CONFIG, source=staged, model="icepack", run_target="run.py",
+        bucket=BUCKET, s3=s3)
+    assert ICEPACK_POSTPROCESS_FILENAME not in set(result.staged_files)
+    workdir = tmp_path / "workdir2"
+    s3(["s3", "sync", f"{result.s3_input}/", f"{workdir}/", "--only-show-errors"])
+    assert (workdir / "run.py").is_file()

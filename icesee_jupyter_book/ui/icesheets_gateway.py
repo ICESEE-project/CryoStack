@@ -814,6 +814,14 @@ def build_icesheets_ui():
                 },
             )
 
+        def _icepack_cloud_postprocess_files() -> dict:
+            """Icepack's cloud output-collector, staged as an ordinary file
+            alongside run.py -- never embedded into the Batch runner script.
+            See cryostack_src/cloud/runtime.py's execution-artifact contract."""
+            from cryostack_src.cloud.runtime import icepack_postprocess_extra_files
+
+            return icepack_postprocess_extra_files()
+
         def _submit_cloud_run(staged_dir, md_provenance, *, review=None):
             """Validate + preflight + stage the user-owned working copy
             (synchronous, local, fast), then hand the run to the
@@ -879,7 +887,16 @@ def build_icesheets_ui():
             if str(staged_dir) == str(example_dir.value):
                 try:
                     _sc = workspace_manager.stage_example_for_run(
-                        source_example=example_dir.value
+                        source_example=example_dir.value,
+                        # Icepack: stage the output collector as an ACTUAL
+                        # FILE alongside run.py -- never embedded into the
+                        # Batch runner script itself (see cloud/runtime.py's
+                        # execution-artifact contract; this is what fixed
+                        # "Container Overrides length must be at most 8192").
+                        extra_files=(
+                            _icepack_cloud_postprocess_files()
+                            if _model == "icepack" else None
+                        ),
                     )
                     staged_dir = str(_sc.path)
                 except Exception as _e:
@@ -1930,7 +1947,7 @@ def build_icesheets_ui():
         def should_use_connector() -> bool:
             return current_remote_bridge().uses_connector()
 
-        def _prepare_effective_example(*, test_mode: bool):
+        def _prepare_effective_example(*, test_mode: bool, for_cloud: bool = False):
             """Validate the local example path and stage a user-owned working
             copy when the run needs one: Basic-mode ISSM md overrides
             (validated + injected before the first solve), Basic-mode Icepack
@@ -1942,6 +1959,13 @@ def build_icesheets_ui():
             never duplicated. Returns ``(effective_example_dir,
             md_run_provenance)`` on success; on failure it has already
             reported the error (status chip + Run Log) and returns ``None``.
+
+            ``for_cloud`` (accurate for both callers -- ``_launch_cloud_run``
+            passes ``True`` unconditionally; ``on_run`` passes whether
+            ``mode_dd.value == "cloud"``, already resolved before this call)
+            additionally stages Icepack's cloud output collector alongside
+            run.py when THIS call is the one that stages a working copy --
+            Local/Remote staging is completely unaffected.
             """
             if not example_dir.value.strip():
                 status_chip.value = status_html("fail")
@@ -2033,6 +2057,13 @@ def build_icesheets_ui():
                                 if _ip_validation.normalized else None
                             ),
                             overrides=_ip_validation.normalized or None,
+                            # cloud only: stage the output collector as an
+                            # ordinary file alongside run.py -- never
+                            # embedded into the Batch runner script itself.
+                            extra_files=(
+                                _icepack_cloud_postprocess_files()
+                                if for_cloud else None
+                            ),
                         )
                     except (IcepackOverrideError, IcepackParameterError) as _ov_err:
                         status_chip.value = status_html("fail")
@@ -2073,7 +2104,7 @@ def build_icesheets_ui():
             """
             log_out.clear_output()
             status_chip.value = status_html("running")
-            _prepared = _prepare_effective_example(test_mode=False)
+            _prepared = _prepare_effective_example(test_mode=False, for_cloud=True)
             if _prepared is None:
                 return
             effective_example_dir, md_run_provenance = _prepared
@@ -2182,7 +2213,8 @@ def build_icesheets_ui():
                             print("  -", _m)
                     return
 
-            _prepared = _prepare_effective_example(test_mode=test_mode)
+            _prepared = _prepare_effective_example(
+                test_mode=test_mode, for_cloud=(mode == "cloud"))
             if _prepared is None:
                 return
             effective_example_dir, md_run_provenance = _prepared

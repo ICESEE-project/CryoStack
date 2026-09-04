@@ -35,7 +35,8 @@ runner:
 3. runs the model runtime -- exactly what ``stage_example_for_run`` prepared
    (ISSM: injected ``runme.m``, ``cryostack_md_overrides.m``, ``data/<...>``
    datasets, ``postprocess_icesee.m``; Icepack: the selected example's own
-   ``.py``/``.ipynb`` run target, then the portable output collector from
+   ``.py``/``.ipynb`` run target, then -- if the caller staged one alongside
+   the run inputs -- the portable output collector produced by
    :mod:`cryostack_src.models.icepack.postprocess`),
 4. syncs ``<workdir>/outputs/`` back to ``<s3-run>/outputs/`` (best effort,
    even on a failed run), and
@@ -44,6 +45,22 @@ runner:
 No scientific logic lives in the runner beyond selecting the per-model runtime
 command. No credentials and no MATLAB license value are ever embedded -- the
 license, if any, arrives only through the batch container's environment.
+
+**Execution-artifact contract**: this runner script itself becomes the Batch
+job definition's ``containerProperties.command`` (:func:`cloud_run_command`),
+and AWS Batch resolves/forwards a job's effective container command through
+ECS ``RunTask`` overrides on every launch -- capped at 8192 characters,
+exactly like ``submit-job``'s own ``--container-overrides``. Any run-specific
+or model-specific logic (an output collector, a helper script, ...) that
+would make this text large must therefore never be embedded inline here: it
+is staged as an ordinary FILE alongside the run's other inputs (via
+``WorkspaceManager.stage_example_for_run``'s ``extra_files``, exactly how
+ISSM's own ``postprocess_icesee.m`` already works) and simply *invoked* by
+filename after ``phase 1`` downloads it -- the runner only ever contains the
+short, per-model INVOCATION, never the helper's source text. A run that
+predates this convention (or a caller that never staged the helper) is not a
+hard failure: the invocation is skipped with a warning, exactly like every
+other best-effort step here.
 """
 
 from __future__ import annotations
@@ -52,6 +69,12 @@ import re
 
 #: models with a complete cloud runtime path today
 SUPPORTED_CLOUD_MODELS: tuple[str, ...] = ("issm", "icepack")
+
+#: filename the Icepack branch above looks for under WORKDIR after phase 1 --
+#: the SAME name a caller must use as the extra_files key when staging (see
+#: icepack_postprocess_extra_files() below); a single source of truth so the
+#: two can never drift apart.
+ICEPACK_POSTPROCESS_FILENAME = "cryostack_icepack_postprocess.py"
 
 #: version of the structured-result contract the run must produce
 RESULT_CONTRACT_VERSION = 1
@@ -187,19 +210,28 @@ case "${CRYOSTACK_MODEL}" in
         ;;
     esac
     log "icepack model runtime exit code: ${rc}"
-    # portable output collector (models/icepack/postprocess.py, embedded
-    # verbatim below) -- gathers figures / native files into outputs/ and
-    # writes an honest metadata.json. Best effort, even on a failed run
-    # (rc is never overwritten by this step): the science already happened.
-    cat > "${WORKDIR}/cryostack_icepack_postprocess.py" <<'CRYOSTACK_ICEPACK_PP_EOF'
-__CRYOSTACK_ICEPACK_POSTPROCESS_SCRIPT__
-CRYOSTACK_ICEPACK_PP_EOF
-    if command -v python3 >/dev/null 2>&1; then
-      CRYOSTACK_RUN_DIR="${WORKDIR}" CRYOSTACK_EXAMPLE_DIR="${WORKDIR}" \
-      python3 "${WORKDIR}/cryostack_icepack_postprocess.py" \
-        || log "WARNING: Icepack output collection failed (model rc=${rc})"
+    # Portable output collector (models/icepack/postprocess.py) -- gathers
+    # figures / native files into outputs/ and writes an honest
+    # metadata.json. Best effort, even on a failed run (rc is never
+    # overwritten by this step): the science already happened.
+    #
+    # The collector is staged as an ACTUAL FILE alongside run.py (same
+    # convention as ISSM's postprocess_icesee.m) and downloaded to WORKDIR
+    # in phase 1 above -- NEVER embedded inline here. See this module's
+    # docstring for why: this whole script becomes the Batch job
+    # definition's command, which AWS caps at 8192 characters on every
+    # launch, and the collector's source alone is bigger than the entire
+    # rest of this runner combined.
+    if [ -f "${WORKDIR}/__CRYOSTACK_ICEPACK_PP_FILENAME__" ]; then
+      if command -v python3 >/dev/null 2>&1; then
+        CRYOSTACK_RUN_DIR="${WORKDIR}" CRYOSTACK_EXAMPLE_DIR="${WORKDIR}" \
+        python3 "${WORKDIR}/__CRYOSTACK_ICEPACK_PP_FILENAME__" \
+          || log "WARNING: Icepack output collection failed (model rc=${rc})"
+      else
+        log "WARNING: python3 not found in the container; skipping Icepack output collection"
+      fi
     else
-      log "WARNING: python3 not found in the container; skipping Icepack output collection"
+      log "WARNING: __CRYOSTACK_ICEPACK_PP_FILENAME__ was not staged with this run's inputs; skipping Icepack output collection"
     fi
     ;;
   *)
@@ -220,20 +252,34 @@ exit "${rc}"
 """
 
 
-_ICEPACK_POSTPROCESS_PLACEHOLDER = "__CRYOSTACK_ICEPACK_POSTPROCESS_SCRIPT__"
+#: the container-overrides / job-definition-command size limit AWS Batch
+#: enforces on every job launch (it forwards the effective command through
+#: an ECS RunTask override, capped the same as submit-job's own
+#: --container-overrides). Kept here so tests -- and any future runner
+#: change -- can assert against the real number, not a guess.
+BATCH_CONTAINER_OVERRIDE_LIMIT = 8192
 
 
 def build_cloud_runner() -> str:
-    """The generic cloud runner script (identical for every execution mode).
+    """The generic cloud runner script (identical for every execution mode,
+    and for every model -- see this module's docstring for why NO
+    model-specific helper source may be embedded here). Only the Icepack
+    helper's FILENAME is substituted (a single source of truth shared with
+    :func:`icepack_postprocess_extra_files`), never its source text."""
+    return _RUNNER.replace(
+        "__CRYOSTACK_ICEPACK_PP_FILENAME__", ICEPACK_POSTPROCESS_FILENAME)
 
-    The Icepack branch embeds the SAME portable output collector Local /
-    Remote already use (:func:`cryostack_src.models.icepack.postprocess.
-    build_postprocess`) -- no duplicated collection logic, just a different
-    shell wrapper around the identical script text.
-    """
+
+def icepack_postprocess_extra_files() -> dict[str, str]:
+    """The ``extra_files`` entry a cloud-run caller merges into
+    ``WorkspaceManager.stage_example_for_run`` so the Icepack output
+    collector is staged as an ordinary file alongside ``run.py`` -- the SAME
+    generic mechanism ISSM's own ``postprocess_icesee.m`` already uses.
+    Never embedded into the runner script itself (see the module docstring
+    and :data:`BATCH_CONTAINER_OVERRIDE_LIMIT`)."""
     from cryostack_src.models.icepack.postprocess import build_postprocess
 
-    return _RUNNER.replace(_ICEPACK_POSTPROCESS_PLACEHOLDER, build_postprocess())
+    return {ICEPACK_POSTPROCESS_FILENAME: build_postprocess()}
 
 
 def cloud_run_command() -> list[str]:
