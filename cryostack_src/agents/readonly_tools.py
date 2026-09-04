@@ -321,3 +321,10 @@ def _get_owned_run(mgr, run_id: str):
     if hasattr(mgr, "_owns") and not mgr._owns(run.workspace_directory):
         raise ValueError(f"run {run_id!r} is not in your workspace")
     return run
+
+
+@tool(name="agent_lab_ping",
+      description="A no-op tool for the lab. Returns a fixed string.",
+      permission=Permission.OBSERVE)
+def agent_lab_ping(ctx) -> dict:
+    return {"pong": True, "user": ctx.user_id}

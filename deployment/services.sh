@@ -76,6 +76,12 @@ fi
 # ------------------------------------------------------------
 export CRYOSTACK_AGENT_PANEL="${CRYOSTACK_AGENT_PANEL:-1}"
 
+export AWS_PROFILE="${AWS_PROFILE:-cryostack-service}"
+
+export CRYOSTACK_AWS_PRINCIPAL_ARN="${CRYOSTACK_AWS_PRINCIPAL_ARN:-arn:aws:iam::713938953301:user/cryostack-service}"
+
+export CRYOSTACK_CF_TEMPLATE_URL="${CRYOSTACK_CF_TEMPLATE_URL:-https://cryostack-cloudformation-713938953301.s3.us-east-2.amazonaws.com/cryostack-execution-role.json}"
+
 
 # ============================================================
 # Helpers
