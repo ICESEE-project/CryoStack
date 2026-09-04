@@ -95,6 +95,53 @@ def test_notebook_is_read_only_and_not_converted(setup):
     assert not (canon / "note.py").exists()          # never silently written as .py
 
 
+# ── open_file_by_name: steering the default file (Icepack run.py) ─────────
+def test_open_file_by_name_switches_to_the_named_file(setup):
+    _mgr, _ed, ctrl, canon, _ = setup
+    ctrl.refresh()
+    assert ctrl.open_file_by_name("runme.m") is True
+    assert ctrl.file_picker.value.endswith("runme.m")
+    assert "Stressbalance" in ctrl.editor.value
+
+
+def test_open_file_by_name_is_a_noop_when_the_name_is_absent(setup):
+    _mgr, _ed, ctrl, canon, _ = setup
+    ctrl.refresh()
+    before = ctrl.file_picker.value
+    assert ctrl.open_file_by_name("run.py") is False   # this fixture has no run.py
+    assert ctrl.file_picker.value == before
+
+
+def test_open_file_by_name_empty_name_is_a_noop(setup):
+    _mgr, _ed, ctrl, canon, _ = setup
+    ctrl.refresh()
+    before = ctrl.file_picker.value
+    assert ctrl.open_file_by_name("") is False
+    assert ctrl.file_picker.value == before
+
+
+def test_open_file_by_name_already_active_is_a_harmless_noop(setup):
+    _mgr, _ed, ctrl, canon, _ = setup
+    ctrl.refresh()
+    ctrl.open_file_by_name("runme.m")
+    assert ctrl.open_file_by_name("runme.m") is True
+    assert ctrl.file_picker.value.endswith("runme.m")
+
+
+def test_open_file_by_name_respects_the_dirty_guard(setup):
+    """It must never silently discard unsaved work -- same guard a manual
+    dropdown pick already goes through."""
+    mgr, example_dir, ctrl, canon, clones = setup
+    ctrl.refresh(); ctrl.clone_example(); example_dir.value = str(clones[0]); ctrl.refresh()
+    _select(ctrl, "runme.m")
+    ctrl.editor.value = "dirty edit\n"
+    assert ctrl.dirty
+
+    assert ctrl.open_file_by_name("Square.par") is False
+    assert ctrl.file_picker.value.endswith("runme.m")     # never switched
+    assert ctrl.editor.value == "dirty edit\n"             # never discarded
+
+
 # ── clone -> editable ─────────────────────────────────────────────────────
 def test_clone_to_workspace_then_edit_and_save(setup):
     mgr, example_dir, ctrl, canon, clones = setup

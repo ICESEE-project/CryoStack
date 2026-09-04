@@ -382,6 +382,8 @@ def test_selecting_an_icepack_notebook_example_materializes_run_py_for_the_edito
 
     model_dd = freevar(handler, "model_dd")
     example_dir = freevar(handler, "example_dir")
+    run_target = freevar(handler, "run_target")
+    editor_panel = freevar(handler, "editor_panel")
 
     model_dd.value = "icepack"          # repopulates the picker via refresh_example_picker
     target = str(notebook.resolve())
@@ -394,3 +396,93 @@ def test_selecting_an_icepack_notebook_example_materializes_run_py_for_the_edito
     assert (staged / "run.py").is_file()
     assert (staged / notebook.name).is_file()          # the source notebook is kept too
     assert "import" in (staged / "run.py").read_text()
+
+    # item 10: the actual Advanced Editor file-selection callback/state --
+    # not just the filesystem it reads from.
+    ctl = editor_panel.controller
+    assert run_target.value == "run.py"
+    assert Path(ctl.file_picker.value).name == "run.py"          # active editor file
+    assert ctl.editor.value == (staged / "run.py").read_text()  # generated Python...
+    assert not ctl.editor.value.lstrip().startswith("{")         # ...never notebook JSON
+    assert ctl.editor.disabled is False                          # run.py is editable
+
+
+def test_deliberately_selecting_the_notebook_keeps_it_readonly_raw(monkeypatch, tmp_path):
+    """Item 6: the .ipynb stays reachable and, once explicitly picked, stays
+    read-only raw JSON -- we are not rendering notebooks in this checkpoint."""
+    from icesee_jupyter_book.core.icesheet_examples import resolve_icepack_root
+
+    root = resolve_icepack_root()
+    if root is None:
+        pytest.skip("no local Icepack checkout on this machine")
+    notebook = root / "notebooks" / "tutorials" / "00-meshes-functions.ipynb"
+    if not notebook.is_file():
+        pytest.skip("00-meshes-functions.ipynb not present in this Icepack checkout")
+
+    monkeypatch.setenv("CRYOSTACK_WORKSPACE_USER", "editor-notebook-user2")
+    monkeypatch.setenv("USER", "cloud-wire-service")
+    monkeypatch.setenv("CRYOSTACK_WORKSPACE_ROOT", str(tmp_path / "ws"))
+    monkeypatch.delenv("CRYOSTACK_AWS_PRINCIPAL_ARN", raising=False)
+    monkeypatch.delenv("CRYOSTACK_CF_TEMPLATE_URL", raising=False)
+    import matplotlib
+    matplotlib.use("Agg")
+    from icesee_jupyter_book.ui.icesheets_gateway import build_icesheets_ui
+    page = build_icesheets_ui()
+
+    picker, handler = _find_widget_by_observer(page, "apply_selected_example")
+
+    def freevar(fn, name):
+        idx = fn.__code__.co_freevars.index(name)
+        return fn.__closure__[idx].cell_contents
+
+    model_dd = freevar(handler, "model_dd")
+    editor_panel = freevar(handler, "editor_panel")
+    model_dd.value = "icepack"
+    picker.value = str(notebook.resolve())
+    ctl = editor_panel.controller
+
+    # the default is run.py (proven above) -- now deliberately switch to .ipynb
+    nb_option = next(v for _l, v in ctl.file_picker.options if v.endswith(".ipynb"))
+    ctl.file_picker.value = nb_option
+    assert ctl.editor.disabled is True
+    assert ctl.editor.value.lstrip().startswith("{")   # raw notebook JSON, unrendered
+
+
+def test_refresh_never_reverts_an_open_run_py_back_to_the_notebook(monkeypatch, tmp_path):
+    """Item 7: Refresh must not switch the active file away from run.py."""
+    from icesee_jupyter_book.core.icesheet_examples import resolve_icepack_root
+
+    root = resolve_icepack_root()
+    if root is None:
+        pytest.skip("no local Icepack checkout on this machine")
+    notebook = root / "notebooks" / "tutorials" / "00-meshes-functions.ipynb"
+    if not notebook.is_file():
+        pytest.skip("00-meshes-functions.ipynb not present in this Icepack checkout")
+
+    monkeypatch.setenv("CRYOSTACK_WORKSPACE_USER", "editor-notebook-user3")
+    monkeypatch.setenv("USER", "cloud-wire-service")
+    monkeypatch.setenv("CRYOSTACK_WORKSPACE_ROOT", str(tmp_path / "ws"))
+    monkeypatch.delenv("CRYOSTACK_AWS_PRINCIPAL_ARN", raising=False)
+    monkeypatch.delenv("CRYOSTACK_CF_TEMPLATE_URL", raising=False)
+    import matplotlib
+    matplotlib.use("Agg")
+    from icesee_jupyter_book.ui.icesheets_gateway import build_icesheets_ui
+    page = build_icesheets_ui()
+
+    picker, handler = _find_widget_by_observer(page, "apply_selected_example")
+
+    def freevar(fn, name):
+        idx = fn.__code__.co_freevars.index(name)
+        return fn.__closure__[idx].cell_contents
+
+    model_dd = freevar(handler, "model_dd")
+    editor_panel = freevar(handler, "editor_panel")
+    model_dd.value = "icepack"
+    picker.value = str(notebook.resolve())
+    ctl = editor_panel.controller
+    assert Path(ctl.file_picker.value).name == "run.py"
+
+    ctl.refresh()                                       # the editor's own Refresh button
+    assert Path(ctl.file_picker.value).name == "run.py", (
+        "Refresh must not silently switch the active file back to the notebook"
+    )

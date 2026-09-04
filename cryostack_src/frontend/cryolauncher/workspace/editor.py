@@ -151,6 +151,34 @@ class EditorController:
             self._suppress = False
         self._load(self.file_picker.value)
 
+    def open_file_by_name(self, name: str) -> bool:
+        """Open the file in the CURRENT listing whose basename is ``name``,
+        if one is present -- otherwise a no-op (returns ``False``).
+
+        This is how a caller that knows something ``editor.py`` deliberately
+        does not (e.g. "this example was materialized from an Icepack
+        notebook, so its generated ``run.py`` -- not the co-staged source
+        notebook -- is the file a user actually wants to see") can steer the
+        default file selection, without ``editor.py`` itself carrying any
+        model- or filename-specific assumption. Reuses the SAME guarded pick
+        path a manual dropdown selection goes through (:meth:`_on_pick`) --
+        a dirty buffer blocks the switch exactly as it always does; this
+        never silently discards unsaved work.
+        """
+        if not name:
+            return False
+        values = [v for _l, v in self.file_picker.options]
+        match = next((v for v in values if v and Path(v).name == name), None)
+        if match is None:
+            return False
+        if match == self.file_picker.value:
+            return True                          # already the active file
+        self.file_picker.value = match           # fires _on_pick -> _load
+        # _on_pick's own dirty guard may have reverted this synchronously
+        # (traitlets observers run inline, before this assignment "returns")
+        # -- report that honestly rather than claiming success either way.
+        return self.file_picker.value == match
+
     # ── open ─────────────────────────────────────────────────────────────
     def _on_pick(self, change) -> None:
         if self._suppress:

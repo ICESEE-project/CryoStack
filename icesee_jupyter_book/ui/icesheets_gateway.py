@@ -1363,6 +1363,7 @@ def build_icesheets_ui():
                            if str(e.path) == selected), None)
             example_info.value = _example_summary(ex, selected)
 
+            _materialized_entrypoint = None      # e.g. "run.py" -- set below
             if selected:
                 _selected_path = Path(selected)
                 if model_dd.value == "icepack" and _selected_path.is_file():
@@ -1380,6 +1381,7 @@ def build_icesheets_ui():
                             source_example=selected
                         )
                         example_dir.value = str(_staged.path)
+                        _materialized_entrypoint = _staged.provenance.get("entrypoint")
                     except NotebookConversionError as _conv_err:
                         example_dir.value = selected
                         with log_out:
@@ -1400,6 +1402,18 @@ def build_icesheets_ui():
             # reset auto-target when example changes
             run_target.value = ""
             auto_set_run_target()
+
+            if _materialized_entrypoint:
+                # A fresh example selection only -- editor_panel.controller
+                # .refresh() itself always keeps whatever file the user
+                # already has open across a plain Refresh (its own
+                # prev-file/prev-name preservation, untouched here), so this
+                # can never "unexpectedly" pull an in-progress edit of
+                # run.py back to the notebook later. run.py is a generated
+                # artifact regenerated on every (re)stage above -- this only
+                # steers which already-staged file the editor shows first,
+                # it never overwrites the buffer of one already open.
+                editor_panel.controller.open_file_by_name(_materialized_entrypoint)
 
             if model_dd.value == "issm":
                 md_panel.set_example(example_dir.value)
