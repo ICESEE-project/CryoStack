@@ -206,3 +206,121 @@ def test_gateway_builds_with_icepack_selectable_and_cloud_supported():
     issm_cap = get_model_capabilities("issm")
     assert issm_cap.cloud_supported is True
     assert issm_cap.requires_matlab is True             # ISSM behaviour unchanged
+
+
+# ── Launch cloud run must never reach Remote/HPC validation ───────────────
+# Live-acceptance bug at commit 5c7f0d10: Launch cloud run (Icepack, Review
+# passed) produced "[remote][ERROR] Host and User are required." -- the
+# button's callback fell through into on_run()'s Remote/HPC dispatch instead
+# of the cloud/AWS controller. Root cause: (1) on_run()'s Host/User check was
+# unconditional (fired for every execution mode, not just "remote"), and
+# (2) nothing set mode_dd back to "cloud" for a user who never touched the
+# main Execution Mode dropdown and drove the run entirely from the Cloud
+# Environment panel, so on_run() read the stale default ("remote").
+#
+# Fix: Launch cloud run's callback (_launch_cloud_run) is wired directly as
+# cloud_review_runtime's launch_handler -- it never calls on_run() at all,
+# so it structurally cannot reach the Remote/HPC checks, regardless of
+# mode_dd's value. on_run()'s own Host/User check is also now correctly
+# gated on mode == "remote" (defence in depth for the generic Run button).
+
+
+def _freevar(fn, name):
+    """Extract one captured (closure) variable from a nested function by
+    name -- the only way to reach icesheets_gateway.py's internals, which
+    are deliberately not module-level (every existing test in this file
+    verifies this legacy gateway's wiring the same way: build the real
+    gateway, then inspect it)."""
+    idx = fn.__code__.co_freevars.index(name)
+    return fn.__closure__[idx].cell_contents
+
+
+def _build_gateway_and_launch_handler(monkeypatch, tmp_path, *, user):
+    monkeypatch.setenv("CRYOSTACK_WORKSPACE_USER", user)
+    monkeypatch.setenv("USER", "cloud-wire-service")
+    monkeypatch.setenv("CRYOSTACK_WORKSPACE_ROOT", str(tmp_path / "ws"))
+    monkeypatch.delenv("CRYOSTACK_AWS_PRINCIPAL_ARN", raising=False)
+    monkeypatch.delenv("CRYOSTACK_CF_TEMPLATE_URL", raising=False)
+    import matplotlib
+    matplotlib.use("Agg")
+    from icesee_jupyter_book.ui.icesheets_gateway import build_icesheets_ui
+    page = build_icesheets_ui()
+
+    launch_button = None
+
+    def walk(w):
+        nonlocal launch_button
+        if isinstance(w, W.Button) and getattr(w, "description", "") == "Launch cloud run":
+            launch_button = w
+        for c in getattr(w, "children", ()):
+            walk(c)
+
+    walk(page)
+    assert launch_button is not None, "Launch cloud run button not found in the built page"
+    assert launch_button._click_handlers.callbacks, "Launch cloud run has no click handler"
+
+    review_launch = launch_button._click_handlers.callbacks[0]   # cloud_review_runtime.launch
+    launch_handler = _freevar(review_launch, "launch_handler")   # _launch_cloud_run
+    return launch_handler
+
+
+@pytest.mark.parametrize("model", ["icepack", "issm"])
+def test_launch_cloud_run_never_reaches_remote_host_user_validation(
+    monkeypatch, tmp_path, capsys, model
+):
+    """The exact live path: build the real gateway, select the model, invoke
+    the REAL function object wired as Launch cloud run's callback -- proving
+    it (a) is not on_run, (b) cannot call on_run (not even in its closure),
+    and (c) running it never produces the Remote/HPC Host/User message,
+    for BOTH Icepack and ISSM."""
+    launch_handler = _build_gateway_and_launch_handler(
+        monkeypatch, tmp_path, user=f"cloud-launch-{model}")
+
+    # (a)/(b): structurally cannot reach on_run -- it is not even a captured
+    # free variable of the Launch cloud run callback.
+    assert "on_run" not in launch_handler.__code__.co_freevars
+
+    prepare = _freevar(launch_handler, "_prepare_effective_example")
+    example_dir_w = _freevar(prepare, "example_dir")
+    model_dd_w = _freevar(prepare, "model_dd")
+
+    example = tmp_path / "SmallestExample"
+    example.mkdir()
+    (example / "run.py").write_text("print('hello')\n")
+    (example / "runme.m").write_text("% issm entry\n")
+
+    model_dd_w.value = model
+    example_dir_w.value = str(example)
+
+    # deliberately leave cluster_host/cluster_user at their untouched
+    # defaults -- exactly the live report's state (the user never touched
+    # the Remote HPC connection fields; only the Cloud Environment panel).
+    capsys.readouterr()   # drop anything printed during gateway construction
+    # (c): the callback runs to whatever conclusion it reaches offline (no
+    # AWS configured -> a clean [cloud] config/preflight message), but it
+    # NEVER emits the Remote/HPC Host/User error.
+    launch_handler(None)
+
+    printed = capsys.readouterr().out
+    assert "[remote][ERROR] Host and User are required." not in printed
+    assert "cluster" not in printed.lower()
+
+
+def test_launch_cloud_run_callback_is_not_on_run_itself():
+    """Static, non-behavioural confirmation of the wiring: the source no
+    longer connects Launch cloud run to on_run through the old
+    pending_review + on_run(None) lambda."""
+    src = _ICESHEETS.read_text()
+    assert "launch_handler=_launch_cloud_run" in src
+    assert 'launch_handler=lambda review: (\n                _cloud.__setitem__' not in src
+    # _launch_cloud_run's own CODE (docstring excluded -- it explains the
+    # invariant in prose, which legitimately names the very things the code
+    # must not touch) never references Remote/HPC state.
+    start = src.index("def _launch_cloud_run(")
+    end = src.index("\n        def on_run(", start)
+    definition = src[start:end]
+    docstring_end = definition.index('"""', definition.index('"""') + 3) + 3
+    code = definition[docstring_end:]
+    for forbidden in ("cluster_host", "cluster_user", "enforce_remote_access",
+                      "on_run(", "mode_dd"):
+        assert forbidden not in code, forbidden

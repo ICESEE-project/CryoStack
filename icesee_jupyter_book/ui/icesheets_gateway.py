@@ -1876,6 +1876,155 @@ def build_icesheets_ui():
         def should_use_connector() -> bool:
             return current_remote_bridge().uses_connector()
 
+        def _prepare_effective_example(*, test_mode: bool):
+            """Validate the local example path and stage a user-owned working
+            copy when the run needs one: Basic-mode ISSM md overrides
+            (validated + injected before the first solve), Basic-mode Icepack
+            overrides, and/or referenced datasets to materialise. The
+            canonical example is never modified.
+
+            Shared by every execution path -- Local/Remote via ``on_run``,
+            Cloud via ``_launch_cloud_run`` -- one staging implementation,
+            never duplicated. Returns ``(effective_example_dir,
+            md_run_provenance)`` on success; on failure it has already
+            reported the error (status chip + Run Log) and returns ``None``.
+            """
+            if not example_dir.value.strip():
+                status_chip.value = status_html("fail")
+                with log_out:
+                    print("[remote][ERROR] Example path is empty.")
+                return None
+
+            local_example = Path(example_dir.value).expanduser()
+            if not local_example.exists():
+                status_chip.value = status_html("fail")
+                with log_out:
+                    print(f"[remote][ERROR] Example path does not exist locally: {local_example}")
+                return None
+
+            effective_example_dir = example_dir.value
+            md_run_provenance: dict = {}
+            if model_dd.value == "issm" and not test_mode:
+                _md_validation = md_panel.validate()
+                if not _md_validation.ok:
+                    status_chip.value = status_html("fail")
+                    with log_out:
+                        print("[md][ERROR] ISSM configuration is not valid:")
+                        for _err in _md_validation.errors:
+                            print("  -", _err)
+                    return None
+                _has_ds_refs = bool(
+                    workspace_manager.example_dataset_references(example_dir.value)
+                )
+                if _md_validation.normalized or _has_ds_refs:
+                    _extra = (
+                        {"cryostack_md_overrides.m":
+                         build_md_override_script(_md_validation.normalized)}
+                        if _md_validation.normalized else None
+                    )
+                    try:
+                        _staged = workspace_manager.stage_example_for_run(
+                            source_example=example_dir.value,
+                            extra_files=_extra,
+                            entrypoint_transform=(
+                                inject_override_step if _md_validation.normalized else None
+                            ),
+                            overrides=_md_validation.normalized or None,
+                        )
+                    except Exception as _stage_err:
+                        status_chip.value = status_html("fail")
+                        with log_out:
+                            print("[stage][ERROR] Could not stage a working copy:",
+                                  type(_stage_err).__name__, _stage_err)
+                        return None
+                    effective_example_dir = str(_staged.path)
+                    md_run_provenance = {
+                        "md_overrides": _md_validation.normalized,
+                        "md_working_copy": str(_staged.path),
+                        "md_example_source": _staged.source,
+                        "md_working_copy_from_canonical": _staged.from_canonical,
+                        "staged_datasets": _staged.provenance.get("staged_datasets", []),
+                    }
+                    with log_out:
+                        print(f"[stage] working copy: {_staged.path}")
+                        if _md_validation.normalized:
+                            print("[stage] md overrides: "
+                                  f"{', '.join(sorted(_md_validation.normalized))}")
+                        for _d in _staged.provenance.get("staged_datasets", []):
+                            print(f"[stage] dataset -> {_d['as']}")
+
+            elif model_dd.value == "icepack" and not test_mode:
+                # Basic-mode Icepack overrides: an exact, single-line, validated
+                # substitution in a user-owned working copy of the notebook/
+                # script. Fail-closed if the example does not expose a param.
+                _ip_validation = icepack_basic_panel.validate()
+                if not _ip_validation.ok:
+                    status_chip.value = status_html("fail")
+                    with log_out:
+                        print("[icepack][ERROR] Basic configuration is not valid:")
+                        for _err in _ip_validation.errors:
+                            print("  -", _err)
+                    return None
+                _ip_ds_refs = bool(
+                    workspace_manager.example_dataset_references(example_dir.value)
+                )
+                if _ip_validation.normalized or _ip_ds_refs:
+                    _ip_entry = (run_target.value or "").strip()
+                    try:
+                        _staged = workspace_manager.stage_example_for_run(
+                            source_example=example_dir.value,
+                            entrypoint=_ip_entry or "runme.m",
+                            entrypoint_transform=(
+                                entrypoint_transform_for(_ip_validation.normalized)
+                                if _ip_validation.normalized else None
+                            ),
+                            overrides=_ip_validation.normalized or None,
+                        )
+                    except (IcepackOverrideError, IcepackParameterError) as _ov_err:
+                        status_chip.value = status_html("fail")
+                        with log_out:
+                            print("[icepack][ERROR]", _ov_err)
+                        return None
+                    except Exception as _stage_err:
+                        status_chip.value = status_html("fail")
+                        with log_out:
+                            print("[stage][ERROR] Could not stage a working copy:",
+                                  type(_stage_err).__name__, _stage_err)
+                        return None
+                    effective_example_dir = str(_staged.path)
+                    md_run_provenance = {
+                        "parameter_overrides": _ip_validation.normalized,
+                        "working_copy": str(_staged.path),
+                        "example_source": _staged.source,
+                        "working_copy_from_canonical": _staged.from_canonical,
+                        "staged_datasets": _staged.provenance.get("staged_datasets", []),
+                    }
+                    with log_out:
+                        print(f"[stage] working copy: {_staged.path}")
+                        if _ip_validation.normalized:
+                            print("[stage] icepack overrides: "
+                                  f"{', '.join(sorted(_ip_validation.normalized))}")
+
+            return effective_example_dir, md_run_provenance
+
+        def _launch_cloud_run(review) -> None:
+            """The Launch cloud run entry point (Review & Launch).
+
+            Execution goes EXCLUSIVELY through the cloud/AWS controller --
+            this function never reads ``mode_dd``, never touches
+            ``cluster_host``/``cluster_user``, never calls
+            ``enforce_remote_access`` or the Slurm validator. The Remote/HPC
+            Host/User validation inside ``on_run`` is structurally
+            unreachable from here: this callback does not call ``on_run``.
+            """
+            log_out.clear_output()
+            status_chip.value = status_html("running")
+            _prepared = _prepare_effective_example(test_mode=False)
+            if _prepared is None:
+                return
+            effective_example_dir, md_run_provenance = _prepared
+            _submit_cloud_run(effective_example_dir, md_run_provenance, review=review)
+
         def on_run(_=None):
             log_out.clear_output()
             status_chip.value = status_html("running")
@@ -1910,15 +2059,22 @@ def build_icesheets_ui():
                         print("[connector] Start the local connector with the session WebSocket URL, then retry.")
                     return
 
-            host = cluster_host.value.strip()
-            user = cluster_user.value.strip()
-            port = int(cluster_port.value)
+            # Remote/HPC host+identity validation is REMOTE-ONLY. It must
+            # never fire for Cloud (or any future non-remote mode): a
+            # cloud-reviewed run never configures cluster_host/cluster_user,
+            # and reaching this block for a cloud run previously produced
+            # "[remote][ERROR] Host and User are required." even though the
+            # user never touched the Remote HPC connection fields.
+            if mode == "remote":
+                host = cluster_host.value.strip()
+                user = cluster_user.value.strip()
+                port = int(cluster_port.value)
 
-            if not host or not user:
-                status_chip.value = status_html("fail")
-                with log_out:
-                    print("[remote][ERROR] Host and User are required.")
-                return
+                if not host or not user:
+                    status_chip.value = status_html("fail")
+                    with log_out:
+                        print("[remote][ERROR] Host and User are required.")
+                    return
 
             # B3: remote-access identity gate. Verifies the real remote identity
             # (fresh whoami) against the configured HPC username and blocks Run
@@ -1972,129 +2128,10 @@ def build_icesheets_ui():
                             print("  -", _m)
                     return
 
-            if not example_dir.value.strip():
-
-                status_chip.value = status_html("fail")
-
-                with log_out:
-
-                    print("[remote][ERROR] Example path is empty.")
-
+            _prepared = _prepare_effective_example(test_mode=test_mode)
+            if _prepared is None:
                 return
-            
-            local_example = Path(example_dir.value).expanduser()
-            if not local_example.exists():
-                status_chip.value = status_html("fail")
-                with log_out:
-                    print(f"[remote][ERROR] Example path does not exist locally: {local_example}")
-                return
-
-            # Stage a user-owned working copy when the run needs one: Basic-mode
-            # ISSM md overrides (validated + injected before the first solve),
-            # and/or referenced datasets to materialise. The canonical example
-            # is never modified.
-            effective_example_dir = example_dir.value
-            md_run_provenance: dict = {}
-            if model_dd.value == "issm" and not test_mode:
-                _md_validation = md_panel.validate()
-                if not _md_validation.ok:
-                    status_chip.value = status_html("fail")
-                    with log_out:
-                        print("[md][ERROR] ISSM configuration is not valid:")
-                        for _err in _md_validation.errors:
-                            print("  -", _err)
-                    return
-                _has_ds_refs = bool(
-                    workspace_manager.example_dataset_references(example_dir.value)
-                )
-                if _md_validation.normalized or _has_ds_refs:
-                    _extra = (
-                        {"cryostack_md_overrides.m":
-                         build_md_override_script(_md_validation.normalized)}
-                        if _md_validation.normalized else None
-                    )
-                    try:
-                        _staged = workspace_manager.stage_example_for_run(
-                            source_example=example_dir.value,
-                            extra_files=_extra,
-                            entrypoint_transform=(
-                                inject_override_step if _md_validation.normalized else None
-                            ),
-                            overrides=_md_validation.normalized or None,
-                        )
-                    except Exception as _stage_err:
-                        status_chip.value = status_html("fail")
-                        with log_out:
-                            print("[stage][ERROR] Could not stage a working copy:",
-                                  type(_stage_err).__name__, _stage_err)
-                        return
-                    effective_example_dir = str(_staged.path)
-                    md_run_provenance = {
-                        "md_overrides": _md_validation.normalized,
-                        "md_working_copy": str(_staged.path),
-                        "md_example_source": _staged.source,
-                        "md_working_copy_from_canonical": _staged.from_canonical,
-                        "staged_datasets": _staged.provenance.get("staged_datasets", []),
-                    }
-                    with log_out:
-                        print(f"[stage] working copy: {_staged.path}")
-                        if _md_validation.normalized:
-                            print("[stage] md overrides: "
-                                  f"{', '.join(sorted(_md_validation.normalized))}")
-                        for _d in _staged.provenance.get("staged_datasets", []):
-                            print(f"[stage] dataset -> {_d['as']}")
-
-            elif model_dd.value == "icepack" and not test_mode:
-                # Basic-mode Icepack overrides: an exact, single-line, validated
-                # substitution in a user-owned working copy of the notebook/
-                # script. Fail-closed if the example does not expose a param.
-                _ip_validation = icepack_basic_panel.validate()
-                if not _ip_validation.ok:
-                    status_chip.value = status_html("fail")
-                    with log_out:
-                        print("[icepack][ERROR] Basic configuration is not valid:")
-                        for _err in _ip_validation.errors:
-                            print("  -", _err)
-                    return
-                _ip_ds_refs = bool(
-                    workspace_manager.example_dataset_references(example_dir.value)
-                )
-                if _ip_validation.normalized or _ip_ds_refs:
-                    _ip_entry = (run_target.value or "").strip()
-                    try:
-                        _staged = workspace_manager.stage_example_for_run(
-                            source_example=example_dir.value,
-                            entrypoint=_ip_entry or "runme.m",
-                            entrypoint_transform=(
-                                entrypoint_transform_for(_ip_validation.normalized)
-                                if _ip_validation.normalized else None
-                            ),
-                            overrides=_ip_validation.normalized or None,
-                        )
-                    except (IcepackOverrideError, IcepackParameterError) as _ov_err:
-                        status_chip.value = status_html("fail")
-                        with log_out:
-                            print("[icepack][ERROR]", _ov_err)
-                        return
-                    except Exception as _stage_err:
-                        status_chip.value = status_html("fail")
-                        with log_out:
-                            print("[stage][ERROR] Could not stage a working copy:",
-                                  type(_stage_err).__name__, _stage_err)
-                        return
-                    effective_example_dir = str(_staged.path)
-                    md_run_provenance = {
-                        "parameter_overrides": _ip_validation.normalized,
-                        "working_copy": str(_staged.path),
-                        "example_source": _staged.source,
-                        "working_copy_from_canonical": _staged.from_canonical,
-                        "staged_datasets": _staged.provenance.get("staged_datasets", []),
-                    }
-                    with log_out:
-                        print(f"[stage] working copy: {_staged.path}")
-                        if _ip_validation.normalized:
-                            print("[stage] icepack overrides: "
-                                  f"{', '.join(sorted(_ip_validation.normalized))}")
+            effective_example_dir, md_run_provenance = _prepared
 
             # =========================================================
             # CLOUD  (AWS Batch)  -- C4/C5
@@ -2843,9 +2880,11 @@ def build_icesheets_ui():
             widgets=cloud_environment,
             review_builder=_build_cloud_review,
             digest_builder=_cloud_review_digest,
-            launch_handler=lambda review: (
-                _cloud.__setitem__("pending_review", review), on_run(None)
-            ),
+            # Launch cloud run goes DIRECTLY to the cloud/AWS controller --
+            # never through on_run()'s mode/backend dispatch, so Remote/HPC
+            # Host/User validation is structurally unreachable from here,
+            # regardless of what mode_dd.value happens to be.
+            launch_handler=_launch_cloud_run,
             log_output=log_out,
         )
         _review_holder["refresh"] = _cloud_review.refresh_estimate
