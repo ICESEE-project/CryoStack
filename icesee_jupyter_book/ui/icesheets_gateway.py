@@ -1669,7 +1669,18 @@ def build_icesheets_ui():
             # remote_actions = remote_log_controls
             # cloud_actions = cloud_log_controls
             terminate_btn.layout.display = "" if (is_remote and not is_agent) else "none"
-            cloud_terminate_btn.layout.display = "" if (is_cloud and not is_agent) else "none"
+            # Cloud mode: the CLOUD RUN card (Terminate / View log / View
+            # results, wired to the account-aware CloudRunController) is THE
+            # single authoritative run-control surface once a run exists.
+            # The generic Execution panel's own Submit job / Terminate here
+            # are unconditionally hidden for cloud mode -- never shown, not
+            # even the "shown only in cloud mode" state they had before --
+            # so a user can never reach a second, non-account-bound path to
+            # the same job. Local/Remote are completely unaffected: run_btn
+            # keeps its existing (always-on) visibility for those modes, and
+            # remote_terminate_button's own toggle above is untouched.
+            run_btn.layout.display = "none" if (is_cloud and not is_agent) else ""
+            cloud_terminate_btn.layout.display = "none"
 
             mode_row.layout.display = _manual
             model_row.layout.display = _manual

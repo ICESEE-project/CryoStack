@@ -486,3 +486,91 @@ def test_refresh_never_reverts_an_open_run_py_back_to_the_notebook(monkeypatch, 
     assert Path(ctl.file_picker.value).name == "run.py", (
         "Refresh must not silently switch the active file back to the notebook"
     )
+
+
+# ── C7.5 live-acceptance: CLOUD RUN card must be the single run-control ───
+# surface for cloud mode. Live finding on job ec56a332-7832-4933-936d-
+# e98f236d0e37: while a cloud run was active, the page rendered BOTH the
+# CLOUD RUN card (View log / View results / Terminate, wired through the
+# account-aware CloudRunController) and the older generic Execution panel
+# below it (state + "Submit job" + its own "Terminate") -- a second,
+# non-account-bound path to the same job. For execution_mode == "cloud" the
+# generic panel's Submit job / Terminate must be hidden; Remote is
+# unaffected (this gateway's Execution Mode dropdown only ever offers
+# "Remote" / "Cloud" -- there is no separate "Local" mode to toggle here).
+def _build_gateway_page(monkeypatch, tmp_path, *, user):
+    monkeypatch.setenv("CRYOSTACK_WORKSPACE_USER", user)
+    monkeypatch.setenv("USER", "cloud-wire-service")
+    monkeypatch.setenv("CRYOSTACK_WORKSPACE_ROOT", str(tmp_path / "ws"))
+    monkeypatch.delenv("CRYOSTACK_AWS_PRINCIPAL_ARN", raising=False)
+    monkeypatch.delenv("CRYOSTACK_CF_TEMPLATE_URL", raising=False)
+    import matplotlib
+    matplotlib.use("Agg")
+    from icesee_jupyter_book.ui.icesheets_gateway import build_icesheets_ui
+    return build_icesheets_ui()
+
+
+def test_cloud_mode_hides_the_duplicate_generic_submit_and_terminate_controls(
+    monkeypatch, tmp_path
+):
+    """Cloud mode: the generic Execution panel's "Submit job" (run_btn) and
+    its own Terminate (cloud_terminate_btn) are both hidden -- the CLOUD RUN
+    card (a structurally distinct widget, built in cloud_environment.py) is
+    the only reachable run-control surface. Remote mode -- the only other
+    execution_mode this gateway offers -- renders exactly as it always has:
+    run_btn visible, the remote Terminate button visible, cloud_terminate_btn
+    still hidden (it always was, outside cloud mode)."""
+    page = _build_gateway_page(monkeypatch, tmp_path, user="cloud-ui-hide-user")
+
+    _, update_visibility = _find_widget_by_observer(page, "update_visibility")
+    mode_dd = _freevar(update_visibility, "mode_dd")
+    ui_mode_dd = _freevar(update_visibility, "ui_mode_dd")
+    run_btn = _freevar(update_visibility, "run_btn")
+    cloud_terminate_btn = _freevar(update_visibility, "cloud_terminate_btn")
+    terminate_btn = _freevar(update_visibility, "terminate_btn")
+
+    assert ui_mode_dd.value != "agent"          # the manual Basic/Advanced surface
+
+    # -- Cloud mode: the CLOUD RUN card alone controls a run --------------
+    mode_dd.value = "cloud"
+    assert run_btn.layout.display == "none", "generic Submit job must be hidden in cloud mode"
+    assert cloud_terminate_btn.layout.display == "none", (
+        "generic Terminate must be hidden in cloud mode -- CLOUD RUN's own "
+        "Terminate (a separate widget) is the only run-control surface"
+    )
+
+    # -- Remote mode (this gateway's only other execution_mode): unchanged -
+    mode_dd.value = "remote"
+    assert run_btn.layout.display == "", "Remote must keep Submit job visible, unchanged"
+    assert terminate_btn.layout.display == "", "Remote's own Terminate stays visible, unchanged"
+    assert cloud_terminate_btn.layout.display == "none", (
+        "cloud_terminate_btn was already hidden outside cloud mode before this fix"
+    )
+
+
+def test_cloud_run_card_terminate_is_a_structurally_distinct_widget_from_the_generic_one(
+    monkeypatch, tmp_path
+):
+    """The CLOUD RUN card's Terminate button (wired to CloudRunController via
+    on_cloud_terminate_confirm) is a DIFFERENT Button object than the generic
+    Execution panel's cloud_terminate_btn -- hiding the latter cannot also
+    remove the former, and the former's own visibility is driven independently
+    (cloud_active_run_runtime / set_active_run_view), not by update_visibility."""
+    page = _build_gateway_page(monkeypatch, tmp_path, user="cloud-ui-distinct-user")
+
+    _, update_visibility = _find_widget_by_observer(page, "update_visibility")
+    cloud_terminate_btn = _freevar(update_visibility, "cloud_terminate_btn")
+
+    terminate_buttons = []
+
+    def walk(w):
+        if isinstance(w, W.Button) and getattr(w, "description", "") == "Terminate":
+            terminate_buttons.append(w)
+        for c in getattr(w, "children", ()):
+            walk(c)
+
+    walk(page)
+    assert len(terminate_buttons) == 2, "expected exactly the generic + CLOUD RUN terminate buttons"
+    assert cloud_terminate_btn in terminate_buttons
+    active_run_terminate = next(b for b in terminate_buttons if b is not cloud_terminate_btn)
+    assert active_run_terminate is not cloud_terminate_btn

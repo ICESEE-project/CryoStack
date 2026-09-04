@@ -97,7 +97,7 @@ def _byo_execution(account="713938953301", *, calls=None):
     return provider
 
 
-def _controller(*, execution_provider, **over):
+def _controller(*, execution_provider, bridge_factory=None, **over):
     sink = {"states": [], "logs": [], "synced": [], "views": []}
 
     def _sync(**kw):
@@ -105,7 +105,7 @@ def _controller(*, execution_provider, **over):
         return "/local/cloud_outputs"
 
     ctl = CloudRunController(
-        bridge_factory=lambda **kw: RecordingBridge(**kw),
+        bridge_factory=bridge_factory or (lambda **kw: RecordingBridge(**kw)),
         register_run=lambda **kw: None,
         sync_results=_sync,
         on_state=sink["states"].append,
@@ -257,6 +257,178 @@ def test_result_retrieval_fails_closed_when_connected_account_diverges():
     assert sink["synced"] == []                  # never synced using B's creds
     assert any("account" in m.lower() and "mismatch" in m.lower()
                for m in sink["logs"])
+
+
+
+# -- F. live-incident regression: developer-mode fallback loophole ---------
+# Reproduces job ec56a332-7832-4933-936d-e98f236d0e37 (account 774888247882):
+# SubmitJob correctly used a fresh BYO AssumeRole, but every poll (and then
+# Terminate) reached AWS Batch as arn:aws:iam::713938953301:user/
+# cryostack-service and was denied. `_assert_same_account`'s old
+# ``want and got`` test only fired when BOTH sides were non-empty -- a
+# developer-mode CloudExecution (``is_byo`` False, ``account_id`` "" by
+# dataclass default) made `got` empty and silently passed the guard, letting
+# `_bridge()` build a bridge with the host's own ambient/profile identity.
+class AmbientBridge:
+    """Stands in for whatever AWS identity the CryoStack host itself runs
+    as (e.g. cryostack-service) -- constructed whenever a bridge is built
+    with no assumed-role credentials. Its mere construction during an
+    account-bound run's poll/terminate/retrieve IS the live defect."""
+
+    instances: list = []
+
+    def __init__(self, *, credentials=None, region=None, profile=None):
+        self.credentials = credentials
+        self.region = region
+        self.profile = profile
+        AmbientBridge.instances.append(self)
+
+    def submit(self, **kw):
+        return _SubmitResult()
+
+    def status(self, *, job_id):
+        return _Status(RUNNING)
+
+    def terminate(self, *, job_id):
+        return {"ok": True}
+
+
+def _mixed_bridge_factory(**kw):
+    """Mirrors the live gateway's ``current_cloud_bridge``: credentials
+    present -> the assumed-role bridge; credentials absent -> whatever the
+    host's own ambient/profile identity is (here, the sentinel that proves
+    the defect if it is ever reached)."""
+    if kw.get("credentials"):
+        return RecordingBridge(**kw)
+    return AmbientBridge(**kw)
+
+
+@pytest.fixture(autouse=True)
+def _reset_ambient():
+    AmbientBridge.instances = []
+    yield
+
+
+def _degrading_provider(byo_account="774888247882", calls=None):
+    """First call (submit) resolves BYO for the reviewed account -- exactly
+    like the live incident, where SubmitJob succeeded. Every call after that
+    "degrades" to developer mode with no account at all, reproducing
+    whatever transient condition made ``resolve_cloud_execution`` return
+    ``CloudExecution(mode="developer", account_id="")`` on the very next
+    poll -- the trigger the live incident showed but this suite does not
+    need to pin down to prove the boundary holds regardless."""
+    state = {"n": 0}
+
+    def provider():
+        state["n"] += 1
+        if calls is not None:
+            calls.append(state["n"])
+        if state["n"] == 1:
+            return CloudExecution(mode="byo", region="us-east-2",
+                                  credentials=dict(BYO_A), profile=None,
+                                  account_id=byo_account)
+        return CloudExecution(mode="developer", region="us-east-2",
+                              credentials=None, profile=None, account_id="")
+
+    return provider
+
+
+def test_poll_fails_closed_when_the_connection_degrades_to_developer_mode():
+    """The exact live defect for polling: submit is BYO, the very next poll
+    resolves developer mode. Must fail closed -- never reach AmbientBridge,
+    i.e. never touch batch:DescribeJobs as the host's own identity."""
+    ctl, sink = _controller(
+        execution_provider=_degrading_provider(),
+        bridge_factory=_mixed_bridge_factory,
+    )
+    ctl.submit(
+        staged_source="/tmp/x", model="issm", run_target="runme.m",
+        bucket="cryostack-runs-774888247882", _account_id="774888247882",
+    )
+    assert AmbientBridge.instances == []          # never reached DescribeJobs as ambient
+    assert sink["states"][-1] == FAILED            # fails closed, not stuck retrying forever
+    assert any("host/ambient credentials" in m or "could not access your aws account" in m.lower()
+               for m in sink["logs"])
+
+
+def _developer_mode_provider():
+    """Always resolves developer mode -- simulates the connection having
+    already degraded by the time this single AWS operation resolves its own
+    fresh context (exactly what terminate/result-retrieval each do: one
+    ``_resolve_execution()`` call per invocation)."""
+    return CloudExecution(mode="developer", region="us-east-2",
+                          credentials=None, profile=None, account_id="")
+
+
+def test_terminate_fails_closed_when_the_connection_degrades_to_developer_mode():
+    """The exact live defect for terminate: a BYO-bound run, but by the time
+    Terminate is clicked the freshly-resolved execution is developer mode.
+    Must fail closed before any AmbientBridge is even constructed."""
+    ctl, sink = _controller(
+        execution_provider=_developer_mode_provider,
+        bridge_factory=_mixed_bridge_factory,
+    )
+    ctl._handle.job_id = "job-A1"
+    ctl._handle.account_id = "774888247882"
+    asyncio.run(ctl._terminate_worker("job-A1"))
+    assert ctl.state != CANCELLED
+    assert AmbientBridge.instances == []
+    assert any("host/ambient credentials" in m or "could not access your aws account" in m.lower()
+               for m in sink["logs"])
+
+
+def test_result_retrieval_fails_closed_when_the_connection_degrades_to_developer_mode():
+    ctl, sink = _controller(
+        execution_provider=_developer_mode_provider,
+        bridge_factory=_mixed_bridge_factory,
+    )
+    ctl._handle.job_id = "job-A1"
+    ctl._handle.s3_run = "s3://cryostack-runs-774888247882/runs/u/x"
+    ctl._handle.account_id = "774888247882"
+    asyncio.run(ctl._retrieve_results())
+    assert sink["synced"] == []
+    assert any("host/ambient credentials" in m or "could not access your aws account" in m.lower()
+               for m in sink["logs"])
+
+
+def test_live_incident_submit_poll_terminate_with_ambient_creds_deliberately_available():
+    """The full submit -> poll -> terminate path from the live incident, in
+    one test, with a real "ambient identity" (AmbientBridge / cryostack-
+    service-shaped) deliberately reachable in the test environment via
+    ``_mixed_bridge_factory`` the whole time. Submit succeeds on BYO (poll
+    sequence resolves the job COMPLETED before any degrade would matter for
+    submit itself); then, attached fresh with a provider that is ALWAYS
+    developer-mode (simulating the connection having degraded by the time
+    the user reattaches / clicks Terminate on page refresh), neither a
+    fresh poll nor Terminate may ever construct AmbientBridge."""
+    calls: list[int] = []
+    ctl, sink = _controller(
+        execution_provider=_byo_execution("774888247882", calls=calls),
+        bridge_factory=_mixed_bridge_factory,
+    )
+    ctl.submit(
+        staged_source="/tmp/x", model="icepack", run_target="run.py",
+        bucket="cryostack-runs-774888247882", _account_id="774888247882",
+    )
+    assert COMPLETED in sink["states"]
+    assert AmbientBridge.instances == []
+    for b in RecordingBridge.instances:
+        assert b.credentials == BYO_A                # never ambient, always the fresh assumed role
+
+    # now simulate the connection having degraded (e.g. page refresh after
+    # the BYO connection needed re-auth) and attempt to terminate the SAME
+    # account-bound job -- must still never touch AmbientBridge.
+    ctl2, sink2 = _controller(
+        execution_provider=lambda: CloudExecution(
+            mode="developer", region="us-east-2", credentials=None,
+            profile=None, account_id=""),
+        bridge_factory=_mixed_bridge_factory,
+    )
+    ctl2._handle.job_id = ctl._handle.job_id
+    ctl2._handle.account_id = "774888247882"
+    asyncio.run(ctl2._terminate_worker(ctl2._handle.job_id))
+    assert ctl2.state != CANCELLED
+    assert AmbientBridge.instances == []
 
 
 def test_switching_accounts_does_not_disturb_an_unrelated_attached_run():

@@ -356,13 +356,47 @@ class CloudRunController:
         return self._bridge_factory(credentials=creds, region=region)
 
     def _assert_same_account(self, execution) -> None:
-        """A run launched for account A must never touch account B."""
+        """A run recorded for a connected BYO account (``self._handle.
+        account_id`` set) must NEVER touch AWS through anything but a fresh,
+        verified assumed-role session for that SAME account -- never
+        cross-account, and never a silent fall-through to ambient/profile
+        (host service) credentials.
+
+        Fails closed on BOTH failure shapes, not just a mismatched account:
+
+        * ``execution`` is not BYO at all (``is_byo`` false / absent) --
+          e.g. ``resolve_cloud_execution`` momentarily found no connection
+          record and degraded to developer/ambient mode. Before this check
+          existed, that case slipped past the old ``want and got`` test
+          (an empty ``got`` made the condition false) and the run went on to
+          use whatever ambient/profile identity the CryoStack host itself
+          runs as -- the exact live defect (SubmitJob correctly used the
+          assumed-role Account-B session; every subsequent poll/terminate
+          silently fell through to the host's own ``cryostack-service`` IAM
+          identity and AWS correctly denied ``batch:DescribeJobs``).
+        * ``execution`` IS BYO but for a DIFFERENT account than this run was
+          reviewed for (the original cross-account guard).
+
+        A developer-mode RUN (``self._handle.account_id`` empty -- no BYO
+        connection was ever involved) has nothing to enforce and is
+        unaffected by this method.
+        """
         want = (self._handle.account_id or "").strip()
+        if not want:
+            return
+        if not getattr(execution, "is_byo", False):
+            raise RuntimeError(
+                "Could not access your AWS account for this run "
+                f"(account {want}). Not falling back to host/ambient "
+                "credentials -- re-check the connected AWS account in "
+                "Cloud Environment → AWS ACCOUNT and try again."
+            )
         got = (getattr(execution, "account_id", "") or "").strip()
-        if want and got and want != got:
+        if got != want:
             raise RuntimeError(
                 "account mismatch: this run was reviewed for AWS account "
-                f"{want} but the connected account is now {got}. Not submitting."
+                f"{want} but the connected account is now {got or 'unknown'}. "
+                "Not proceeding."
             )
 
     # -- submit --------------------------------------------------------
