@@ -734,6 +734,15 @@ def build_icesheets_ui():
         #    Submitting -> Queued -> Running -> Completed / Failed --------
         _CLOUD_STATES = {
             "not_configured": ("icesee-idle", "Not configured"),
+            # AWS ACCOUNT has a connection record but it is not yet verified
+            # (the user started onboarding, or a page reload found a pending
+            # attempt) -- distinct from "nothing configured at all".
+            "connection_required": ("icesee-running", "Connection required"),
+            # the last verification attempt failed (bad/forgotten Role ARN,
+            # AssumeRole denied, account mismatch, ...). The AWS ACCOUNT block
+            # carries Retry connection / Change AWS account -- this is never
+            # a dead end.
+            "connection_issue": ("icesee-fail", "Connection issue"),
             "checking": ("icesee-running", "Checking…"),
             "testing": ("icesee-running", "Testing connection…"),
             "preparing": ("icesee-running", "Preparing…"),
@@ -2593,13 +2602,25 @@ def build_icesheets_ui():
         def _on_aws_account_state(summary: dict) -> None:
             """Once the account is verified, Prepare cloud -- not Test
             connection -- is the normal-user action. Re-check lives in the AWS
-            ACCOUNT block."""
-            connected = (summary or {}).get("status") == "connected"
+            ACCOUNT block.
+
+            Also keeps the Cloud state chip honest: a deployment that IS
+            configured but whose user connection needs attention must never
+            read "Not configured" (that label is reserved for genuinely
+            nothing attempted yet)."""
+            status = (summary or {}).get("status")
+            connected = status == "connected"
             cloud_environment.test_button.layout.display = (
                 "none" if connected else "inline-flex"
             )
-            if connected:
+            if status == "connected":
                 _set_cloud_state("connected")
+            elif status == "error":
+                _set_cloud_state("connection_issue")
+            elif status == "pending":
+                _set_cloud_state("connection_required")
+            elif status == "disconnected":
+                _set_cloud_state("not_configured")
 
         aws_connect = build_aws_connect_callbacks(
             widgets=cloud_environment,
@@ -2611,6 +2632,11 @@ def build_icesheets_ui():
         cloud_environment.verify_button.on_click(aws_connect.verify)
         cloud_environment.recheck_button.on_click(aws_connect.recheck)
         cloud_environment.disconnect_button.on_click(aws_connect.disconnect)
+        # failed-verification recovery: repair the same account, or abandon
+        # this local attempt and connect a different one (C7 live-acceptance
+        # fix -- an "error" connection used to have no reachable action).
+        cloud_environment.retry_button.on_click(aws_connect.retry)
+        cloud_environment.change_account_button.on_click(aws_connect.change_account)
         try:
             aws_connect.refresh()          # render any existing connection
         except Exception as _err:          # noqa: BLE001 - never block panel build

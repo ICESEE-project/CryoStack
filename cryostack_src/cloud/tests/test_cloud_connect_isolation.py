@@ -109,3 +109,31 @@ def test_role_arn_account_mismatch_is_rejected(tmp_path):
     result = verify_connection(conn, role_arn=ROLE_B, runner=FakeAWS("713938953301"))
     assert not result.ok
     assert "mismatch" in result.connection.status_reason.lower()
+
+
+def test_change_account_recovery_only_touches_the_acting_users_file(tmp_path):
+    """"Change AWS account" (AWSOnboarding.reconnect -- delete + create) must
+    never reach across to another CryoStack user's connection file."""
+    from cryostack_src.cloud.connect.onboarding import AWSOnboarding
+
+    alice = AWSOnboarding(
+        user=_user("alice"), workspace_root=tmp_path,
+        template_url="https://x.example/t.json",
+        principal_arn="arn:aws:iam::713938953301:role/cryostack-service",
+    )
+    bob_store = AWSConnectionStore(user=_user("bob"), workspace_root=tmp_path)
+    bob_store.save(
+        AWSConnection(
+            connection_id="conn-bob", external_id="cryostack:bob:xyz",
+            region="us-east-2", role_arn=ROLE_B,
+        ).mark_connected(account_id="774888247882")
+    )
+
+    alice.begin()
+    alice.reconnect()                  # "Change AWS account" for alice only
+
+    # Bob's connection is byte-for-byte untouched
+    reloaded_bob = AWSConnectionStore(user=_user("bob"), workspace_root=tmp_path).load()
+    assert reloaded_bob.connection_id == "conn-bob"
+    assert reloaded_bob.external_id == "cryostack:bob:xyz"
+    assert reloaded_bob.account_id == "774888247882"

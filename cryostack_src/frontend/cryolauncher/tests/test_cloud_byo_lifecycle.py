@@ -220,3 +220,53 @@ def test_terminate_uses_a_fresh_context_for_the_same_account():
     assert ctl.state == CANCELLED
     assert RecordingBridge.instances[-1].credentials == BYO_A
     assert RecordingBridge.instances[-1].profile is None
+
+
+# -- E. account-switch isolation: a selected run keeps its OWN account -----
+def test_terminate_fails_closed_when_connected_account_diverges_from_the_run():
+    """A run recorded under account A, terminated while the CryoStack user is
+    now connected to account B (they used "Change AWS account"), must never
+    reach AWS with B's credentials pretending to be A's job. It must fail
+    closed and touch no bridge."""
+    ctl, sink = _controller(execution_provider=_byo_execution("774888247882"))  # now on B
+    ctl._handle.job_id = "job-A1"
+    ctl._handle.account_id = "713938953301"                                     # run is A's
+    asyncio.run(ctl._terminate_worker("job-A1"))
+    assert ctl.state != CANCELLED               # never claims success
+    assert RecordingBridge.instances == []       # no AWS call was made
+    assert any("account" in m.lower() and "mismatch" in m.lower()
+               for m in sink["logs"])
+
+
+def test_poll_fails_closed_when_connected_account_diverges_from_the_run():
+    ctl, sink = _controller(execution_provider=_byo_execution("774888247882"))  # now on B
+    ctl._handle.job_id = "job-A1"
+    ctl._handle.account_id = "713938953301"                                     # run is A's
+    asyncio.run(ctl._poll_loop("job-A1"))
+    assert COMPLETED not in sink["states"]
+    assert RecordingBridge.instances == []       # the mismatch is caught before
+                                                  # any AWS status call is made
+
+
+def test_result_retrieval_fails_closed_when_connected_account_diverges():
+    ctl, sink = _controller(execution_provider=_byo_execution("774888247882"))  # now on B
+    ctl._handle.job_id = "job-A1"
+    ctl._handle.s3_run = "s3://cryostack-runs-713938953301/runs/u/x"
+    ctl._handle.account_id = "713938953301"                                     # run is A's
+    asyncio.run(ctl._retrieve_results())
+    assert sink["synced"] == []                  # never synced using B's creds
+    assert any("account" in m.lower() and "mismatch" in m.lower()
+               for m in sink["logs"])
+
+
+def test_switching_accounts_does_not_disturb_an_unrelated_attached_run():
+    """Attaching (selecting) a run for the account CURRENTLY connected still
+    works normally after a "Change AWS account" -- the guard only blocks a
+    genuine cross-account mismatch, never same-account use."""
+    ctl, sink = _controller(execution_provider=_byo_execution("774888247882"))
+    ctl.attach(job_id="job-B1", s3_run="s3://cryostack-runs-774888247882/runs/u/y",
+               model="issm", region="us-east-2", account_id="774888247882",
+               state=RUNNING)
+    asyncio.run(ctl._terminate_worker("job-B1"))
+    assert ctl.state == CANCELLED
+    assert RecordingBridge.instances

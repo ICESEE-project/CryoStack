@@ -9,8 +9,10 @@
 #
 # Description :
 #     UI callbacks for the AWS ACCOUNT onboarding block: Connect / Open AWS
-#     Setup / Verify / Re-check / Disconnect. Non-blocking; touches widgets
-#     only on the event loop; owns no AWS semantics (AWSOnboarding does).
+#     Setup / Verify / Re-check / Disconnect, plus the failed-verification
+#     recovery actions Retry connection / Change AWS account. Non-blocking;
+#     touches widgets only on the event loop; owns no AWS semantics
+#     (AWSOnboarding does).
 #
 # Author(s)   :
 #     Brian Kyanjo
@@ -39,6 +41,12 @@ class AWSConnectCallbacks:
     recheck: Callable          # re-verify an already-connected account
     disconnect: Callable       # drop the (non-secret) connection metadata
     refresh: Callable          # render current state (call on panel load)
+    #: -- failed-verification recovery (this connection is "error") --------
+    retry: Callable            # reopen the form for THIS account, same
+                                # ExternalId, Role ARN prepopulated from disk
+    change_account: Callable   # abandon this local attempt, mint a fresh
+                                # connection (new ExternalId) for another
+                                # account -- local metadata only, no AWS calls
 
 
 def build_aws_connect_callbacks(
@@ -90,8 +98,21 @@ def build_aws_connect_callbacks(
 
     def refresh(_=None) -> None:
         try:
-            _render(onboarding_factory().summary())
-        except Exception as err:                       # noqa: BLE001
+            onboarding = onboarding_factory()
+            summary = onboarding.summary()
+            # A stored "pending" or "error" connection has a setup URL worth
+            # showing again after a page reload (a fresh AWSOnboarding built
+            # this render, so nothing survived in memory). begin() only
+            # reuses the on-disk record -- no AssumeRole, no ExternalId
+            # rotation -- so this is safe to do on every render.
+            setup_url = None
+            if summary.get("status") in ("pending", "error"):
+                try:
+                    setup_url = onboarding.begin().setup_url
+                except Exception:                       # noqa: BLE001
+                    setup_url = None                     # e.g. template URL unset
+            _render(summary, setup_url=setup_url)
+        except Exception as err:                        # noqa: BLE001
             _config_error(err)
 
     # -- Connect: mint/reuse the record, reveal the card, fill the link --
@@ -172,10 +193,66 @@ def build_aws_connect_callbacks(
         _log("disconnected — connection metadata removed (no STS credentials "
              "were stored)")
 
+    # -- Retry connection: repair the SAME account -----------------------
+    def retry(_=None) -> None:
+        """Reopen the connect card for a stranded (error/pending) connection
+        without losing anything: ``begin()`` reuses the on-disk record, so
+        the ExternalId is untouched, and the saved Role ARN (if any) is
+        prepopulated so a forgotten value is never a dead end."""
+        if _busy["on"]:
+            return
+        try:
+            step = onboarding_factory().begin()
+        except (PrincipalNotConfiguredError, OnboardingConfigError) as err:
+            _config_error(err)
+            return
+        except Exception as err:                        # noqa: BLE001
+            _config_error(err)
+            return
+        if step.connection.role_arn:
+            widgets.role_arn_input.value = step.connection.role_arn
+        _render(
+            onboarding_factory().summary(),
+            setup_url=step.setup_url,
+            form_open=True,
+        )
+        _log("retry — reopened this connection (same ExternalId); "
+             "saved Role ARN restored, edit if needed and Verify")
+
+    # -- Change AWS account: abandon this attempt, start a new one -------
+    def change_account(_=None) -> None:
+        """Replace THIS user's local connection metadata with a brand-new
+        record for a different AWS account. Mints a fresh ExternalId (the
+        old one stops being trusted, which is correct -- it must not be
+        reused across accounts). Touches no AWS resource, CloudFormation
+        stack, run, log or result -- those are untouched by this local
+        metadata swap."""
+        if _busy["on"]:
+            return
+        try:
+            step = onboarding_factory().reconnect()
+        except (PrincipalNotConfiguredError, OnboardingConfigError) as err:
+            _config_error(err)
+            return
+        except Exception as err:                        # noqa: BLE001
+            _config_error(err)
+            return
+        widgets.role_arn_input.value = ""
+        _render(
+            onboarding_factory().summary(),
+            setup_url=step.setup_url,
+            form_open=True,
+        )
+        _log("connect a different AWS account — the previous local "
+             "connection metadata was replaced with a new ExternalId "
+             "(no AWS resources were touched; past runs are unaffected)")
+
     return AWSConnectCallbacks(
         connect=connect,
         verify=verify,
         recheck=recheck,
         disconnect=disconnect,
         refresh=refresh,
+        retry=retry,
+        change_account=change_account,
     )

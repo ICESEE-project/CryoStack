@@ -116,3 +116,54 @@ def test_gateway_still_builds_with_the_cloud_wiring(builder, monkeypatch):
     walk(page)
     blob = "\n".join(html)
     assert "Cloud: Not configured" in blob
+
+
+# -- C7 live-acceptance: a failed AWS connection is not "Not configured" ---
+def test_recovery_actions_and_new_chip_states_are_wired():
+    src = _ICESHEETS.read_text()
+    assert "connection_issue" in src and "Connection issue" in src
+    assert "connection_required" in src and "Connection required" in src
+    assert "aws_connect.retry" in src
+    assert "aws_connect.change_account" in src
+    assert "retry_button.on_click(aws_connect.retry)" in src
+    assert "change_account_button.on_click(aws_connect.change_account)" in src
+
+
+def test_a_stranded_aws_connection_shows_connection_issue_not_not_configured(monkeypatch, tmp_path):
+    """The exact live-acceptance bug: a previously-attempted-but-failed AWS
+    connection must render as "Cloud: Connection issue", never silently
+    fall back to the first-time "Cloud: Not configured" label."""
+    monkeypatch.setenv("CRYOSTACK_WORKSPACE_USER", "cloud-recovery-user")
+    monkeypatch.setenv("USER", "cloud-wire-service")
+    monkeypatch.setenv("CRYOSTACK_WORKSPACE_ROOT", str(tmp_path))
+    monkeypatch.delenv("CRYOSTACK_AWS_PRINCIPAL_ARN", raising=False)
+    monkeypatch.delenv("CRYOSTACK_CF_TEMPLATE_URL", raising=False)
+    import matplotlib
+    matplotlib.use("Agg")
+
+    from cryostack_src.cloud.connect import AWSConnectionStore
+    from cryostack_src.workspace.identity import WorkspaceUser
+
+    user = WorkspaceUser(user_id="cloud-recovery-user", source="env-override")
+    store = AWSConnectionStore(user=user, workspace_root=tmp_path)
+    conn = store.create(region="us-east-2").with_role(
+        "arn:aws:iam::713938953301:role/CryoStackExecutionRole"
+    ).mark_error("AWS denied the role assumption.")
+    store.save(conn)
+
+    from icesee_jupyter_book.ui.icesheets_gateway import build_icesheets_ui
+    page = build_icesheets_ui()
+    html = []
+
+    def walk(w):
+        if isinstance(w, W.HTML):
+            html.append(w.value)
+        for c in getattr(w, "children", ()):
+            walk(c)
+
+    walk(page)
+    blob = "\n".join(html)
+    assert "Cloud: Connection issue" in blob
+    assert "Cloud: Not configured" not in blob
+    # the Role ARN this user already saved must still be on disk, untouched
+    assert store.load().role_arn == "arn:aws:iam::713938953301:role/CryoStackExecutionRole"

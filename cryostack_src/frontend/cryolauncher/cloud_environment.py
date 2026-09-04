@@ -97,6 +97,16 @@ class CloudEnvironmentWidgets:
     recheck_button: W.Button
     #: connected -> remove the (non-secret) connection metadata
     disconnect_button: W.Button
+    #: error (verification failed) -> the Retry connection / Change AWS
+    #: account row -- the recovery escape hatch for a stranded connection
+    recovery_actions: W.HBox
+    #: repair/re-verify THIS account -- reopens the form, reusing the saved
+    #: ExternalId, and prepopulates the saved Role ARN
+    retry_button: W.Button
+    #: abandon this local connection attempt and start onboarding a
+    #: different AWS account (mints a fresh ExternalId; no AWS resources of
+    #: the previous account are touched)
+    change_account_button: W.Button
 
     # -- RUN ESTIMATE + Review & Launch (C7.4) --------------------------
     #: compact "expected runtime · resources · estimated cost" block
@@ -260,6 +270,15 @@ def _build_aws_account_section() -> dict:
         layout=W.Layout(gap="8px", display="none"),
     )
 
+    # -- failed-verification recovery: shown ONLY in the "error" state ---
+    retry_button = primary_button("Retry connection", icon="redo")
+    change_account_button = secondary_button("Change AWS account", icon="exchange")
+
+    recovery_actions = W.HBox(
+        [retry_button, change_account_button],
+        layout=W.Layout(gap="8px", display="none"),
+    )
+
     heading = W.HTML(
         value=(
             "<div style='font-size:12px;font-weight:700;color:#172033;"
@@ -275,6 +294,7 @@ def _build_aws_account_section() -> dict:
             connect_button,
             connect_form,
             connect_actions,
+            recovery_actions,
         ],
         layout=W.Layout(width="100%", gap="5px", padding="6px 0"),
     )
@@ -291,6 +311,9 @@ def _build_aws_account_section() -> dict:
         "verify_button": verify_button,
         "recheck_button": recheck_button,
         "disconnect_button": disconnect_button,
+        "recovery_actions": recovery_actions,
+        "retry_button": retry_button,
+        "change_account_button": change_account_button,
     }
 
 
@@ -323,6 +346,9 @@ def set_aws_account_view(
     def _show_connected_actions(show: bool) -> None:
         widgets.connect_actions.layout.display = "flex" if show else "none"
 
+    def _show_recovery_actions(show: bool) -> None:
+        widgets.recovery_actions.layout.display = "flex" if show else "none"
+
     if status == "connected":
         widgets.aws_account_status.value = status_badge("done", label="Connected")
         acct = summary.get("account_id", "")
@@ -339,6 +365,7 @@ def set_aws_account_view(
         widgets.connect_button.layout.display = "none"
         widgets.connect_form.layout.display = "none"
         _show_connected_actions(True)
+        _show_recovery_actions(False)
         return
 
     if status == "error":
@@ -348,8 +375,13 @@ def set_aws_account_view(
             f"<div style='font-size:11px;color:#b23c3c;line-height:1.45;'>{escape_text(reason)}</div>"
         )
         widgets.connect_button.layout.display = "none"
-        widgets.connect_form.layout.display = "flex"
+        # The form (Role ARN + Verify) is NOT forced open here -- it stays at
+        # whatever the caller last set it to (hidden by default; a prior
+        # Retry/Verify in this session left it open). "Retry connection"
+        # below is the explicit, discoverable way back into it, prepopulated
+        # with the saved Role ARN -- a forgotten ARN is never a dead end.
         _show_connected_actions(False)
+        _show_recovery_actions(True)
         return
 
     if status == "pending":
@@ -362,6 +394,7 @@ def set_aws_account_view(
         widgets.connect_button.layout.display = "none"
         widgets.connect_form.layout.display = "flex"
         _show_connected_actions(False)
+        _show_recovery_actions(False)
         return
 
     # disconnected
@@ -372,6 +405,7 @@ def set_aws_account_view(
     widgets.connect_button.layout.display = "inline-flex"
     widgets.connect_form.layout.display = "none"
     _show_connected_actions(False)
+    _show_recovery_actions(False)
 
 
 def escape_text(value: str) -> str:
@@ -991,6 +1025,9 @@ def build_cloud_environment_card(
         verify_button=aws_account["verify_button"],
         recheck_button=aws_account["recheck_button"],
         disconnect_button=aws_account["disconnect_button"],
+        recovery_actions=aws_account["recovery_actions"],
+        retry_button=aws_account["retry_button"],
+        change_account_button=aws_account["change_account_button"],
 
         run_estimate_section=run_estimate["run_estimate_section"],
         run_estimate_line=run_estimate["run_estimate_line"],

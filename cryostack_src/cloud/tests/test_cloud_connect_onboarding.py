@@ -182,3 +182,74 @@ def test_recheck_reuses_the_stored_role_arn(tmp_path):
     ob.verify(role_arn=ROLE_A)
     again = ob.recheck()
     assert again.ok and again.connection.account_id == "713938953301"
+
+
+# -- C7 live-acceptance: recovering a failed/stranded connection -----------
+def test_forgotten_role_arn_survives_a_failed_verify_and_is_readable_back(tmp_path):
+    """A failed AssumeRole still persists the Role ARN the user typed --
+    "forgotten ARN" is recoverable because it was never lost."""
+    ob = _onboarding(tmp_path, runner=FakeAWS(deny=True))
+    ob.begin()
+    result = ob.verify(role_arn=ROLE_A)
+    assert not result.ok
+
+    reloaded = _onboarding(tmp_path)
+    summary = reloaded.summary()
+    assert summary["status"] == "error"
+    assert summary["role_arn"] == ROLE_A
+
+
+def test_retry_via_begin_after_a_failed_verify_does_not_rotate_the_external_id(tmp_path):
+    """"Retry connection" is `begin()` on the existing record -- it must
+    reuse the ExternalId a failed verification already spent (the cross-
+    account trust policy was written against it), never mint a new one."""
+    ob = _onboarding(tmp_path, runner=FakeAWS(deny=True))
+    ob.begin()
+    before = ob.current().external_id
+    ob.verify(role_arn=ROLE_A)                 # fails -> status "error"
+    after_failure = ob.current().external_id
+    assert after_failure == before
+
+    # "Retry connection" reopens the card via begin() -- same record
+    retry_step = ob.begin()
+    assert retry_step.external_id == before
+    assert retry_step.connection.role_arn == ROLE_A
+    assert ob.current().external_id == before   # still not rotated
+
+
+def test_retry_then_verify_succeeds_and_recovers_the_same_connection(tmp_path):
+    """A repaired role (the user fixed the trust policy in AWS) verifies
+    successfully on retry, still under the original ExternalId."""
+    ob = _onboarding(tmp_path, runner=FakeAWS(deny=True))
+    ob.begin()
+    ext_id = ob.current().external_id
+    ob.verify(role_arn=ROLE_A)
+    assert ob.summary()["status"] == "error"
+
+    ob2 = _onboarding(tmp_path, runner=FakeAWS("713938953301"))  # role now works
+    result = ob2.verify(role_arn=ROLE_A)
+    assert result.ok
+    assert result.connection.external_id == ext_id
+    assert result.connection.account_id == "713938953301"
+
+
+def test_change_account_via_reconnect_replaces_only_this_users_metadata(tmp_path):
+    """"Change AWS account" == reconnect(): a fresh connection_id + external_id
+    for THIS user only. It never touches another user's file (isolation is
+    covered separately) and, being a pure local JSON write, never touches any
+    other kind of local state (run history, logs, results) either."""
+    ob = _onboarding(tmp_path, runner=FakeAWS(deny=True))
+    ob.begin()
+    ob.verify(role_arn=ROLE_A)                  # left in "error"
+    stranded_path = ob.store.path
+    stranded_external_id = ob.current().external_id
+
+    step = ob.reconnect()                       # "Change AWS account"
+    assert step.connection.status == "pending"
+    assert step.connection.role_arn == ""        # no carry-over to a new account
+    assert step.connection.external_id != stranded_external_id
+    assert ob.store.path == stranded_path         # same file, new content
+
+    ob2 = _onboarding(tmp_path, runner=FakeAWS("774888247882"))
+    result = ob2.verify(role_arn=ROLE_B)
+    assert result.ok and result.connection.account_id == "774888247882"

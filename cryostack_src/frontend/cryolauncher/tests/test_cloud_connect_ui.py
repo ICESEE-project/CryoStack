@@ -298,6 +298,170 @@ def test_refresh_restores_connected_metadata_without_sts_credentials(tmp_path, c
     assert "774888247882" in fresh.aws_account_detail.value
 
 
+# -- C7 live-acceptance: failed-verification recovery ---------------------
+def test_failed_verification_reveals_two_explicit_recovery_actions(tmp_path, card):
+    """The stranding bug: a failed verify used to leave NO reachable action
+    (connect_actions -- Re-check/Disconnect -- is connected-only). Retry
+    connection / Change AWS account must be visible and enabled instead."""
+    spawn = _DeferredSpawn()
+    cbs = build_aws_connect_callbacks(
+        widgets=card, onboarding_factory=_factory(tmp_path, runner=FakeAWS(deny=True)),
+        log_output=_Out(), spawn=spawn, to_thread=lambda fn: _immediate(fn),
+    )
+    cbs.connect()
+    card.role_arn_input.value = ROLE_B
+    cbs.verify()
+    spawn.run()
+
+    assert "Not verified" in card.aws_account_status.value
+    assert card.recovery_actions.layout.display == "flex"
+    assert card.retry_button.disabled is False
+    assert card.change_account_button.disabled is False
+
+
+def test_retry_prepopulates_the_saved_role_arn_and_keeps_the_external_id(tmp_path, card):
+    """Forgotten-ARN recovery: the saved Role ARN comes back on Retry, and the
+    ExternalId is the SAME one the (already-written) trust policy uses --
+    retry must never silently break a repair by rotating it."""
+    spawn = _DeferredSpawn()
+    factory = _factory(tmp_path, runner=FakeAWS(deny=True))
+    cbs = build_aws_connect_callbacks(
+        widgets=card, onboarding_factory=factory,
+        log_output=_Out(), spawn=spawn, to_thread=lambda fn: _immediate(fn),
+    )
+    cbs.connect()
+    external_id_before = factory().current().external_id
+    card.role_arn_input.value = ROLE_B
+    cbs.verify()
+    spawn.run()
+    assert "Not verified" in card.aws_account_status.value
+
+    card.role_arn_input.value = ""            # simulate "I forgot it"
+    cbs.retry()
+    assert card.role_arn_input.value == ROLE_B
+    assert card.connect_form.layout.display == "flex"
+    assert factory().current().external_id == external_id_before
+
+
+def test_retry_then_verify_recovers_a_repaired_connection(tmp_path):
+    """End to end: fails, Retry, fix nothing but the AWS-side role (simulated
+    by swapping in a working runner) -- the SAME local connection verifies."""
+    card = build_cloud_environment_card()
+    spawn = _DeferredSpawn()
+    denying = _factory(tmp_path, runner=FakeAWS(deny=True))
+    cbs = build_aws_connect_callbacks(
+        widgets=card, onboarding_factory=denying,
+        log_output=_Out(), spawn=spawn, to_thread=lambda fn: _immediate(fn),
+    )
+    cbs.connect()
+    card.role_arn_input.value = ROLE_B
+    cbs.verify()
+    spawn.run()
+    assert "Not verified" in card.aws_account_status.value
+
+    working = _factory(tmp_path, runner=FakeAWS("774888247882"))
+    cbs2 = build_aws_connect_callbacks(
+        widgets=card, onboarding_factory=working,
+        log_output=_Out(), spawn=spawn, to_thread=lambda fn: _immediate(fn),
+    )
+    cbs2.retry()
+    assert card.role_arn_input.value == ROLE_B     # prepopulated, unchanged
+    cbs2.verify()
+    spawn.run()
+    assert "Connected" in card.aws_account_status.value
+    assert "774888247882" in card.aws_account_detail.value
+
+
+def test_change_account_mints_a_new_external_id_and_clears_the_form(tmp_path, card):
+    """"Change AWS account" abandons the stranded attempt: fresh
+    connection_id/ExternalId, empty Role ARN field, form open for the new
+    account. The old ExternalId must never be reused for the new one."""
+    spawn = _DeferredSpawn()
+    factory = _factory(tmp_path, runner=FakeAWS(deny=True))
+    cbs = build_aws_connect_callbacks(
+        widgets=card, onboarding_factory=factory,
+        log_output=_Out(), spawn=spawn, to_thread=lambda fn: _immediate(fn),
+    )
+    cbs.connect()
+    external_id_before = factory().current().external_id
+    card.role_arn_input.value = ROLE_B
+    cbs.verify()
+    spawn.run()
+    assert "Not verified" in card.aws_account_status.value
+
+    cbs.change_account()
+    assert card.role_arn_input.value == ""
+    assert card.connect_form.layout.display == "flex"
+    new_conn = factory().current()
+    assert new_conn.status == "pending"
+    assert new_conn.role_arn == ""
+    assert new_conn.external_id != external_id_before
+
+    # and it is usable for a DIFFERENT account
+    fresh_working = _factory(tmp_path, runner=FakeAWS("774888247882"))
+    cbs3 = build_aws_connect_callbacks(
+        widgets=card, onboarding_factory=fresh_working,
+        log_output=_Out(), spawn=spawn, to_thread=lambda fn: _immediate(fn),
+    )
+    card.role_arn_input.value = ROLE_B
+    cbs3.verify()
+    spawn.run()
+    assert "Connected" in card.aws_account_status.value
+    assert "774888247882" in card.aws_account_detail.value
+
+
+def test_recovery_after_page_refresh_shows_error_not_disconnected(tmp_path):
+    """A "page reload": a fresh card + fresh callbacks over the SAME on-disk
+    connection must render the stranded state (and its recovery actions),
+    never silently fall back to "disconnected"."""
+    card = build_cloud_environment_card()
+    spawn = _DeferredSpawn()
+    cbs = build_aws_connect_callbacks(
+        widgets=card, onboarding_factory=_factory(tmp_path, runner=FakeAWS(deny=True)),
+        log_output=_Out(), spawn=spawn, to_thread=lambda fn: _immediate(fn),
+    )
+    cbs.connect()
+    card.role_arn_input.value = ROLE_B
+    cbs.verify()
+    spawn.run()
+    assert "Not verified" in card.aws_account_status.value
+
+    fresh = build_cloud_environment_card()
+    cbs2 = build_aws_connect_callbacks(
+        widgets=fresh, onboarding_factory=_factory(tmp_path, runner=FakeAWS(deny=True)),
+        log_output=_Out(),
+    )
+    cbs2.refresh()
+    assert "Not verified" in fresh.aws_account_status.value
+    assert fresh.recovery_actions.layout.display == "flex"
+    # the setup link is rebuilt too -- not stuck on the built-in placeholder
+    assert "Open AWS Setup" in fresh.open_setup_link.value
+
+
+def test_recovery_actions_never_render_a_secret(tmp_path, card):
+    """No STS credential material anywhere in the recovered-state UI."""
+    spawn = _DeferredSpawn()
+    cbs = build_aws_connect_callbacks(
+        widgets=card, onboarding_factory=_factory(tmp_path, runner=FakeAWS(deny=True)),
+        log_output=_Out(), spawn=spawn, to_thread=lambda fn: _immediate(fn),
+    )
+    cbs.connect()
+    card.role_arn_input.value = ROLE_B
+    cbs.verify()
+    spawn.run()
+    cbs.retry()
+    cbs.change_account()
+
+    texts = [
+        card.aws_account_status.value, card.aws_account_detail.value,
+        card.open_setup_link.value, card.role_arn_input.value,
+    ]
+    blob = " ".join(texts).lower()
+    assert "secretaccesskey" not in blob
+    assert "sessiontoken" not in blob
+    assert "asia_" not in blob and "akia" not in blob
+
+
 def _immediate(fn):
     """Stand-in for asyncio.to_thread that runs the worker inline and returns
     an already-awaitable result."""

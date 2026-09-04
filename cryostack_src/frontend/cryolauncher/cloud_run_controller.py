@@ -337,10 +337,20 @@ class CloudRunController:
 
         BYO-AWS: assumed-role temporary credentials (fresh). Developer mode
         (no execution provider): the existing ambient/profile bridge.
+
+        When ``execution`` is not supplied (poll / terminate / status calls
+        that resolve their own context), the freshly resolved account is
+        checked against the run's recorded ``account_id`` -- a run attached
+        for account A must never be polled/terminated against whichever
+        account is CURRENTLY connected (B). ``run_once`` already resolves +
+        asserts once and passes ``execution`` in explicitly, so it is not
+        re-checked here.
         """
         if self._execution_provider is None:
             return self._bridge_factory()
         ex = execution if execution is not None else self._resolve_execution()
+        if execution is None:
+            self._assert_same_account(ex)
         creds = getattr(ex, "credentials", None)
         region = getattr(ex, "region", None) or self._handle.region or None
         return self._bridge_factory(credentials=creds, region=region)
@@ -443,9 +453,26 @@ class CloudRunController:
 
     async def _poll_loop(self, job_id: str) -> None:
         while not is_terminal(self._handle.state):
+            # Credential/account resolution is checked SEPARATELY from the
+            # AWS status call: a broken connection or an account switch
+            # underneath an in-flight run (this run is A's, the user is now
+            # connected to B) is not a transient hiccup to retry forever --
+            # it must fail closed and stop polling.
+            try:
+                execution = await self._to_thread(self._resolve_execution)
+                self._assert_same_account(execution)
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:  # noqa: BLE001
+                short, detail = classify_cloud_failure(error)
+                self._log(f"[cloud][ERROR] {short}")
+                self._log(f"[cloud][detail] {detail}")
+                self._set_state(FAILED)
+                return
+
             try:
                 status = await self._to_thread(
-                    lambda: self._bridge().status(job_id=job_id))
+                    lambda: self._bridge(execution).status(job_id=job_id))
                 state = getattr(status, "state", "") or normalize_aws_state(
                     getattr(status, "raw_state", ""))
                 reason = getattr(status, "reason", "") or ""
@@ -470,6 +497,7 @@ class CloudRunController:
         self._log("[cloud] Job completed. Retrieving outputs from S3…")
         try:
             execution = await self._to_thread(self._resolve_execution)
+            self._assert_same_account(execution)
             creds = getattr(execution, "credentials", None)
             region = getattr(execution, "region", None) or self._handle.region or None
             path = await self._to_thread(
