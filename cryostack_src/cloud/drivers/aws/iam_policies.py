@@ -98,6 +98,26 @@ def job_trust_policy() -> dict:
     }
 
 
+def ec2_instance_trust_policy() -> dict:
+    """Trust relationship for the ECS **instance** role used by the Advanced
+    EC2 Batch compute environment (the EC2 hosts that run the containers).
+    Assumed by EC2 itself, not by ECS tasks. Only needed for EC2 mode.
+    """
+
+    return {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Principal": {
+                    "Service": "ec2.amazonaws.com"
+                },
+                "Action": "sts:AssumeRole",
+            }
+        ],
+    }
+
+
 def job_s3_policy(
     *,
     bucket: str,

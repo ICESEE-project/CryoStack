@@ -55,6 +55,12 @@ class AWSIAMResources:
     ecs_execution_role_name: str | None = None
     job_role_name: str | None = None
 
+    #: ECS instance PROFILE ARN for the Advanced EC2 Batch compute environment
+    #: (the value Batch calls ``instanceRole``). ``None`` until EC2 mode is
+    #: prepared; never required for the default Fargate path.
+    ec2_instance_profile: str | None = None
+    ec2_instance_profile_name: str | None = None
+
     missing: list[str] | None = None
 
 
@@ -138,6 +144,32 @@ def find_role(
     return None
 
 
+def list_instance_profiles(config: AWSConfig) -> list[dict]:
+    """Instance profiles visible to the connected AWS identity (for the
+    Advanced EC2 Batch compute environment).
+
+    Best-effort: a role scoped only for the Fargate path may lack
+    ``iam:ListInstanceProfiles``. That must not break the default Prepare
+    Cloud, so a failure here yields ``[]`` -- EC2 provisioning, which needs
+    this, surfaces its own clear error later.
+    """
+    code, stdout, stderr = run_aws(config, ["iam", "list-instance-profiles"])
+    if code != 0:
+        return []
+    try:
+        return json.loads(stdout or "{}").get("InstanceProfiles", [])
+    except (ValueError, TypeError):
+        return []
+
+
+def find_instance_profile(profiles: list[dict], names: list[str]) -> dict | None:
+    wanted = {n.strip().lower() for n in names}
+    for prof in profiles:
+        if (prof.get("InstanceProfileName") or "").strip().lower() in wanted:
+            return prof
+    return None
+
+
 def discover_iam_resources(
     config: AWSConfig,
 ) -> AWSIAMResources:
@@ -175,6 +207,11 @@ def discover_iam_resources(
         [
             "cryostack-job-role",
         ],
+    )
+
+    ec2_instance_profile = find_instance_profile(
+        list_instance_profiles(config),
+        ["cryostack-ec2-instance-profile"],
     )
 
     missing: list[str] = []
@@ -223,6 +260,16 @@ def discover_iam_resources(
         job_role_name=(
             job_role.get("RoleName")
             if job_role
+            else None
+        ),
+        ec2_instance_profile=(
+            ec2_instance_profile.get("Arn")
+            if ec2_instance_profile
+            else None
+        ),
+        ec2_instance_profile_name=(
+            ec2_instance_profile.get("InstanceProfileName")
+            if ec2_instance_profile
             else None
         ),
         missing=missing,

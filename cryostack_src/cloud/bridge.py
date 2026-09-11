@@ -81,7 +81,10 @@ class CloudBridge:
         )
 
     def prepare_environment(self, *, bucket: str | None = None,
-                            matlab_secret_arn: str = ""):
+                            matlab_secret_arn: str = "",
+                            compute_mode: str = "fargate",
+                            ec2_max_vcpus: int | None = None,
+                            ec2_instance_types: tuple[str, ...] | None = None):
         return self.manager.bootstrap(
             provider=self.provider,
             region=self.region,
@@ -89,4 +92,7 @@ class CloudBridge:
             credentials=self.credentials,
             bucket=bucket,
             matlab_secret_arn=matlab_secret_arn,
+            compute_mode=compute_mode,
+            ec2_max_vcpus=ec2_max_vcpus,
+            ec2_instance_types=ec2_instance_types,
         )

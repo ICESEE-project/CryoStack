@@ -46,10 +46,15 @@ import re
 from dataclasses import dataclass, field
 
 from cryostack_src.cloud.drivers.aws.batch_config import (
+    COMPUTE_MODE_EC2,
+    COMPUTE_MODE_FARGATE,
     DEFAULT_ISSM_JOB_CONFIG,
     JOB_QUEUE_NAME,
+    EC2ComputeConfig,
     FargateJobConfig,
     job_definition_name,
+    job_queue_name,
+    normalize_compute_mode,
 )
 from cryostack_src.cloud.s3_uri import S3LocationError, parse_s3_location
 
@@ -71,12 +76,28 @@ class CloudRunConfig:
     profile: str | None = None
     job_queue: str = ""
     job_definition: str = ""
+    #: "fargate" (default) or "ec2" -- the AWS Batch compute environment this
+    #: run targets. EC2 is the Advanced option; an old saved config that never
+    #: carried the field deserialises to "fargate" (see resolve_cloud_config).
+    aws_batch_compute: str = COMPUTE_MODE_FARGATE
     #: the resolved Fargate resource shape -- THE canonical source of truth for
     #: what the run asks AWS for. The Review card and the submit path both read
     #: this; nothing derives a second copy.
     fargate: FargateJobConfig = field(default_factory=lambda: DEFAULT_ISSM_JOB_CONFIG)
+    #: EC2-only advanced knobs (max vCPUs / instance types); ignored unless
+    #: ``aws_batch_compute == "ec2"``.
+    ec2: EC2ComputeConfig = field(default_factory=EC2ComputeConfig)
     #: the raw user input that could not be normalized (validation reports it)
     bucket_error: str = ""
+
+    # -- compute-mode accessors -------------------------------------
+    @property
+    def is_ec2(self) -> bool:
+        return normalize_compute_mode(self.aws_batch_compute) == COMPUTE_MODE_EC2
+
+    @property
+    def compute_mode(self) -> str:
+        return normalize_compute_mode(self.aws_batch_compute)
 
     # -- canonical resource accessors --------------------------------
     @property
@@ -108,6 +129,10 @@ class CloudRunConfig:
             "base_prefix": self.base_prefix,
             "job_queue": self.job_queue,
             "job_definition": self.job_definition,
+            # only recorded when it deviates from the default -- keeps every
+            # existing Fargate run's provenance byte-identical
+            "aws_batch_compute": (self.compute_mode
+                                  if self.compute_mode != COMPUTE_MODE_FARGATE else ""),
         }
         return {k: v for k, v in out.items() if v}
 
@@ -122,6 +147,8 @@ def resolve_cloud_config(
     job_queue: str = "",
     job_definition: str = "",
     fargate: FargateJobConfig | None = None,
+    aws_batch_compute: str = "",
+    ec2: EC2ComputeConfig | None = None,
 ) -> CloudRunConfig:
     """Fill deterministic defaults and normalize the S3 location.
 
@@ -138,6 +165,8 @@ def resolve_cloud_config(
             bucket_name, base_prefix = loc.bucket, loc.prefix
         except S3LocationError as err:
             bucket_error = str(err)
+    # backward compatible: a config that never carried the field -> Fargate
+    compute_mode = normalize_compute_mode(aws_batch_compute)
     return CloudRunConfig(
         provider=provider,
         region=(region or "").strip() or DEFAULT_CLOUD_REGION,
@@ -145,9 +174,13 @@ def resolve_cloud_config(
         base_prefix=base_prefix,
         bucket_error=bucket_error,
         profile=(profile or "").strip() or None,
-        job_queue=(job_queue or "").strip() or JOB_QUEUE_NAME,
-        job_definition=(job_definition or "").strip() or job_definition_name(model),
+        job_queue=((job_queue or "").strip()
+                   or job_queue_name(compute_mode)),
+        job_definition=((job_definition or "").strip()
+                        or job_definition_name(model, compute_mode)),
+        aws_batch_compute=compute_mode,
         fargate=fargate or DEFAULT_ISSM_JOB_CONFIG,
+        ec2=ec2 or EC2ComputeConfig(),
     )
 
 

@@ -94,10 +94,14 @@ from .batch import (
 
 from .batch_config import (
     DEFAULT_MAX_VCPUS,
+    COMPUTE_MODE_EC2,
+    EC2ComputeConfig,
+    normalize_compute_mode,
 )
 
 from .batch_provision import (
     AWSBatchProvisionResult,
+    EC2Provisioning,
     ensure_batch_resources,
 )
 
@@ -249,6 +253,10 @@ class AWSDriver(
         include_icesee: bool = False,
         image_copier=None,
         matlab_secret_arn: str = "",
+        compute_mode: str = "fargate",
+        ec2_instance_role_arn: str = "",
+        ec2_max_vcpus: int | None = None,
+        ec2_instance_types: tuple[str, ...] | None = None,
     ) -> AWSBatchProvisionResult:
         """
         Idempotently provision AWS Batch on Fargate: a scale-to-zero compute
@@ -319,6 +327,25 @@ class AWSDriver(
         from cryostack_src.cloud.runtime import cloud_run_command
         from icesee_jupyter_book.core.cloud_runner import icesee_batch_command
 
+        # Advanced: when EC2 mode is requested AND an ECS instance profile is
+        # available, ALSO stand up the EC2 compute environment / queue /
+        # -ec2 job definitions. Fargate is always provisioned regardless.
+        ec2_provisioning = None
+        if normalize_compute_mode(compute_mode) == COMPUTE_MODE_EC2:
+            instance_role = (ec2_instance_role_arn
+                             or getattr(iam, "ec2_instance_profile", "") or "")
+            if instance_role:
+                ec2_cfg_kwargs: dict = {}
+                if ec2_max_vcpus is not None:
+                    ec2_cfg_kwargs["max_vcpus"] = int(ec2_max_vcpus)
+                if ec2_instance_types:
+                    ec2_cfg_kwargs["instance_types"] = tuple(ec2_instance_types)
+                ec2_provisioning = EC2Provisioning(
+                    instance_role_arn=instance_role,
+                    ec2_config=EC2ComputeConfig(**ec2_cfg_kwargs),
+                    service_role_arn=getattr(iam, "batch_service_role", None),
+                )
+
         result = ensure_batch_resources(
             self.config,
             subnets=network.subnet_ids,
@@ -334,6 +361,7 @@ class AWSDriver(
             include_icesee=include_icesee,
             icesee_image=icesee_image,
             icesee_command=icesee_batch_command() if include_icesee else None,
+            ec2=ec2_provisioning,
         )
         result.image_delivery = delivery
         result.icepack_image_delivery = icepack_delivery
@@ -346,6 +374,9 @@ class AWSDriver(
         *,
         bucket: str | None = None,
         matlab_secret_arn: str = "",
+        compute_mode: str = "fargate",
+        ec2_max_vcpus: int | None = None,
+        ec2_instance_types: tuple[str, ...] | None = None,
     ) -> dict:
         """
         Prepare the AWS environment currently supported by CryoStack.
@@ -453,6 +484,7 @@ class AWSDriver(
             # ---------------------------------------------------------
             #
             stage = "iam"
+            _want_ec2 = normalize_compute_mode(compute_mode) == COMPUTE_MODE_EC2
             iam_result = ensure_iam_resources(
                 self.config,
                 bucket=storage.bucket,
@@ -460,6 +492,9 @@ class AWSDriver(
                 # execution role every Prepare Cloud (scoped to exactly this
                 # ARN; removed when unconfigured)
                 matlab_secret_arn=matlab_secret_arn,
+                # Advanced: create the ECS instance profile only when EC2 mode
+                # was selected -- Fargate-only accounts never get an EC2 role
+                include_ec2=_want_ec2,
             )
             iam = iam_result.resources
             if iam_result.created:
@@ -514,6 +549,11 @@ class AWSDriver(
                 include_icepack=True,
                 include_icesee=True,
                 matlab_secret_arn=matlab_secret_arn,
+                compute_mode=compute_mode,
+                ec2_instance_role_arn=getattr(
+                    iam_result, "ec2_instance_profile", "") or "",
+                ec2_max_vcpus=ec2_max_vcpus,
+                ec2_instance_types=ec2_instance_types,
             )
 
         except AWSCredentialsError:
@@ -647,7 +687,9 @@ class AWSDriver(
         from cryostack_src.cloud.preflight import assert_cloud_run_allowed
         from .staging import stage_run_inputs
         from .submit import submit_batch_job
-        from .batch_config import JOB_QUEUE_NAME, job_definition_name
+        from .batch_config import (
+            job_definition_name, job_queue_name, normalize_compute_mode,
+        )
 
         staged_source = kwargs.get("staged_source") or kwargs.get("source")
         model = (kwargs.get("model") or "").strip().lower()
@@ -657,8 +699,14 @@ class AWSDriver(
         run_id = kwargs.get("run_id")
         run_prefix = kwargs.get("run_prefix") or ""
         job_name = kwargs.get("job_name") or "cryostack"
-        job_queue = (kwargs.get("job_queue") or "").strip() or JOB_QUEUE_NAME
-        job_definition = (kwargs.get("job_definition") or "").strip() or job_definition_name(model)
+        # "fargate" (default / anything unrecognised) or "ec2" -- selects which
+        # Batch queue + job definition the run targets. An old caller that
+        # passes nothing gets the Fargate pair, exactly as before.
+        compute_mode = normalize_compute_mode(kwargs.get("compute_mode"))
+        job_queue = (kwargs.get("job_queue") or "").strip() or job_queue_name(compute_mode)
+        job_definition = (
+            (kwargs.get("job_definition") or "").strip()
+            or job_definition_name(model, compute_mode))
         matlab_license_configured = bool(kwargs.get("matlab_license_configured", False))
         s3 = kwargs.get("s3")
         aws = kwargs.get("aws")
@@ -709,6 +757,7 @@ class AWSDriver(
             "run_target": run_target,
             "job_queue": submission.job_queue,
             "job_definition": submission.job_definition,
+            "aws_batch_compute": compute_mode,
             "messages": [*staging.messages, *submission.messages],
         }
 

@@ -64,6 +64,13 @@ class CloudEnvironmentWidgets:
     matlab_license_arn: W.Text
     matlab_license_save_button: W.Button
 
+    #: Advanced: AWS Batch compute environment -- "fargate" (default) or "ec2"
+    compute_mode: W.Dropdown
+    #: EC2-only knobs, revealed only while compute_mode == "ec2"
+    ec2_max_vcpus: W.IntText
+    ec2_instance_types: W.Text
+    ec2_options_box: W.VBox
+
     account_status: W.HTML
     storage_status: W.HTML
     registry_status: W.HTML
@@ -897,6 +904,9 @@ def build_cloud_environment_card(
     job_definition: str = "",
     job_name: str = "icesheets",
     matlab_license_secret_arn: str = "",
+    aws_batch_compute: str = "fargate",
+    ec2_max_vcpus: int = 16,
+    ec2_instance_types: str = "optimal",
 ) -> CloudEnvironmentWidgets:
     """
     Build the ICESEE Cloud Environment panel.
@@ -1073,6 +1083,55 @@ def build_cloud_environment_card(
         ),
     )
 
+    # -- Compute environment: Fargate (default) or EC2 (advanced) --------
+    compute_mode_widget = W.Dropdown(
+        description="Compute:",
+        options=[
+            ("Fargate — serverless (default)", "fargate"),
+            ("EC2 — managed instances (advanced)", "ec2"),
+        ],
+        value=("ec2" if str(aws_batch_compute).strip().lower() == "ec2"
+               else "fargate"),
+        layout=W.Layout(width="100%"),
+        style={"description_width": "110px"},
+    )
+    ec2_max_vcpus_widget = W.IntText(
+        description="Max vCPUs:",
+        value=int(ec2_max_vcpus or 16),
+        layout=W.Layout(width="100%"),
+        style={"description_width": "110px"},
+    )
+    ec2_instance_types_widget = W.Text(
+        description="Instance types:",
+        value=(ec2_instance_types or "optimal"),
+        placeholder="optimal   (or e.g. c5,m5,r5)",
+        layout=W.Layout(width="100%"),
+        style={"description_width": "110px"},
+    )
+    ec2_options_caption = W.HTML(
+        value=(
+            "<div style='font-size:11px;color:#96a1b4;line-height:1.45;'>"
+            "EC2 runs on managed AWS Batch instances (scale-to-zero when idle) "
+            "for heavier CPU / memory than Fargate allows. CryoStack manages "
+            "the AMI, the ECS instance role and scaling; you only choose the "
+            "ceiling and instance families. <b>optimal</b> lets AWS pick. "
+            "Fargate stays the default and is always available."
+            "</div>"
+        ),
+    )
+    ec2_options_box = W.VBox(
+        [ec2_options_caption, ec2_max_vcpus_widget, ec2_instance_types_widget],
+        layout=W.Layout(width="100%", gap="5px"),
+    )
+    ec2_options_box.layout.display = (
+        "flex" if compute_mode_widget.value == "ec2" else "none")
+
+    def _on_compute_mode_change(change):
+        ec2_options_box.layout.display = (
+            "flex" if change.get("new") == "ec2" else "none")
+
+    compute_mode_widget.observe(_on_compute_mode_change, names="value")
+
     matlab_license_arn_widget = W.Text(
         description="MATLAB license ARN:",
         value=matlab_license_secret_arn,
@@ -1110,6 +1169,8 @@ def build_cloud_environment_card(
             job_queue_widget,
             job_definition_widget,
             job_name_widget,
+            compute_mode_widget,
+            ec2_options_box,
             matlab_license_caption,
             matlab_license_arn_widget,
             matlab_license_save_button,
@@ -1221,6 +1282,11 @@ def build_cloud_environment_card(
         job_name=job_name_widget,
         matlab_license_arn=matlab_license_arn_widget,
         matlab_license_save_button=matlab_license_save_button,
+
+        compute_mode=compute_mode_widget,
+        ec2_max_vcpus=ec2_max_vcpus_widget,
+        ec2_instance_types=ec2_instance_types_widget,
+        ec2_options_box=ec2_options_box,
 
         account_status=account_status,
         storage_status=storage_status,

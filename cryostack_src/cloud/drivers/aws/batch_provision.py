@@ -49,17 +49,26 @@ from .auth import run_aws
 from .batch import AWSBatchResources, discover_batch_resources
 from .batch_config import (
     COMPUTE_ENVIRONMENT_NAME,
+    COMPUTE_MODE_EC2,
+    DEFAULT_EC2_JOB_CONFIG,
     DEFAULT_ISSM_JOB_CONFIG,
     DEFAULT_MAX_VCPUS,
+    EC2_COMPUTE_ENVIRONMENT_NAME,
+    EC2_JOB_QUEUE_NAME,
     JOB_QUEUE_NAME,
     JOB_QUEUE_PRIORITY,
     LOG_RETENTION_DAYS,
+    EC2ComputeConfig,
+    EC2JobConfig,
     FargateJobConfig,
     compute_resources_payload,
     container_properties_payload,
+    ec2_compute_resources_payload,
+    ec2_container_properties_payload,
     job_definition_fingerprint,
     job_definition_name,
     log_group_name,
+    normalize_compute_mode,
 )
 from .models import AWSConfig
 
@@ -184,11 +193,13 @@ def ensure_log_group(config: AWSConfig, *, model: str) -> str:
 
 
 # ── compute environment ───────────────────────────────────────────────────
-def _current_compute_environment(config: AWSConfig) -> dict | None:
+def _current_compute_environment(
+    config: AWSConfig, name: str = COMPUTE_ENVIRONMENT_NAME,
+) -> dict | None:
     payload = _describe(
         config,
         ["batch", "describe-compute-environments",
-         "--compute-environments", COMPUTE_ENVIRONMENT_NAME],
+         "--compute-environments", name],
     )
     envs = payload.get("computeEnvironments", [])
     return envs[0] if envs else None
@@ -269,11 +280,96 @@ def ensure_compute_environment(
     return "updated"
 
 
+def ensure_ec2_compute_environment(
+    config: AWSConfig,
+    *,
+    subnets: list[str],
+    security_groups: list[str],
+    instance_role_arn: str,
+    service_role_arn: str | None = None,
+    ec2_config: EC2ComputeConfig = EC2ComputeConfig(),
+    ready_interval: float = BATCH_READY_INTERVAL_SECONDS,
+    ready_timeout: float = BATCH_READY_TIMEOUT_SECONDS,
+    sleep: Callable[[float], None] = time.sleep,
+) -> str:
+    """Managed EC2 (scale-to-zero) compute environment ``cryostack-ec2``.
+
+    Separate from the Fargate compute environment -- never renamed / reused /
+    overwritten. Returns ``created`` / ``updated`` / ``reused``, VALID before
+    it returns. Drift = maxvCpus / subnets / security groups / instance types /
+    instance role.
+    """
+    name = EC2_COMPUTE_ENVIRONMENT_NAME
+    what = f"compute environment {name}"
+
+    def _wait() -> None:
+        _poll_batch_status(
+            lambda: _current_compute_environment(config, name), what=what,
+            interval=ready_interval, timeout=ready_timeout, sleep=sleep,
+        )
+
+    desired = ec2_compute_resources_payload(
+        subnets=subnets, security_groups=security_groups,
+        instance_role_arn=instance_role_arn, config=ec2_config,
+    )
+    current = _current_compute_environment(config, name)
+
+    if current is None:
+        args = [
+            "batch", "create-compute-environment",
+            "--compute-environment-name", name,
+            "--type", "MANAGED",
+            "--state", "ENABLED",
+            "--compute-resources", json.dumps(desired),
+        ]
+        if service_role_arn:
+            args += ["--service-role", service_role_arn]
+        code, stdout, stderr = run_aws(config, args)
+        _require_success(code, stdout, stderr, what="batch create-compute-environment")
+        _wait()
+        return "created"
+
+    cr = current.get("computeResources") or {}
+    drift = (
+        int(cr.get("maxvCpus", -1)) != int(desired["maxvCpus"])
+        or set(cr.get("subnets") or []) != set(desired["subnets"])
+        or set(cr.get("securityGroupIds") or []) != set(desired.get("securityGroupIds") or [])
+        or list(cr.get("instanceTypes") or []) != list(desired["instanceTypes"])
+    )
+    if not drift:
+        if (current.get("status") or "").upper() != "VALID":
+            _wait()
+        return "reused"
+
+    code, stdout, stderr = run_aws(
+        config,
+        [
+            "batch", "update-compute-environment",
+            "--compute-environment", name,
+            "--state", "ENABLED",
+            "--compute-resources", json.dumps({
+                "minvCpus": desired["minvCpus"],
+                "desiredvCpus": desired["desiredvCpus"],
+                "maxvCpus": desired["maxvCpus"],
+                "instanceTypes": desired["instanceTypes"],
+                "subnets": desired["subnets"],
+                **({"securityGroupIds": desired["securityGroupIds"]}
+                   if desired.get("securityGroupIds") else {}),
+            }),
+        ],
+    )
+    _require_success(code, stdout, stderr, what="batch update-compute-environment")
+    _wait()
+    return "updated"
+
+
 # ── job queue ─────────────────────────────────────────────────────────────
-def _current_job_queue(config: AWSConfig) -> dict | None:
+def _current_job_queue(
+    config: AWSConfig, name: str = JOB_QUEUE_NAME,
+) -> dict | None:
     payload = _describe(
         config,
-        ["batch", "describe-job-queues", "--job-queues", JOB_QUEUE_NAME],
+        ["batch", "describe-job-queues", "--job-queues", name],
     )
     queues = payload.get("jobQueues", [])
     return queues[0] if queues else None
@@ -290,6 +386,8 @@ def _compute_env_in_order(order: list[dict]) -> set[str]:
 def ensure_job_queue(
     config: AWSConfig,
     *,
+    name: str = JOB_QUEUE_NAME,
+    compute_environment: str = COMPUTE_ENVIRONMENT_NAME,
     ready_interval: float = BATCH_READY_INTERVAL_SECONDS,
     ready_timeout: float = BATCH_READY_TIMEOUT_SECONDS,
     sleep: Callable[[float], None] = time.sleep,
@@ -298,33 +396,35 @@ def ensure_job_queue(
 
     Requires the bound compute environment to be ``VALID`` first (AWS rejects a
     ``create-job-queue`` otherwise), and polls the queue itself to ``VALID``
-    before returning.
+    before returning. ``name`` / ``compute_environment`` default to the Fargate
+    pair; the EC2 queue passes its own (``cryostack-ec2-queue`` ->
+    ``cryostack-ec2``) so the two never share ordering.
     """
-    what = f"job queue {JOB_QUEUE_NAME}"
+    what = f"job queue {name}"
 
     def _wait_queue() -> None:
         _poll_batch_status(
-            lambda: _current_job_queue(config), what=what,
+            lambda: _current_job_queue(config, name), what=what,
             interval=ready_interval, timeout=ready_timeout, sleep=sleep,
         )
 
-    ce_order = [{"order": 1, "computeEnvironment": COMPUTE_ENVIRONMENT_NAME}]
-    current = _current_job_queue(config)
+    ce_order = [{"order": 1, "computeEnvironment": compute_environment}]
+    current = _current_job_queue(config, name)
 
     if current is None:
         # defensive: the CE must be VALID before it can be attached
-        ce = _current_compute_environment(config)
+        ce = _current_compute_environment(config, compute_environment)
         if (ce or {}).get("status", "").upper() != "VALID":
             _poll_batch_status(
-                lambda: _current_compute_environment(config),
-                what=f"compute environment {COMPUTE_ENVIRONMENT_NAME}",
+                lambda: _current_compute_environment(config, compute_environment),
+                what=f"compute environment {compute_environment}",
                 interval=ready_interval, timeout=ready_timeout, sleep=sleep,
             )
         code, stdout, stderr = run_aws(
             config,
             [
                 "batch", "create-job-queue",
-                "--job-queue-name", JOB_QUEUE_NAME,
+                "--job-queue-name", name,
                 "--state", "ENABLED",
                 "--priority", str(JOB_QUEUE_PRIORITY),
                 "--compute-environment-order", json.dumps(ce_order),
@@ -336,7 +436,7 @@ def ensure_job_queue(
 
     drift = (
         int(current.get("priority", -1)) != JOB_QUEUE_PRIORITY
-        or COMPUTE_ENVIRONMENT_NAME not in _compute_env_in_order(
+        or compute_environment not in _compute_env_in_order(
             current.get("computeEnvironmentOrder"))
         or (current.get("state") or "").upper() != "ENABLED"
     )
@@ -349,7 +449,7 @@ def ensure_job_queue(
         config,
         [
             "batch", "update-job-queue",
-            "--job-queue", JOB_QUEUE_NAME,
+            "--job-queue", name,
             "--state", "ENABLED",
             "--priority", str(JOB_QUEUE_PRIORITY),
             "--compute-environment-order", json.dumps(ce_order),
@@ -378,16 +478,39 @@ def ensure_job_definition(
     job_role_arn: str,
     execution_role_arn: str,
     region: str,
-    job_config: FargateJobConfig = DEFAULT_ISSM_JOB_CONFIG,
+    job_config: FargateJobConfig | EC2JobConfig = DEFAULT_ISSM_JOB_CONFIG,
     command: list[str] | None = None,
     secrets: list[dict] | None = None,
+    compute_mode: str = "fargate",
 ) -> str:
-    name = job_definition_name(model)
-    desired_cp = container_properties_payload(
-        model=model, image=image, job_role_arn=job_role_arn,
-        execution_role_arn=execution_role_arn, region=region, config=job_config,
-        command=command, secrets=secrets,
-    )
+    """Register (or reuse) a model's job definition.
+
+    ``compute_mode`` selects the platform: ``"fargate"`` (default -- unchanged
+    behaviour, name ``cryostack-<model>``, ``--platform-capabilities FARGATE``,
+    Fargate ``containerProperties``) or ``"ec2"`` (name
+    ``cryostack-<model>-ec2``, ``--platform-capabilities EC2``, EC2
+    ``containerProperties`` with no Fargate-only keys). The Secrets Manager
+    MATLAB-license path, the image digest and the container command are
+    identical for both.
+    """
+    is_ec2 = normalize_compute_mode(compute_mode) == COMPUTE_MODE_EC2
+    name = job_definition_name(model, compute_mode)
+    platform_capability = "EC2" if is_ec2 else "FARGATE"
+
+    if is_ec2:
+        if not isinstance(job_config, EC2JobConfig):
+            job_config = DEFAULT_EC2_JOB_CONFIG
+        desired_cp = ec2_container_properties_payload(
+            model=model, image=image, job_role_arn=job_role_arn,
+            execution_role_arn=execution_role_arn, region=region,
+            config=job_config, command=command, secrets=secrets,
+        )
+    else:
+        desired_cp = container_properties_payload(
+            model=model, image=image, job_role_arn=job_role_arn,
+            execution_role_arn=execution_role_arn, region=region,
+            config=job_config, command=command, secrets=secrets,
+        )
     desired_fp = job_definition_fingerprint(
         container_properties=desired_cp,
         timeout_seconds=job_config.timeout_seconds,
@@ -414,7 +537,7 @@ def ensure_job_definition(
             "batch", "register-job-definition",
             "--job-definition-name", name,
             "--type", "container",
-            "--platform-capabilities", "FARGATE",
+            "--platform-capabilities", platform_capability,
             "--container-properties", json.dumps(desired_cp),
             "--timeout", json.dumps(
                 {"attemptDurationSeconds": int(job_config.timeout_seconds)}),
@@ -426,6 +549,23 @@ def ensure_job_definition(
 
 
 # ── orchestration ─────────────────────────────────────────────────────────
+@dataclass
+class EC2Provisioning:
+    """Everything :func:`ensure_batch_resources` needs to *additionally* stand
+    up the Advanced EC2 compute environment / queue / ``-ec2`` job definitions.
+
+    Passed ONLY when the user selected EC2 mode. When ``None`` the function is
+    byte-for-byte the Fargate-only path it has always been.
+    """
+
+    instance_role_arn: str
+    ec2_config: EC2ComputeConfig = field(default_factory=EC2ComputeConfig)
+    service_role_arn: str | None = None
+    issm_job_config: EC2JobConfig | None = None
+    icepack_job_config: EC2JobConfig | None = None
+    icesee_job_config: EC2JobConfig | None = None
+
+
 def ensure_batch_resources(
     config: AWSConfig,
     *,
@@ -445,11 +585,19 @@ def ensure_batch_resources(
     icesee_image: str | None = None,
     icesee_job_config: FargateJobConfig | None = None,
     icesee_command: list[str] | None = None,
+    ec2: EC2Provisioning | None = None,
     ready_interval: float = BATCH_READY_INTERVAL_SECONDS,
     ready_timeout: float = BATCH_READY_TIMEOUT_SECONDS,
     sleep: Callable[[float], None] = time.sleep,
 ) -> AWSBatchProvisionResult:
-    """Prepare CryoStack's AWS Batch on Fargate environment, idempotently.
+    """Prepare CryoStack's AWS Batch environment, idempotently.
+
+    The **Fargate** compute environment / queue / job definitions are ALWAYS
+    provisioned (unchanged), so a Fargate <-> EC2 switch never needs a
+    re-prepare of the default path. When ``ec2`` is supplied, the Advanced EC2
+    compute environment (``cryostack-ec2``), its own queue
+    (``cryostack-ec2-queue``) and ``cryostack-<model>-ec2`` job definitions are
+    provisioned in ADDITION -- never in place of -- the Fargate ones.
 
     The compute environment is waited to ``VALID`` before the queue is
     created/attached, and the queue is waited to ``VALID`` before the job
@@ -525,6 +673,54 @@ def ensure_batch_resources(
         else:
             result.skipped.append(
                 "icesee_job_definition (needs job role, execution role and an image)")
+
+    # 4. Advanced: EC2 compute environment + queue + -ec2 job definitions.
+    #    Only when the user selected EC2 mode; never touches the Fargate
+    #    resources above. Shares the model log groups (same /cryostack/batch/
+    #    <model>), the ECR image, the job role, the ECS execution role (so the
+    #    MATLAB Secrets Manager grant is reused unchanged) and the container
+    #    command.
+    if ec2 is not None:
+        if not (ec2.instance_role_arn or "").strip():
+            result.skipped.append(
+                "ec2 batch (no ECS instance profile -- run IAM prepare first)")
+        else:
+            _bucket("ec2_compute_environment", ensure_ec2_compute_environment(
+                config, subnets=subnets, security_groups=security_groups,
+                instance_role_arn=ec2.instance_role_arn,
+                service_role_arn=ec2.service_role_arn,
+                ec2_config=ec2.ec2_config, **_ready,
+            ))
+            _bucket("ec2_job_queue", ensure_job_queue(
+                config, name=EC2_JOB_QUEUE_NAME,
+                compute_environment=EC2_COMPUTE_ENVIRONMENT_NAME, **_ready,
+            ))
+            _ec2_defaults = DEFAULT_EC2_JOB_CONFIG
+            if job_role_arn and execution_role_arn and issm_image:
+                _bucket("issm_job_definition_ec2", ensure_job_definition(
+                    config, model="issm", image=issm_image,
+                    job_role_arn=job_role_arn,
+                    execution_role_arn=execution_role_arn, region=config.region,
+                    job_config=ec2.issm_job_config or _ec2_defaults,
+                    command=job_command, secrets=issm_secrets,
+                    compute_mode=COMPUTE_MODE_EC2,
+                ))
+            if include_icepack and job_role_arn and execution_role_arn and icepack_image:
+                _bucket("icepack_job_definition_ec2", ensure_job_definition(
+                    config, model="icepack", image=icepack_image,
+                    job_role_arn=job_role_arn,
+                    execution_role_arn=execution_role_arn, region=config.region,
+                    job_config=ec2.icepack_job_config or _ec2_defaults,
+                    command=job_command, compute_mode=COMPUTE_MODE_EC2,
+                ))
+            if include_icesee and job_role_arn and execution_role_arn and icesee_image:
+                _bucket("icesee_job_definition_ec2", ensure_job_definition(
+                    config, model="icesee", image=icesee_image,
+                    job_role_arn=job_role_arn,
+                    execution_role_arn=execution_role_arn, region=config.region,
+                    job_config=ec2.icesee_job_config or _ec2_defaults,
+                    command=icesee_command, compute_mode=COMPUTE_MODE_EC2,
+                ))
 
     result.resources = discover_batch_resources(config)
     return result

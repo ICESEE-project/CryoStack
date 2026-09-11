@@ -936,6 +936,8 @@ def build_icesheets_ui():
                     model=_model,
                     job_queue=batch_job_queue.value.strip(),
                     job_definition=_job_def,
+                    aws_batch_compute=getattr(
+                        cloud_environment.compute_mode, "value", "fargate"),
                 )
             _lic = _cloud_matlab_license_configured()
             _problems = validate_cloud_config(_cfg, model=_model)
@@ -1030,6 +1032,7 @@ def build_icesheets_ui():
                 ),
                 job_queue=_cfg.job_queue,
                 job_definition=_cfg.job_definition,
+                compute_mode=_cfg.compute_mode,
                 job_name=(batch_job_name.value.strip() or "cryostack"),
                 matlab_license_configured=_lic,
                 _region=_cfg.region,
@@ -3100,6 +3103,8 @@ def build_icesheets_ui():
                 model=_model,
                 job_queue=batch_job_queue.value.strip(),
                 job_definition=_job_def,
+                aws_batch_compute=getattr(
+                    cloud_environment.compute_mode, "value", "fargate"),
             )
 
         def _cloud_run_history():

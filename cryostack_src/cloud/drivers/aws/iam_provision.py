@@ -38,10 +38,15 @@ from .auth import run_aws
 from .iam import (
     AWSIAMResources,
     discover_iam_resources,
+    find_instance_profile,
+    find_role,
+    list_instance_profiles,
+    list_roles,
 )
 from .iam_policies import (
     MATLAB_LICENSE_SECRET_POLICY_NAME,
     batch_service_trust_policy,
+    ec2_instance_trust_policy,
     ecs_execution_trust_policy,
     job_s3_policy,
     job_trust_policy,
@@ -58,6 +63,16 @@ BATCH_SERVICE_ROLE_NAME = "cryostack-batch-service-role"
 ECS_EXECUTION_ROLE_NAME = "cryostack-ecs-execution-role"
 JOB_ROLE_NAME = "cryostack-job-role"
 
+#: Advanced EC2 Batch only: the ECS instance role + its instance profile that
+#: the EC2 hosts assume. Created solely when EC2 mode is prepared.
+EC2_INSTANCE_ROLE_NAME = "cryostack-ec2-instance-role"
+EC2_INSTANCE_PROFILE_NAME = "cryostack-ec2-instance-profile"
+#: AWS-managed policy for an ECS container instance (ECR pull, ECS register,
+#: CloudWatch). The standard, supported choice -- no custom policy needed.
+_EC2_INSTANCE_MANAGED_POLICY = (
+    "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
+)
+
 
 @dataclass
 class AWSIAMProvisionResult:
@@ -72,6 +87,9 @@ class AWSIAMProvisionResult:
     #: policies reconciled on an already-existing role this run (e.g. the
     #: ISSM MATLAB-license secret grant re-scoped to a changed ARN).
     updated: list[str] = field(default_factory=list)
+    #: Advanced EC2 Batch only: the ECS instance-profile ARN (Batch
+    #: ``instanceRole``). ``""`` unless EC2 mode was prepared this run.
+    ec2_instance_profile: str = ""
 
 
 def _require_success(
@@ -229,6 +247,62 @@ def delete_inline_policy(
     )
 
 
+def ensure_ec2_instance_profile(config: AWSConfig) -> tuple[str, str]:
+    """Idempotently create the ECS instance role + instance profile the
+    Advanced EC2 Batch compute environment needs, and return
+    ``(instance_profile_arn, outcome)`` where outcome is ``created`` /
+    ``reused``.
+
+    Only ever called when the user selected EC2 mode. Attaches ONE AWS-managed
+    policy (``AmazonEC2ContainerServiceforEC2Role``) -- no custom / wildcard
+    policy. The role trusts ``ec2.amazonaws.com`` only.
+    """
+
+    existing = find_instance_profile(
+        list_instance_profiles(config), [EC2_INSTANCE_PROFILE_NAME])
+    if existing and existing.get("Arn"):
+        return existing["Arn"], "reused"
+
+    # role
+    role_missing = find_role(list_roles(config), [EC2_INSTANCE_ROLE_NAME]) is None
+    if role_missing:
+        create_role(
+            config, name=EC2_INSTANCE_ROLE_NAME,
+            trust_policy=ec2_instance_trust_policy(),
+        )
+        attach_managed_policy(
+            config, role_name=EC2_INSTANCE_ROLE_NAME,
+            policy_arn=_EC2_INSTANCE_MANAGED_POLICY,
+        )
+
+    # instance profile + role membership (tolerate "already exists")
+    code, stdout, stderr = run_aws(
+        config,
+        ["iam", "create-instance-profile",
+         "--instance-profile-name", EC2_INSTANCE_PROFILE_NAME],
+    )
+    text = (stderr or stdout or "")
+    if code != 0 and "EntityAlreadyExists" not in text:
+        raise RuntimeError(text.strip() or "Unable to create EC2 instance profile.")
+
+    code, stdout, stderr = run_aws(
+        config,
+        ["iam", "add-role-to-instance-profile",
+         "--instance-profile-name", EC2_INSTANCE_PROFILE_NAME,
+         "--role-name", EC2_INSTANCE_ROLE_NAME],
+    )
+    text = (stderr or stdout or "")
+    if code != 0 and "LimitExceeded" not in text and "already" not in text.lower():
+        raise RuntimeError(text.strip() or "Unable to add role to EC2 instance profile.")
+
+    prof = find_instance_profile(
+        list_instance_profiles(config), [EC2_INSTANCE_PROFILE_NAME])
+    arn = (prof or {}).get("Arn") or ""
+    if not arn:
+        raise RuntimeError("EC2 instance profile was created but its ARN is unknown.")
+    return arn, "created"
+
+
 def _reconcile_matlab_license_secret(
     config: AWSConfig,
     *,
@@ -279,9 +353,15 @@ def ensure_iam_resources(
     *,
     bucket: str,
     matlab_secret_arn: str = "",
+    include_ec2: bool = False,
 ) -> AWSIAMProvisionResult:
     """
     Ensure the IAM roles required by CryoStack AWS Batch exist.
+
+    ``include_ec2`` additionally provisions the ECS instance role + instance
+    profile the Advanced EC2 Batch compute environment needs. Left ``False``
+    for the default Fargate path -- an EC2-only IAM resource is never created
+    for a user who has not chosen EC2.
     """
 
     current = discover_iam_resources(
@@ -411,6 +491,16 @@ def ensure_iam_resources(
         )
 
     #
+    # ---------------------------------------------------------
+    # Advanced: EC2 Batch ECS instance profile (only when selected)
+    # ---------------------------------------------------------
+    #
+    ec2_instance_profile = ""
+    if include_ec2:
+        ec2_instance_profile, outcome = ensure_ec2_instance_profile(config)
+        (created if outcome == "created" else reused).append("ec2_instance_profile")
+
+    #
     # Rediscover so returned values contain
     # the final role ARNs.
     #
@@ -423,4 +513,7 @@ def ensure_iam_resources(
         created=created,
         reused=reused,
         updated=updated,
+        # populated only when EC2 mode was prepared THIS run -- never inferred
+        # from whatever profiles the account happens to already have
+        ec2_instance_profile=ec2_instance_profile,
     )

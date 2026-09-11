@@ -133,7 +133,7 @@ class CloudBackend(
                 k: result[k]
                 for k in (
                     "s3_input", "s3_outputs", "model", "run_target",
-                    "job_queue", "job_definition",
+                    "job_queue", "job_definition", "aws_batch_compute",
                 )
                 if result.get(k)
             }

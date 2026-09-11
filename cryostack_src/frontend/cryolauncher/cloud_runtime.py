@@ -421,6 +421,30 @@ def build_cloud_runtime_callbacks(
         _kw = {"bucket": bucket or None}
         if _matlab_arn:
             _kw["matlab_secret_arn"] = _matlab_arn
+        # Advanced: AWS Batch compute environment. Default "fargate" keeps the
+        # call identical to before; "ec2" additionally provisions the EC2
+        # compute environment / queue / -ec2 job definitions.
+        try:
+            _cm = getattr(getattr(cloud_environment, "compute_mode", None),
+                          "value", "fargate")
+        except Exception:  # noqa: BLE001
+            _cm = "fargate"
+        if str(_cm).strip().lower() == "ec2":
+            _kw["compute_mode"] = "ec2"
+            try:
+                _mv = int(getattr(cloud_environment.ec2_max_vcpus, "value", 0) or 0)
+                if _mv > 0:
+                    _kw["ec2_max_vcpus"] = _mv
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                _it = (getattr(cloud_environment.ec2_instance_types, "value", "")
+                       or "").strip()
+                _types = tuple(t.strip() for t in _it.split(",") if t.strip())
+                if _types:
+                    _kw["ec2_instance_types"] = _types
+            except Exception:  # noqa: BLE001
+                pass
         return bridge.prepare_environment(**_kw)
 
     def _prepare_success(result) -> None:
