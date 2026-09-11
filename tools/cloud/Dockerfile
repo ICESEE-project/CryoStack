@@ -28,6 +28,47 @@ RUN set -eu \
     && /opt/venv-icepack/bin/pip install --no-cache-dir --no-deps bigmpi4py \
     && /opt/venv-firedrake/bin/pip install --no-cache-dir --no-deps bigmpi4py
 
+# ── CryoStack combined-runtime scientific & notebook packages ──
+# The supported CryoStack examples must run in the SAME interpreter
+# `with-icepack python` uses -- /opt/venv-icepack. The ICESEE deps above
+# cover most of the stack; this layer adds what the upstream examples
+# import unchanged but neither the base image nor gen_pip_reqs.py
+# provides:
+#
+#   ipywidgets  the Icepack flow tutorials do `from tqdm.notebook import
+#               trange`; with no ipywidgets that raises "IProgress not
+#               found" and aborts the whole run (v1.0.1 live failure:
+#               04-synthetic-ice-stream-xy on Fargate, exit 1 after 46 s).
+#   jupyter     notebook tooling (nbconvert for a raw *.ipynb run target);
+#               also completes bigmpi4py's declared dependencies.
+#   seaborn     the last unmet bigmpi4py dependency (bigmpi4py is installed
+#               --no-deps above) -- makes `pip check` clean.
+#   jax, jaxlib ICESEE runtime deps that gen_pip_reqs.py deliberately
+#               skips. Pinned to the 0.4.x line: jax >= 0.5 requires
+#               numpy >= 2, which would break the Spack/PETSc/Firedrake
+#               numpy 1.26 baked into the base image.
+#
+# The constraints file freezes every package that is built against the
+# Spack / PETSc / Firedrake stack -- pip must NEVER pull a new numpy,
+# scipy, h5py or mpi4py in underneath Firedrake.
+RUN set -eu \
+    && printf '%s\n' \
+        'numpy==1.26.4' \
+        'scipy==1.17.1' \
+        'h5py==3.16.0' \
+        'mpi4py==4.1.1' \
+        > /tmp/cryostack-runtime-constraints.txt \
+    && for _venv in /opt/venv-icepack /opt/venv-firedrake; do \
+         "${_venv}/bin/pip" install --no-cache-dir \
+           --constraint /tmp/cryostack-runtime-constraints.txt \
+           ipywidgets \
+           jupyter \
+           seaborn \
+           'jax==0.4.38' \
+           'jaxlib==0.4.38' ; \
+       done \
+    && rm -f /tmp/cryostack-runtime-constraints.txt
+
 # ── AWS CLI v2 (build-time, baked into the image) ────────────────
 # CryoStack's cloud runner (cryostack_src/cloud/runtime.py) shells out to
 # `aws s3 sync` to fetch a run's staged inputs and publish its outputs --

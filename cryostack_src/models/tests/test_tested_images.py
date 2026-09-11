@@ -22,6 +22,15 @@ from cryostack_src.models.stack import (
     tested_images_for_model as _images_for_model,
 )
 
+# v1.0.2: current default combined image (completes the venv-icepack
+# scientific/notebook stack -- ipywidgets/jupyter/seaborn/jax -- so the
+# upstream Icepack tutorials run unmodified). v1.0.1 stays registered,
+# unmodified, just no longer the default.
+_KEY_CURRENT = "icesee-combined-v1.0.2"
+_REF_CURRENT = "bkyanjo/icesee-combined:v1.0.2"
+_DIGEST_CURRENT = (
+    "sha256:d68d88dcb7047f29d6e277a45710f50f1bf3023566e0472f07a7dd75ffbcd170")
+
 _KEY = "icesee-combined-v1.0.1"
 _REF = "bkyanjo/icesee-combined:v1.0.1"
 _DIGEST = "sha256:e393b1eed21f3481fffcfb3bb7ce5ce315fbff0cc8dc0fe4f2bcc2e2f1d538ed"
@@ -37,6 +46,16 @@ _OLD_DIGEST = "sha256:a727f60a738c748d1812b157e1fe94ddb1177ecc32354afa7b747db2f6
 
 
 # ── registry facts ────────────────────────────────────────────────────────
+def test_current_default_is_the_combined_image_v1_0_2_with_pushed_digest():
+    img = get_tested_image(_KEY_CURRENT)
+    assert img.reference == _REF_CURRENT
+    assert img.digest == _DIGEST_CURRENT
+    assert img.models == ("issm", "icepack", "icesee")
+    assert img.stack_profile == "tested"
+    for model in ("issm", "icepack", "icesee"):
+        assert default_tested_image_for_model(model).key == _KEY_CURRENT
+
+
 def test_registry_entry_is_the_combined_image_with_verified_digest():
     img = get_tested_image(_KEY)
     assert img.reference == _REF
@@ -70,16 +89,17 @@ def test_superseded_v1_0_0_stays_registered_unmodified():
     assert img.models == ("issm", "icepack")
 
 
-def test_tested_issm_offers_the_combined_image_v1_0_1_first():
+def test_tested_issm_offers_every_combined_release_current_first():
     imgs = _images_for_model("ISSM")
-    assert [i.key for i in imgs] == [_KEY, _OLD_KEY]
+    assert [i.key for i in imgs] == [_KEY_CURRENT, _KEY, _OLD_KEY]
     assert all(i.supports("issm") for i in imgs)
-    assert default_tested_image_for_model("issm").key == _KEY
+    assert default_tested_image_for_model("issm").key == _KEY_CURRENT
 
 
-def test_tested_icepack_also_sees_the_combined_image():
-    assert [i.key for i in _images_for_model("icepack")] == [_KEY, _OLD_KEY]
-    assert default_tested_image_for_model("icepack").reference == _REF
+def test_tested_icepack_also_sees_every_combined_release():
+    assert [i.key for i in _images_for_model("icepack")] == [
+        _KEY_CURRENT, _KEY, _OLD_KEY]
+    assert default_tested_image_for_model("icepack").reference == _REF_CURRENT
 
 
 def test_unknown_model_has_no_tested_images():

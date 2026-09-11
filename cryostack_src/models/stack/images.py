@@ -69,6 +69,45 @@ class TestedImage:
 # image (or a run's recorded provenance) must always resolve back to a real,
 # unmodified registry fact, even after a newer tested image is added.
 TESTED_IMAGES: dict[str, TestedImage] = {
+    "icesee-combined-v1.0.2": TestedImage(
+        key="icesee-combined-v1.0.2",
+        label="ICESEE Combined v1.0.2",
+        reference="bkyanjo/icesee-combined:v1.0.2",
+        digest="sha256:d68d88dcb7047f29d6e277a45710f50f1bf3023566e0472f07a7dd75ffbcd170",
+        # v1.0.2 (2026-09-10, current default): completes the scientific /
+        # notebook Python stack in /opt/venv-icepack -- the interpreter
+        # `with-icepack python` uses -- so the upstream Icepack tutorials
+        # run unmodified. It adds `ipywidgets`, `jupyter`, `seaborn` and
+        # `jax`/`jaxlib` (0.4.x, held to the base image's numpy 1.26) on
+        # top of v1.0.1; nothing in the Spack / PETSc / Firedrake / ISSM /
+        # ICESEE scientific stack was rebuilt or changed. The trigger: a
+        # v1.0.1 Fargate run of `04-synthetic-ice-stream-xy` exited 1 after
+        # ~46 s at `from tqdm.notebook import trange` ("IProgress not
+        # found" -- ipywidgets absent). Verified in the built+pushed image:
+        # all of numpy/scipy/h5py/zarr/dask/psutil/tqdm/pyyaml/numcodecs/
+        # gstools/jax/jaxlib/mpi4py/matplotlib/pandas/jupyter/ipywidgets
+        # import; `from tqdm.notebook import trange` iterates; `pip check`
+        # clean in venv-icepack and venv-firedrake; numpy stays 1.26.4 and
+        # firedrake still solves; `04-synthetic-ice-stream-xy` runs run.py
+        # end to end (runner_exit=0, 12 figures captured).
+        #
+        # The v1.0.1 "icesee" claim carries forward unchanged: v1.0.2 is a
+        # strict superset of v1.0.1's stack (only pip packages added under
+        # a numpy constraint), so `with-icesee` + single-rank (NP=1)
+        # `run_da_lorenz96.py` remains verified; NP>1 is still unverified /
+        # unsafe for the same reasons documented on the v1.0.1 entry.
+        models=("issm", "icepack", "icesee"),
+        components={
+            # unchanged from v1.0.1 / v1.0.0 -- this release ONLY adds pip
+            # packages to venv-icepack / venv-firedrake; no scientific-stack
+            # layer was rebuilt.
+            "issm": {
+                "version": "2026.1 (self-reported)",
+                "commit": "e70338d8685f8582b61958211e8f5fce2ea686ff",
+            },
+            "firedrake": {"version": "2025.10.2"},
+        },
+    ),
     "icesee-combined-v1.0.1": TestedImage(
         key="icesee-combined-v1.0.1",
         label="ICESEE Combined v1.0.1",

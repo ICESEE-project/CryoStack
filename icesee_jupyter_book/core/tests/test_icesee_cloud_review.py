@@ -37,9 +37,10 @@ _READY_INFRA = InfrastructureReadiness(
 
 
 def test_icesee_cloud_runtime_is_honestly_ready_now():
-    """A real, checkable fact: bkyanjo/icesee-combined:v1.0.1 was verified
-    (2026-09-08) to run the Lorenz-96 example end-to-end under `with-icesee`
-    and is registered in TESTED_IMAGES with "icesee" in its models tuple."""
+    """A real, checkable fact: the combined image was verified (2026-09-08,
+    on v1.0.1) to run the Lorenz-96 example end-to-end under `with-icesee`;
+    v1.0.2 (the current default) is a strict superset of that stack and is
+    registered in TESTED_IMAGES with "icesee" in its models tuple."""
     assert icesee_cloud_runtime_ready() is True
 
 
@@ -71,7 +72,7 @@ def test_review_launches_for_lorenz96_at_np1_once_infrastructure_is_ready():
     assert review.icesee_runtime_ready is True
     assert review.runtime_contract_ok is True
     assert review.parallel_mode_label == "Single-rank verified"
-    assert review.image_reference == "bkyanjo/icesee-combined:v1.0.1"
+    assert review.image_reference == "bkyanjo/icesee-combined:v1.0.2"
 
 
 def test_np_greater_than_one_is_blocked_with_the_exact_reason():
@@ -228,7 +229,7 @@ def test_render_enables_launch_for_lorenz96_at_np1_and_shows_verified_wording():
     widgets = _FakeWidgets()
     render_icesee_review_panel(widgets, review)
     assert widgets.launch_button.disabled is False
-    assert "bkyanjo/icesee-combined:v1.0.1" in widgets.review_body.value
+    assert "bkyanjo/icesee-combined:v1.0.2" in widgets.review_body.value
     assert "ICESEE runtime" in widgets.review_body.value
     assert "Single-rank verified" in widgets.review_body.value
     assert "Parallel mode" in widgets.review_body.value

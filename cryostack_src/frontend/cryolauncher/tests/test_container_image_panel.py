@@ -12,10 +12,13 @@ from cryostack_src.frontend.cryolauncher.container_image import (
     build_container_image_panel,
 )
 
-# v1.0.1 is the current default tested image (adds the AWS CLI for cloud
-# S3 sync); v1.0.0 stays a selectable option (never removed), just no
+# v1.0.2 is the current default tested image (completes the venv-icepack
+# scientific/notebook stack so the Icepack tutorials run unmodified);
+# v1.0.1 and v1.0.0 stay selectable options (never removed), just no
 # longer the default -- see cryostack_src/models/stack/images.py.
-_REF = "bkyanjo/icesee-combined:v1.0.1"
+_KEY = "icesee-combined-v1.0.2"
+_REF = "bkyanjo/icesee-combined:v1.0.2"
+_KEY_V101 = "icesee-combined-v1.0.1"
 _OLD_KEY = "icesee-combined-v1.0.0"
 _CUSTOM = "__custom__"
 
@@ -28,7 +31,7 @@ def test_docker_oci_defaults_to_the_combined_tested_image():
     p = build_container_image_panel()          # defaults to issm / tested
     sel = p.selection()
     assert sel.mode == "tested"
-    assert sel.tested_key == "icesee-combined-v1.0.1"
+    assert sel.tested_key == _KEY
     assert sel.image_uri == _REF
     assert p.validate() is None
 
@@ -36,15 +39,15 @@ def test_docker_oci_defaults_to_the_combined_tested_image():
 def test_tested_issm_shows_only_compatible_tested_images():
     p = build_container_image_panel()
     p.set_model("issm")
-    # tested profile => curated list only, no "Custom image…" -- both
-    # tested releases are offered, the current default (v1.0.1) first
-    assert _option_values(p) == ["icesee-combined-v1.0.1", _OLD_KEY]
+    # tested profile => curated list only, no "Custom image…" -- every
+    # tested release is offered, the current default (v1.0.2) first
+    assert _option_values(p) == [_KEY, _KEY_V101, _OLD_KEY]
 
 
 def test_tested_icepack_also_sees_the_combined_image():
     p = build_container_image_panel()
     p.set_model("icepack")
-    assert _option_values(p) == ["icesee-combined-v1.0.1", _OLD_KEY]
+    assert _option_values(p) == [_KEY, _KEY_V101, _OLD_KEY]
     assert p.selection().image_uri == _REF
 
 
