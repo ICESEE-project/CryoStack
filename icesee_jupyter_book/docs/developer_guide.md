@@ -403,6 +403,34 @@ in the gateway:
   in the cross-account role for that ARN; preflight blocks it honestly until
   then. The ARN input field in Cloud Environment plus the end-to-end validation
   with a real license remain the externally-blocked remainder.
+- *Compute mode: Fargate vs. EC2.* EC2 is not a second cloud backend — it is
+  an alternate **AWS Batch compute environment** behind the same `AWSDriver`.
+  Everything above (auth model, credential routing, staging, ECR/image
+  resolution, S3, job submission/status/logs/terminate, result sync,
+  visualization, provenance) is unchanged by the choice; only the Batch
+  compute-environment/job-definition the job schedules onto differs.
+  `CloudEnvironmentWidgets.compute_mode` (`fargate` default | `ec2`) in
+  `cryostack_src/frontend/cryolauncher/cloud_environment.py` gates a
+  progressive-disclosure `ec2_options_box`; while `compute_mode == "fargate"`
+  none of it renders and Fargate behaves exactly as documented above.
+  Selecting `ec2` exposes four further dropdowns, each independently gated:
+  `ec2_capacity` (`on_demand` default | `spot`), `ec2_accelerator` (`none`
+  default | `gpu`, its box only visible when `gpu` is selected),
+  `ec2_network` (`default` | `custom`, revealing VPC id / subnet ids /
+  security-group-ids text fields only when `custom`), and `ec2_topology`
+  (`single_node` default | `multi_node`, revealing a node-count field only
+  when `multi_node`). No AMI, launch-template, instance-profile, or other
+  raw IAM/EC2 detail is ever exposed to the UI. GPU and multi-node are
+  submission-guarded rather than removed: the GPU caption and multi-node
+  caption in the same module state, in place, that the qualified container
+  image has no CUDA runtime and that the scientific runners do not yet
+  coordinate distributed MPI across Batch nodes, so selecting either stages
+  infrastructure without CryoStack ever attempting a run neither the image
+  nor the runners can perform. On-Demand/Spot and custom-network EC2
+  provisioning are implemented and covered by the same test suite as Fargate,
+  but — unlike the Fargate path above — have not been exercised against live
+  AWS in this repository's evidence; do not describe EC2 as AWS-validated
+  without a checkpoint that says otherwise.
 
 ## Results and visualization
 
@@ -434,7 +462,8 @@ so the Solution / Field controls stay hidden — that is not a failure.
 
 **Execution-provider vocabulary.** CryoLauncher distinguishes: *execution mode*
 (Remote / Cloud / Local), *compute backend* (Remote → Slurm/HPC; Cloud → AWS
-Batch (Fargate)), *model environment* (ICESEE-Spack or ICESEE-Container),
+Batch, with a *compute mode* of Fargate (default) or EC2 (Advanced)),
+*model environment* (ICESEE-Spack or ICESEE-Container),
 *model* (Icepack / ISSM), *container* (tag + immutable digest + provenance), and
 *experiment* (selected example + source + run target). History cards, the Run
 Plan, and manifests render these as separate rows and derive a historical run's

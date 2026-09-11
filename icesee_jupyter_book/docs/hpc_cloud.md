@@ -83,6 +83,13 @@
       </div>
 
       <div class="cryostack-docs-summary-card">
+        <div class="cryostack-docs-summary-icon">CM</div>
+        <h3><a href="#compute-mode-fargate-default-or-ec2-advanced">Compute mode</a></h3>
+        <p>Fargate (default) or EC2 (Advanced): capacity, accelerator,
+           network, and execution options.</p>
+      </div>
+
+      <div class="cryostack-docs-summary-card">
         <div class="cryostack-docs-summary-icon">RL</div>
         <h3><a href="#reviewing-and-launching-a-run">Review &amp; Launch</a></h3>
         <p>The run estimate, the review card, and what actually launches.</p>
@@ -119,7 +126,7 @@
       This describes <strong>software that exists today</strong> — every
       button, label, and step name below matches the running application.
       Nothing here is a roadmap. "Cloud parity" is not one fact — it is
-      four separate ones, and they are not all at the same maturity:
+      five separate ones, and they are not all at the same maturity:
     </p>
 
     <div class="cryostack-docs-summary-grid">
@@ -151,12 +158,28 @@
 
       <div class="cryostack-docs-summary-card">
         <div class="cryostack-docs-summary-icon">EV</div>
-        <h3>End-to-end validation <span class="cryostack-status dev">Narrow</span></h3>
-        <p>Exactly one configuration has been run and confirmed end-to-end:
-           <strong>ICESEE Lorenz-96 at NP&nbsp;=&nbsp;1</strong>. CryoLauncher/ISSM
-           has the onboarding, provisioning, and submission architecture
-           implemented and exercised, but this page makes no claim of a
-           fully verified live run-to-results cycle for it.</p>
+        <h3>End-to-end validation <span class="cryostack-status dev">Growing</span></h3>
+        <p>Two configurations have been run and confirmed end-to-end on AWS Batch's
+           <strong>Fargate</strong> compute mode: <strong>ICESEE Lorenz-96 at
+           NP&nbsp;=&nbsp;1</strong>, and <strong>CryoLauncher/Icepack
+           04-synthetic-ice-stream-xy</strong>. CryoLauncher/ISSM has the
+           onboarding, provisioning, and submission architecture implemented
+           and exercised, but a real ISSM run still needs a cloud-reachable
+           MATLAB license (see
+           <a href="../applications/icesheets/user_manual.html#preparing-and-launching-runs">MATLAB licensing</a>)
+           and this page makes no claim of a fully verified live run-to-results
+           cycle for it.</p>
+      </div>
+
+      <div class="cryostack-docs-summary-card">
+        <div class="cryostack-docs-summary-icon">CM</div>
+        <h3>Compute mode <span class="cryostack-status dev">Fargate validated, EC2 advanced</span></h3>
+        <p><strong>Fargate</strong> is the default AWS Batch compute mode and
+           the one every validated run above used. <strong>EC2</strong> is an
+           Advanced, opt-in alternative — implemented and exercised locally,
+           not yet run against live AWS in this repository's evidence. See
+           <a href="#compute-mode-fargate-default-or-ec2-advanced">Compute mode</a>
+           below.</p>
       </div>
 
     </div>
@@ -189,7 +212,19 @@ execution — the application and its configuration do not change; only the
                                                               │
                                                               ▼
                     Results  ←  Monitor  ←  Launch  ←  Prepare cloud
+                                                              ▲
+                                                              │
+                                              AWS Batch  ──┬── Fargate (default)
+                                                            └── EC2 (Advanced)
+                                                                ├─ On-Demand / Spot
+                                                                ├─ Default / Custom network
+                                                                └─ Single node / Multi-node*
 ```
+
+Both branches converge on the same Prepare cloud → Launch → Monitor → Results
+path below — EC2 changes what Batch schedules the job onto, not the
+application, the staging, or the result pipeline. (`*` guarded/experimental —
+see <a href="#compute-mode-fargate-default-or-ec2-advanced">Compute mode</a>.)
 
 This is the shared architecture, not a claim that Monitor/Results behave
 identically in every application today: CryoLauncher uses an active
@@ -268,6 +303,49 @@ In the application's own terms, this is:
   </section>
 </div>
 :::
+
+## Compute mode: Fargate (default) or EC2 (Advanced)
+
+Every run above submits to **AWS Batch**. Batch itself needs a compute
+environment to schedule jobs onto, and CryoStack lets you choose which kind
+under **Advanced** in Cloud Environment:
+
+- **Fargate** — the default. No infrastructure to choose or manage; this is
+  the compute mode every worked example on this page has actually run
+  against.
+- **EC2 (Advanced)** — CryoStack provisions its own EC2-backed Batch compute
+  environment instead. Selecting it reveals four further choices, each
+  purpose-built rather than exposing raw AWS knobs:
+
+  - **Capacity** — **On-Demand** (default; predictable EC2 capacity) or
+    **Spot** (lower-cost, interruptible capacity that AWS can reclaim).
+  - **Accelerator** — **None** (default) or **GPU** — stages GPU-capable EC2
+    infrastructure, but CryoStack's qualified container image has no CUDA
+    runtime, so a GPU job is refused at submission until a GPU-qualified
+    image exists. This is infrastructure preparation, not a working
+    scientific execution mode.
+  - **Network** — **Default** or **Custom / Private** — places the EC2
+    compute environment into a VPC, subnets, and security groups you already
+    control (a `vpc-…`, `subnet-…`, `sg-…` you supply), for example one
+    already routed to an institutional network. CryoStack does not create a
+    VPN, Direct Connect connection, Transit Gateway, or firewall rule itself
+    — the VPC you point it at must already have whatever route it needs. See
+    the ISSM MATLAB-licensing note under
+    <a href="../applications/icesheets/user_manual.html#preparing-and-launching-runs">Preparing and launching runs</a>
+    for the case this is meant to unblock.
+  - **Execution** — **Single node** (default) or **Multi-node** — registers
+    an AWS Batch multi-node parallel job definition (EC2 only), but
+    CryoStack's scientific runners do not yet coordinate distributed MPI
+    across Batch nodes, so this stages the infrastructure ahead of a
+    scientific run rather than enabling one today.
+
+On-Demand and Spot capacity, and custom/private networking, are implemented
+and exercised locally; they have not yet been exercised against live AWS
+infrastructure in this repository's evidence, so treat them as an advanced,
+not-yet-AWS-validated configuration rather than a second validated backend.
+GPU and multi-node are guarded at submission specifically so that selecting
+them stages infrastructure without ever silently attempting a scientific run
+neither the image nor the runners can actually perform.
 
 ## Connecting your AWS account (BYO-AWS)
 
@@ -366,11 +444,18 @@ unvalidated version of the same behavior:**
   in its cloud code path; this page does not name a specific button label
   for it until that label is verified against the running UI.)
 
-## Worked example: Lorenz-96 on AWS
+## Worked examples verified on AWS
 
-This is the one path verified end-to-end against the current container
-image. Steps this platform does not yet support are called out explicitly
-rather than skipped over.
+Two configurations have been run and confirmed end-to-end against the
+current container image, on the default Fargate compute mode: **ICESEE
+Lorenz-96 at NP = 1**, walked through below, and **CryoLauncher/Icepack
+04-synthetic-ice-stream-xy** (exit 0, 12 figures, 5 structured fields,
+results rendering the same way a local run's do). Both follow the identical
+Connect → Prepare cloud → Review & Launch → Monitor → Results sequence; the
+Lorenz-96 walkthrough below spells out every step, and the Icepack path
+differs only in which application and example you open in step 1. Steps
+this platform does not yet support are called out explicitly rather than
+skipped over.
 
 1. **Open ICESEE** and select the **Lorenz-96** example.
 2. Leave its configuration at the default (or your own edits) — the same
@@ -386,7 +471,7 @@ rather than skipped over.
    Compute** to all read **Ready**.
 7. Set **Processes** to **1** — this is the only value CryoStack will let
    you launch today for ICESEE (see
-   <a href="#icesees-verified-runtime-contract">ICESEE's verified runtime contract</a>
+   <a href="#verified-runtime-contracts">ICESEE's verified runtime contract</a>
    below).
 8. Click **Review & Launch**. Confirm the card reads
    **ICESEE runtime: Ready**, **Parallel mode: Single-rank verified**,
@@ -433,22 +518,31 @@ entirely manual today:
   connection's AWS infrastructure entirely, delete the stack yourself from
   the AWS Console or CLI; deleting it removes the IAM role with it.
 
-## ICESEE's verified runtime contract
+## Verified runtime contracts
 
-ICESEE's cloud container has been verified, locally and against the exact
-published image, for exactly:
+**ICESEE's** cloud container has been verified, locally and against the
+exact published image, for exactly:
 
 - **Example:** `lorenz96`
 - **Processes (`ICESEE_NP`):** `1`
 
 Multi-process execution was tested and found unsafe on this image (the
 default execution path has no coordination between MPI ranks and races on
-shared output files), and no example other than Lorenz-96 has been run
-against the cloud container. CryoStack's Review card enforces this directly
-— a different example or a higher process count is **refused with an
-explicit reason**, never silently changed to a value that would pass. This
-is a deliberate design choice: the goal is an honest preflight, not a
-best-effort launch.
+shared output files), and no ICESEE example other than Lorenz-96 has been
+run against the cloud container. CryoStack's Review card enforces this
+directly for ICESEE — a different example or a higher process count is
+**refused with an explicit reason**, never silently changed to a value that
+would pass. This is a deliberate design choice: the goal is an honest
+preflight, not a best-effort launch.
+
+**Icepack's** cloud path has confirmed one example end-to-end,
+`04-synthetic-ice-stream-xy`, sharing the same Firedrake export and
+figure-capture code the Remote/Slurm path uses. Unlike ICESEE, CryoLauncher
+does not currently refuse a different Icepack example at Review — the code
+path is model-neutral, so other examples are expected to run, but only this
+one has actually been confirmed against the cloud container. Treat other
+Icepack examples on Cloud the same way you would treat them on Remote:
+architecturally supported, not yet individually verified.
 
 ## Screenshots
 

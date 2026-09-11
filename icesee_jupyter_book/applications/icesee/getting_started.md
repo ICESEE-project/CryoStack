@@ -101,7 +101,8 @@ Remote execution may require:
 
 Cloud mode runs ICESEE on your own AWS account (bring-your-own-AWS), through
 the same Connect AWS Account → Prepare cloud → Review & Launch flow as
-CryoLauncher — see the platform-wide
+CryoLauncher, on AWS Batch (Fargate by default, with an Advanced EC2 option)
+— see the platform-wide
 [Cloud Run Guide](https://cryostack.eas.gatech.edu/docs/hpc_cloud.html)
 for the full walkthrough and current status.
 

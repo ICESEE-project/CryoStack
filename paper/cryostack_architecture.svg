@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1400" height="920" viewBox="0 0 1400 920" role="img" aria-labelledby="title desc">
   <title id="title">CryoStack modular platform architecture</title>
-  <desc id="desc">Browser users access a shared gateway and operations plane serving CryoLauncher, ICESEE, LIVIST, and Frozen Legacies. Shared execution services connect to local, remote HPC, and evolving AWS resources.</desc>
+  <desc id="desc">Browser users access a shared gateway and operations plane serving CryoLauncher, ICESEE, LIVIST, and Frozen Legacies. Shared execution services connect to local, remote HPC, and AWS Batch resources (Fargate default, EC2 advanced).</desc>
   <defs>
     <style>
       text { font-family: Arial; }
@@ -83,9 +83,9 @@
   <text x="700" y="808" text-anchor="middle" class="small">rsync · archives · Slurm · logs · outputs</text>
 
   <rect x="930" y="710" width="300" height="126" rx="14" fill="#edf3f5" stroke="#7896a5" stroke-width="2" filter="url(#shadow)"/>
-  <text x="1080" y="750" text-anchor="middle" class="box-title">AWS (integration in progress)</text>
-  <text x="1080" y="781" text-anchor="middle" class="body">S3 · IAM · ECR · networking · Batch</text>
-  <text x="1080" y="808" text-anchor="middle" class="small">Discovery/provisioning/lifecycle modules</text>
+  <text x="1080" y="750" text-anchor="middle" class="box-title">AWS Batch</text>
+  <text x="1080" y="781" text-anchor="middle" class="body">S3 · IAM · ECR · Fargate (default)</text>
+  <text x="1080" y="808" text-anchor="middle" class="small">EC2 advanced: Spot/GPU*/multi-node* provisioned</text>
 
   <rect x="170" y="860" width="1060" height="42" rx="12" fill="#dce9ee" stroke="#5d8293" stroke-width="2"/>
   <text x="700" y="888" text-anchor="middle" class="body">Reproducible environments and artifacts: Spack locks · Docker/Apptainer images · run records · data catalogs</text>

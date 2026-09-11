@@ -108,7 +108,11 @@ The interface has two areas:
   figures and output files but not an interactive field/timestep viewer —
   Firedrake results are function-space DOF vectors, not the ISSM
   solution/field/timestep structure the viewer is built on.</li>
-  <li><b>Cloud (AWS Batch) execution.</b> ISSM only for now.</li>
+  <li><b>Cloud (AWS Batch) execution.</b> Icepack has run end-to-end on Cloud
+  for <code>04-synthetic-ice-stream-xy</code>; other Icepack examples share
+  the same code path but have not each been individually confirmed there —
+  see the <a href="../../docs/hpc_cloud.html#verified-runtime-contracts">Cloud
+  Run Guide</a>.</li>
 </ul>
 <p>
   These are tracked as explicit science checkpoints, not left vague. Treat
@@ -281,17 +285,22 @@ example**, in your personal dataset area.
 </p>
 <p>
   <b>Cloud</b> <span class="cryostack-status dev">In validation</span>
-  &nbsp;— run on <b>your own</b> AWS account and credits (bring-your-own-AWS).
-  You connect the account once (<b>Connect AWS Account</b> → <b>Open AWS
-  Setup</b> → create the CryoStack access role → <b>Verify</b>), CryoStack
-  prepares the required infrastructure, and you review an estimated cost
-  before launching. CryoStack uses <b>temporary role access</b> and never
+  &nbsp;— run on <b>your own</b> AWS account and credits (bring-your-own-AWS),
+  on AWS Batch. You connect the account once (<b>Connect AWS Account</b> →
+  <b>Open AWS Setup</b> → create the CryoStack access role → <b>Verify</b>),
+  CryoStack prepares the required infrastructure, and you review an estimated
+  cost before launching. CryoStack uses <b>temporary role access</b> and never
   stores your AWS access keys — you are never asked to paste an access key, a
   secret, or a CLI profile. ICESEE's own Cloud tab uses this exact same
-  Connect/Prepare/Review flow. The onboarding and infrastructure-provisioning
-  steps below are exercised and working; the full BYO-AWS operational
-  lifecycle (through a completed run and cleanup) is still being validated
-  end-to-end — see the platform-wide
+  Connect/Prepare/Review flow. Batch runs on <b>Fargate</b> by default; an
+  <b>Advanced</b> section lets you switch to <b>EC2</b> instead for
+  On-Demand/Spot capacity or a custom/private network — see
+  <a href="../../docs/hpc_cloud.html#compute-mode-fargate-default-or-ec2-advanced">Compute
+  mode</a> in the Cloud Run Guide. The onboarding, infrastructure-provisioning,
+  and Fargate execution steps below are exercised and working — Icepack and
+  ICESEE have each completed a real run on Fargate; the full BYO-AWS
+  operational lifecycle (budget/quota/cleanup automation) and the EC2 compute
+  mode are still being validated — see the platform-wide
   <a href="../../docs/hpc_cloud.html">Cloud Run Guide</a> for the current
   scope and known limits before depending on Cloud for production work.
 </p>
@@ -640,7 +649,12 @@ Some backends need a one-time setup on the remote resource:
     not reachable from AWS Fargate. You supply a cloud-reachable mechanism
     by creating an **AWS Secrets Manager** secret *in your own AWS account*
     whose value is the `MLM_LICENSE_FILE` string (a license server you can
-    reach from the Batch VPC, or a MathWorks online-licensing token), and
+    reach from the Batch VPC — CryoStack's default Fargate compute
+    environment always uses your account's discovered default VPC, so
+    reaching an institutional network-license server may additionally
+    require the EC2 Advanced compute mode's
+    <a href="../../docs/hpc_cloud.html#compute-mode-fargate-default-or-ec2-advanced">custom/private
+    networking</a> — or a MathWorks online-licensing token), and
     giving CryoStack only that secret's **ARN**. Prepare Cloud then wires the
     ARN into the ISSM job definition (`containerProperties.secrets`) and AWS
     Batch injects the value when the container starts. The license value

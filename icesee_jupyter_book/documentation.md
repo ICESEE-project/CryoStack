@@ -254,9 +254,12 @@
           Bring-your-own AWS account, connected once through a CloudFormation
           role and used with temporary credentials only. Infrastructure
           provisioning (storage, container registry, AWS Batch) and the run
-          contract are wired for CryoLauncher and ICESEE; the full onboarding
-          and operational lifecycle is still being validated end-to-end —
-          see the <a href="docs/hpc_cloud.html">Cloud Run Guide</a>.
+          contract are wired for CryoLauncher and ICESEE, on a default
+          Fargate compute mode with an Advanced EC2 alternative; Icepack and
+          ICESEE have each completed a real run end-to-end on Fargate, and
+          the full onboarding and operational lifecycle is still being
+          validated end-to-end — see the
+          <a href="docs/hpc_cloud.html">Cloud Run Guide</a>.
         </p>
       </div>
 

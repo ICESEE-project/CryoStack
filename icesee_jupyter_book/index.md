@@ -273,7 +273,7 @@
     <div class="cryostack-exec-status">
       <span><b>Remote / HPC</b> <span class="cryostack-status supported">Supported</span></span>
       <span><b>Containers</b> <span class="cryostack-status supported">Supported</span></span>
-      <span><b>Cloud</b> <span class="cryostack-status dev">In development</span></span>
+      <span><b>Cloud</b> <span class="cryostack-status dev">In validation</span></span>
     </div>
 
   </section>
@@ -419,8 +419,9 @@
     <h2>Recent developments.</h2>
 
     <p class="cryostack-section-intro">
-      Major work completed as CryoStack matures. Cloud execution is actively
-      under development and is not yet available for real runs.
+      Major work completed as CryoStack matures. Cloud execution runs real
+      jobs today on AWS Batch's default Fargate compute mode; a newer,
+      not-yet-AWS-validated EC2 Advanced compute mode is also available.
     </p>
 
     <div class="cryostack-updates-grid">
@@ -474,18 +475,19 @@
       </article>
 
       <article class="cryostack-update-card">
-        <div class="cryostack-update-status">In development</div>
+        <div class="cryostack-update-status">In validation</div>
 
         <h3>Cloud execution</h3>
 
         <p>
-          AWS Batch infrastructure provisioning and the cloud run contract
-          are in place. Real cloud scientific execution has not been accepted
-          yet — use Remote execution.
+          AWS Batch execution, on a default Fargate compute mode. Icepack and
+          ICESEE have each completed a real cloud run end-to-end; an Advanced
+          EC2 compute mode is provisioned but not yet AWS-validated, and ISSM
+          additionally needs a cloud-reachable MATLAB license.
         </p>
 
-        <a href="documentation.html">
-          Documentation →
+        <a href="docs/hpc_cloud.html">
+          Cloud Run Guide →
         </a>
       </article>
 

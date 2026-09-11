@@ -186,12 +186,13 @@
 
   <article class="cryostack-resource-card">
     <div class="cryostack-resource-tag">Execution Mode</div>
-    <h3>Cloud <span class="cryostack-status dev">In development</span></h3>
+    <h3>Cloud <span class="cryostack-status dev">In validation</span></h3>
     <p>
-      AWS Batch execution. Infrastructure provisioning and the run contract
-      exist; real cloud execution has not been accepted yet.
+      AWS Batch execution, Fargate by default (EC2 Advanced also exists).
+      Icepack has run a real cloud job end-to-end; ISSM's cloud path is
+      provisioned but needs a cloud-reachable MATLAB license.
     </p>
-    <a href="../../documentation.html">Platform status &rarr;</a>
+    <a href="../../docs/hpc_cloud.html">Cloud Run Guide &rarr;</a>
   </article>
 
   <article class="cryostack-resource-card">

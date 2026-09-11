@@ -161,8 +161,13 @@ ICESEE workflows may use Slurm or another scheduler depending on the connected c
 
 ### Cloud Mode
 
-Cloud mode runs ICESEE on your own AWS account (bring-your-own-AWS) using the
-same infrastructure CryoLauncher's Cloud Environment panel provides:
+Cloud mode runs ICESEE on your own AWS account (bring-your-own-AWS) on AWS
+Batch, using the same infrastructure CryoLauncher's Cloud Environment panel
+provides. Batch runs on a default **Fargate** compute mode; an **Advanced**
+section exposes an **EC2** alternative (On-Demand/Spot capacity, a
+custom/private network, and guarded GPU/multi-node options) — see
+[Compute mode](https://cryostack.eas.gatech.edu/docs/hpc_cloud.html#compute-mode-fargate-default-or-ec2-advanced)
+in the Cloud Run Guide.
 
 - **Connect AWS Account** once, through a CloudFormation role your own AWS
   console creates (CryoStack never asks for an access key or secret);

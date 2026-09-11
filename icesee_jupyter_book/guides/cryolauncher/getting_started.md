@@ -106,7 +106,11 @@ Remote mode may require:
 
 ### Cloud
 
-Runs supported workflows on **your own AWS account and credits**.
+Runs supported workflows on **your own AWS account and credits**, on AWS
+Batch. Batch runs on a default **Fargate** compute mode; an **Advanced**
+section exposes an **EC2** alternative (On-Demand/Spot capacity, a
+custom/private network, and guarded GPU/multi-node options) for workflows
+that need it.
 
 Connect the account once from **Cloud Environment → AWS ACCOUNT**:
 
