@@ -61,12 +61,15 @@ from .batch_config import (
     EC2ComputeConfig,
     EC2JobConfig,
     FargateJobConfig,
+    compute_environment_name,
     compute_resources_payload,
     container_properties_payload,
     ec2_compute_resources_payload,
     ec2_container_properties_payload,
+    ec2_multinode_job_definition_payload,
     job_definition_fingerprint,
     job_definition_name,
+    job_queue_name,
     log_group_name,
     normalize_compute_mode,
 )
@@ -288,18 +291,22 @@ def ensure_ec2_compute_environment(
     instance_role_arn: str,
     service_role_arn: str | None = None,
     ec2_config: EC2ComputeConfig = EC2ComputeConfig(),
+    name: str | None = None,
     ready_interval: float = BATCH_READY_INTERVAL_SECONDS,
     ready_timeout: float = BATCH_READY_TIMEOUT_SECONDS,
     sleep: Callable[[float], None] = time.sleep,
 ) -> str:
-    """Managed EC2 (scale-to-zero) compute environment ``cryostack-ec2``.
+    """Managed EC2 (scale-to-zero) compute environment. Defaults to
+    ``cryostack-ec2``; the caller passes ``cryostack-ec2-spot`` for Spot
+    capacity so On-Demand and Spot environments never collide or overwrite
+    each other's ``type``/``allocationStrategy``.
 
     Separate from the Fargate compute environment -- never renamed / reused /
     overwritten. Returns ``created`` / ``updated`` / ``reused``, VALID before
     it returns. Drift = maxvCpus / subnets / security groups / instance types /
     instance role.
     """
-    name = EC2_COMPUTE_ENVIRONMENT_NAME
+    name = name or EC2_COMPUTE_ENVIRONMENT_NAME
     what = f"compute environment {name}"
 
     def _wait() -> None:
@@ -482,20 +489,32 @@ def ensure_job_definition(
     command: list[str] | None = None,
     secrets: list[dict] | None = None,
     compute_mode: str = "fargate",
+    compute: "EC2ComputeConfig | None" = None,
 ) -> str:
     """Register (or reuse) a model's job definition.
 
     ``compute_mode`` selects the platform: ``"fargate"`` (default -- unchanged
     behaviour, name ``cryostack-<model>``, ``--platform-capabilities FARGATE``,
-    Fargate ``containerProperties``) or ``"ec2"`` (name
-    ``cryostack-<model>-ec2``, ``--platform-capabilities EC2``, EC2
-    ``containerProperties`` with no Fargate-only keys). The Secrets Manager
-    MATLAB-license path, the image digest and the container command are
-    identical for both.
+    Fargate ``containerProperties``) or ``"ec2"`` (EC2 ``containerProperties``
+    with no Fargate-only keys). The Secrets Manager MATLAB-license path, the
+    image digest and the container command are identical for both.
+
+    ``compute`` (EC2 only) is the full :class:`EC2ComputeConfig` -- its
+    ``accelerator``/``topology`` pick the deterministic job-definition name
+    and whether this registers a plain single-container job or an AWS Batch
+    **multi-node parallel** one (``--type multinode``). Capacity (On-Demand
+    vs Spot) does NOT affect the job definition -- only the compute
+    environment/queue it is submitted to.
     """
     is_ec2 = normalize_compute_mode(compute_mode) == COMPUTE_MODE_EC2
-    name = job_definition_name(model, compute_mode)
+    ec2_cfg = compute if (is_ec2 and compute is not None) else None
+    name = job_definition_name(
+        model, compute_mode,
+        accelerator=(ec2_cfg.accelerator if ec2_cfg else None),
+        topology=(ec2_cfg.topology if ec2_cfg else None),
+    )
     platform_capability = "EC2" if is_ec2 else "FARGATE"
+    is_multinode = bool(ec2_cfg and ec2_cfg.is_multinode)
 
     if is_ec2:
         if not isinstance(job_config, EC2JobConfig):
@@ -504,6 +523,7 @@ def ensure_job_definition(
             model=model, image=image, job_role_arn=job_role_arn,
             execution_role_arn=execution_role_arn, region=region,
             config=job_config, command=command, secrets=secrets,
+            compute=ec2_cfg,
         )
     else:
         desired_cp = container_properties_payload(
@@ -516,34 +536,55 @@ def ensure_job_definition(
         timeout_seconds=job_config.timeout_seconds,
         attempts=job_config.attempts,
     )
+    if is_multinode:
+        desired_fp["numNodes"] = int(ec2_cfg.node_count)
+
+    def _existing_container_properties(revision: dict) -> dict:
+        node_props = revision.get("nodeProperties") or {}
+        ranges = node_props.get("nodeRangeProperties") or []
+        if ranges:
+            return ranges[0].get("container") or {}
+        return revision.get("containerProperties") or {}
 
     for revision in sorted(
         _active_job_definitions(config, name),
         key=lambda r: int(r.get("revision", 0)), reverse=True,
     ):
         existing_fp = job_definition_fingerprint(
-            container_properties=revision.get("containerProperties") or {},
+            container_properties=_existing_container_properties(revision),
             timeout_seconds=int(
                 (revision.get("timeout") or {}).get("attemptDurationSeconds", 0)),
             attempts=int((revision.get("retryStrategy") or {}).get("attempts", 1)),
         )
+        if is_multinode:
+            existing_fp["numNodes"] = int(
+                (revision.get("nodeProperties") or {}).get("numNodes", -1))
         if existing_fp == desired_fp:
             return "reused"
         break  # only the latest revision matters
 
-    code, stdout, stderr = run_aws(
-        config,
-        [
-            "batch", "register-job-definition",
-            "--job-definition-name", name,
+    args = [
+        "batch", "register-job-definition",
+        "--job-definition-name", name,
+        "--platform-capabilities", platform_capability,
+        "--timeout", json.dumps(
+            {"attemptDurationSeconds": int(job_config.timeout_seconds)}),
+        "--retry-strategy", json.dumps({"attempts": int(job_config.attempts)}),
+    ]
+    if is_multinode:
+        node_body = ec2_multinode_job_definition_payload(
+            container_properties=desired_cp, node_count=ec2_cfg.node_count)
+        args += [
+            "--type", "multinode",
+            "--node-properties", json.dumps(node_body["nodeProperties"]),
+        ]
+    else:
+        args += [
             "--type", "container",
-            "--platform-capabilities", platform_capability,
             "--container-properties", json.dumps(desired_cp),
-            "--timeout", json.dumps(
-                {"attemptDurationSeconds": int(job_config.timeout_seconds)}),
-            "--retry-strategy", json.dumps({"attempts": int(job_config.attempts)}),
-        ],
-    )
+        ]
+
+    code, stdout, stderr = run_aws(config, args)
     _require_success(code, stdout, stderr, what="batch register-job-definition")
     return "created"
 
@@ -685,41 +726,56 @@ def ensure_batch_resources(
             result.skipped.append(
                 "ec2 batch (no ECS instance profile -- run IAM prepare first)")
         else:
-            _bucket("ec2_compute_environment", ensure_ec2_compute_environment(
-                config, subnets=subnets, security_groups=security_groups,
+            _ec2_cfg = ec2.ec2_config
+            _ce_name = compute_environment_name(COMPUTE_MODE_EC2, _ec2_cfg.capacity)
+            _q_name = job_queue_name(COMPUTE_MODE_EC2, _ec2_cfg.capacity)
+            _ce_label = "ec2_spot_compute_environment" if _ec2_cfg.is_spot \
+                else "ec2_compute_environment"
+            _q_label = "ec2_spot_job_queue" if _ec2_cfg.is_spot else "ec2_job_queue"
+
+            _bucket(_ce_label, ensure_ec2_compute_environment(
+                config,
+                # custom network: the caller's discovered subnets/SGs are
+                # overridden inside ec2_compute_resources_payload itself when
+                # _ec2_cfg.network == "custom" -- always pass discovery
+                # through so the default path is unaffected.
+                subnets=subnets, security_groups=security_groups,
                 instance_role_arn=ec2.instance_role_arn,
                 service_role_arn=ec2.service_role_arn,
-                ec2_config=ec2.ec2_config, **_ready,
+                ec2_config=_ec2_cfg, name=_ce_name, **_ready,
             ))
-            _bucket("ec2_job_queue", ensure_job_queue(
-                config, name=EC2_JOB_QUEUE_NAME,
-                compute_environment=EC2_COMPUTE_ENVIRONMENT_NAME, **_ready,
+            _bucket(_q_label, ensure_job_queue(
+                config, name=_q_name, compute_environment=_ce_name, **_ready,
             ))
             _ec2_defaults = DEFAULT_EC2_JOB_CONFIG
+            _jd_suffix = ("_ec2_gpu" if _ec2_cfg.is_gpu
+                          else "_ec2_mnp" if _ec2_cfg.is_multinode else "_ec2")
             if job_role_arn and execution_role_arn and issm_image:
-                _bucket("issm_job_definition_ec2", ensure_job_definition(
+                _bucket(f"issm_job_definition{_jd_suffix}", ensure_job_definition(
                     config, model="issm", image=issm_image,
                     job_role_arn=job_role_arn,
                     execution_role_arn=execution_role_arn, region=config.region,
                     job_config=ec2.issm_job_config or _ec2_defaults,
                     command=job_command, secrets=issm_secrets,
-                    compute_mode=COMPUTE_MODE_EC2,
+                    compute_mode=COMPUTE_MODE_EC2, compute=_ec2_cfg,
                 ))
             if include_icepack and job_role_arn and execution_role_arn and icepack_image:
-                _bucket("icepack_job_definition_ec2", ensure_job_definition(
+                _bucket(f"icepack_job_definition{_jd_suffix}", ensure_job_definition(
                     config, model="icepack", image=icepack_image,
                     job_role_arn=job_role_arn,
                     execution_role_arn=execution_role_arn, region=config.region,
                     job_config=ec2.icepack_job_config or _ec2_defaults,
                     command=job_command, compute_mode=COMPUTE_MODE_EC2,
+                    compute=_ec2_cfg,
                 ))
             if include_icesee and job_role_arn and execution_role_arn and icesee_image:
-                _bucket("icesee_job_definition_ec2", ensure_job_definition(
+                _bucket(f"icesee_job_definition{_jd_suffix}", ensure_job_definition(
                     config, model="icesee", image=icesee_image,
                     job_role_arn=job_role_arn,
                     execution_role_arn=execution_role_arn, region=config.region,
                     job_config=ec2.icesee_job_config or _ec2_defaults,
                     command=icesee_command, compute_mode=COMPUTE_MODE_EC2,
+                    compute=_ec2_cfg,
                 ))
 
     result.resources = discover_batch_resources(config)

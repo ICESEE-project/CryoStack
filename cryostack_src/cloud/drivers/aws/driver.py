@@ -255,8 +255,7 @@ class AWSDriver(
         matlab_secret_arn: str = "",
         compute_mode: str = "fargate",
         ec2_instance_role_arn: str = "",
-        ec2_max_vcpus: int | None = None,
-        ec2_instance_types: tuple[str, ...] | None = None,
+        ec2_config: "EC2ComputeConfig | None" = None,
     ) -> AWSBatchProvisionResult:
         """
         Idempotently provision AWS Batch on Fargate: a scale-to-zero compute
@@ -329,20 +328,17 @@ class AWSDriver(
 
         # Advanced: when EC2 mode is requested AND an ECS instance profile is
         # available, ALSO stand up the EC2 compute environment / queue /
-        # -ec2 job definitions. Fargate is always provisioned regardless.
+        # job definitions for the selected sub-mode (capacity/network/
+        # accelerator/topology all live on `ec2_config`). Fargate is always
+        # provisioned regardless.
         ec2_provisioning = None
         if normalize_compute_mode(compute_mode) == COMPUTE_MODE_EC2:
             instance_role = (ec2_instance_role_arn
                              or getattr(iam, "ec2_instance_profile", "") or "")
             if instance_role:
-                ec2_cfg_kwargs: dict = {}
-                if ec2_max_vcpus is not None:
-                    ec2_cfg_kwargs["max_vcpus"] = int(ec2_max_vcpus)
-                if ec2_instance_types:
-                    ec2_cfg_kwargs["instance_types"] = tuple(ec2_instance_types)
                 ec2_provisioning = EC2Provisioning(
                     instance_role_arn=instance_role,
-                    ec2_config=EC2ComputeConfig(**ec2_cfg_kwargs),
+                    ec2_config=ec2_config or EC2ComputeConfig(),
                     service_role_arn=getattr(iam, "batch_service_role", None),
                 )
 
@@ -375,8 +371,7 @@ class AWSDriver(
         bucket: str | None = None,
         matlab_secret_arn: str = "",
         compute_mode: str = "fargate",
-        ec2_max_vcpus: int | None = None,
-        ec2_instance_types: tuple[str, ...] | None = None,
+        ec2_config: "EC2ComputeConfig | None" = None,
     ) -> dict:
         """
         Prepare the AWS environment currently supported by CryoStack.
@@ -552,8 +547,7 @@ class AWSDriver(
                 compute_mode=compute_mode,
                 ec2_instance_role_arn=getattr(
                     iam_result, "ec2_instance_profile", "") or "",
-                ec2_max_vcpus=ec2_max_vcpus,
-                ec2_instance_types=ec2_instance_types,
+                ec2_config=ec2_config,
             )
 
         except AWSCredentialsError:
@@ -703,10 +697,18 @@ class AWSDriver(
         # Batch queue + job definition the run targets. An old caller that
         # passes nothing gets the Fargate pair, exactly as before.
         compute_mode = normalize_compute_mode(kwargs.get("compute_mode"))
-        job_queue = (kwargs.get("job_queue") or "").strip() or job_queue_name(compute_mode)
+        # the full EC2 sub-mode selection (capacity/network/accelerator/
+        # topology) -- optional; a caller that only passes compute_mode="ec2"
+        # gets the plain On-Demand/default-network/CPU/single-node EC2 path.
+        ec2_config = kwargs.get("ec2_config") or EC2ComputeConfig()
+        job_queue = (
+            (kwargs.get("job_queue") or "").strip()
+            or job_queue_name(compute_mode, ec2_config.capacity))
         job_definition = (
             (kwargs.get("job_definition") or "").strip()
-            or job_definition_name(model, compute_mode))
+            or job_definition_name(
+                model, compute_mode,
+                accelerator=ec2_config.accelerator, topology=ec2_config.topology))
         matlab_license_configured = bool(kwargs.get("matlab_license_configured", False))
         s3 = kwargs.get("s3")
         aws = kwargs.get("aws")
@@ -716,9 +718,14 @@ class AWSDriver(
         if not bucket:
             raise RuntimeError("AWS cloud submission needs an S3 bucket.")
 
-        # 1. gate the run BEFORE anything is uploaded or a job is created
+        # 1. gate the run BEFORE anything is uploaded or a job is created --
+        # model/license AND the AWS Batch compute-selection compatibility
+        # matrix (Fargate+Spot/GPU/custom-network/multi-node rejected; EC2+GPU
+        # or EC2+multi-node rejected unless the image/runtime actually
+        # supports it).
         assert_cloud_run_allowed(
-            model=model, matlab_license_configured=matlab_license_configured
+            model=model, matlab_license_configured=matlab_license_configured,
+            compute_mode=compute_mode, ec2_config=ec2_config,
         )
 
         # 2. stage the run's inputs to S3

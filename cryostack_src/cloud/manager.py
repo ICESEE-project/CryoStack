@@ -208,8 +208,7 @@ class CloudManager:
         bucket: str | None = None,
         matlab_secret_arn: str = "",
         compute_mode: str = "fargate",
-        ec2_max_vcpus: int | None = None,
-        ec2_instance_types: tuple[str, ...] | None = None,
+        ec2_config=None,
     ):
 
         return self.driver(
@@ -221,8 +220,7 @@ class CloudManager:
             bucket=bucket,
             matlab_secret_arn=matlab_secret_arn,
             compute_mode=compute_mode,
-            ec2_max_vcpus=ec2_max_vcpus,
-            ec2_instance_types=ec2_instance_types,
+            ec2_config=ec2_config,
         )
 
     def prepare_batch(
