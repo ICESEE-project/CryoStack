@@ -204,3 +204,30 @@ def test_bootstrap_also_prepares_icesee_registry_and_batch(monkeypatch):
 def test_redact_helper_scrubs_secret_shaped_text():
     assert _redact("key AKIAIOSFODNN7EXAMPLE here") == "key <redacted> here"
     assert _redact("plain provisioning message") == "plain provisioning message"
+
+
+def test_redact_helper_scrubs_a_matlab_license_endpoint_and_env():
+    # bare FlexNet endpoint form (dummy) -- e.g. MATLAB's own "License path:" line
+    out = _redact("License path: 27000@test-license.invalid:/opt/matlab/licenses")
+    assert "27000@test-license.invalid" not in out
+    assert "<redacted>" in out
+    assert "/opt/matlab/licenses" in out                     # ordinary path untouched
+
+    # MLM_LICENSE_FILE=<value>  ->  key kept, value redacted
+    out = _redact("env MLM_LICENSE_FILE=27000@test-license.invalid was set")
+    assert "27000@test-license.invalid" not in out
+    assert "MLM_LICENSE_FILE=<redacted>" in out
+
+    # redundant-server form
+    out = _redact("MLM_LICENSE_FILE=1711@a.invalid,1711@b.invalid")
+    assert "a.invalid" not in out and "b.invalid" not in out
+
+
+def test_redact_helper_does_not_touch_ordinary_host_port_or_urls():
+    for text in (
+        "could not connect to https://batch.us-east-2.amazonaws.com:443",
+        "endpoint example.com:8080 refused",
+        "AWS Batch job cryostack-issm:4 not found",
+        "plain provisioning message",
+    ):
+        assert _redact(text) == text

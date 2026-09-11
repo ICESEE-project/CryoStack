@@ -137,3 +137,52 @@ def test_no_secrets_block_when_unconfigured():
         execution_role_arn="arn:aws:iam::123456789012:role/exec",
         region="us-east-2", secrets=NOT_CONFIGURED.batch_secrets_block())
     assert "secrets" not in cp
+
+
+# ── end-to-end security contract: only the ARN travels, never the value ──
+def test_the_license_value_never_travels_only_the_secret_arn_does():
+    from cryostack_src.cloud.drivers.aws.submit import build_container_overrides
+    from cryostack_src.cloud.runtime import build_cloud_runner, build_run_descriptor
+    from cryostack_src.cloud.runtime import descriptor_is_clean
+
+    lic = CloudMatlabLicense(configured=True, mechanism="secrets-manager",
+                             secret_arn=_ARN)
+
+    # 1. the Batch job definition gets ONLY the ARN reference
+    assert lic.batch_secrets_block() == [
+        {"name": "MLM_LICENSE_FILE", "valueFrom": _ARN}]
+
+    # 2. runtime containerOverrides.environment cannot carry MLM_LICENSE_FILE
+    #    (it is a fixed 3-value set; "mlm_license" is also in _FORBIDDEN_ENV_HINTS)
+    ov = build_container_overrides(
+        s3_run="s3://b/runs/r", model="issm", run_target="runme.m")
+    assert {e["name"] for e in ov["environment"]} == {
+        "CRYOSTACK_S3_RUN", "CRYOSTACK_MODEL", "CRYOSTACK_RUN_TARGET"}
+
+    # 3. the generic cloud runtime script embeds no license value
+    assert "MLM_LICENSE_FILE=" not in build_cloud_runner()
+
+    # 4. the run descriptor (provenance) fails its no-secrets check if a
+    #    license value is smuggled in; a clean one passes
+    assert descriptor_is_clean(build_run_descriptor(
+        model="issm", run_target="runme.m")) is True
+    assert descriptor_is_clean(
+        {"x": "MLM_LICENSE_FILE=27000@test-license.invalid"}) is False
+
+
+def test_iam_grant_is_scoped_to_exactly_the_configured_secret_arn():
+    """The ARN wired into containerProperties.secrets must be the SAME ARN the
+    ECS execution-role policy is scoped to -- no wildcard, one secret only."""
+    from cryostack_src.cloud.drivers.aws.iam_policies import (
+        matlab_license_secret_policy,
+    )
+
+    secret_block = CloudMatlabLicense(
+        configured=True, mechanism="secrets-manager",
+        secret_arn=_ARN).batch_secrets_block()
+    policy = matlab_license_secret_policy(secret_arn=_ARN)
+
+    (stmt,) = policy["Statement"]
+    assert stmt["Action"] == "secretsmanager:GetSecretValue"
+    assert stmt["Resource"] == secret_block[0]["valueFrom"] == _ARN
+    assert "*" not in json.dumps(policy)

@@ -136,14 +136,32 @@ _FAILURE_RULES: tuple[tuple[str, str], ...] = (
 )
 
 
+# Defence-in-depth: a raw AWS/MATLAB error carried into the Run Log's
+# "[cloud][detail]" line must not echo a MATLAB network-license value. Redacts
+# "MLM_LICENSE_FILE=<value>" (key kept, value masked) and a bare FlexNet
+# "<port>@<host>" endpoint (an all-digit 1-5 char "user" is the port -- this
+# does NOT touch user@host or a normal host:port).
+_LICENSE_DETAIL_RE = (
+    (re.compile(r"(MLM_LICENSE_FILE\s*[=:]\s*)(\S+)", re.IGNORECASE), r"\1<redacted>"),
+    (re.compile(r"\b\d{1,5}@[A-Za-z0-9](?:[A-Za-z0-9.\-]*[A-Za-z0-9])?"), "<redacted>"),
+)
+
+
+def _redact_license(text: str) -> str:
+    for pattern, repl in _LICENSE_DETAIL_RE:
+        text = pattern.sub(repl, text)
+    return text
+
+
 def classify_cloud_failure(error: Any) -> tuple[str, str]:
     """Map an exception / message to ``(short_actionable, full_detail)``.
 
     The short message is safe to show a user; the detail is the original text
-    for the log. Never returns a secret -- the inputs are already screened
-    upstream, and this only pattern-matches.
+    for the log, with any MATLAB network-license value redacted. Never returns
+    a secret -- the other inputs are already screened upstream, and this only
+    pattern-matches.
     """
-    detail = str(error).strip()
+    detail = _redact_license(str(error).strip())
     low = detail.lower()
     for pattern, short in _FAILURE_RULES:
         if re.search(pattern, low):

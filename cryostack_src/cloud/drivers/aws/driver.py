@@ -48,13 +48,26 @@ _SECRET_TEXT_RE = re.compile(
     r"|(?:aws[_-])?(?:session|security)[_ -]?token[\"'=:\s]+\S+"
     r"|x-amz-security-token[\"'=:\s]+\S+"
     r"|\b(?:FwoG|IQoJ|FQoG|Fwo)[A-Za-z0-9+/=_-]{16,}"
-    r"|cryostack:[\w.\-]+:[\w\-]{8,})",
+    r"|cryostack:[\w.\-]+:[\w\-]{8,}"
+    # FlexNet / MATLAB network-license endpoint: "<port>@<host>" (an all-digit
+    # "user" of 1-5 chars is the port -- this does NOT match user@host or a
+    # normal "host:port"). Covers the MLM_LICENSE_FILE value and MATLAB's own
+    # "License path: <port>@<host>:..." diagnostic line.
+    r"|\b\d{1,5}@[A-Za-z0-9](?:[A-Za-z0-9.\-]*[A-Za-z0-9])?)",
     re.IGNORECASE,
+)
+
+#: keep the key, redact the value -- "MLM_LICENSE_FILE=<anything>" /
+#: "MLM_LICENSE_FILE: <anything>" (also catches a license-file PATH form the
+#: bare-endpoint pattern above would miss).
+_LICENSE_ENV_RE = re.compile(
+    r"(MLM_LICENSE_FILE\s*[=:]\s*)(\S+)", re.IGNORECASE
 )
 
 
 def _redact(text: str) -> str:
-    return _SECRET_TEXT_RE.sub("<redacted>", text or "")
+    out = _SECRET_TEXT_RE.sub("<redacted>", text or "")
+    return _LICENSE_ENV_RE.sub(r"\1<redacted>", out)
 
 
 def _issm_matlab_secrets(secret_arn: str) -> list[dict] | None:
@@ -443,11 +456,19 @@ class AWSDriver(
             iam_result = ensure_iam_resources(
                 self.config,
                 bucket=storage.bucket,
+                # reconcile the ISSM MATLAB-license secret grant on the ECS
+                # execution role every Prepare Cloud (scoped to exactly this
+                # ARN; removed when unconfigured)
+                matlab_secret_arn=matlab_secret_arn,
             )
             iam = iam_result.resources
             if iam_result.created:
                 messages.append(
                     "Created IAM resources: " + ", ".join(iam_result.created)
+                )
+            if getattr(iam_result, "updated", None):
+                messages.append(
+                    "Updated IAM resources: " + ", ".join(iam_result.updated)
                 )
             if iam_result.reused:
                 messages.append(

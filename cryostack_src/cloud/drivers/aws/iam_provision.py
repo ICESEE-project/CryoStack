@@ -32,7 +32,7 @@ appropriate.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .auth import run_aws
 from .iam import (
@@ -40,10 +40,12 @@ from .iam import (
     discover_iam_resources,
 )
 from .iam_policies import (
+    MATLAB_LICENSE_SECRET_POLICY_NAME,
     batch_service_trust_policy,
     ecs_execution_trust_policy,
     job_s3_policy,
     job_trust_policy,
+    matlab_license_secret_policy,
 )
 from .models import AWSConfig
 
@@ -67,6 +69,9 @@ class AWSIAMProvisionResult:
 
     created: list[str]
     reused: list[str]
+    #: policies reconciled on an already-existing role this run (e.g. the
+    #: ISSM MATLAB-license secret grant re-scoped to a changed ARN).
+    updated: list[str] = field(default_factory=list)
 
 
 def _require_success(
@@ -187,10 +192,93 @@ def put_inline_policy(
         stderr,
     )
 
+
+def delete_inline_policy(
+    config: AWSConfig,
+    *,
+    role_name: str,
+    policy_name: str,
+) -> bool:
+    """Delete one inline role policy by name. Returns ``True`` if a policy
+    was removed, ``False`` if there was nothing to remove (already absent).
+    Any other failure raises -- an unexpected error must not be swallowed.
+    """
+
+    code, stdout, stderr = run_aws(
+        config,
+        [
+            "iam",
+            "delete-role-policy",
+            "--role-name",
+            role_name,
+            "--policy-name",
+            policy_name,
+        ],
+    )
+
+    if code == 0:
+        return True
+
+    blob = (stderr or stdout or "").lower()
+    if "nosuchentity" in blob or "cannot be found" in blob:
+        return False
+
+    raise RuntimeError(
+        (stderr or stdout).strip()
+        or "Failed to delete inline role policy."
+    )
+
+
+def _reconcile_matlab_license_secret(
+    config: AWSConfig,
+    *,
+    matlab_secret_arn: str,
+    updated: list[str],
+) -> None:
+    """Reconcile the ISSM MATLAB-license secret grant on the ECS
+    task-execution role. Runs on EVERY Prepare Cloud, independent of whether
+    the role was just created:
+
+    * a configured ARN -> put/overwrite an inline policy scoped to EXACTLY
+      that secret ARN. An ARN change (secret A -> secret B) is handled by the
+      overwrite: the role stops being able to read A and is scoped to B.
+    * no ARN -> remove CryoStack's own ``CryoStackMatlabLicenseSecret``
+      inline policy if present, so the role never keeps a stale grant. Only
+      that one named policy is ever touched; every other policy on the role
+      (the AWS-managed ``AmazonECSTaskExecutionRolePolicy``, anything the
+      user added) is left exactly as it was.
+
+    KMS: a secret encrypted with the Secrets Manager default AWS-managed key
+    needs no extra ``kms:Decrypt`` grant. A customer-managed key would; the
+    UI does not collect a CMK ARN today, so that is a documented future case
+    (see :func:`matlab_license_secret_policy`).
+    """
+
+    arn = (matlab_secret_arn or "").strip()
+
+    if arn:
+        put_inline_policy(
+            config,
+            role_name=ECS_EXECUTION_ROLE_NAME,
+            policy_name=MATLAB_LICENSE_SECRET_POLICY_NAME,
+            policy=matlab_license_secret_policy(secret_arn=arn),
+        )
+        updated.append("ecs_execution_role:matlab_license_secret")
+        return
+
+    if delete_inline_policy(
+        config,
+        role_name=ECS_EXECUTION_ROLE_NAME,
+        policy_name=MATLAB_LICENSE_SECRET_POLICY_NAME,
+    ):
+        updated.append("ecs_execution_role:matlab_license_secret (removed)")
+
+
 def ensure_iam_resources(
     config: AWSConfig,
     *,
     bucket: str,
+    matlab_secret_arn: str = "",
 ) -> AWSIAMProvisionResult:
     """
     Ensure the IAM roles required by CryoStack AWS Batch exist.
@@ -202,6 +290,7 @@ def ensure_iam_resources(
 
     created: list[str] = []
     reused: list[str] = []
+    updated: list[str] = []
 
     #
     # ---------------------------------------------------------
@@ -274,6 +363,18 @@ def ensure_iam_resources(
         )
 
     #
+    # Reconcile the ISSM MATLAB-license secret grant on the ECS execution
+    # role EVERY run -- whether the role was just created or already existed
+    # -- so a changed secret ARN (A -> B) re-scopes the grant and a cleared
+    # ARN removes it. No-op (and no permission added) when unconfigured.
+    #
+    _reconcile_matlab_license_secret(
+        config,
+        matlab_secret_arn=matlab_secret_arn,
+        updated=updated,
+    )
+
+    #
     # ---------------------------------------------------------
     # CryoStack job role
     # ---------------------------------------------------------
@@ -321,4 +422,5 @@ def ensure_iam_resources(
         resources=resources,
         created=created,
         reused=reused,
+        updated=updated,
     )

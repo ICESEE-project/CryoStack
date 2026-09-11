@@ -161,6 +161,31 @@ def test_classify_cloud_failure(msg, needle):
     assert detail == msg
 
 
+def test_classify_cloud_failure_redacts_a_matlab_license_value_in_the_detail():
+    # a raw MATLAB / FlexNet error must not echo the license endpoint into
+    # the "[cloud][detail]" Run Log line (dummy values only)
+    short, detail = classify_cloud_failure(RuntimeError(
+        "License checkout failed. License path: "
+        "27000@test-license.invalid:/opt/matlab/R2024b/licenses"))
+    assert "27000@test-license.invalid" not in detail
+    assert "<redacted>" in detail
+    assert "/opt/matlab/R2024b/licenses" in detail          # non-secret path kept
+
+    short, detail = classify_cloud_failure(RuntimeError(
+        "container env MLM_LICENSE_FILE=27000@test-license.invalid rejected"))
+    assert "27000@test-license.invalid" not in detail
+    assert "MLM_LICENSE_FILE=<redacted>" in detail          # key kept, value gone
+
+
+def test_classify_cloud_failure_leaves_ordinary_host_port_text_alone():
+    for msg in ("could not connect to https://batch.us-east-2.amazonaws.com:443",
+                "endpoint example.com:8080 refused the connection",
+                "Job queue cryostack-queue does not exist"):
+        _short, detail = classify_cloud_failure(RuntimeError(msg))
+        assert detail == msg
+        assert "<redacted>" not in detail
+
+
 def test_plan_summary_has_charge_warning_and_no_dollar_figure():
     s = cloud_run_plan_summary(model="issm", region="us-east-2", bucket="b",
                                job_queue="cryostack-queue",
