@@ -16,6 +16,11 @@ whatever resource executed the run:
     CRYOSTACK_RUN_STARTED  epoch seconds; only files touched at/after    [optional]
                            this time are collected (avoids sweeping in
                            example inputs that predate the run)
+
+It also reads an optional ``cryostack_icepack_figure_titles.json`` staged next
+to ``run.py`` (see :mod:`cryostack_src.models.icepack.figure_titles`) and uses
+it as the *lowest-priority* figure-title fallback -- never overriding a title
+the scientific script itself produced.
 """
 from __future__ import annotations
 
@@ -93,11 +98,17 @@ all_figures = sorted(set(figures) | set(_listdir_names("figures", FIGURE_SUFFIXE
 all_model = sorted(set(model_files) | set(_listdir_names("model")))
 
 # Per-figure metadata captured by cryostack_icepack_runner FROM THE FIGURE
-# ITSELF (suptitle / axes titles / axis labels). Never inferred from a
-# variable name, figure order, or the tutorial's identity -- a figure the
-# script gave no title just has no "title" key here, and the UI falls back
-# to a neutral "Figure N". Keyed by filename; only figures with real
-# extracted text get an entry.
+# ITSELF (explicit figure label / suptitle / axes title / axis labels).
+# Never inferred from a variable name, figure order, or the tutorial's
+# identity -- a figure the script gave no name at all just has no "title"
+# key here, and the UI falls back to a neutral "Figure N". Keyed by
+# filename; only figures with real extracted text get an entry.
+#
+# "title" is the single field the Results gallery reads as the heading; it
+# is resolved here, once, in priority order:
+#   1. explicit figure label   (plt.figure("…") / fig.set_label / window title)
+#   2. figure suptitle         (fig.suptitle("…"))
+#   3. primary axes title      (first non-empty axes.set_title("…"))
 figures_meta = {}
 try:
     _cap = json.loads((outputs / "figures" / "_captured.json").read_text(encoding="utf-8"))
@@ -106,10 +117,15 @@ try:
         if not _f:
             continue
         _rec = {}
-        _title = (_e.get("suptitle")
-                  or next((t for t in (_e.get("axes_titles") or []) if t), "")).strip()
+        _title = (
+            _e.get("label")
+            or _e.get("suptitle")
+            or next((t for t in (_e.get("axes_titles") or []) if t), "")
+        ).strip()
         if _title:
             _rec["title"] = _title
+        if _e.get("label"):
+            _rec["label"] = _e["label"].strip()
         if _e.get("axes_titles"):
             _rec["axes_titles"] = [t for t in _e["axes_titles"] if t]
         if _e.get("xlabel"):
@@ -119,6 +135,37 @@ try:
         figures_meta[_f] = _rec
 except Exception:
     figures_meta = figures_meta or {}
+
+# ── curated example figure titles: the lowest-priority fallback ────────
+# For a curated CryoStack example whose plots carry no title of their own
+# (e.g. 00-meshes-functions), the notebook materializer stages an ordered
+# title list as cryostack_icepack_figure_titles.json. It is applied ONLY:
+#   * when a figure has no script-produced title (label/suptitle/axes title
+#     above always win -- a curated title never overrides real metadata), and
+#   * when the curated list length equals the number of captured figures
+#     (a cheap "the example was not modified" gate).
+# Every figure it fills is stamped "title_source": "curated-example".
+_curated_titles = None
+for _root in (example_dir, str(run_dir)):
+    if not _root:
+        continue
+    _sidecar = Path(_root).expanduser() / "cryostack_icepack_figure_titles.json"
+    if _sidecar.is_file():
+        try:
+            _payload = json.loads(_sidecar.read_text(encoding="utf-8"))
+            _t = _payload.get("titles") if isinstance(_payload, dict) else None
+            if isinstance(_t, list) and _t and all(isinstance(x, str) for x in _t):
+                _curated_titles = _t
+                break
+        except Exception:
+            pass
+
+if _curated_titles and len(_curated_titles) == len(all_figures):
+    for _i, _fname in enumerate(all_figures):
+        _rec = figures_meta.setdefault(_fname, {})
+        if not _rec.get("title") and _curated_titles[_i].strip():
+            _rec["title"] = _curated_titles[_i].strip()
+            _rec["title_source"] = "curated-example"
 
 # A structured export (cryostack_icepack_export) may already have written a
 # richer metadata.json (fields / mesh / status "ok"). Never clobber that --

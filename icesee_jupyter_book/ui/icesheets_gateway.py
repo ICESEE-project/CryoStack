@@ -4,6 +4,7 @@ import os
 import io
 import html
 import json
+import shutil
 import time as _time
 import yaml
 import subprocess
@@ -873,6 +874,15 @@ def build_icesheets_ui():
                 container=_container,
                 software=_software,
             )
+            # The just-submitted run is the active run (it is the subject of the
+            # CLOUD RUN card). Make it the Workspace's selected run too, so the
+            # result sync, Run Log and Results all target THIS run by default.
+            try:
+                _new = workspace_manager._run_by_job_id(handle.job_id)
+                if _new is not None:
+                    workspace_manager.select_run(_new.id)
+            except Exception:  # noqa: BLE001 - selection is best-effort
+                pass
 
         def _icepack_cloud_postprocess_files() -> dict:
             """Icepack's cloud output-collector, staged as an ordinary file
@@ -3296,15 +3306,51 @@ def build_icesheets_ui():
                 workspace_manager.preview_results()
             visualization_panel.controller.preview()
 
+        def _download_cloud_results(*, figures_only=False):
+            """Cloud Download: synchronise the selected run's S3 outputs into
+            its own cache (the SAME cache/cloud_outputs the Results panel and
+            Preview read), then package that exact set. Never a re-derived path,
+            never a silent empty archive."""
+            results_out.clear_output()
+            with results_out:
+                print("[cloud] Synchronising results from S3…")
+            try:
+                outputs_dir = sync_selected_run_results()
+            except Exception as _e:  # noqa: BLE001 - surfaced, never a raw traceback
+                with results_out:
+                    print("[cloud][ERROR]", type(_e).__name__, _e)
+                return
+            if outputs_dir is None:
+                return
+            cache_dir = Path(outputs_dir).parent
+            if figures_only:
+                figs = sorted(Path(outputs_dir).rglob("*.png")) \
+                    + sorted(Path(outputs_dir).rglob("*.jpg"))
+                if not figs:
+                    with results_out:
+                        print("[cloud] This run produced no figure files.")
+                    return
+                figures_dir = cache_dir / "_cloud_figures_only"
+                if figures_dir.exists():
+                    workspace_manager.delete(figures_dir)
+                figures_dir.mkdir(parents=True, exist_ok=True)
+                for p in figs:
+                    shutil.copy2(p, figures_dir / p.name)
+                workspace_manager.package_and_download(
+                    figures_dir, filename="figures_bundle.zip", cache_dir=cache_dir)
+                return
+            workspace_manager.package_and_download(
+                outputs_dir, filename="results_bundle.zip", cache_dir=cache_dir)
+
         def on_results_download(_=None):
             if active_execution_mode() == "cloud":
-                on_cloud_results()
+                _download_cloud_results()
             else:
                 workspace_manager.download_results()
 
         def on_figures_download(_=None):
             if active_execution_mode() == "cloud":
-                on_cloud_results()
+                _download_cloud_results(figures_only=True)
             else:
                 workspace_manager.download_figures()
 
@@ -3898,9 +3944,37 @@ def build_icesheets_ui():
             return None
 
         def _open_active_run(tab):
-            rid = _run_id_for_job(STATUS.get("batch_job_id"))
+            """CLOUD RUN card -> Workspace. Guarantees three things for the run
+            the card is showing: (1) it becomes the selected run, (2) the
+            Workspace opens on the requested tab, (3) that tab shows THAT run.
+
+            The run is resolved from the controller's own job id first (the
+            card's subject), then the last-submitted job id -- never "the most
+            recent run in history"."""
+            ctl = _cloud["controller"]
+            job_id = (getattr(ctl, "job_id", "") if ctl is not None else "") \
+                or STATUS.get("batch_job_id")
+            rid = _run_id_for_job(job_id)
+            if rid is None:
+                # the run list may not have this run yet -- rebuild it once
+                try:
+                    workspace_history_panel.refresh_button.click()
+                except Exception:  # noqa: BLE001
+                    pass
+                rid = _run_id_for_job(job_id)
+
             if rid:
-                workspace_manager.select_run(rid)
+                # route through the Runs panel's Select widget so the whole
+                # Workspace (selected-run state, run cards, viz panel) agrees on
+                # ONE run -- not just workspace_manager._selected_run_id.
+                try:
+                    if rid in [v for _, v in workspace_history_panel.runs.options]:
+                        workspace_history_panel.runs.value = rid
+                    else:
+                        workspace_manager.select_run(rid)
+                except Exception:  # noqa: BLE001
+                    workspace_manager.select_run(rid)
+
             _switch_workspace_tab(tab)
             if tab == "log":
                 if rid:
@@ -3909,6 +3983,9 @@ def build_icesheets_ui():
                     on_cloud_logs()
             else:
                 on_results_preview()
+            # re-assert the destination tab: the data step above may have driven
+            # widgets that could steal focus; the requested tab must stay active.
+            _switch_workspace_tab(tab)
 
         _active_run = build_active_run_callbacks(
             widgets=cloud_environment,

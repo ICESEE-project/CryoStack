@@ -76,7 +76,9 @@ sys.path.insert(0, run_dir)
 _ns = runpy.run_path(script, run_name="__main__")   # science: errors propagate
 
 # Persist any still-open figures the script drew but never saved, and record
-# each figure's OWN metadata (title / labels) -- never inferred.
+# each figure's OWN metadata -- explicit figure label, suptitle, axes title,
+# axis labels -- never inferred from a variable name, filename, or the
+# tutorial's identity.
 def _text(obj):
     try:
         t = obj.get_text() if obj is not None else ""
@@ -104,6 +106,26 @@ try:
                 continue
             _entry = {"file": _name}
             try:
+                # (1) an EXPLICIT label the script itself set on the figure --
+                # plt.figure("Bed topography") / fig.set_label(...) / a
+                # non-default window title. Highest-priority name; never
+                # inferred. matplotlib's own default label is "" and its
+                # default window title is "Figure <n>", both of which are
+                # treated as "no label".
+                _lbl = ""
+                try:
+                    _lbl = (_fig.get_label() or "").strip()
+                except Exception:
+                    _lbl = ""
+                if not _lbl:
+                    try:
+                        _wt = (_fig.canvas.manager.get_window_title() or "").strip()
+                        if _wt and _wt != ("Figure %d" % _num):
+                            _lbl = _wt
+                    except Exception:
+                        pass
+                if _lbl:
+                    _entry["label"] = _lbl
                 _st = _text(getattr(_fig, "_suptitle", None))
                 if _st:
                     _entry["suptitle"] = _st

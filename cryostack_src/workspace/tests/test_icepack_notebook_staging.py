@@ -92,8 +92,18 @@ def test_a_bare_notebook_file_is_a_valid_stage_example_for_run_source(tmp_path):
     assert staged.path.is_dir()
     assert staged.provenance["entrypoint"] == "run.py"
     listing = {p.name for p in staged.path.iterdir()}
-    assert listing == {"00-meshes-functions.ipynb", "run.py", ".cryostack-example.json"}
+    assert listing == {
+        "00-meshes-functions.ipynb", "run.py", ".cryostack-example.json",
+        # curated example: its figure-title sidecar rides with the working
+        # copy (so the same title-metadata path works for Remote/HPC + Cloud)
+        "cryostack_icepack_figure_titles.json",
+    }
     assert "import firedrake" in (staged.path / "run.py").read_text()
+    _sidecar = json.loads(
+        (staged.path / "cryostack_icepack_figure_titles.json").read_text())
+    assert _sidecar["example"] == "00-meshes-functions"
+    assert _sidecar["titles"][0] == "Mesh of the unit square"
+    assert len(_sidecar["titles"]) == 7
     # the original notebook is preserved verbatim, byte for byte
     assert json.loads((staged.path / "00-meshes-functions.ipynb").read_text()) == \
         json.loads(nb.read_text())
@@ -217,6 +227,9 @@ def test_full_pipeline_discovery_to_cloud_staging_run_target_is_python(tmp_path)
     assert result.descriptor["run_target"] == "run.py"
     assert "00-meshes-functions.ipynb" in result.staged_files
     assert "run.py" in result.staged_files
+    # curated example: the figure-title sidecar is uploaded with the run
+    # inputs (Cloud path)
+    assert "cryostack_icepack_figure_titles.json" in result.staged_files
     (sync,) = [c for c in s3.calls if c[:2] == ["s3", "sync"] and c[1] == "sync"
                and str(staged.path) in c[2]]
     assert sync  # the whole staged directory (notebook + run.py) was uploaded

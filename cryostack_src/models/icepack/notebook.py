@@ -135,4 +135,24 @@ def materialize_notebook_workspace(source: str | Path, *, dest_dir: str | Path) 
 
     script_text = convert_notebook_to_script(src)
     (dest_dir / RUN_SCRIPT_NAME).write_text(script_text, encoding="utf-8")
+    _stage_curated_figure_titles(src.stem, dest_dir)
     return RUN_SCRIPT_NAME
+
+
+def _stage_curated_figure_titles(example_stem: str, dest_dir: Path) -> None:
+    """When this canonical example has curated figure titles
+    (:mod:`cryostack_src.models.icepack.figure_titles`), write them as an
+    ordinary JSON sidecar alongside ``run.py``. It rides with the materialized
+    working copy through the SAME staging both Remote/HPC and Cloud use, and
+    the post-run collector applies it as a lowest-priority title fallback. No
+    curated entry → no file written (an unknown example gets nothing)."""
+    import json
+
+    from .figure_titles import SIDECAR_FILENAME, sidecar_payload
+
+    payload = sidecar_payload(example_stem)
+    if payload is None:
+        return
+    (dest_dir / SIDECAR_FILENAME).write_text(
+        json.dumps(payload, indent=2), encoding="utf-8"
+    )

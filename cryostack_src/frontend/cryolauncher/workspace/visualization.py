@@ -18,13 +18,22 @@ local package. Legacy runs (``status == "legacy"``) keep their existing PNGs and
 """
 from __future__ import annotations
 
+import base64
 import html
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
 import ipywidgets as W
-from IPython.display import Image, clear_output, display
+from IPython.display import HTML, Image, clear_output, display
+
+#: figures larger than this are NOT base64-embedded for inline preview -- the
+#: card shows a "too large to preview" note instead and the file stays fully
+#: available through Download results. 12 MiB raw -> ~16 MiB base64.
+_MAX_INLINE_FIGURE_BYTES = 12 * 1024 * 1024
+
+_IMG_MIME = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+             "gif": "image/gif", "svg": "image/svg+xml"}
 
 from cryostack_src.workspace.manager import WorkspaceManager
 
@@ -185,35 +194,42 @@ class VisualizationController:
             self.field_dd.options = ()
             arts = self._pkg.legacy_artifacts()
             figs = arts.get("figures") or []
-            natives = (arts.get("native") or []) + (arts.get("mats") or [])
-            if status == "artifacts":
+            _seen: set = set()
+            natives = []
+            for p in ([arts["model_mat"]] if arts.get("model_mat") else []) \
+                    + (arts.get("native") or []) + (arts.get("mats") or []) \
+                    + (arts.get("other") or []):
+                if p and p not in _seen:
+                    _seen.add(p)
+                    natives.append(p)
+
+            # "No structured visualizer" and "No results" are different
+            # conditions -- say which one this is. The count is explicit about
+            # WHAT was found (figures vs other output files), never a vague
+            # "N files".
+            if figs or natives:
+                note = _LEGACY_NOTE if status == "legacy" else _ARTIFACTS_NOTE
+                parts = []
                 if figs:
-                    note = _ARTIFACTS_NOTE
-                elif natives:
-                    note = (
-                        "This run produced native model output files but no "
-                        "figures. Use <b>Download results</b> to retrieve them."
-                    )
-                else:
-                    note = _ARTIFACTS_NOTE
+                    parts.append(f"{len(figs)} figure{'s' if len(figs) != 1 else ''}")
                 if natives:
-                    note += (
-                        f" &nbsp;·&nbsp; {len(natives)} native file"
-                        f"{'s' if len(natives) != 1 else ''}: <code>"
-                        + "</code> <code>".join(
-                            html.escape(Path(p).name) for p in natives[:6])
-                        + "</code>"
-                        + (" …" if len(natives) > 6 else "")
-                    )
-            elif status == "empty":
-                note = _EMPTY_NOTE
+                    parts.append(
+                        f"{len(natives)} other output file"
+                        f"{'s' if len(natives) != 1 else ''}")
+                note += (
+                    " &nbsp;·&nbsp; " + " and ".join(parts)
+                    + " found — use <b>Download results</b> to export "
+                    + ("them." if (len(figs) + len(natives)) != 1 else "it.")
+                )
             else:
-                note = _LEGACY_NOTE
-                if arts.get("model_mat"):
-                    note += " &nbsp;·&nbsp; model: <code>md_final.mat</code>"
+                note = (
+                    _EMPTY_NOTE if status == "empty"
+                    else "This run's outputs are not available locally. "
+                         "Use <b>Fetch results</b> to retrieve them."
+                )
             self.status.value = f"<span class='icesee-subtle'>{note}</span>"
             self.meta.value = ""
-            self._show_legacy_figures(arts)
+            self._show_native_outputs(figs, natives)
             return
 
         if status == "missing" or not self._pkg.is_readable():
@@ -332,20 +348,106 @@ class VisualizationController:
 
     @staticmethod
     def _figure_heading(name: str, meta: dict) -> str:
-        """Human-readable heading for one gallery figure. The title (if any)
-        comes straight from the figure itself -- never inferred. An untitled
-        captured figure gets a neutral "Figure N"; anything else is labelled
-        by its own filename stem."""
-        title = (meta.get("title") or "").strip()
-        if title:
-            return title
+        """Human-readable heading for one gallery figure. The name comes
+        straight from the figure ITSELF -- never inferred from the image, the
+        filename, or the example's identity. Priority (the collector already
+        folds 1-3 into ``title``; the extra fallbacks here cover metadata
+        written by another path):
+
+          1. explicit figure label   2. suptitle   3. primary axes title
+          4. -> neutral "Figure N"
+
+        A figure the script gave no name at all gets "Figure N"; anything
+        else is labelled by its own filename stem."""
+        for key in ("title", "label", "suptitle"):
+            v = (meta.get(key) or "").strip()
+            if v:
+                return v
+        for t in (meta.get("axes_titles") or []):
+            if t and t.strip():
+                return t.strip()
         m = re.match(r"figure-0*(\d+)\.[a-z0-9]+$", name, re.IGNORECASE)
         if m:
             return f"Figure {int(m.group(1))}"
         return Path(name).stem
 
-    def _show_legacy_figures(self, arts: dict):
-        figures = arts.get("figures") or []
+    @staticmethod
+    def _fmt_size(n: int) -> str:
+        step = 1024.0
+        val = float(max(0, n))
+        for unit in ("B", "KB", "MB", "GB"):
+            if val < step:
+                return f"{val:.0f} {unit}" if unit == "B" else f"{val:.1f} {unit}"
+            val /= step
+        return f"{val:.1f} TB"
+
+    def _native_file_rows(self, natives: list) -> str:
+        base = getattr(self._pkg, "outputs", None)
+        rows = []
+        for p in natives:
+            path = Path(p)
+            try:
+                rel = str(path.relative_to(base)) if base else path.name
+            except ValueError:
+                rel = path.name
+            try:
+                size = self._fmt_size(path.stat().st_size)
+            except OSError:
+                size = "—"
+            ext = path.suffix.lstrip(".").lower() or "—"
+            rows.append(
+                "<tr>"
+                f"<td><code>{html.escape(path.name)}</code></td>"
+                f"<td>{html.escape(rel)}</td>"
+                f"<td>{html.escape(ext)}</td>"
+                f"<td style='text-align:right'>{html.escape(size)}</td>"
+                "</tr>"
+            )
+        if not rows:
+            return ""
+        return (
+            "<div class='cryostack-section-label'>Native output files</div>"
+            "<table class='cryostack-native-files'>"
+            "<thead><tr><th>File</th><th>Path</th><th>Type</th>"
+            "<th style='text-align:right'>Size</th></tr></thead>"
+            "<tbody>" + "".join(rows) + "</tbody></table>"
+        )
+
+    def _show_native_outputs(self, figs: list, natives: list):
+        """The native-output fallback: render any recognisable figure files as
+        an inline gallery, and list every other native output file (name /
+        relative path / type / size). Never fabricates a plot.
+
+        Figures are emitted as ``<img src="data:image/…;base64,…">`` inside an
+        ``IPython.display.HTML`` payload -- the SAME transport ``render()`` and
+        the download helper already use. A bare ``ipywidgets`` image/box
+        display()'d into an ``Output`` does not render reliably in Voilà (the
+        live "large blank area" symptom); a data-URI ``<img>`` is browser-native
+        and works identically for Local, HPC and Cloud figures, which all land
+        in the same local ``outputs/figures/``.
+        """
+        gallery_html, oversized = self._figure_gallery_html(figs)
+        native_html = self._native_file_rows(natives)
+        with self.plot_out:
+            clear_output(wait=True)
+            if gallery_html or native_html:
+                display(HTML(gallery_html + native_html))
+            else:
+                display(HTML(
+                    "<div class='icesee-subtle'>No output files were found "
+                    "for this run.</div>"))
+        rendered = gallery_html.count("data:image/")
+        if gallery_html or native_html:
+            self._log(
+                f"[viz] native outputs: {rendered} figure(s) previewed"
+                + (f", {oversized} too large for inline preview" if oversized else "")
+                + f", {len(natives)} other file(s)")
+
+    def _figure_gallery_html(self, figures: list) -> tuple[str, int]:
+        """``(gallery_html, oversized_count)``. Each recognisable image file
+        becomes a card: heading + base64 data-URI ``<img>`` + filename/labels.
+        A figure over :data:`_MAX_INLINE_FIGURE_BYTES` is not embedded (card
+        says so, file still downloadable)."""
         captions: dict = {}
         try:
             if hasattr(self._pkg, "figure_captions"):
@@ -353,50 +455,59 @@ class VisualizationController:
         except Exception:  # noqa: BLE001 - caption gaps never break the gallery
             captions = {}
 
-        cards = []
+        cards: list[str] = []
+        oversized = 0
         for path in figures:
-            p = str(path)
-            low = p.lower()
-            if not low.endswith((".png", ".jpg", ".jpeg", ".gif")):
+            p = Path(path)
+            ext = p.suffix.lower().lstrip(".")
+            if ext not in _IMG_MIME:
                 continue
-            try:
-                data = Path(p).read_bytes()
-            except OSError:
-                continue
-            name = Path(p).name
+            name = p.name
             meta = captions.get(name) or {}
-            heading = self._figure_heading(name, meta)
-            fmt = "jpg" if low.endswith((".jpg", ".jpeg")) else (
-                "gif" if low.endswith(".gif") else "png")
+            heading = html.escape(self._figure_heading(name, meta))
+
             sub_bits = [f"<code>{html.escape(name)}</code>"]
             if meta.get("xlabel"):
-                sub_bits.append("x: " + html.escape(meta["xlabel"]))
+                sub_bits.append("x: " + html.escape(str(meta["xlabel"])))
             if meta.get("ylabel"):
-                sub_bits.append("y: " + html.escape(meta["ylabel"]))
+                sub_bits.append("y: " + html.escape(str(meta["ylabel"])))
             extra_titles = [t for t in (meta.get("axes_titles") or [])
                             if t and t != meta.get("title")]
             sub_html = " &nbsp;·&nbsp; ".join(sub_bits)
             if extra_titles:
-                sub_html += ("<br>" + " · ".join(html.escape(t) for t in extra_titles))
-            card = W.VBox(
-                [
-                    W.HTML(f"<div class='cryostack-figure-title'>"
-                           f"{html.escape(heading)}</div>"),
-                    W.Image(value=data, format=fmt,
-                            layout=W.Layout(width="100%", height="auto")),
-                    W.HTML(f"<div class='cryostack-figure-sub'>{sub_html}</div>"),
-                ],
-                layout=W.Layout(width="100%", margin="0 0 14px 0"),
-            )
-            card.add_class("cryostack-figure-card")
-            cards.append(card)
+                sub_html += ("<br>" + " · ".join(html.escape(str(t)) for t in extra_titles))
 
-        with self.plot_out:
-            clear_output(wait=True)
-            if cards:
-                display(W.VBox(cards, layout=W.Layout(width="100%")))
-        if cards:
-            self._log(f"[viz] showing {len(cards)} figure card(s) for this run")
+            try:
+                size = p.stat().st_size
+            except OSError:
+                continue
+            if size > _MAX_INLINE_FIGURE_BYTES:
+                oversized += 1
+                body = ("<div class='icesee-subtle'>Figure is "
+                        f"{self._fmt_size(size)} — too large to preview inline. "
+                        "Use <b>Download results</b>.</div>")
+            else:
+                try:
+                    data = p.read_bytes()
+                except OSError:
+                    continue
+                b64 = base64.b64encode(data).decode("ascii")
+                body = (f"<img src='data:{_IMG_MIME[ext]};base64,{b64}' "
+                        f"alt='{heading}'>")
+
+            cards.append(
+                "<div class='cryostack-figure-card'>"
+                f"<div class='cryostack-figure-title'>{heading}</div>"
+                f"{body}"
+                f"<div class='cryostack-figure-sub'>{sub_html}</div>"
+                "</div>"
+            )
+        if not cards:
+            return "", oversized
+        return (
+            "<div class='cryostack-figure-gallery'>" + "".join(cards) + "</div>",
+            oversized,
+        )
 
 
 def build_visualization_panel(*, manager: WorkspaceManager, selected_run_id,

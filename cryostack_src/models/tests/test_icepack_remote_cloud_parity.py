@@ -61,6 +61,36 @@ def test_cloud_and_remote_stage_byte_identical_helpers():
     assert export_module_source() in remote
 
 
+def test_curated_figure_title_sidecar_reaches_both_providers(tmp_path):
+    """The curated figure-title sidecar rides with the materialized working
+    copy through ``WorkspaceManager.stage_example_for_run`` -- the ONE staging
+    entry point both the Cloud submit path and the Remote/SLURM submit path
+    use -- and the collector staged by BOTH providers knows how to read it."""
+    import json as _json
+
+    from cryostack_src.models.icepack.figure_titles import SIDECAR_FILENAME
+    from cryostack_src.models.icepack.notebook import materialize_notebook_workspace
+
+    src = tmp_path / "00-meshes-functions.ipynb"
+    src.write_text(_json.dumps({
+        "cells": [{"cell_type": "code", "source": ["x = 1\n"], "metadata": {},
+                   "outputs": [], "execution_count": None}],
+        "metadata": {"language_info": {"name": "python"}},
+        "nbformat": 4, "nbformat_minor": 5,
+    }), encoding="utf-8")
+    dest = tmp_path / "work"
+    materialize_notebook_workspace(src, dest_dir=dest)
+    assert (dest / SIDECAR_FILENAME).is_file()          # staged with run.py
+
+    # the stdlib collector -- staged verbatim by icepack_postprocess_extra_files()
+    # (Cloud) and build_collection_shell_block()/build_export_shell_block()
+    # (Remote) -- reads the sidecar and stamps a curated title honestly.
+    collector = build_postprocess()
+    assert SIDECAR_FILENAME in collector
+    assert '"title_source"' in collector and "curated-example" in collector
+    assert icepack_postprocess_extra_files()[ICEPACK_POSTPROCESS_FILENAME] == collector
+
+
 def test_both_invoke_the_runner_with_script_and_run_dir():
     cloud_runner = build_cloud_runner()
     assert f'"${{WORKDIR}}/{ICEPACK_RUNNER_FILENAME}"' in cloud_runner

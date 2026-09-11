@@ -1033,10 +1033,24 @@ class WorkspaceManager:
                 print("[advanced][ERROR]", type(error).__name__, error)
             return None
 
-    def local_run_cache_dir(self) -> Path:
-        selected = self.selected_run()
-        if selected and selected.workspace_directory:
-            cache = selected.workspace_directory / "cache"
+    def _run_by_job_id(self, job_id: str) -> "RunInfo | None":
+        """The owned run whose ``jobid`` matches ``job_id`` (cloud runs are
+        keyed by their AWS Batch job id, which is stable across a page refresh
+        and independent of which run the Workspace currently has selected)."""
+        job_id = str(job_id or "").strip()
+        if not job_id:
+            return None
+        for run in self._runs.values():
+            if str(getattr(run, "jobid", "") or "") == job_id:
+                return run
+        return None
+
+    def local_run_cache_dir(self, run: "RunInfo | None" = None) -> Path:
+        """Cache dir for ``run`` (default: the selected run). Falls back to a
+        model/backend-scoped scratch dir only when no run context exists."""
+        target = run or self.selected_run()
+        if target and target.workspace_directory:
+            cache = target.workspace_directory / "cache"
             cache.mkdir(parents=True, exist_ok=True)
             return cache
         root = self.example_root()
@@ -1050,6 +1064,7 @@ class WorkspaceManager:
         profile: str | None = None,
         credentials: dict | None = None,
         aws=None,
+        run_job_id: str | None = None,
     ) -> Path:
         """Pull a cloud run's ``outputs/`` into this user's local run cache in
         the same ``outputs/{metadata.json,mesh,fields,model,figures}`` shape the
@@ -1064,8 +1079,14 @@ class WorkspaceManager:
             raise RuntimeError(
                 f"cloud result location must be a full s3://bucket/... URI, "
                 f"got {s3_uri!r}")
-        self.invalidate_result_package_cache(self._selected_run_id)
-        outputs_dir = self.local_run_cache_dir() / "cloud_outputs"
+        # Resolve the destination from the run the outputs belong to -- not the
+        # ambient selection. The controller passes the completed run's job id;
+        # the manual Preview / Fetch path passes nothing and keeps targeting the
+        # selected run.
+        target_run = self._run_by_job_id(run_job_id) if run_job_id else None
+        self.invalidate_result_package_cache(
+            target_run.id if target_run else self._selected_run_id)
+        outputs_dir = self.local_run_cache_dir(target_run) / "cloud_outputs"
         if outputs_dir.exists():
             self.delete(outputs_dir)
         outputs_dir.mkdir(parents=True, exist_ok=True)
@@ -1209,6 +1230,44 @@ class WorkspaceManager:
         a.download = "{html.escape(download_name)}"; a.style.display = "none";
         document.body.appendChild(a); setTimeout(() => {{ a.click();
         document.body.removeChild(a); }}, 100); }})();</script>'''))
+
+    def package_and_download(self, outputs_dir, *, filename: str = "results_bundle.zip",
+                             cache_dir=None) -> bool:
+        """Zip ``outputs_dir`` and hand it to the browser. Returns ``False``
+        with a clear message (and generates no download) when there is nothing
+        to package -- never a misleading empty archive.
+
+        Shared by every result-download surface (Remote, Cloud) so they all
+        export the SAME discovered file set."""
+        if outputs_dir is None:
+            with self.results_output:
+                print("[download] No outputs to package for this run.")
+            return False
+        outputs_dir = Path(outputs_dir)
+        files = [p for p in outputs_dir.rglob("*") if p.is_file()] \
+            if outputs_dir.is_dir() else []
+        if not files:
+            with self.results_output:
+                print("[download] This run produced no output files. "
+                      "Nothing to download.")
+            return False
+        zip_path = Path(cache_dir or self.local_run_cache_dir()) / filename
+        try:
+            if zip_path.exists():
+                self.delete(zip_path)
+            self._make_zip(outputs_dir, zip_path)
+            if not zipfile.is_zipfile(zip_path):
+                raise RuntimeError(f"Created file is not a valid zip: {zip_path}")
+            with self.results_output:
+                print(f"Preparing download: {zip_path.name} ({len(files)} file(s))")
+                print("If the browser blocks repeated downloads, allow multiple "
+                      "downloads for this page.")
+                self._auto_download(zip_path, filename)
+            return True
+        except Exception as error:
+            with self.results_output:
+                print("[download][ERROR]", type(error).__name__, error)
+            return False
 
     def download_results(self, _=None) -> None:
         if isinstance(_, str) and not self.select_run(_):

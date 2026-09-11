@@ -468,7 +468,15 @@ CRYOSTACK_FRONTEND_CSS = r"""
 }
 
 /* Results gallery: each captured figure is a discrete card (title + image +
-   filename/labels), not one continuous vertical stream of plots. */
+   filename/labels), not one continuous vertical stream of plots. Figures are
+   inline data-URI <img> elements (see workspace/visualization.py) -- a bare
+   ipywidgets image display()'d into an Output does not render in Voilà. */
+.cryostack-figure-gallery {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    width: 100%;
+}
 .cryostack-figure-card {
     border: 1px solid rgba(15, 23, 42, 0.14);
     border-radius: 10px;

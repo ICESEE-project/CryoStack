@@ -317,6 +317,10 @@ class CloudRunController:
     def job_id(self) -> str:
         return self._handle.job_id
 
+    @property
+    def run_id(self) -> str:
+        return self._handle.run_id
+
     def _set_state(self, state: str) -> None:
         self._handle.state = state
         try:
@@ -640,6 +644,11 @@ class CloudRunController:
                     region=region,
                     profile=None if creds else self._handle.profile,
                     credentials=creds,
+                    # C6 fix: bind the sync to THIS run's job id so the outputs
+                    # land in the completed run's own cache dir, never in
+                    # whichever run the Workspace happens to have selected (or
+                    # the no-run fallback dir) when the job finishes.
+                    run_job_id=self._handle.job_id,
                 )
             )
             self._log(f"[cloud] Outputs synced to {path}")

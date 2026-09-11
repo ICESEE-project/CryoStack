@@ -235,6 +235,112 @@ def test_icepack_figures_only_package_degrades_gracefully(tmp_path):
     assert result.ok is False and result.reason        # unsupported, not a crash
 
 
+def _cloud_run(m, run_id, jobid):
+    run = m.register_run(RunInfo(
+        id=run_id, name=run_id, model="icepack", backend="aws",
+        execution_mode="cloud", status="completed", created=datetime.now(),
+        jobid=jobid, metadata={"cloud_run": f"s3://b/runs/{run_id}"}))
+    return run
+
+
+def _fake_s3_sync(*payload_files):
+    """An injectable `aws(args)` that writes `payload_files` (relative paths)
+    into whatever local dir the sync targets (args[-1])."""
+    def _aws(args):
+        dest = Path(args[-1])
+        dest.mkdir(parents=True, exist_ok=True)
+        for rel, data in payload_files:
+            p = dest / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(data if isinstance(data, bytes) else data.encode())
+        return (0, "", "")
+    return _aws
+
+
+_ICEPACK_ARTIFACTS_META = json.dumps({
+    "schema": "cryostack.icepack.results", "version": 2, "model": "icepack",
+    "status": "artifacts", "solutions": [], "fields": [],
+    "figures": ["figure-01.png"], "model_files": [],
+})
+
+
+def test_sync_cloud_results_targets_the_run_by_job_id_not_the_selection(tmp_path):
+    """The completed cloud run's outputs land in ITS OWN cache/cloud_outputs,
+    even when the Workspace currently has a different run selected (or none)."""
+    m = _mgr(USER_A, tmp_path / "ws")
+    run_a = _cloud_run(m, "cloud-A", "job-A")
+    run_b = _cloud_run(m, "cloud-B", "job-B")
+    m.select_run(run_b.id)                         # the WRONG run is selected
+
+    landed = m.sync_cloud_results(
+        s3_uri="s3://b/runs/cloud-A", run_job_id="job-A",
+        aws=_fake_s3_sync(("metadata.json", _ICEPACK_ARTIFACTS_META),
+                          ("figures/figure-01.png", b"\x89PNG\r\n")))
+
+    assert landed == run_a.workspace_directory / "cache" / "cloud_outputs"
+    assert (landed / "metadata.json").is_file()
+    # discovery for run A now sees the artifacts package
+    pkg = m.result_package_for_run(run_a.id)
+    assert pkg.status == "artifacts"
+    assert [p.name for p in pkg.figures()] == ["figure-01.png"]
+    # run B's cache is untouched
+    assert not (run_b.workspace_directory / "cache" / "cloud_outputs").exists()
+
+
+def test_sync_cloud_results_without_job_id_uses_the_selected_run(tmp_path):
+    """The manual Preview / Fetch path passes no job id and keeps targeting the
+    selected run (unchanged behaviour)."""
+    m = _mgr(USER_A, tmp_path / "ws")
+    run = _cloud_run(m, "cloud-sel", "job-sel")
+    m.select_run(run.id)
+    landed = m.sync_cloud_results(
+        s3_uri="s3://b/runs/cloud-sel",
+        aws=_fake_s3_sync(("metadata.json", _ICEPACK_ARTIFACTS_META)))
+    assert landed == run.workspace_directory / "cache" / "cloud_outputs"
+
+
+def test_nested_cloud_outputs_are_discovered(tmp_path):
+    """If the synced tree nests the package one level down (outputs/outputs/…),
+    result discovery still locates it."""
+    m = _mgr(USER_A, tmp_path / "ws")
+    run = _cloud_run(m, "cloud-nest", "job-nest")
+    m.select_run(run.id)
+    m.sync_cloud_results(
+        s3_uri="s3://b/runs/cloud-nest", run_job_id="job-nest",
+        aws=_fake_s3_sync(("outputs/metadata.json", _ICEPACK_ARTIFACTS_META),
+                          ("outputs/figures/figure-01.png", b"\x89PNG\r\n")))
+    pkg = m.result_package_for_run(run.id)
+    assert pkg.status == "artifacts"
+    assert [p.name for p in pkg.figures()] == ["figure-01.png"]
+
+
+def test_package_and_download_refuses_an_empty_result_set(tmp_path):
+    out = _CaptureOut()
+    m = _mgr(USER_A, tmp_path / "ws", results_output=out)
+    run = _register(m)
+    empty = run.workspace_directory / "cache" / "cloud_outputs"
+    empty.mkdir(parents=True)
+    assert m.package_and_download(empty) is False
+    assert "no output files" in out.text.lower()
+    assert not (run.workspace_directory / "cache" / "results_bundle.zip").exists()
+
+
+def test_package_and_download_zips_the_discovered_files(tmp_path):
+    import zipfile
+    out = _CaptureOut()
+    m = _mgr(USER_A, tmp_path / "ws", results_output=out)
+    run = _register(m)
+    outputs = run.workspace_directory / "cache" / "cloud_outputs"
+    (outputs / "figures").mkdir(parents=True)
+    (outputs / "metadata.json").write_text("{}")
+    (outputs / "figures" / "figure-01.png").write_bytes(b"\x89PNG")
+    assert m.package_and_download(outputs, cache_dir=outputs.parent) is True
+    zp = outputs.parent / "results_bundle.zip"
+    assert zp.is_file()
+    names = set(zipfile.ZipFile(zp).namelist())
+    assert names == {"metadata.json", "figures/figure-01.png"}
+
+
 def test_another_user_cannot_read_the_package(tmp_path):
     root = tmp_path / "ws"
     m_a = _mgr(USER_A, root)

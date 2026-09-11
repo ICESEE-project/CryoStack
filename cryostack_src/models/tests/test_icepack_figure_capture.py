@@ -243,6 +243,73 @@ def test_metadata_fig_suptitle(tmp_path):
     assert fm["suptitle"] == "Rosenbrock function" if "suptitle" in fm else True
 
 
+def test_metadata_explicit_figure_label_is_captured(tmp_path):
+    """Priority 1: a label the script set on the figure itself
+    (plt.figure("…") / fig.set_label(…)) is captured verbatim as the title."""
+    run = tmp_path / "r"; run.mkdir()
+    meta = _figures_meta(run, run, (
+        "import matplotlib.pyplot as plt\n"
+        "fig = plt.figure('Bed topography')\n"           # explicit label
+        "ax = fig.add_subplot()\n"
+        "ax.plot([0,1],[1,0])\n"
+    ))
+    fm = meta["figures_meta"]["figure-01.png"]
+    assert fm["title"] == "Bed topography"
+    assert fm["label"] == "Bed topography"
+
+
+def test_metadata_explicit_label_via_set_label(tmp_path):
+    run = tmp_path / "r"; run.mkdir()
+    meta = _figures_meta(run, run, (
+        "import matplotlib.pyplot as plt\n"
+        "fig, ax = plt.subplots()\n"
+        "fig.set_label('Ice velocity magnitude')\n"
+        "ax.plot([0,1],[0,1])\n"
+    ))
+    fm = meta["figures_meta"]["figure-01.png"]
+    assert fm["title"] == "Ice velocity magnitude"
+
+
+def test_metadata_priority_label_beats_suptitle_beats_axes_title(tmp_path):
+    run = tmp_path / "r"; run.mkdir()
+    meta = _figures_meta(run, run, (
+        "import matplotlib.pyplot as plt\n"
+        "fig = plt.figure('LABEL')\n"
+        "ax = fig.add_subplot()\n"
+        "ax.plot([0,1],[1,0]); ax.set_title('AXES')\n"
+        "fig.suptitle('SUPTITLE')\n"
+    ))
+    fm = meta["figures_meta"]["figure-01.png"]
+    assert fm["title"] == "LABEL"                        # 1 beats 2 beats 3
+    assert fm["axes_titles"] == ["AXES"]                 # lower-priority text still recorded
+
+    from cryostack_src.frontend.cryolauncher.workspace.visualization import (
+        VisualizationController as _VCx)
+    assert _VCx._figure_heading("figure-01.png", fm) == "LABEL"
+
+
+def test_metadata_multiple_figures_keep_distinct_titles(tmp_path):
+    run = tmp_path / "r"; run.mkdir()
+    meta = _figures_meta(run, run, (
+        "import matplotlib.pyplot as plt\n"
+        "f1 = plt.figure('Mesh'); f1.add_subplot().plot([0,1],[0,1])\n"
+        "f2, a2 = plt.subplots(); a2.plot([0,1],[1,0]); f2.suptitle('Thickness')\n"
+        "f3, a3 = plt.subplots(); a3.plot([0,1],[0,0]); a3.set_title('Velocity')\n"
+        "f4, a4 = plt.subplots(); a4.plot([0,1],[1,1])\n"          # nameless
+    ))
+    fm = meta["figures_meta"]
+    assert fm["figure-01.png"]["title"] == "Mesh"
+    assert fm["figure-02.png"]["title"] == "Thickness"
+    assert fm["figure-03.png"]["title"] == "Velocity"
+    assert "title" not in fm.get("figure-04.png", {})
+
+    from cryostack_src.frontend.cryolauncher.workspace.visualization import (
+        VisualizationController as _VCx)
+    headings = [_VCx._figure_heading(f"figure-0{n}.png", fm.get(f"figure-0{n}.png", {}))
+                for n in (1, 2, 3, 4)]
+    assert headings == ["Mesh", "Thickness", "Velocity", "Figure 4"]
+
+
 def test_metadata_untitled_figure_has_no_title_and_ui_uses_figure_n(tmp_path):
     run = tmp_path / "r"; run.mkdir()
     meta = _figures_meta(run, run, (
@@ -331,3 +398,103 @@ def test_capture_mechanism_is_the_same_for_cloud_and_remote(tmp_path):
         run_dir="/run", example_dir="/ex", backend="container",
         sif_path="/i.sif", stack_binds="", run_file_name="run.py")
     assert src in blk                                     # staged verbatim on Remote too
+
+
+# ── curated example figure titles: lowest-priority fallback ─────────────
+_SIDECAR = "cryostack_icepack_figure_titles.json"
+_EXPECTED_00_MESHES = (
+    "Mesh of the unit square",
+    "Filled contour of the Rosenbrock function",
+    "Streamlines of the Rosenbrock negative-gradient field",
+    "Tanh ramp across the domain diagonal",
+    "Tanh ramp around a circle of radius 1/4",
+    "Sech bump function",
+    "Sech ridge around a circle of radius 1/4",
+)
+
+
+def _figures_meta_with_sidecar(run: Path, script_text: str, titles) -> dict:
+    _write(run / "run.py", script_text)
+    r = _run_runner(run, run / "run.py")
+    assert r.returncode == 0, r.stderr
+    (run / _SIDECAR).write_text(
+        json.dumps({"example": "x", "titles": list(titles)}), encoding="utf-8")
+    return _run_collector(run, run, started=time.time())
+
+
+_N_NAMELESS = "import matplotlib.pyplot as plt\n" + "".join(
+    f"f{i}=plt.figure(); f{i}.add_subplot().plot([0,1],[0,1])\n" for i in range(1, 8)
+)
+
+
+def test_curated_titles_fill_all_seven_untitled_00_meshes_figures(tmp_path):
+    run = tmp_path / "r"; run.mkdir()
+    meta = _figures_meta_with_sidecar(run, _N_NAMELESS, _EXPECTED_00_MESHES)
+    fm = meta["figures_meta"]
+    for i, expected in enumerate(_EXPECTED_00_MESHES, start=1):
+        rec = fm[f"figure-0{i}.png"]
+        assert rec["title"] == expected
+        assert rec["title_source"] == "curated-example"
+
+    from cryostack_src.frontend.cryolauncher.workspace.visualization import (
+        VisualizationController as _VCx)
+    headings = [_VCx._figure_heading(f"figure-0{i}.png", fm[f"figure-0{i}.png"])
+                for i in range(1, 8)]
+    assert tuple(headings) == _EXPECTED_00_MESHES
+
+
+def test_captured_title_wins_over_curated_title(tmp_path):
+    run = tmp_path / "r"; run.mkdir()
+    script = (
+        "import matplotlib.pyplot as plt\n"
+        "f1, a1 = plt.subplots(); a1.plot([0,1],[0,1]); a1.set_title('REAL SCRIPT TITLE')\n"
+        "f2, a2 = plt.subplots(); a2.plot([0,1],[1,0])\n"          # nameless
+    )
+    meta = _figures_meta_with_sidecar(run, script, ("Curated one", "Curated two"))
+    fm = meta["figures_meta"]
+    # figure-01: the script's own title is kept, NOT the curated one
+    assert fm["figure-01.png"]["title"] == "REAL SCRIPT TITLE"
+    assert "title_source" not in fm["figure-01.png"]
+    # figure-02: nameless -> curated fallback used, stamped
+    assert fm["figure-02.png"]["title"] == "Curated two"
+    assert fm["figure-02.png"]["title_source"] == "curated-example"
+
+
+def test_curated_fallback_only_when_captured_metadata_absent(tmp_path):
+    run = tmp_path / "r"; run.mkdir()
+    script = (
+        "import matplotlib.pyplot as plt\n"
+        "f1 = plt.figure('LBL'); f1.add_subplot().plot([0,1],[0,1])\n"        # explicit label
+        "f2, a2 = plt.subplots(); a2.plot([0,1],[1,0]); f2.suptitle('SUP')\n"  # suptitle
+        "f3, a3 = plt.subplots(); a3.plot([0,1],[0,0])\n"                      # nameless
+    )
+    meta = _figures_meta_with_sidecar(run, script, ("cA", "cB", "cC"))
+    fm = meta["figures_meta"]
+    assert fm["figure-01.png"]["title"] == "LBL" and "title_source" not in fm["figure-01.png"]
+    assert fm["figure-02.png"]["title"] == "SUP" and "title_source" not in fm["figure-02.png"]
+    assert fm["figure-03.png"]["title"] == "cC" and fm["figure-03.png"]["title_source"] == "curated-example"
+
+
+def test_figure_count_mismatch_prevents_curated_assignment(tmp_path):
+    run = tmp_path / "r"; run.mkdir()
+    script = (
+        "import matplotlib.pyplot as plt\n"
+        "f1, a1 = plt.subplots(); a1.plot([0,1],[0,1])\n"
+        "f2, a2 = plt.subplots(); a2.plot([0,1],[1,0])\n"          # only 2 figures
+    )
+    # sidecar carries 7 curated titles (the canonical 00-meshes list) -> mismatch
+    meta = _figures_meta_with_sidecar(run, script, _EXPECTED_00_MESHES)
+    fm = meta["figures_meta"]
+    for name in ("figure-01.png", "figure-02.png"):
+        assert "title" not in fm.get(name, {})
+        assert "title_source" not in fm.get(name, {})
+
+
+def test_title_source_absent_when_no_sidecar_is_staged(tmp_path):
+    run = tmp_path / "r"; run.mkdir()
+    meta = _figures_meta(run, run, (
+        "import matplotlib.pyplot as plt\n"
+        "f1, a1 = plt.subplots(); a1.plot([0,1],[0,1])\n"
+    ))
+    fm = meta["figures_meta"].get("figure-01.png", {})
+    assert "title" not in fm and "title_source" not in fm
