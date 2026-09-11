@@ -70,6 +70,18 @@ class CloudEnvironmentWidgets:
     ec2_max_vcpus: W.IntText
     ec2_instance_types: W.Text
     ec2_options_box: W.VBox
+    #: EC2 sub-modes (progressive disclosure -- each reveals its own controls
+    #: only while selected). Every one defaults to the plain/valid case.
+    ec2_capacity: W.Dropdown              # "on_demand" (default) | "spot"
+    ec2_accelerator: W.Dropdown           # "none" (default) | "gpu"
+    ec2_network: W.Dropdown               # "default" (default) | "custom"
+    ec2_topology: W.Dropdown              # "single_node" (default) | "multi_node"
+    ec2_vpc_id: W.Text
+    ec2_subnet_ids: W.Text
+    ec2_security_group_ids: W.Text
+    ec2_network_box: W.VBox               # shown only while ec2_network == "custom"
+    ec2_node_count: W.IntText
+    ec2_multinode_box: W.VBox             # shown only while ec2_topology == "multi_node"
 
     account_status: W.HTML
     storage_status: W.HTML
@@ -907,6 +919,14 @@ def build_cloud_environment_card(
     aws_batch_compute: str = "fargate",
     ec2_max_vcpus: int = 16,
     ec2_instance_types: str = "optimal",
+    ec2_capacity: str = "on_demand",
+    ec2_accelerator: str = "none",
+    ec2_network: str = "default",
+    ec2_topology: str = "single_node",
+    ec2_vpc_id: str = "",
+    ec2_subnet_ids: str = "",
+    ec2_security_group_ids: str = "",
+    ec2_node_count: int = 2,
 ) -> CloudEnvironmentWidgets:
     """
     Build the ICESEE Cloud Environment panel.
@@ -1119,8 +1139,113 @@ def build_cloud_environment_card(
             "</div>"
         ),
     )
+    # -- EC2 sub-modes: capacity / accelerator / network / topology --------
+    # Progressive disclosure -- each dropdown reveals ONLY its own extra
+    # controls, and only while EC2 is the selected compute mode. Every
+    # default is the plain, always-valid case (On-Demand, no accelerator,
+    # the discovered default VPC, single node).
+    ec2_capacity_widget = W.Dropdown(
+        description="Capacity:",
+        options=[("On-Demand (default)", "on_demand"), ("Spot", "spot")],
+        value=("spot" if str(ec2_capacity).strip().lower() == "spot" else "on_demand"),
+        layout=W.Layout(width="100%"), style={"description_width": "110px"},
+    )
+    ec2_accelerator_widget = W.Dropdown(
+        description="Accelerator:",
+        options=[("None (default)", "none"), ("GPU (experimental)", "gpu")],
+        value=("gpu" if str(ec2_accelerator).strip().lower() == "gpu" else "none"),
+        layout=W.Layout(width="100%"), style={"description_width": "110px"},
+    )
+    ec2_network_widget = W.Dropdown(
+        description="Network:",
+        options=[("Default (discovered VPC)", "default"),
+                 ("Custom / Private", "custom")],
+        value=("custom" if str(ec2_network).strip().lower() == "custom" else "default"),
+        layout=W.Layout(width="100%"), style={"description_width": "110px"},
+    )
+    ec2_topology_widget = W.Dropdown(
+        description="Execution:",
+        options=[("Single node (default)", "single_node"),
+                 ("Multi-node (experimental)", "multi_node")],
+        value=("multi_node" if str(ec2_topology).strip().lower() == "multi_node"
+               else "single_node"),
+        layout=W.Layout(width="100%"), style={"description_width": "110px"},
+    )
+
+    ec2_vpc_id_widget = W.Text(
+        description="VPC id:", value=(ec2_vpc_id or ""),
+        placeholder="vpc-xxxxxxxx (optional -- inferred from the subnets if blank)",
+        layout=W.Layout(width="100%"), style={"description_width": "110px"},
+    )
+    ec2_subnet_ids_widget = W.Text(
+        description="Subnet ids:", value=(ec2_subnet_ids or ""),
+        placeholder="subnet-aaa, subnet-bbb",
+        layout=W.Layout(width="100%"), style={"description_width": "110px"},
+    )
+    ec2_security_group_ids_widget = W.Text(
+        description="Security groups:", value=(ec2_security_group_ids or ""),
+        placeholder="sg-aaa, sg-bbb   (optional)",
+        layout=W.Layout(width="100%"), style={"description_width": "110px"},
+    )
+    ec2_network_caption = W.HTML(
+        value=(
+            "<div style='font-size:11px;color:#96a1b4;line-height:1.45;'>"
+            "Place the EC2 compute environment into a VPC you already control "
+            "instead of the discovered default VPC -- e.g. one already routed "
+            "to a private/campus network. CryoStack does not create any VPN, "
+            "Direct Connect, Transit Gateway or firewall rule; the VPC must "
+            "already have whatever route it needs."
+            "</div>"
+        ),
+    )
+    ec2_network_box = W.VBox(
+        [ec2_network_caption, ec2_vpc_id_widget, ec2_subnet_ids_widget,
+         ec2_security_group_ids_widget],
+        layout=W.Layout(width="100%", gap="5px"),
+    )
+    ec2_network_box.layout.display = (
+        "flex" if ec2_network_widget.value == "custom" else "none")
+
+    ec2_node_count_widget = W.IntText(
+        description="Node count:", value=int(ec2_node_count or 2),
+        layout=W.Layout(width="100%"), style={"description_width": "110px"},
+    )
+    ec2_multinode_caption = W.HTML(
+        value=(
+            "<div style='font-size:11px;color:#96a1b4;line-height:1.45;'>"
+            "<b>Experimental.</b> Registers an AWS Batch multi-node parallel "
+            "job definition (EC2 only). CryoStack's scientific runners do not "
+            "yet establish distributed MPI across Batch nodes, so a "
+            "scientific run is blocked until that runtime support lands -- "
+            "this stages the infrastructure ahead of it."
+            "</div>"
+        ),
+    )
+    ec2_multinode_box = W.VBox(
+        [ec2_multinode_caption, ec2_node_count_widget],
+        layout=W.Layout(width="100%", gap="5px"),
+    )
+    ec2_multinode_box.layout.display = (
+        "flex" if ec2_topology_widget.value == "multi_node" else "none")
+
+    ec2_gpu_caption = W.HTML(
+        value=(
+            "<div style='font-size:11px;color:#96a1b4;line-height:1.45;'>"
+            "<b>Experimental.</b> Stages GPU-capable EC2 infrastructure. The "
+            "qualified CryoStack container image has no CUDA runtime, so a "
+            "GPU job is blocked at submission until a GPU-qualified image is "
+            "available."
+            "</div>"
+        ),
+    )
+    ec2_gpu_caption.layout.display = (
+        "flex" if ec2_accelerator_widget.value == "gpu" else "none")
+
     ec2_options_box = W.VBox(
-        [ec2_options_caption, ec2_max_vcpus_widget, ec2_instance_types_widget],
+        [ec2_options_caption, ec2_max_vcpus_widget, ec2_instance_types_widget,
+         ec2_capacity_widget, ec2_accelerator_widget, ec2_gpu_caption,
+         ec2_network_widget, ec2_network_box,
+         ec2_topology_widget, ec2_multinode_box],
         layout=W.Layout(width="100%", gap="5px"),
     )
     ec2_options_box.layout.display = (
@@ -1130,7 +1255,22 @@ def build_cloud_environment_card(
         ec2_options_box.layout.display = (
             "flex" if change.get("new") == "ec2" else "none")
 
+    def _on_network_change(change):
+        ec2_network_box.layout.display = (
+            "flex" if change.get("new") == "custom" else "none")
+
+    def _on_topology_change(change):
+        ec2_multinode_box.layout.display = (
+            "flex" if change.get("new") == "multi_node" else "none")
+
+    def _on_accelerator_change(change):
+        ec2_gpu_caption.layout.display = (
+            "flex" if change.get("new") == "gpu" else "none")
+
     compute_mode_widget.observe(_on_compute_mode_change, names="value")
+    ec2_network_widget.observe(_on_network_change, names="value")
+    ec2_topology_widget.observe(_on_topology_change, names="value")
+    ec2_accelerator_widget.observe(_on_accelerator_change, names="value")
 
     matlab_license_arn_widget = W.Text(
         description="MATLAB license ARN:",
@@ -1287,6 +1427,16 @@ def build_cloud_environment_card(
         ec2_max_vcpus=ec2_max_vcpus_widget,
         ec2_instance_types=ec2_instance_types_widget,
         ec2_options_box=ec2_options_box,
+        ec2_capacity=ec2_capacity_widget,
+        ec2_accelerator=ec2_accelerator_widget,
+        ec2_network=ec2_network_widget,
+        ec2_topology=ec2_topology_widget,
+        ec2_vpc_id=ec2_vpc_id_widget,
+        ec2_subnet_ids=ec2_subnet_ids_widget,
+        ec2_security_group_ids=ec2_security_group_ids_widget,
+        ec2_network_box=ec2_network_box,
+        ec2_node_count=ec2_node_count_widget,
+        ec2_multinode_box=ec2_multinode_box,
 
         account_status=account_status,
         storage_status=storage_status,

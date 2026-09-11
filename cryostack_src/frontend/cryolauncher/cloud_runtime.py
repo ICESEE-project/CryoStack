@@ -37,6 +37,64 @@ from cryostack_src.frontend.cryolauncher.cloud_run_controller import (
     classify_cloud_failure,
 )
 
+
+def _ec2_config_from_widgets(cloud_environment) -> "EC2ComputeConfig":
+    """Read the Advanced EC2 sub-mode widgets into one
+    :class:`~cryostack_src.cloud.drivers.aws.batch_config.EC2ComputeConfig`.
+    Best-effort per field (a bad/blank widget value falls back to that
+    field's safe default rather than blocking Prepare Cloud); only called
+    while ``compute_mode == "ec2"``."""
+    from cryostack_src.cloud.drivers.aws.batch_config import EC2ComputeConfig
+
+    def _val(name: str, default=""):
+        return getattr(getattr(cloud_environment, name, None), "value", default)
+
+    kwargs: dict = {}
+
+    try:
+        mv = int(_val("ec2_max_vcpus", 0) or 0)
+        if mv > 0:
+            kwargs["max_vcpus"] = mv
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        it = (_val("ec2_instance_types", "") or "").strip()
+        types = tuple(t.strip() for t in it.split(",") if t.strip())
+        if types:
+            kwargs["instance_types"] = types
+    except Exception:  # noqa: BLE001
+        pass
+
+    kwargs["capacity"] = str(_val("ec2_capacity", "on_demand") or "on_demand")
+    kwargs["accelerator"] = str(_val("ec2_accelerator", "none") or "none")
+    kwargs["topology"] = str(_val("ec2_topology", "single_node") or "single_node")
+    kwargs["network"] = str(_val("ec2_network", "default") or "default")
+
+    if kwargs["network"] == "custom":
+        kwargs["vpc_id"] = (_val("ec2_vpc_id", "") or "").strip()
+        try:
+            subnets = (_val("ec2_subnet_ids", "") or "").strip()
+            kwargs["subnet_ids"] = tuple(
+                s.strip() for s in subnets.split(",") if s.strip())
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            sgs = (_val("ec2_security_group_ids", "") or "").strip()
+            kwargs["security_group_ids"] = tuple(
+                s.strip() for s in sgs.split(",") if s.strip())
+        except Exception:  # noqa: BLE001
+            pass
+
+    if kwargs["topology"] == "multi_node":
+        try:
+            nc = int(_val("ec2_node_count", 2) or 2)
+            if nc >= 2:
+                kwargs["node_count"] = nc
+        except Exception:  # noqa: BLE001
+            pass
+
+    return EC2ComputeConfig(**kwargs)
+
 # Redact anything that looks like AWS credential material or a CryoStack
 # ExternalId before it can reach the Run Log. `run_aws` keeps credentials in
 # the child env (never argv), so this is defence-in-depth for a CLI error that
@@ -431,20 +489,7 @@ def build_cloud_runtime_callbacks(
             _cm = "fargate"
         if str(_cm).strip().lower() == "ec2":
             _kw["compute_mode"] = "ec2"
-            try:
-                _mv = int(getattr(cloud_environment.ec2_max_vcpus, "value", 0) or 0)
-                if _mv > 0:
-                    _kw["ec2_max_vcpus"] = _mv
-            except Exception:  # noqa: BLE001
-                pass
-            try:
-                _it = (getattr(cloud_environment.ec2_instance_types, "value", "")
-                       or "").strip()
-                _types = tuple(t.strip() for t in _it.split(",") if t.strip())
-                if _types:
-                    _kw["ec2_instance_types"] = _types
-            except Exception:  # noqa: BLE001
-                pass
+            _kw["ec2_config"] = _ec2_config_from_widgets(cloud_environment)
         return bridge.prepare_environment(**_kw)
 
     def _prepare_success(result) -> None:
