@@ -55,7 +55,7 @@ from dataclasses import dataclass
 
 from cryostack_src.workspace.identity import WorkspaceUser
 
-from .cloudformation import connection_stack_name, quick_create_url
+from .cloudformation import connection_stack_name, quick_create_url, quick_update_url
 from .defaults import derive_cloud_defaults
 from .models import AWSConnection
 from .principal import cryostack_principal_arn
@@ -169,6 +169,48 @@ class AWSOnboarding:
         if conn is None:
             conn = self.store.create(region=(region or self.region).strip())
         return self._connect_step(conn)
+
+    def begin_update(self) -> ConnectStep:
+        """Build an *Update stack* deep link for the ACTIVE connection's
+        EXISTING stack -- for an account that already completed onboarding
+        (``status == "connected"``) whose stack was created from an older
+        published template than the one :meth:`template_url` now resolves
+        to (e.g. a policy fix landed in the template after this account
+        connected).
+
+        Never mints a new connection, ExternalId, or stack name, and never
+        touches the store -- pure read, exactly like :meth:`begin`. The
+        resulting stack Update keeps the SAME physical IAM role and Role
+        ARN, so nothing downstream (the stored ``role_arn``, any resource
+        CryoStack already provisioned under it) needs to change; the only
+        AWS-side effect is the role's policy gaining/losing statements per
+        the diff between the old and current template.
+
+        Raises :class:`OnboardingConfigError` if there is no connection to
+        update yet -- use :meth:`begin` first.
+        """
+        conn = self.store.load()
+        if conn is None:
+            raise OnboardingConfigError(
+                "No AWS connection to update. Click Connect AWS account first."
+            )
+        principal = self.principal_arn()
+        template_url = self.template_url()
+        stack_name = connection_stack_name(conn.connection_id, attempt=conn.stack_attempt)
+        url = quick_update_url(
+            template_url=template_url,
+            external_id=conn.external_id,
+            region=conn.region,
+            principal_arn=principal,
+            stack_name=stack_name,
+        )
+        return ConnectStep(
+            connection=conn,
+            setup_url=url,
+            stack_name=stack_name,
+            principal_arn=principal,
+            external_id=conn.external_id,
+        )
 
     def retry_with_fresh_stack(self) -> ConnectStep:
         """The ACTIVE connection's previous CloudFormation attempt rolled

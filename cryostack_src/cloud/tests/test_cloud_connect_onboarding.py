@@ -490,6 +490,75 @@ def test_retry_with_fresh_stack_requires_an_existing_connection(tmp_path):
         ob.retry_with_fresh_stack()
 
 
+# -- Update stack: an already-connected account whose stack predates a ------
+# -- template fix (e.g. the EC2 iam:CreateInstanceProfile gap) --------------
+def test_begin_update_requires_an_existing_connection(tmp_path):
+    ob = _onboarding(tmp_path)
+    with pytest.raises(OnboardingConfigError):
+        ob.begin_update()
+
+
+def test_begin_update_reuses_the_exact_stack_role_and_identity_of_a_connected_account(tmp_path):
+    """Live-EC2-gap fix: an account that already completed onboarding (and
+    is actively using its role) must be able to pick up a template change
+    WITHOUT disconnecting, reconnecting, rotating its ExternalId, or ending
+    up with a different Role ARN."""
+    ob = _onboarding(tmp_path, runner=FakeAWS("713938953301"))
+    first = ob.begin()
+    ob.verify(role_arn=ROLE_A)
+    connected = ob.current()
+    assert connected.status == "connected"
+
+    updated = ob.begin_update()
+
+    assert updated.stack_name == first.stack_name           # same stack
+    assert updated.external_id == first.external_id         # same identity
+    after = ob.current()
+    assert after.role_arn == connected.role_arn              # untouched
+    assert after.status == connected.status                  # untouched
+    assert after.connection_id == connected.connection_id    # same connection
+
+
+def test_begin_update_url_targets_update_template_not_quickcreate(tmp_path):
+    """The update link must perform CloudFormation UpdateStack, never
+    CreateStack -- CreateStack against an existing stack name fails with
+    AlreadyExistsException, which is the exact dead end this fixes."""
+    ob = _onboarding(tmp_path, runner=FakeAWS("713938953301"))
+    ob.begin()
+    ob.verify(role_arn=ROLE_A)
+
+    updated = ob.begin_update()
+
+    assert "#/stacks/update/template" in updated.setup_url
+    assert "quickcreate" not in updated.setup_url
+    query = parse_qs(updated.setup_url.split("?", 1)[1].split("#", 1)[-1].split("?", 1)[-1])
+    assert query["stackId"] == [updated.stack_name]
+    assert query["templateURL"] == [TEMPLATE_URL]
+    assert query["param_ExternalId"] == [updated.external_id]
+
+
+def test_begin_update_never_mutates_the_stored_connection(tmp_path):
+    ob = _onboarding(tmp_path, runner=FakeAWS("713938953301"))
+    ob.begin()
+    ob.verify(role_arn=ROLE_A)
+    before = ob.current()
+
+    ob.begin_update()
+
+    assert ob.current() == before
+
+
+def test_begin_update_requires_a_configured_template_url(tmp_path, monkeypatch):
+    monkeypatch.delenv(TEMPLATE_URL_ENV, raising=False)
+    ob = AWSOnboarding(
+        user=_user("alice"), workspace_root=tmp_path, principal_arn=PRINCIPAL,
+        runner=FakeAWS("713938953301"),
+    )
+    ob.store.create(region="us-east-2")   # a connection exists; no template URL
+    with pytest.raises(OnboardingConfigError):
+        ob.begin_update()
+
+
 def test_pending_replacement_rolled_back_stack_gets_a_fresh_name_transactionally(tmp_path):
     """The pending-replacement equivalent of the ROLLBACK_COMPLETE escape
     hatch: it must never read or touch the ACTIVE connection -- Change AWS

@@ -16,6 +16,7 @@ from cryostack_src.cloud.connect.cloudformation import (
     EXECUTION_ROLE_NAME,
     execution_role_template,
     quick_create_url,
+    quick_update_url,
     render_template,
 )
 
@@ -334,6 +335,38 @@ def test_quick_create_url_is_well_formed_and_encoded():
     # reserved characters were percent-encoded in the raw string
     raw = parsed.fragment.split("?", 1)[1]
     assert "sekret%2Brandom%2Fvalue" in raw
+
+
+def test_quick_update_url_targets_update_template_action():
+    """UpdateStack, never CreateStack -- a stack that already exists must be
+    updated, not re-created (which fails with AlreadyExistsException)."""
+    url = quick_update_url(
+        template_url=TEMPLATE_URL, external_id=EXTERNAL_ID,
+        region="us-east-2", principal_arn=PRINCIPAL,
+        stack_name="cryostack-access-conn-abc123",
+    )
+    parsed = urlparse(url)
+    assert parsed.fragment.startswith("/stacks/update/template")
+    assert "quickcreate" not in url
+
+    query = parse_qs(parsed.fragment.split("?", 1)[1])
+    assert query["stackId"] == ["cryostack-access-conn-abc123"]
+    assert query["templateURL"] == [TEMPLATE_URL]
+    assert query["param_ExternalId"] == [EXTERNAL_ID]
+    assert query["param_CryoStackPrincipalArn"] == [PRINCIPAL]
+
+
+def test_quick_update_url_requires_every_input_including_stack_name():
+    base_kwargs = dict(
+        template_url=TEMPLATE_URL, external_id=EXTERNAL_ID,
+        region="us-east-2", principal_arn=PRINCIPAL,
+        stack_name="cryostack-access-conn-abc123",
+    )
+    for missing in ("template_url", "external_id", "region", "principal_arn", "stack_name"):
+        kwargs = dict(base_kwargs)
+        kwargs[missing] = ""
+        with pytest.raises(ValueError):
+            quick_update_url(**kwargs)
 
 
 def test_quick_create_url_requires_every_input():

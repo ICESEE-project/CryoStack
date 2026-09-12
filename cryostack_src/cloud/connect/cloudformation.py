@@ -521,3 +521,59 @@ def quick_create_url(
         quote_via=quote,
     )
     return f"{base}?{params}"
+
+
+# ---------------------------------------------------------------------------
+# Quick Update URL -- for an EXISTING, already-created stack
+# ---------------------------------------------------------------------------
+def quick_update_url(
+    *,
+    template_url: str,
+    external_id: str,
+    region: str,
+    principal_arn: str,
+    stack_name: str,
+) -> str:
+    """A CloudFormation console *Update stack* deep link for a stack that
+    already exists, re-pointed at the CURRENT ``template_url``.
+
+    Quick Create (:func:`quick_create_url`) always performs ``CreateStack``
+    -- it fails with ``AlreadyExistsException`` if the target stack name is
+    already taken, so it can never be used to pick up a template change on
+    an account that already completed onboarding. This builds the
+    console's *Update* deep link instead (``#/stacks/update/template``,
+    identical query-parameter shape to Quick Create otherwise), which
+    performs ``UpdateStack`` against the SAME stack -- the same physical
+    IAM role, same Role ARN, same ExternalId -- so a connected user never
+    has to disconnect, reconnect, or re-paste a new Role ARN just to pick
+    up a permissions fix. The console still shows a full changeset review
+    before the user clicks **Update stack**.
+    """
+    for name, value in (
+        ("template_url", template_url),
+        ("external_id", external_id),
+        ("region", region),
+        ("principal_arn", principal_arn),
+        ("stack_name", stack_name),
+    ):
+        if not (value or "").strip():
+            raise ValueError(f"quick_update_url: {name} is required")
+
+    region = region.strip()
+    base = (
+        f"https://{region}.console.aws.amazon.com/cloudformation/home"
+        f"?region={quote(region, safe='')}#/stacks/update/template"
+    )
+    params = urlencode(
+        {
+            # the console resolves a bare stack NAME (not just an ARN) for
+            # `stackId` -- CryoStack never captures the stack's ARN, only
+            # the name it minted, so this must work from the name alone.
+            "stackId": stack_name.strip(),
+            "templateURL": template_url.strip(),
+            "param_ExternalId": external_id.strip(),
+            "param_CryoStackPrincipalArn": principal_arn.strip(),
+        },
+        quote_via=quote,
+    )
+    return f"{base}?{params}"
