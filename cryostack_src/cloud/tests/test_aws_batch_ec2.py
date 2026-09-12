@@ -375,6 +375,26 @@ def test_ec2_prepare_creates_the_instance_profile_with_one_managed_policy(monkey
     assert "ec2_instance_profile" in (res.created + res.reused)
 
 
+def test_rerunning_prepare_cloud_with_ec2_is_idempotent(monkeypatch):
+    """A second Prepare Cloud for the same connection must reuse the
+    instance profile it already created -- never a duplicate
+    create-instance-profile/create-role, and never an error."""
+    f = _FakeIamAWS()
+    monkeypatch.setattr(ip, "run_aws", f)
+    monkeypatch.setattr("cryostack_src.cloud.drivers.aws.iam.run_aws", f, raising=False)
+
+    first = ip.ensure_iam_resources(CONFIG, bucket="b", include_ec2=True)
+    assert "ec2_instance_profile" in first.created
+    assert first.ec2_instance_profile == INSTANCE_PROFILE
+
+    second = ip.ensure_iam_resources(CONFIG, bucket="b", include_ec2=True)
+    assert "ec2_instance_profile" in second.reused
+    assert second.ec2_instance_profile == INSTANCE_PROFILE
+
+    creates = [c for c in f.calls if c[:2] == ["iam", "create-instance-profile"]]
+    assert len(creates) == 1        # only the first run actually created it
+
+
 # ── driver.submit: queue + job definition follow the compute mode ─────
 def _submit(monkeypatch, **kw):
     from cryostack_src.cloud.drivers.aws.driver import AWSDriver

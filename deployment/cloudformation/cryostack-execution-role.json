@@ -1,6 +1,6 @@
 {
   "AWSTemplateFormatVersion": "2010-09-09",
-  "Description": "CryoStack cross-account access role. Grants CryoStack least-privilege access to run scientific experiments on AWS Batch in your account, assumable only with your unique ExternalId. (template 2026-09-08)",
+  "Description": "CryoStack cross-account access role. Grants CryoStack least-privilege access to run scientific experiments on AWS Batch in your account, assumable only with your unique ExternalId. (template 2026-09-11)",
   "Parameters": {
     "ExternalId": {
       "Type": "String",
@@ -208,6 +208,12 @@
                   "Resource": "*"
                 },
                 {
+                  "Sid": "CryoStackIamListInstanceProfiles",
+                  "Effect": "Allow",
+                  "Action": "iam:ListInstanceProfiles",
+                  "Resource": "*"
+                },
+                {
                   "Sid": "CryoStackServiceRoles",
                   "Effect": "Allow",
                   "Action": [
@@ -227,6 +233,17 @@
                   }
                 },
                 {
+                  "Sid": "CryoStackEc2InstanceProfile",
+                  "Effect": "Allow",
+                  "Action": [
+                    "iam:CreateInstanceProfile",
+                    "iam:AddRoleToInstanceProfile"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:instance-profile/cryostack-*"
+                  }
+                },
+                {
                   "Sid": "CryoStackPassRole",
                   "Effect": "Allow",
                   "Action": "iam:PassRole",
@@ -237,7 +254,8 @@
                     "StringEquals": {
                       "iam:PassedToService": [
                         "batch.amazonaws.com",
-                        "ecs-tasks.amazonaws.com"
+                        "ecs-tasks.amazonaws.com",
+                        "ec2.amazonaws.com"
                       ]
                     }
                   }

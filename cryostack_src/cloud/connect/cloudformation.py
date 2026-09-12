@@ -74,7 +74,7 @@ from urllib.parse import quote, urlencode
 #: LOGICAL id -- no longer the role's PHYSICAL name (see module docstring).
 EXECUTION_ROLE_NAME = "CryoStackExecutionRole"
 DEFAULT_STACK_NAME = "cryostack-access"
-TEMPLATE_VERSION = "2026-09-08"
+TEMPLATE_VERSION = "2026-09-11"
 
 _STACK_NAME_MAX_LENGTH = 128
 _STACK_SLUG_RE = re.compile(r"[^a-z0-9]+")
@@ -264,6 +264,21 @@ def _permissions_policy() -> dict:
                 "Action": "iam:ListRoles",
                 "Resource": "*",
             },
+            # -- IAM: discover existing instance profiles (Advanced EC2 Batch
+            #    reconciliation -- iam.py:list_instance_profiles). Like
+            #    `iam:ListRoles` above, `iam:ListInstanceProfiles` has no
+            #    resource-level permissions in AWS IAM (see the IAM Actions,
+            #    Resources, and Condition Keys reference): it is an
+            #    account-wide list call, so `Resource: "*"` is the only valid
+            #    form -- not a broadening choice. It grants no read access to
+            #    instance-profile *contents* beyond name/ARN/role membership,
+            #    which `iam:ListRoles` already effectively exposes for roles.
+            {
+                "Sid": "CryoStackIamListInstanceProfiles",
+                "Effect": "Allow",
+                "Action": "iam:ListInstanceProfiles",
+                "Resource": "*",
+            },
             # -- IAM: create + pass ONLY the cryostack-* service roles ----
             {
                 "Sid": "CryoStackServiceRoles",
@@ -282,6 +297,26 @@ def _permissions_policy() -> dict:
                 ],
                 "Resource": sub(f"arn:{partition}:iam::{account}:role/cryostack-*"),
             },
+            # -- IAM: Advanced EC2 Batch only -- create + populate the ECS
+            #    instance profile the EC2 hosts assume
+            #    (iam_provision.py:ensure_ec2_instance_profile). Both actions'
+            #    only resource type in AWS IAM is `instance-profile`, a
+            #    separate ARN namespace from `role/*` above, so it needs its
+            #    own statement scoped to the one CryoStack-owned instance-
+            #    profile name family. Never touched by the default Fargate
+            #    path -- ensure_ec2_instance_profile is only called when the
+            #    user selects EC2 mode.
+            {
+                "Sid": "CryoStackEc2InstanceProfile",
+                "Effect": "Allow",
+                "Action": [
+                    "iam:CreateInstanceProfile",
+                    "iam:AddRoleToInstanceProfile",
+                ],
+                "Resource": sub(
+                    f"arn:{partition}:iam::{account}:instance-profile/cryostack-*"
+                ),
+            },
             {
                 "Sid": "CryoStackPassRole",
                 "Effect": "Allow",
@@ -292,6 +327,16 @@ def _permissions_policy() -> dict:
                         "iam:PassedToService": [
                             "batch.amazonaws.com",
                             "ecs-tasks.amazonaws.com",
+                            # Advanced EC2 Batch: AWS Batch's `instanceRole`
+                            # (the instance PROFILE) attaches
+                            # cryostack-ec2-instance-role to the EC2 hosts it
+                            # launches -- the role is ultimately assumed by
+                            # ec2.amazonaws.com, so CreateComputeEnvironment /
+                            # UpdateComputeEnvironment with an EC2 instanceRole
+                            # requires this PassedToService value in addition
+                            # to the two above. Resource stays role/cryostack-*
+                            # -- unchanged and no less scoped than before.
+                            "ec2.amazonaws.com",
                         ]
                     }
                 },

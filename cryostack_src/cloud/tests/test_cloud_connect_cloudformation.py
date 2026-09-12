@@ -91,6 +91,7 @@ def test_no_administrator_access_and_no_star_star(template):
                 "CryoStackNetworkDiscovery",
                 "CryoStackIdentityAndPricing",
                 "CryoStackIamListRoles",
+                "CryoStackIamListInstanceProfiles",
             }, stmt["Sid"]
 
 
@@ -160,6 +161,9 @@ def test_provisioning_permission_audit_actions_are_all_granted(template):
         # IAM (iam.py / iam_provision.py)
         "iam:ListRoles", "iam:CreateRole", "iam:PutRolePolicy",
         "iam:AttachRolePolicy", "iam:PassRole",
+        # IAM: Advanced EC2 Batch instance profile (iam.py / iam_provision.py)
+        "iam:ListInstanceProfiles", "iam:CreateInstanceProfile",
+        "iam:AddRoleToInstanceProfile",
         # ECR (registry*.py / registry_delivery.py)
         "ecr:GetAuthorizationToken", "ecr:CreateRepository",
         "ecr:DescribeRepositories", "ecr:DescribeImages", "ecr:BatchGetImage",
@@ -211,7 +215,86 @@ def test_passrole_is_tightly_scoped_to_cryostack_roles_and_services(template):
     assert pr["Action"] == "iam:PassRole"
     assert pr["Resource"]["Fn::Sub"].endswith("role/cryostack-*")
     services = pr["Condition"]["StringEquals"]["iam:PassedToService"]
-    assert set(services) == {"batch.amazonaws.com", "ecs-tasks.amazonaws.com"}
+    assert set(services) == {
+        "batch.amazonaws.com", "ecs-tasks.amazonaws.com", "ec2.amazonaws.com",
+    }
+
+
+def test_ec2_instance_profile_actions_are_scoped_to_cryostack_instance_profiles(template):
+    """The gap that caused the first real EC2 AccessDenied
+    (iam:CreateInstanceProfile on .../cryostack-ec2-instance-profile): both
+    instance-profile actions must be present and scoped to the
+    instance-profile/cryostack-* ARN family -- a namespace distinct from
+    role/cryostack-*."""
+    sids = {s["Sid"]: s for s in _all_statements(template)}
+    ec2p = sids["CryoStackEc2InstanceProfile"]
+    actions = ec2p["Action"] if isinstance(ec2p["Action"], list) else [ec2p["Action"]]
+    assert set(actions) == {"iam:CreateInstanceProfile", "iam:AddRoleToInstanceProfile"}
+    assert ec2p["Resource"]["Fn::Sub"] == (
+        "arn:${AWS::Partition}:iam::${AWS::AccountId}:instance-profile/cryostack-*"
+    )
+    # a separate ARN namespace from the role statements -- never role/*
+    assert "role/" not in ec2p["Resource"]["Fn::Sub"]
+
+
+def test_no_wildcard_iam_action_is_introduced(template):
+    """No `iam:*` anywhere, and only the one documented, un-scopable list
+    action (iam:ListInstanceProfiles, alongside the pre-existing
+    iam:ListRoles) is granted on Resource "*"."""
+    star_iam_actions = set()
+    for stmt in _all_statements(template):
+        actions = stmt["Action"] if isinstance(stmt["Action"], list) else [stmt["Action"]]
+        for a in actions:
+            assert a != "iam:*"
+        resources = stmt["Resource"] if isinstance(stmt["Resource"], list) else [stmt["Resource"]]
+        if "*" in resources:
+            star_iam_actions.update(a for a in actions if a.startswith("iam:"))
+    assert star_iam_actions == {"iam:ListRoles", "iam:ListInstanceProfiles"}
+
+
+def test_matlab_license_secret_grant_is_not_part_of_this_template(template):
+    """The ISSM MATLAB-license secretsmanager:GetSecretValue grant is applied
+    per-connection at Prepare Cloud time (iam_provision.py, on the ECS
+    execution role) -- it must never appear in the cross-account onboarding
+    template, so this EC2 IAM fix cannot have widened it."""
+    blob = json.dumps(template)
+    assert "secretsmanager" not in blob
+    assert "MatlabLicense" not in blob
+
+
+def test_fargate_onboarding_statements_are_unchanged_by_the_ec2_iam_fix(template):
+    """The EC2 instance-profile fix only ADDS statements/condition values --
+    it must not alter anything the default Fargate path (or any other
+    already-provisioned resource) relies on."""
+    sids = {s["Sid"]: s for s in _all_statements(template)}
+
+    assert sids["CryoStackServiceRoles"]["Action"] == [
+        "iam:CreateRole", "iam:GetRole", "iam:TagRole",
+        "iam:ListRolePolicies", "iam:ListAttachedRolePolicies",
+        "iam:GetRolePolicy", "iam:PutRolePolicy", "iam:DeleteRolePolicy",
+        "iam:AttachRolePolicy", "iam:DetachRolePolicy",
+    ]
+    assert sids["CryoStackServiceRoles"]["Resource"]["Fn::Sub"].endswith(
+        "role/cryostack-*"
+    )
+    assert sids["CryoStackIamListRoles"] == {
+        "Sid": "CryoStackIamListRoles",
+        "Effect": "Allow",
+        "Action": "iam:ListRoles",
+        "Resource": "*",
+    }
+    assert sids["CryoStackBatchProvision"]["Action"] == [
+        "batch:CreateComputeEnvironment", "batch:UpdateComputeEnvironment",
+        "batch:DeleteComputeEnvironment", "batch:CreateJobQueue",
+        "batch:UpdateJobQueue", "batch:DeleteJobQueue",
+        "batch:RegisterJobDefinition", "batch:DeregisterJobDefinition",
+        "batch:TagResource",
+    ]
+    # the PassRole resource and the two pre-existing services are untouched;
+    # only a third permitted service was appended
+    pr = sids["CryoStackPassRole"]
+    services = pr["Condition"]["StringEquals"]["iam:PassedToService"]
+    assert services[:2] == ["batch.amazonaws.com", "ecs-tasks.amazonaws.com"]
 
 
 def test_render_template_is_valid_json_round_trip(template):
