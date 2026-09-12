@@ -1373,6 +1373,25 @@ def build_cloud_environment_card(
     run_estimate = _build_run_estimate_section()
     active_run = _build_active_run_section()
 
+    def _invalidate_prepared_state(_change=None) -> None:
+        """A compute-mode or EC2 Advanced-option change after a successful
+        Prepare cloud must not leave a stale "Ready" Compute row, nor an
+        open Review & Launch estimate, for a configuration that was never
+        actually provisioned -- Prepare cloud must be run again. Storage
+        and Containers (S3 / ECR) are compute-mode independent and are left
+        as they are; only the Batch compute environment depends on this
+        choice. A no-op before any Prepare has ever run (the row is already
+        "Not prepared" and the estimate is already hidden)."""
+        set_cloud_status(compute_status, state="idle", label="Not prepared")
+        run_estimate["run_estimate_section"].layout.display = "none"
+        run_estimate["review_panel"].layout.display = "none"
+
+    compute_mode_widget.observe(_invalidate_prepared_state, names="value")
+    ec2_capacity_widget.observe(_invalidate_prepared_state, names="value")
+    ec2_accelerator_widget.observe(_invalidate_prepared_state, names="value")
+    ec2_network_widget.observe(_invalidate_prepared_state, names="value")
+    ec2_topology_widget.observe(_invalidate_prepared_state, names="value")
+
     infra_heading = W.HTML(
         value=(
             "<div style='font-size:12px;font-weight:700;color:#172033;"
@@ -1380,19 +1399,26 @@ def build_cloud_environment_card(
         ),
     )
 
+    # Workflow order: connect the account, THEN choose a compute mode
+    # (Fargate stays the simple default; EC2 reveals its own Advanced
+    # settings) BEFORE Prepare cloud -- not after. `advanced` is placed
+    # ahead of the status/actions block so a user reaches Fargate/EC2 and,
+    # if EC2, Capacity/Accelerator/Network/Execution, before Prepare cloud;
+    # Review & Launch only becomes available once Prepare succeeds (see
+    # set_run_estimate_view / _invalidate_prepared_state below).
     body = W.VBox(
         [
             heading,
             provider_widget,
             region_widget,
             aws_account["aws_account_section"],
+            advanced,
             infra_heading,
             status_panel,
             actions,
             run_estimate["run_estimate_section"],
             run_estimate["review_panel"],
             active_run["active_run_section"],
-            advanced,
         ],
         layout=W.Layout(
             width="100%",
