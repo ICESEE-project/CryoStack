@@ -3082,6 +3082,7 @@ def build_icesee_ui():
         icesee_cloud_environment.verify_button.on_click(icesee_aws_connect.verify)
         icesee_cloud_environment.recheck_button.on_click(icesee_aws_connect.recheck)
         icesee_cloud_environment.disconnect_button.on_click(icesee_aws_connect.disconnect)
+        icesee_cloud_environment.update_role_button.on_click(icesee_aws_connect.update_role)
         icesee_cloud_environment.retry_button.on_click(icesee_aws_connect.retry)
         icesee_cloud_environment.change_account_button.on_click(icesee_aws_connect.change_account)
         icesee_cloud_environment.change_verify_button.on_click(icesee_aws_connect.change_verify)

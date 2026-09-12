@@ -118,6 +118,15 @@ class CloudEnvironmentWidgets:
     recheck_button: W.Button
     #: connected -> remove the (non-secret) connection metadata
     disconnect_button: W.Button
+    #: connected -> open a CloudFormation *Update stack* link for the SAME
+    #: stack/role/ExternalId, so a permissions fix that landed in the
+    #: template after this account connected can be applied without
+    #: disconnecting, reconnecting, or getting a new Role ARN
+    update_role_button: W.Button
+    #: an <a target="_blank"> to the CloudFormation Update stack page, or an
+    #: inline error -- populated only after Update role permissions is
+    #: clicked; empty otherwise
+    update_role_link: W.HTML
     #: error (verification failed) -> the Retry connection / Change AWS
     #: account row -- the recovery escape hatch for a stranded connection
     recovery_actions: W.HBox
@@ -301,11 +310,19 @@ def _build_aws_account_section() -> dict:
 
     recheck_button = secondary_button("Re-check", icon="refresh")
     disconnect_button = secondary_button("Disconnect", icon="unlink")
+    #: a normal secondary action, not visually emphasized -- CryoStack has
+    #: no reliable way to tell a connected account's stack was created from
+    #: an older published template (AWSConnection records no template
+    #: version), so this is offered plainly rather than inventing that
+    #: version state.
+    update_role_button = secondary_button("Update role permissions", icon="wrench")
 
     connect_actions = W.HBox(
-        [recheck_button, disconnect_button],
-        layout=W.Layout(gap="8px", display="none"),
+        [recheck_button, disconnect_button, update_role_button],
+        layout=W.Layout(gap="8px", flex_wrap="wrap", display="none"),
     )
+
+    update_role_link = W.HTML(value="")
 
     # -- failed-verification recovery: shown ONLY in the "error" state ---
     retry_button = primary_button("Retry connection", icon="redo")
@@ -379,6 +396,7 @@ def _build_aws_account_section() -> dict:
             connect_button,
             connect_form,
             connect_actions,
+            update_role_link,
             recovery_actions,
             change_account_panel,
         ],
@@ -397,6 +415,8 @@ def _build_aws_account_section() -> dict:
         "verify_button": verify_button,
         "recheck_button": recheck_button,
         "disconnect_button": disconnect_button,
+        "update_role_button": update_role_button,
+        "update_role_link": update_role_link,
         "recovery_actions": recovery_actions,
         "retry_button": retry_button,
         "change_account_button": change_account_button,
@@ -426,6 +446,12 @@ def set_aws_account_view(
 
     status = (summary or {}).get("status", "disconnected")
     detail = widgets.aws_account_detail
+
+    if status != "connected":
+        # a stale "Open CloudFormation Update stack" link (or error) from a
+        # previous connected session must never linger once the account is
+        # no longer connected (disconnected, or a fresh error/pending state).
+        widgets.update_role_link.value = ""
 
     if setup_url:
         widgets.open_setup_link.value = (
@@ -1487,6 +1513,8 @@ def build_cloud_environment_card(
         verify_button=aws_account["verify_button"],
         recheck_button=aws_account["recheck_button"],
         disconnect_button=aws_account["disconnect_button"],
+        update_role_button=aws_account["update_role_button"],
+        update_role_link=aws_account["update_role_link"],
         recovery_actions=aws_account["recovery_actions"],
         retry_button=aws_account["retry_button"],
         change_account_button=aws_account["change_account_button"],

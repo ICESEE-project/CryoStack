@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from cryostack_src.cloud.connect import OnboardingConfigError, PrincipalNotConfiguredError
 from cryostack_src.cloud.connect.assume_role import AssumeRoleError
 from cryostack_src.frontend.cryolauncher.cloud_environment import (
+    escape_attr,
     set_aws_account_view,
     set_change_account_panel,
 )
@@ -57,6 +58,11 @@ class AWSConnectCallbacks:
                                 # success does it become the active connection
     change_cancel: Callable    # discard the pending replacement; back to
                                 # whatever the active connection already was
+    #: -- connected only: pick up a template change on the SAME stack ------
+    update_role: Callable      # open a CloudFormation Update stack link for
+                                # the active connection's existing stack --
+                                # never mints anything, never touches the
+                                # stored connection
 
 
 def build_aws_connect_callbacks(
@@ -361,6 +367,40 @@ def build_aws_connect_callbacks(
         _render_change(None)
         _log("cancelled — back to your current AWS account connection, unchanged")
 
+    # -- Update role permissions: connected only, non-destructive ----------
+    def update_role(_=None) -> None:
+        """Open a CloudFormation *Update stack* link for the ACTIVE
+        connection's EXISTING stack -- same stack name, same ExternalId,
+        same Role ARN. Never creates a second connection, never disconnects
+        or re-verifies the current one, never rotates any credential; a
+        pure local URL computation, exactly like :func:`connect` for the
+        initial Quick Create link."""
+        if _busy["on"]:
+            return
+        try:
+            step = onboarding_factory().begin_update()
+        except (PrincipalNotConfiguredError, OnboardingConfigError) as err:
+            widgets.update_role_link.value = (
+                "<div style='font-size:11px;color:#b23c3c;line-height:1.45;'>"
+                f"{err}</div>"
+            )
+            _log("ERROR", err)
+            return
+        except Exception as err:                        # noqa: BLE001
+            widgets.update_role_link.value = (
+                "<div style='font-size:11px;color:#b23c3c;line-height:1.45;'>"
+                f"{err}</div>"
+            )
+            _log("ERROR", err)
+            return
+        widgets.update_role_link.value = (
+            f"<a href='{escape_attr(step.setup_url)}' target='_blank' rel='noopener' "
+            "style='font-size:12px;font-weight:600;'>▶ Open CloudFormation "
+            "Update Stack</a>"
+        )
+        _log("update — opening the current template against the existing "
+             f"stack ({step.stack_name}); same role, same ExternalId")
+
     return AWSConnectCallbacks(
         connect=connect,
         verify=verify,
@@ -371,4 +411,5 @@ def build_aws_connect_callbacks(
         change_account=change_account,
         change_verify=change_verify,
         change_cancel=change_cancel,
+        update_role=update_role,
     )

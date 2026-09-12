@@ -2950,6 +2950,7 @@ def build_icesheets_ui():
         cloud_environment.verify_button.on_click(aws_connect.verify)
         cloud_environment.recheck_button.on_click(aws_connect.recheck)
         cloud_environment.disconnect_button.on_click(aws_connect.disconnect)
+        cloud_environment.update_role_button.on_click(aws_connect.update_role)
 
         # -- ISSM cloud MATLAB license: a non-secret Secrets Manager ARN on
         # the connected AWS account (cryostack_src/cloud/matlab_license.py).

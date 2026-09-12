@@ -9,6 +9,7 @@ from __future__ import annotations
 import inspect
 import sys
 from pathlib import Path
+from urllib.parse import parse_qs
 
 _REPO = Path(__file__).resolve().parents[4]
 if str(_REPO) not in sys.path:
@@ -659,6 +660,122 @@ def test_recovery_after_page_refresh_shows_error_not_disconnected(tmp_path):
     assert fresh.recovery_actions.layout.display == "flex"
     # the setup link is rebuilt too -- not stuck on the built-in placeholder
     assert "Open AWS Setup" in fresh.open_setup_link.value
+
+
+def _connect_and_verify(tmp_path, card, *, account="774888247882", role=ROLE_B):
+    """Drive a connection through to "connected" -- the shared setup every
+    Update role permissions test starts from."""
+    spawn = _DeferredSpawn()
+    cbs = build_aws_connect_callbacks(
+        widgets=card, onboarding_factory=_factory(tmp_path, runner=FakeAWS(account)),
+        log_output=_Out(), spawn=spawn, to_thread=lambda fn: _immediate(fn),
+    )
+    cbs.connect()
+    card.role_arn_input.value = role
+    cbs.verify()
+    spawn.run()
+    assert "Connected" in card.aws_account_status.value
+    return cbs
+
+
+# -- Update role permissions: connected-only, non-destructive -------------
+def test_connected_account_shows_update_role_permissions_action(tmp_path, card):
+    """Issue 2 UI wiring: a connected account exposes Update role
+    permissions as a normal secondary action alongside Re-check/Disconnect
+    -- CryoStack has no reliable way to know a connection's stack predates
+    the current template, so it is never visually emphasized."""
+    _connect_and_verify(tmp_path, card)
+    assert card.connect_actions.layout.display == "flex"
+    assert card.update_role_button in card.connect_actions.children
+    assert card.update_role_button.disabled is False
+
+
+def test_pending_connection_keeps_existing_setup_behavior_unaffected(tmp_path, card):
+    cbs = build_aws_connect_callbacks(
+        widgets=card, onboarding_factory=_factory(tmp_path, runner=FakeAWS()),
+        log_output=_Out(),
+    )
+    cbs.connect()
+    assert card.connect_form.layout.display == "flex"
+    assert "Open AWS Setup" in card.open_setup_link.value
+    # Update role permissions is a connected-only action -- not shown here
+    assert card.connect_actions.layout.display == "none"
+    assert card.update_role_link.value == ""
+
+
+def test_error_connection_keeps_existing_recovery_actions_unaffected(tmp_path, card):
+    spawn = _DeferredSpawn()
+    cbs = build_aws_connect_callbacks(
+        widgets=card, onboarding_factory=_factory(tmp_path, runner=FakeAWS(deny=True)),
+        log_output=_Out(), spawn=spawn, to_thread=lambda fn: _immediate(fn),
+    )
+    cbs.connect()
+    card.role_arn_input.value = ROLE_B
+    cbs.verify()
+    spawn.run()
+    assert card.recovery_actions.layout.display == "flex"
+    assert card.retry_button.disabled is False
+    # still connected-only -- an errored attempt shows Retry/Change account,
+    # not Update role permissions
+    assert card.connect_actions.layout.display == "none"
+    assert card.update_role_link.value == ""
+
+
+def test_update_role_uses_the_same_stack_name_as_the_original_connection(tmp_path, card):
+    cbs = _connect_and_verify(tmp_path, card)
+    original_step = _factory(tmp_path, runner=FakeAWS())().begin()
+
+    cbs.update_role()
+
+    assert "#/stacks/update/template" in card.update_role_link.value
+    assert original_step.stack_name in card.update_role_link.value
+
+
+def test_update_role_preserves_external_id(tmp_path, card):
+    cbs = _connect_and_verify(tmp_path, card)
+    original = _factory(tmp_path, runner=FakeAWS())().current()
+
+    cbs.update_role()
+
+    href = card.update_role_link.value.split("href='", 1)[1].split("'", 1)[0]
+    href = href.replace("&amp;", "&")               # undo HTML-attribute escaping
+    fragment = href.split("#", 1)[1]
+    query = parse_qs(fragment.split("?", 1)[1])
+    assert query["param_ExternalId"] == [original.external_id]
+
+
+def test_update_role_preserves_role_arn(tmp_path, card):
+    cbs = _connect_and_verify(tmp_path, card, role=ROLE_B)
+    before = _factory(tmp_path, runner=FakeAWS())().current()
+    assert before.role_arn == ROLE_B
+
+    cbs.update_role()
+
+    after = _factory(tmp_path, runner=FakeAWS())().current()
+    assert after.role_arn == ROLE_B                # unchanged by opening the link
+    assert after.role_arn == before.role_arn
+
+
+def test_update_role_does_not_create_or_mutate_a_second_connection(tmp_path, card):
+    cbs = _connect_and_verify(tmp_path, card)
+    before = _factory(tmp_path, runner=FakeAWS())().current()
+
+    cbs.update_role()
+
+    onboarding = _factory(tmp_path, runner=FakeAWS())()
+    after = onboarding.current()
+    assert after == before                          # byte-for-byte identical
+    assert onboarding.has_pending_replacement() is False   # no staged second connection
+
+
+def test_update_role_link_is_cleared_on_disconnect(tmp_path, card):
+    cbs = _connect_and_verify(tmp_path, card)
+    cbs.update_role()
+    assert card.update_role_link.value != ""
+
+    cbs.disconnect()
+
+    assert card.update_role_link.value == ""
 
 
 def test_recovery_actions_never_render_a_secret(tmp_path, card):
