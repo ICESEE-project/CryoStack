@@ -108,6 +108,16 @@ class CloudRunReview:
     issm_runtime_ready: bool | None = None
 
     # -- presentation ------------------------------------------------
+    @property
+    def compute_backend_label(self) -> str:
+        """``"AWS Batch Fargate"`` / ``"AWS Batch EC2"`` -- from the SAME
+        resolved backend (``self.config.is_ec2``, the same ``CloudRunConfig``
+        that picked the actual queue/job definition) already used by
+        :meth:`estimate_basis_lines`. Never inferred from a queue/job-def
+        name."""
+        is_ec2 = bool(getattr(self.config, "is_ec2", False))
+        return "AWS Batch EC2" if is_ec2 else "AWS Batch Fargate"
+
     def resource_summary(self) -> str:
         return f"{self.vcpu:g} vCPU · {self.memory_gib:g} GiB"
 
@@ -244,6 +254,13 @@ def build_cloud_run_review(
     """
     reasons: list[str] = []
 
+    # the SAME resolved backend the queue/job-definition selection used --
+    # never inferred from a name.
+    _backend_label = (
+        "AWS Batch EC2" if bool(getattr(config, "is_ec2", False))
+        else "AWS Batch Fargate"
+    )
+
     if not account_freshly_verified:
         reasons.append(
             "Your AWS account connection could not be verified just now. "
@@ -252,7 +269,7 @@ def build_cloud_run_review(
     for label, ready in (
         ("Storage", infrastructure.storage),
         ("Container repository", infrastructure.container),
-        ("Compute (AWS Batch)", infrastructure.compute),
+        (f"Compute ({_backend_label})", infrastructure.compute),
     ):
         if not ready:
             reasons.append(f"{label} is not prepared. Run Prepare cloud first.")

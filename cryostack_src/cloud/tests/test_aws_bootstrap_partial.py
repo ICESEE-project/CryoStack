@@ -118,6 +118,47 @@ def test_full_success_returns_ready_row_status(monkeypatch):
                                     "registry": "ready", "compute": "ready"}
 
 
+# -- Fargate/EC2 backend-aware "environment is ready" summary --------------
+def test_bootstrap_default_ready_message_names_fargate(monkeypatch):
+    import cryostack_src.cloud.drivers.aws.driver as drv
+    monkeypatch.setattr(drv, "ensure_iam_resources", lambda *a, **k: type("I", (), {
+        "resources": type("R", (), {"job_role": "jr", "ecs_execution_role": "er"})(),
+        "created": [], "reused": ["job_role"]})())
+
+    class _CapsOK(_Caps):
+        storage_ready = True
+        registry_ready = True
+        batch_ready = True
+        network_ready = True
+        iam_ready = True
+
+    d = _driver()
+    d.capabilities = lambda: _CapsOK()
+    result = d.bootstrap(bucket="cryostack-runs-774888247882")
+    assert "AWS Batch Fargate environment is ready." in result["messages"]
+    assert "AWS Batch EC2 environment is ready." not in result["messages"]
+
+
+def test_bootstrap_ec2_ready_message_names_ec2(monkeypatch):
+    import cryostack_src.cloud.drivers.aws.driver as drv
+    monkeypatch.setattr(drv, "ensure_iam_resources", lambda *a, **k: type("I", (), {
+        "resources": type("R", (), {"job_role": "jr", "ecs_execution_role": "er"})(),
+        "created": [], "reused": ["job_role"]})())
+
+    class _CapsOK(_Caps):
+        storage_ready = True
+        registry_ready = True
+        batch_ready = True
+        network_ready = True
+        iam_ready = True
+
+    d = _driver()
+    d.capabilities = lambda: _CapsOK()
+    result = d.bootstrap(bucket="cryostack-runs-774888247882", compute_mode="ec2")
+    assert "AWS Batch EC2 environment is ready." in result["messages"]
+    assert "AWS Batch Fargate environment is ready." not in result["messages"]
+
+
 # -- Icepack Cloud Execution checkpoint -----------------------------------
 def test_bootstrap_prepares_both_models_registry_and_batch(monkeypatch):
     """Prepare Cloud (bootstrap) must request BOTH models' resources -- this

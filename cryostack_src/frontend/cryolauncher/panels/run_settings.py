@@ -36,7 +36,21 @@ def build_run_settings_panel(
     remote_panel: W.Widget,
     cloud_panel: W.Widget,
     run_plan: W.Widget,
+    workspace_rows: list[W.Widget] | None = None,
 ) -> W.VBox:
+    """Compose Run Settings top-to-bottom in execution-environment-first
+    order: identity/mode rows -> Remote/Cloud connection -> FILE/WORKSPACE
+    operations (editor, datasets) + model/run configuration
+    (``workspace_rows``) -> Review/Launch (``run_plan``).
+
+    The principle: establish the execution environment first, THEN expose
+    operations against it -- a caller must never place file/editor/upload/
+    download controls in ``configuration_rows`` (before ``remote_panel``/
+    ``cloud_panel``); ``workspace_rows`` (optional -- a caller with no
+    separate file/workspace section, e.g. ICESEE, omits it) is where those
+    belong. Reuses whatever widget instances the caller passes -- pure
+    layout/container composition, no widget creation here.
+    """
 
     children: list[W.Widget] = [
         W.HTML(
@@ -52,9 +66,14 @@ def build_run_settings_panel(
         [
             remote_panel,
             cloud_panel,
-            run_plan,
         ]
     )
+
+    children.extend(
+        workspace_rows or []
+    )
+
+    children.append(run_plan)
 
     return W.VBox(
         children,

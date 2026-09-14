@@ -75,6 +75,21 @@ def _select(ctrl, label_or_abs):
     raise AssertionError(f"{label_or_abs} not in picker")
 
 
+# ── Advanced-mode editor sizing (now hosted in the right Workspace panel,
+#    which has more usable vertical space than the old left column -- so
+#    substantially taller than the original 320px, responsive min-height
+#    rather than an unconditional bare fixed height) ───────────────────────
+def test_editor_textarea_is_substantially_taller_than_the_original_compressed_height(setup):
+    _mgr, _ed, ctrl, _canon, _ = setup
+    layout = ctrl.editor.layout
+    # original height was 320px -- assert a real, substantial increase in a
+    # sane band, not one brittle exact pixel value.
+    height_px = int(str(layout.height).rstrip("px"))
+    assert 560 <= height_px <= 1000
+    # a responsive floor (min_height), not only a bare fixed height
+    assert layout.min_height == layout.height
+
+
 # ── canonical is read-only ────────────────────────────────────────────────
 def test_canonical_file_opens_read_only(setup):
     _mgr, _ed, ctrl, canon, _ = setup

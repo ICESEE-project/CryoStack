@@ -589,6 +589,14 @@ class AWSDriver(
         for message in batch_result.messages:
             messages.append(message)
 
+        # the SAME resolved compute mode this bootstrap actually provisioned
+        # against -- never inferred from queue/job-definition names.
+        _backend_label = (
+            "AWS Batch EC2"
+            if normalize_compute_mode(compute_mode) == COMPUTE_MODE_EC2
+            else "AWS Batch Fargate"
+        )
+
         if (
             batch.compute_environment
             and batch.job_queue
@@ -596,13 +604,13 @@ class AWSDriver(
         ):
 
             messages.append(
-                "AWS Batch environment is ready."
+                f"{_backend_label} environment is ready."
             )
 
         else:
 
             messages.append(
-                "AWS Batch environment is incomplete."
+                f"{_backend_label} environment is incomplete."
             )
 
         #

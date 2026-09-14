@@ -155,6 +155,7 @@ def test_icesee_backend_defaults_to_fargate():
         example_name="lorenz96",
     )
     assert review.compute_backend == "AWS Batch (Fargate)"
+    assert review.compute_backend_label == "AWS Batch Fargate"
 
 
 def test_icesee_backend_reflects_ec2_selection():
@@ -165,6 +166,28 @@ def test_icesee_backend_reflects_ec2_selection():
         example_name="lorenz96", compute_mode="ec2",
     )
     assert review.compute_backend == "AWS Batch (EC2)"
+    assert review.compute_backend_label == "AWS Batch EC2"
+
+
+def test_icesee_compute_not_ready_reason_names_the_resolved_backend():
+    not_ready = InfrastructureReadiness(
+        account=True, storage=True, container=True, compute=False)
+    fargate = build_icesee_cloud_review(
+        forecast_model="lorenz96", filter_alg="EnKF", ensemble_size=30,
+        parallel_processes=1, account_id="774888247882", region="us-east-2",
+        infrastructure=not_ready, account_freshly_verified=True,
+        example_name="lorenz96",
+    )
+    assert any(x.startswith("Compute (AWS Batch Fargate)")
+               for x in fargate.blocked_reasons)
+
+    ec2 = build_icesee_cloud_review(
+        forecast_model="lorenz96", filter_alg="EnKF", ensemble_size=30,
+        parallel_processes=1, account_id="774888247882", region="us-east-2",
+        infrastructure=not_ready, account_freshly_verified=True,
+        example_name="lorenz96", compute_mode="ec2",
+    )
+    assert any(x.startswith("Compute (AWS Batch EC2)") for x in ec2.blocked_reasons)
 
 
 def test_unsupported_icesee_examples_remain_blocked():

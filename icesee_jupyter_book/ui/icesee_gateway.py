@@ -3073,12 +3073,14 @@ def build_icesee_ui():
             ],
             layout=W.Layout(gap="8px"),
         )
+        remote_box.add_class("cryostack-remote-config")
 
         # Cloud panel -- the shared Cloud Environment card itself. Status/
         # Logs live in the Workspace Run Log toolbar; Terminate lives in the
         # Execution panel; Submit only happens through its own Review &
         # Launch (wired below) -- neither is duplicated here.
         cloud_panel = icesee_cloud_environment.container
+        cloud_panel.add_class("cryostack-cloud-config")
 
         # =========================================================
         # AWS ACCOUNT -- the SAME generic onboarding callbacks CryoLauncher

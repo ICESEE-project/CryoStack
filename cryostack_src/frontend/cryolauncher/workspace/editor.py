@@ -446,7 +446,16 @@ def build_editor_panel(
 ) -> EditorPanel:
     file_picker = W.Dropdown(options=[("(no editable files found)", "")],
                              layout=W.Layout(width="100%"))
-    editor = W.Textarea(value="", layout=W.Layout(width="100%", height="320px"))
+    # Advanced-mode editor: now hosted in the RIGHT Workspace panel, which
+    # has considerably more usable vertical space than its old LEFT-column
+    # placement, so the visible editing height goes up again (was 640px,
+    # itself already ~2x the original 320px). `min_height` (not a bare
+    # `height`) so a later responsive/flex parent can still grow it, while
+    # it never collapses below a usable size on an ordinary laptop screen;
+    # `height` is set to the same floor because a plain ipywidgets Textarea
+    # does not itself grow with content.
+    editor = W.Textarea(value="", layout=W.Layout(
+        width="100%", height="820px", min_height="820px"))
     status = W.HTML()
     name_field = W.Text(placeholder="name for new / rename / save-as / clone",
                         layout=W.Layout(width="260px"))

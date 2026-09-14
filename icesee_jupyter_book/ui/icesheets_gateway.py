@@ -999,6 +999,7 @@ def build_icesheets_ui():
                 print(cloud_run_plan_summary(
                     model=_model, region=_cfg.region, bucket=_cfg.bucket,
                     job_queue=_cfg.job_queue, job_definition=_cfg.job_definition,
+                    compute_mode=_cfg.compute_mode,
                 ))
 
             status_chip.value = status_html("running")
@@ -1355,6 +1356,7 @@ def build_icesheets_ui():
             [cloud_state_chip, cloud_environment.container],
             layout=W.Layout(width="100%", gap="8px"),
         )
+        cloud_box.add_class("cryostack-cloud-config")
 
         aws_region = cloud_environment.region
         aws_profile = cloud_environment.profile
@@ -1900,7 +1902,17 @@ def build_icesheets_ui():
             exec_row.layout.display = _manual
 
             advanced_action_row.layout.display = "" if (is_advanced and not is_agent) else "none"
-            editor_panel.container.layout.display = "" if (is_advanced and not is_agent) else "none"
+            # The Advanced editor is integrated as tab 0 ("Editor") of the
+            # RIGHT Workspace's SAME Tab widget (built later, alongside
+            # output_workspace) -- the Tab's own children/titles are the
+            # show/hide mechanism, so this only ever reassigns which tabs
+            # are attached, never recreates the Tab or the editor. Defined
+            # later in this function (like run_plan/actions_card below),
+            # hence the NameError guard.
+            try:
+                output_workspace.set_advanced_mode(is_advanced and not is_agent)
+            except NameError:
+                pass
             run_target_row.layout.display = _manual
             dataset_panel.container.layout.display = "" if (is_advanced and not is_agent) else "none"
             download_buttons_row.layout.display = ""
@@ -3580,6 +3592,7 @@ def build_icesheets_ui():
         icepack_config_panel = W.Accordion(children=[icepack_basic_panel.container])
         icepack_config_panel.set_title(0, "⚙️ Icepack configuration (Basic)")
         icepack_config_panel.selected_index = None
+
         container_source_row = form_row("Source:", container_source)
         image_uri_row = form_row("Image:", image_uri)
 
@@ -3871,6 +3884,7 @@ def build_icesheets_ui():
             ssh_key_manager_box,
             slurm_box,
         ], layout=W.Layout(gap="10px"))
+        remote_box.add_class("cryostack-remote-config")
 
         run_plan = build_run_plan_panel(
             summary_widget=summary_html,
@@ -3899,6 +3913,10 @@ def build_icesheets_ui():
         log_runtime_controls = build_workspace_toolbar([])
 
         run_settings_panel = build_run_settings_panel(
+            # establish the execution environment first: identity/mode rows,
+            # then Remote/Cloud connection -- file/editor/dataset operations
+            # and model/run configuration move to `workspace_rows` (rendered
+            # AFTER remote_panel/cloud_panel), never here.
             configuration_rows=[
                 ui_mode_row,
                 *([agent_panel.container] if agent_panel is not None else []),
@@ -3909,14 +3927,20 @@ def build_icesheets_ui():
                 example_row,
                 exec_row,
                 advanced_action_row,
-                editor_panel.container,
-                run_target_row,
-                md_config_panel,
-                icepack_config_panel,
-                dataset_panel.container,
             ],
             remote_panel=remote_box,
             cloud_panel=cloud_box,
+            # Dataset upload/download (not the editor -- that is now tab 0
+            # ("Editor") of the RIGHT Workspace's Tab widget, see
+            # output_workspace/build_run_details below), then model/run
+            # configuration -- both depend on the execution environment
+            # (Remote/Cloud) already being established above.
+            workspace_rows=[
+                dataset_panel.container,
+                run_target_row,
+                md_config_panel,
+                icepack_config_panel,
+            ],
             run_plan=run_plan.container,
         )
 
@@ -3982,13 +4006,21 @@ def build_icesheets_ui():
         # the existing tail / preview path for the selected run. No second
         # panel, no second viewer, no second result-loading path.
         _workspace_tabs = {"w": None}       # late-bound: set after build_run_details
-        _WS_TAB = {"runs": 0, "files": 1, "log": 2, "results": 3}
+        # by TITLE, not a fixed index: in Advanced mode the Editor tab is
+        # inserted at 0, shifting Runs/Files/Run Log/Results each +1 --
+        # a hardcoded index map would silently switch to the wrong tab.
+        _WS_TAB_TITLE = {"runs": "Runs", "files": "Files", "log": "Run Log",
+                         "results": "Results"}
 
         def _switch_workspace_tab(name):
             tab = _workspace_tabs["w"]
-            idx = _WS_TAB.get(name)
-            if tab is not None and idx is not None and idx < len(tab.children):
-                tab.selected_index = idx
+            title = _WS_TAB_TITLE.get(name)
+            if tab is None or title is None:
+                return
+            for index in range(len(tab.children)):
+                if tab.get_title(index) == title:
+                    tab.selected_index = index
+                    return
 
         def _runs_tail_log():
             rid = workspace_history_panel.runs.value
@@ -4023,6 +4055,15 @@ def build_icesheets_ui():
                 on_download=_runs_download,
             )
 
+        # Advanced-mode file editor -- integrated as tab 0 ("Editor") of the
+        # RIGHT Workspace's SAME Tab widget (LEFT = run/execution
+        # configuration only). The SAME editor_panel.container instance
+        # built earlier -- no new editor widget, no second set of controls,
+        # no wrapper Accordion: the Tab's own children/titles ARE the
+        # show/hide mechanism (see update_visibility's
+        # output_workspace.set_advanced_mode call below). Basic<->Advanced
+        # only reassigns which tabs are attached to the SAME Tab object, so
+        # file selection and unsaved content survive every mode switch.
         output_workspace = build_run_details(
             log_output=log_out,
             results_output=results_out,
@@ -4031,6 +4072,7 @@ def build_icesheets_ui():
             runs_panel=workspace_history_panel.runs_panel,
             files_panel=workspace_history_panel.files_panel,
             visualization_panel=visualization_panel.container,
+            editor_panel=editor_panel.container,
         )
         _workspace_tabs["w"] = output_workspace.tabs
 

@@ -815,7 +815,7 @@ def set_review_panel(widgets: "CloudEnvironmentWidgets", review) -> None:
         <tr><td style="padding:1px 12px 1px 0;">Account</td><td>{_yn(infra.account)}</td></tr>
         <tr><td style="padding:1px 12px 1px 0;">Storage</td><td>{_yn(infra.storage)}</td></tr>
         <tr><td style="padding:1px 12px 1px 0;">Container image</td><td>{_yn(infra.container)}</td></tr>
-        <tr><td style="padding:1px 12px 1px 0;">Compute (AWS Batch)</td><td>{_yn(infra.compute)}</td></tr>
+        <tr><td style="padding:1px 12px 1px 0;">Compute ({escape_text(r.compute_backend_label)})</td><td>{_yn(infra.compute)}</td></tr>
         {runtime_row}
       </table>
       {blocked}

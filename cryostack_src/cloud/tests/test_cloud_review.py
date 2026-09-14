@@ -100,6 +100,35 @@ def test_icepack_review_can_launch_without_matlab():
     assert r.config.job_definition == "cryostack-icepack"
 
 
+# -- Fargate/EC2 backend labeling (Compute row + its blocked-reason text) --
+def test_fargate_review_compute_backend_label():
+    r = _review()   # _cfg() default is Fargate
+    assert r.compute_backend_label == "AWS Batch Fargate"
+
+
+def test_ec2_review_compute_backend_label():
+    ec2_cfg = resolve_cloud_config(
+        bucket="cryostack-runs-774888247882", model="icepack",
+        region="us-east-2", aws_batch_compute="ec2")
+    r = _review(config=ec2_cfg, model="icepack")
+    assert r.compute_backend_label == "AWS Batch EC2"
+
+
+def test_compute_not_ready_reason_names_the_resolved_backend_fargate():
+    r = _review(infrastructure=InfrastructureReadiness(
+        account=True, storage=True, container=True, compute=False))
+    assert any(x.startswith("Compute (AWS Batch Fargate)") for x in r.blocked_reasons)
+
+
+def test_compute_not_ready_reason_names_the_resolved_backend_ec2():
+    ec2_cfg = resolve_cloud_config(
+        bucket="cryostack-runs-774888247882", model="icepack",
+        region="us-east-2", aws_batch_compute="ec2")
+    r = _review(config=ec2_cfg, model="icepack", infrastructure=InfrastructureReadiness(
+        account=True, storage=True, container=True, compute=False))
+    assert any(x.startswith("Compute (AWS Batch EC2)") for x in r.blocked_reasons)
+
+
 def test_missing_cost_estimate_does_not_block_launch():
     r = _review(cost=estimate_cloud_cost(
         region="us-east-2", vcpu=2, memory_gib=8, expected_runtime_minutes=5,
