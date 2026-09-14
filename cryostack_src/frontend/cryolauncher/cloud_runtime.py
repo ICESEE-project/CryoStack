@@ -35,6 +35,7 @@ from dataclasses import dataclass
 
 from cryostack_src.frontend.cryolauncher.cloud_run_controller import (
     classify_cloud_failure,
+    is_log_read_permission_error,
 )
 
 
@@ -622,8 +623,19 @@ def build_cloud_runtime_callbacks(
                     print(result or "(no log output)")
             status_widget.value = status_html("done")
         except Exception as error:
-            status_widget.value = status_html("fail")
-            _report(log_output, error)
+            if is_log_read_permission_error(error):
+                # Read-only and independent of the job: the Batch run and
+                # any already-retrieved S3 results are unaffected by a role
+                # that cannot read CloudWatch Logs, so this must not flip
+                # the status pill to failed (the Results view stays usable).
+                short, _detail = classify_cloud_failure(error)
+                with log_output:
+                    print("[cloud] Logs")
+                    print(f"[cloud] {short}")
+                status_widget.value = status_html("done")
+            else:
+                status_widget.value = status_html("fail")
+                _report(log_output, error)
 
     def on_terminate(_=None):
         log_output.clear_output()

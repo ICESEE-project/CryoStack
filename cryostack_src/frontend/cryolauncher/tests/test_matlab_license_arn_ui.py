@@ -34,9 +34,14 @@ def test_cloud_environment_card_exposes_the_license_arn_field_and_save_button():
     assert isinstance(card.matlab_license_arn, W.Text)
     assert isinstance(card.matlab_license_save_button, W.Button)
     assert card.matlab_license_arn.value == ""
-    # the field never renders inline in the primary view -- it lives inside
-    # Advanced cloud settings alongside queue/job-definition/etc.
-    assert card.matlab_license_arn in card.advanced.children[0].children
+    # the field lives in its OWN box, independent of the Advanced cloud
+    # settings accordion -- its visibility is driven by whether the
+    # SELECTED WORKFLOW needs MATLAB (see
+    # cryostack_src.models.workflow_capabilities), not by Basic/Advanced
+    # mode, so it must never be nested inside the accordion that Basic mode
+    # hides entirely.
+    assert card.matlab_license_arn in card.matlab_license_box.children
+    assert card.matlab_license_arn not in card.advanced.children[0].children
 
 
 def test_cloud_environment_card_prefills_an_existing_arn():
@@ -89,7 +94,7 @@ def test_gateway_saves_the_arn_onto_the_connection_never_a_license_value(tmp_pat
             idx = fn.__code__.co_freevars.index(name)
             return fn.__closure__[idx].cell_contents
 
-        cloud_environment = freevar(handler, "cloud_environment")
+        cloud_environment = freevar(handler, "widgets")
         arn = "arn:aws:secretsmanager:us-east-2:774888247882:secret:issm-license-abc123"
         cloud_environment.matlab_license_arn.value = arn
         handler(None)
@@ -144,7 +149,7 @@ def test_gateway_rejects_a_pasted_license_value_instead_of_an_arn(tmp_path):
         idx = fn.__code__.co_freevars.index(name)
         return fn.__closure__[idx].cell_contents
 
-    cloud_environment = freevar(handler, "cloud_environment")
+    cloud_environment = freevar(handler, "widgets")
     cloud_environment.matlab_license_arn.value = "27000@my-license-server"
     handler(None)   # must not raise -- the error is printed, not thrown
 

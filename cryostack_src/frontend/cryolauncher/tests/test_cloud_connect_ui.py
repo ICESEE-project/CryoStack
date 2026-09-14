@@ -727,21 +727,73 @@ def test_update_role_uses_the_same_stack_name_as_the_original_connection(tmp_pat
 
     cbs.update_role()
 
-    assert "#/stacks/update/template" in card.update_role_link.value
+    # regression fix: plain Stacks-list navigation, never the undocumented
+    # `#/stacks/update/template` deep link that caused the live AssumeRole
+    # denial on account 774888247882
+    assert "#/stacks/update/template" not in card.update_role_link.value
+    assert "#/stacks?" in card.update_role_link.value
     assert original_step.stack_name in card.update_role_link.value
 
 
-def test_update_role_preserves_external_id(tmp_path, card):
+def test_update_role_is_manual_and_explains_itself(tmp_path, card):
+    """Requirement 8/9: the panel must say this is a manual update and tell
+    the user to keep every existing parameter value."""
+    cbs = _connect_and_verify(tmp_path, card)
+
+    cbs.update_role()
+
+    text = card.update_role_link.value.lower()
+    assert "manual" in text
+    assert "use existing value" in text
+    assert "replace current template" in text
+
+
+def test_update_role_provides_the_template_url_as_plain_text_not_a_url_param(tmp_path, card):
+    cbs = _connect_and_verify(tmp_path, card)
+
+    cbs.update_role()
+
+    assert TEMPLATE_URL in card.update_role_link.value
+    # present as data (a <code> block), never as a query-string value on
+    # the navigation link itself
+    assert f"templateURL={TEMPLATE_URL}" not in card.update_role_link.value
+
+
+def test_update_role_link_never_contains_param_external_id(tmp_path, card):
+    cbs = _connect_and_verify(tmp_path, card)
+
+    cbs.update_role()
+
+    assert "param_ExternalId" not in card.update_role_link.value
+
+
+def test_update_role_link_never_contains_param_principal_arn(tmp_path, card):
+    cbs = _connect_and_verify(tmp_path, card)
+
+    cbs.update_role()
+
+    assert "param_CryoStackPrincipalArn" not in card.update_role_link.value
+
+
+def test_update_role_link_never_contains_the_actual_external_id_value(tmp_path, card):
     cbs = _connect_and_verify(tmp_path, card)
     original = _factory(tmp_path, runner=FakeAWS())().current()
 
     cbs.update_role()
 
-    href = card.update_role_link.value.split("href='", 1)[1].split("'", 1)[0]
-    href = href.replace("&amp;", "&")               # undo HTML-attribute escaping
-    fragment = href.split("#", 1)[1]
-    query = parse_qs(fragment.split("?", 1)[1])
-    assert query["param_ExternalId"] == [original.external_id]
+    from urllib.parse import quote as _quote
+    assert original.external_id not in card.update_role_link.value
+    assert _quote(original.external_id, safe="") not in card.update_role_link.value
+
+
+def test_update_role_link_never_contains_the_principal_arn_value(tmp_path, card):
+    cbs = _connect_and_verify(tmp_path, card)
+
+    cbs.update_role()
+
+    from urllib.parse import quote as _quote
+    assert PRINCIPAL not in card.update_role_link.value
+    assert _quote(PRINCIPAL, safe="") not in card.update_role_link.value
 
 
 def test_update_role_preserves_role_arn(tmp_path, card):

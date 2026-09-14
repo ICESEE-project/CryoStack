@@ -55,7 +55,11 @@ from dataclasses import dataclass
 
 from cryostack_src.workspace.identity import WorkspaceUser
 
-from .cloudformation import connection_stack_name, quick_create_url, quick_update_url
+from .cloudformation import (
+    connection_stack_name,
+    existing_stack_console_url,
+    quick_create_url,
+)
 from .defaults import derive_cloud_defaults
 from .models import AWSConnection
 from .principal import cryostack_principal_arn
@@ -80,6 +84,24 @@ class ConnectStep:
     stack_name: str
     principal_arn: str
     external_id: str
+
+
+@dataclass
+class UpdateStep:
+    """What the UI needs to render the manual "Update role permissions"
+    flow for an already-connected account.
+
+    Deliberately carries no ``principal_arn`` or ``external_id`` field --
+    unlike :class:`ConnectStep`, nothing here is meant to be dropped into a
+    browser URL. ``console_url`` is navigation only (region + stack-name
+    filter); ``template_url`` is shown as plain text for the user to paste
+    into AWS's own Update Stack wizard themselves.
+    """
+
+    connection: AWSConnection
+    console_url: str
+    template_url: str
+    stack_name: str
 
 
 class AWSOnboarding:
@@ -170,17 +192,35 @@ class AWSOnboarding:
             conn = self.store.create(region=(region or self.region).strip())
         return self._connect_step(conn)
 
-    def begin_update(self) -> ConnectStep:
-        """Build an *Update stack* deep link for the ACTIVE connection's
-        EXISTING stack -- for an account that already completed onboarding
-        (``status == "connected"``) whose stack was created from an older
+    def begin_update(self) -> UpdateStep:
+        """Point the ACTIVE connection's owner at their EXISTING stack for a
+        MANUAL CloudFormation update -- for an account that already
+        completed onboarding whose stack was created from an older
         published template than the one :meth:`template_url` now resolves
         to (e.g. a policy fix landed in the template after this account
         connected).
 
+        This is navigation, not automation: AWS documents URL-based
+        parameter pre-fill only for creating a brand-new stack
+        (quick-create links); there is no equivalent for updating an
+        existing one, and ``ExternalId`` is a ``NoEcho`` template parameter
+        that AWS's own Update Stack wizard always renders blank regardless
+        of any query string. An earlier revision invented an
+        ``#/stacks/update/template?stackId=...&param_ExternalId=...`` deep
+        link anyway; it caused a live AssumeRole regression (the trust
+        policy inputs it was supposed to reproduce did not survive whatever
+        that undocumented fragment actually resolved to). This method
+        therefore returns only a plain console link to the region's Stacks
+        list (filtered by name) plus the template URL as data -- neither
+        the connection's ExternalId nor the CryoStack principal ARN is
+        ever placed in a URL. The caller is expected to tell the user, in
+        plain UI text, to select the stack, choose Update, "Replace
+        current template", paste in the template URL, and keep every
+        existing parameter as "Use existing value".
+
         Never mints a new connection, ExternalId, or stack name, and never
-        touches the store -- pure read, exactly like :meth:`begin`. The
-        resulting stack Update keeps the SAME physical IAM role and Role
+        touches the store -- pure read, exactly like :meth:`begin`. A
+        completed manual update keeps the SAME physical IAM role and Role
         ARN, so nothing downstream (the stored ``role_arn``, any resource
         CryoStack already provisioned under it) needs to change; the only
         AWS-side effect is the role's policy gaining/losing statements per
@@ -194,22 +234,14 @@ class AWSOnboarding:
             raise OnboardingConfigError(
                 "No AWS connection to update. Click Connect AWS account first."
             )
-        principal = self.principal_arn()
         template_url = self.template_url()
         stack_name = connection_stack_name(conn.connection_id, attempt=conn.stack_attempt)
-        url = quick_update_url(
-            template_url=template_url,
-            external_id=conn.external_id,
-            region=conn.region,
-            principal_arn=principal,
-            stack_name=stack_name,
-        )
-        return ConnectStep(
+        console_url = existing_stack_console_url(region=conn.region, stack_name=stack_name)
+        return UpdateStep(
             connection=conn,
-            setup_url=url,
+            console_url=console_url,
+            template_url=template_url,
             stack_name=stack_name,
-            principal_arn=principal,
-            external_id=conn.external_id,
         )
 
     def retry_with_fresh_stack(self) -> ConnectStep:

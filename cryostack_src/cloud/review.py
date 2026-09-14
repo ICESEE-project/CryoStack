@@ -115,15 +115,26 @@ class CloudRunReview:
         return self.cost.display_total() if self.cost.available else "unavailable"
 
     def estimate_basis_lines(self) -> list[str]:
-        lines = [
-            f"AWS Fargate pricing in {self.region}",
+        # the pricing basis must reflect the ACTIVE resolved backend
+        # (``self.config``, the same CloudRunConfig the submit path uses) --
+        # never an unconditional "AWS Fargate pricing" regardless of what
+        # was actually selected/prepared.
+        is_ec2 = bool(getattr(self.config, "is_ec2", False))
+        if is_ec2:
+            # no EC2 pricing model is implemented yet -- say so plainly
+            # rather than mislabel the estimate as Fargate.
+            lines = ["EC2 cost estimate unavailable"]
+        else:
+            lines = [f"AWS Fargate pricing in {self.region}"]
+        lines.append(
             f"Expected runtime: ~{_round_minutes(self.expected_runtime_minutes)} "
-            f"min ({self.runtime_source})",
-        ]
-        if self.cost.available and self.cost.source_timestamp:
-            lines.append(f"Price checked: {self.cost.source_timestamp}")
-        elif not self.cost.available:
-            lines.append("Cost estimate unavailable")
+            f"min ({self.runtime_source})"
+        )
+        if not is_ec2:
+            if self.cost.available and self.cost.source_timestamp:
+                lines.append(f"Price checked: {self.cost.source_timestamp}")
+            elif not self.cost.available:
+                lines.append("Cost estimate unavailable")
         return lines
 
     def to_public_dict(self) -> dict:

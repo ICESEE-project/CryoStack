@@ -283,13 +283,145 @@ def ensure_compute_environment(
     return "updated"
 
 
+#: infix that appears ONLY in AWS Batch's own service-linked role ARN
+#: (``arn:aws:iam::<account>:role/aws-service-role/batch.amazonaws.com/
+#: AWSServiceRoleForBatch``) -- never in a regular IAM role such as
+#: CryoStack's own ``cryostack-batch-service-role``.
+_BATCH_SERVICE_LINKED_ROLE_INFIX = "/aws-service-role/batch.amazonaws.com/"
+
+
+def _is_batch_service_linked_role(service_role: str | None) -> bool:
+    """AWS Batch only allows ``UpdateComputeEnvironment`` to touch a MANAGED
+    compute environment's infrastructure fields (``instanceRole``/
+    ``instanceTypes``/``allocationStrategy``/``subnets``/
+    ``securityGroupIds``/...) when it runs on ITS OWN service-linked role.
+    On one created with an explicit regular IAM role (e.g. CryoStack's own
+    ``cryostack-batch-service-role``), every such update is rejected:
+    ``ClientException: ... can be updated only for Non-fargate Compute
+    Environment having a Batch Service Linked Role``."""
+    return _BATCH_SERVICE_LINKED_ROLE_INFIX in (service_role or "")
+
+
+def _poll_until_state(
+    describe: Callable[[], dict | None], *, state: str, what: str,
+    interval: float, timeout: float, sleep: Callable[[float], None],
+) -> dict:
+    """Poll until ``describe()`` reports ``state`` (e.g. ``"DISABLED"``) with
+    ``status == "VALID"`` -- the same VALID-before-proceeding rule as
+    :func:`_poll_batch_status`, but for a state transition rather than a
+    fresh create/update settling."""
+    attempts = max(1, int(timeout // max(1e-9, interval)) + 1)
+    last: dict = {}
+    for i in range(attempts):
+        res = describe() or None
+        if res:
+            last = res
+        if ((last.get("state") or "").upper() == state.upper()
+                and (last.get("status") or "").upper() == "VALID"):
+            return last
+        if (last.get("status") or "").upper() == "INVALID":
+            raise BatchResourceNotReady(
+                f"{what} is INVALID: "
+                f"{last.get('statusReason') or 'no reason reported'}")
+        if i < attempts - 1:
+            sleep(interval)
+    raise BatchResourceNotReady(
+        f"{what} did not reach state={state} within ~{int(timeout)}s "
+        f"(last state={last.get('state')!r} status={last.get('status')!r})")
+
+
+def _poll_until_gone(
+    describe: Callable[[], dict | None], *, what: str,
+    interval: float, timeout: float, sleep: Callable[[float], None],
+) -> None:
+    """Poll until ``describe()`` returns ``None`` -- AWS Batch deletes a
+    compute environment / job queue asynchronously."""
+    attempts = max(1, int(timeout // max(1e-9, interval)) + 1)
+    for i in range(attempts):
+        if describe() is None:
+            return
+        if i < attempts - 1:
+            sleep(interval)
+    raise BatchResourceNotReady(f"{what} was not deleted within ~{int(timeout)}s")
+
+
+def _replace_legacy_ec2_compute_environment(
+    config: AWSConfig, *, name: str, ec2_config: EC2ComputeConfig,
+    ready_interval: float, ready_timeout: float,
+    sleep: Callable[[float], None],
+) -> None:
+    """Blue/green replacement for an EC2 compute environment that was
+    created with a regular IAM role instead of AWS Batch's service-linked
+    role (see :func:`_is_batch_service_linked_role`) -- AWS Batch never
+    allows updating such an environment's infrastructure fields in place, so
+    the only supported fix is: detach it from its job queue, delete the
+    queue, delete the compute environment, and let the caller
+    (:func:`ensure_ec2_compute_environment`) recreate both fresh (which
+    never passes a custom service role, so AWS Batch uses/creates the
+    service-linked role).
+
+    Scoped strictly to the CryoStack-owned compute-environment name passed
+    in (``name``) and the queue name AWS Batch's own
+    ``computeEnvironmentOrder`` says references it -- never touches any
+    other Batch resource, and this function only ever runs after the caller
+    has already confirmed ``name`` is a legacy-role environment.
+    """
+    queue_name = job_queue_name(COMPUTE_MODE_EC2, ec2_config.capacity)
+    q_what = f"job queue {queue_name}"
+    ce_what = f"compute environment {name}"
+
+    queue = _current_job_queue(config, queue_name)
+    if queue is not None and name in _compute_env_in_order(
+            queue.get("computeEnvironmentOrder")):
+        if (queue.get("state") or "").upper() != "DISABLED":
+            code, stdout, stderr = run_aws(
+                config, ["batch", "update-job-queue",
+                         "--job-queue", queue_name, "--state", "DISABLED"])
+            _require_success(
+                code, stdout, stderr, what="batch update-job-queue (disable)")
+        _poll_until_state(
+            lambda: _current_job_queue(config, queue_name), state="DISABLED",
+            what=q_what, interval=ready_interval, timeout=ready_timeout,
+            sleep=sleep,
+        )
+        code, stdout, stderr = run_aws(
+            config, ["batch", "delete-job-queue", "--job-queue", queue_name])
+        _require_success(code, stdout, stderr, what="batch delete-job-queue")
+        _poll_until_gone(
+            lambda: _current_job_queue(config, queue_name), what=q_what,
+            interval=ready_interval, timeout=ready_timeout, sleep=sleep,
+        )
+
+    current = _current_compute_environment(config, name)
+    if current is not None:
+        if (current.get("state") or "").upper() != "DISABLED":
+            code, stdout, stderr = run_aws(
+                config, ["batch", "update-compute-environment",
+                         "--compute-environment", name, "--state", "DISABLED"])
+            _require_success(
+                code, stdout, stderr,
+                what="batch update-compute-environment (disable)")
+        _poll_until_state(
+            lambda: _current_compute_environment(config, name),
+            state="DISABLED", what=ce_what, interval=ready_interval,
+            timeout=ready_timeout, sleep=sleep,
+        )
+        code, stdout, stderr = run_aws(
+            config, ["batch", "delete-compute-environment",
+                     "--compute-environment", name])
+        _require_success(code, stdout, stderr, what="batch delete-compute-environment")
+        _poll_until_gone(
+            lambda: _current_compute_environment(config, name), what=ce_what,
+            interval=ready_interval, timeout=ready_timeout, sleep=sleep,
+        )
+
+
 def ensure_ec2_compute_environment(
     config: AWSConfig,
     *,
     subnets: list[str],
     security_groups: list[str],
     instance_role_arn: str,
-    service_role_arn: str | None = None,
     ec2_config: EC2ComputeConfig = EC2ComputeConfig(),
     name: str | None = None,
     ready_interval: float = BATCH_READY_INTERVAL_SECONDS,
@@ -301,10 +433,21 @@ def ensure_ec2_compute_environment(
     capacity so On-Demand and Spot environments never collide or overwrite
     each other's ``type``/``allocationStrategy``.
 
+    Never passes an explicit ``--service-role``: AWS Batch's recommended,
+    supported behaviour for a MANAGED compute environment is to use/create
+    its own service-linked role (``AWSServiceRoleForBatch``), which is also
+    the ONLY role AWS Batch will let an in-place ``UpdateComputeEnvironment``
+    touch infrastructure fields on (see
+    :func:`_is_batch_service_linked_role`). If an existing environment under
+    this name was created with a regular IAM role instead (a stale/legacy
+    environment from before this was fixed), it is migrated -- deleted and
+    recreated -- via :func:`_replace_legacy_ec2_compute_environment` rather
+    than sent an update AWS is guaranteed to reject.
+
     Separate from the Fargate compute environment -- never renamed / reused /
-    overwritten. Returns ``created`` / ``updated`` / ``reused``, VALID before
-    it returns. Drift = maxvCpus / subnets / security groups / instance types /
-    instance role.
+    overwritten. Returns ``created`` / ``updated`` / ``reused`` /
+    ``migrated``, VALID before it returns. Drift = maxvCpus / subnets /
+    security groups / instance types / instance role.
     """
     name = name or EC2_COMPUTE_ENVIRONMENT_NAME
     what = f"compute environment {name}"
@@ -321,6 +464,17 @@ def ensure_ec2_compute_environment(
     )
     current = _current_compute_environment(config, name)
 
+    migrated = False
+    if current is not None and not _is_batch_service_linked_role(
+            current.get("serviceRole")):
+        _replace_legacy_ec2_compute_environment(
+            config, name=name, ec2_config=ec2_config,
+            ready_interval=ready_interval, ready_timeout=ready_timeout,
+            sleep=sleep,
+        )
+        current = None
+        migrated = True
+
     if current is None:
         args = [
             "batch", "create-compute-environment",
@@ -329,12 +483,10 @@ def ensure_ec2_compute_environment(
             "--state", "ENABLED",
             "--compute-resources", json.dumps(desired),
         ]
-        if service_role_arn:
-            args += ["--service-role", service_role_arn]
         code, stdout, stderr = run_aws(config, args)
         _require_success(code, stdout, stderr, what="batch create-compute-environment")
         _wait()
-        return "created"
+        return "migrated" if migrated else "created"
 
     cr = current.get("computeResources") or {}
     drift = (
@@ -601,7 +753,6 @@ class EC2Provisioning:
 
     instance_role_arn: str
     ec2_config: EC2ComputeConfig = field(default_factory=EC2ComputeConfig)
-    service_role_arn: str | None = None
     issm_job_config: EC2JobConfig | None = None
     icepack_job_config: EC2JobConfig | None = None
     icesee_job_config: EC2JobConfig | None = None
@@ -655,6 +806,13 @@ def ensure_batch_resources(
         return result
 
     def _bucket(name: str, outcome: str) -> None:
+        if outcome == "migrated":
+            result.updated.append(name)
+            result.messages.append(
+                f"{name}: replaced (was using a custom Batch service role; "
+                "recreated on the AWS Batch service-linked role)"
+            )
+            return
         {"created": result.created, "updated": result.updated,
          "reused": result.reused}[outcome].append(name)
 
@@ -741,7 +899,6 @@ def ensure_batch_resources(
                 # through so the default path is unaffected.
                 subnets=subnets, security_groups=security_groups,
                 instance_role_arn=ec2.instance_role_arn,
-                service_role_arn=ec2.service_role_arn,
                 ec2_config=_ec2_cfg, name=_ce_name, **_ready,
             ))
             _bucket(_q_label, ensure_job_queue(

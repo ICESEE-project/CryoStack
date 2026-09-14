@@ -332,15 +332,17 @@ class EC2JobConfig:
 
     No Fargate-only knobs: no ``ephemeral_gib`` (EC2 uses the instance's own
     disk), no ``assign_public_ip`` (that is compute-environment level on EC2),
-    no ``platform_version``. The Fargate vCPU/memory compatibility table is
-    NOT applied -- on EC2 ``memory`` is just the container's hard limit."""
+    no ``platform_version``, and no ``cpu_architecture``/
+    ``operating_system_family`` -- those describe ``runtimePlatform``, which
+    AWS Batch does not accept on an EC2 job definition; the instance's
+    architecture/OS come from the compute environment's instance types
+    instead. The Fargate vCPU/memory compatibility table is NOT applied --
+    on EC2 ``memory`` is just the container's hard limit."""
 
     vcpu: str = "2"
     memory_mib: str = "8192"
     timeout_seconds: int = 3600
     attempts: int = 1
-    cpu_architecture: str = "X86_64"
-    operating_system_family: str = "LINUX"
 
 
 DEFAULT_EC2_JOB_CONFIG = EC2JobConfig()
@@ -486,11 +488,16 @@ def ec2_container_properties_payload(
 ) -> dict:
     """``containerProperties`` for an **EC2** CryoStack job definition.
 
-    Same image / command / roles / resourceRequirements / runtimePlatform /
-    awslogs / Secrets Manager wiring as Fargate, minus every Fargate-only key:
-    no ``networkConfiguration``, no ``fargatePlatformConfiguration``, no
-    ``ephemeralStorage``. The MATLAB-license secret path (``executionRoleArn``
-    + ``secrets``) is identical to Fargate.
+    Same image / command / roles / resourceRequirements / awslogs / Secrets
+    Manager wiring as Fargate, minus every Fargate-only key: no
+    ``networkConfiguration``, no ``fargatePlatformConfiguration``, no
+    ``ephemeralStorage``, and no ``runtimePlatform`` -- AWS Batch rejects
+    ``runtimePlatform`` on a job definition registered with
+    ``platformCapabilities=["EC2"]`` (``ClientException: runtimePlatform is
+    not applicable for EC2``); the CPU architecture/OS for an EC2 job is
+    whatever the compute environment's instance types provide, not a
+    per-job-definition setting. The MATLAB-license secret path
+    (``executionRoleArn`` + ``secrets``) is identical to Fargate.
 
     ``compute`` (optional) supplies the GPU resource requirement when its
     accelerator is ``"gpu"`` -- purely additive; never removes VCPU/MEMORY.
@@ -513,10 +520,6 @@ def ec2_container_properties_payload(
         "jobRoleArn": job_role_arn,
         "executionRoleArn": execution_role_arn,
         "resourceRequirements": resource_requirements,
-        "runtimePlatform": {
-            "cpuArchitecture": config.cpu_architecture,
-            "operatingSystemFamily": config.operating_system_family,
-        },
         "logConfiguration": {
             "logDriver": "awslogs",
             "options": {

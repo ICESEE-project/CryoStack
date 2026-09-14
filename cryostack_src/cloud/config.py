@@ -167,6 +167,7 @@ def resolve_cloud_config(
             bucket_error = str(err)
     # backward compatible: a config that never carried the field -> Fargate
     compute_mode = normalize_compute_mode(aws_batch_compute)
+    ec2_cfg = ec2 or EC2ComputeConfig()
     return CloudRunConfig(
         provider=provider,
         region=(region or "").strip() or DEFAULT_CLOUD_REGION,
@@ -174,13 +175,19 @@ def resolve_cloud_config(
         base_prefix=base_prefix,
         bucket_error=bucket_error,
         profile=(profile or "").strip() or None,
+        # capacity/accelerator/topology only ever change these derived
+        # defaults while compute_mode == "ec2" -- Fargate's names are
+        # unaffected either way.
         job_queue=((job_queue or "").strip()
-                   or job_queue_name(compute_mode)),
+                   or job_queue_name(compute_mode, ec2_cfg.capacity)),
         job_definition=((job_definition or "").strip()
-                        or job_definition_name(model, compute_mode)),
+                        or job_definition_name(
+                            model, compute_mode,
+                            accelerator=ec2_cfg.accelerator,
+                            topology=ec2_cfg.topology)),
         aws_batch_compute=compute_mode,
         fargate=fargate or DEFAULT_ISSM_JOB_CONFIG,
-        ec2=ec2 or EC2ComputeConfig(),
+        ec2=ec2_cfg,
     )
 
 

@@ -109,6 +109,33 @@ def test_missing_cost_estimate_does_not_block_launch():
     assert "Cost estimate unavailable" in " ".join(r.estimate_basis_lines())
 
 
+# -- cost basis must follow the ACTIVE resolved backend, never a
+# hardcoded "AWS Fargate pricing" regardless of what was selected ────────
+def test_fargate_review_states_fargate_pricing_basis():
+    r = _review()   # _cfg() default is Fargate
+    basis = " ".join(r.estimate_basis_lines())
+    assert "AWS Fargate pricing" in basis
+    assert "EC2" not in basis
+
+
+def test_ec2_review_never_claims_fargate_pricing():
+    from cryostack_src.cloud.estimate.models import CloudCostEstimate
+
+    ec2_cfg = resolve_cloud_config(
+        bucket="cryostack-runs-774888247882", model="icepack",
+        region="us-east-2", aws_batch_compute="ec2")
+    r = _review(
+        config=ec2_cfg, model="icepack",
+        cost=CloudCostEstimate(region="us-east-2", available=False,
+                                warning="EC2 cost estimate unavailable"),
+    )
+    basis = " ".join(r.estimate_basis_lines())
+    assert "AWS Fargate pricing" not in basis
+    assert "EC2 cost estimate unavailable" in basis
+    # never a duplicate/contradictory generic line alongside it
+    assert basis.count("unavailable") == 1
+
+
 # -- canonical resources --------------------------------------------
 def test_review_resources_are_the_canonical_config_values():
     cfg = _cfg()

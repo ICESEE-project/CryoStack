@@ -511,30 +511,31 @@ def test_begin_update_reuses_the_exact_stack_role_and_identity_of_a_connected_ac
 
     updated = ob.begin_update()
 
-    assert updated.stack_name == first.stack_name           # same stack
-    assert updated.external_id == first.external_id         # same identity
+    assert updated.stack_name == first.stack_name                    # same stack
+    assert updated.connection.external_id == first.external_id       # same identity
     after = ob.current()
     assert after.role_arn == connected.role_arn              # untouched
     assert after.status == connected.status                  # untouched
     assert after.connection_id == connected.connection_id    # same connection
 
 
-def test_begin_update_url_targets_update_template_not_quickcreate(tmp_path):
-    """The update link must perform CloudFormation UpdateStack, never
-    CreateStack -- CreateStack against an existing stack name fails with
-    AlreadyExistsException, which is the exact dead end this fixes."""
+def test_begin_update_is_plain_navigation_not_a_deep_link(tmp_path):
+    """Regression fix: the earlier `#/stacks/update/template?stackId=...`
+    deep link is not a documented AWS console feature and caused a live
+    AssumeRole regression on account 774888247882. begin_update() must
+    return a plain Stacks-list console link plus the template URL as data
+    -- never a URL asserting it can auto-fill ExternalId/PrincipalArn."""
     ob = _onboarding(tmp_path, runner=FakeAWS("713938953301"))
     ob.begin()
     ob.verify(role_arn=ROLE_A)
 
     updated = ob.begin_update()
 
-    assert "#/stacks/update/template" in updated.setup_url
-    assert "quickcreate" not in updated.setup_url
-    query = parse_qs(updated.setup_url.split("?", 1)[1].split("#", 1)[-1].split("?", 1)[-1])
-    assert query["stackId"] == [updated.stack_name]
-    assert query["templateURL"] == [TEMPLATE_URL]
-    assert query["param_ExternalId"] == [updated.external_id]
+    assert "#/stacks?" in updated.console_url
+    assert "update/template" not in updated.console_url
+    assert "stackId" not in updated.console_url
+    assert updated.template_url == TEMPLATE_URL
+    assert updated.stack_name in updated.console_url
 
 
 def test_begin_update_never_mutates_the_stored_connection(tmp_path):
@@ -557,6 +558,92 @@ def test_begin_update_requires_a_configured_template_url(tmp_path, monkeypatch):
     ob.store.create(region="us-east-2")   # a connection exists; no template URL
     with pytest.raises(OnboardingConfigError):
         ob.begin_update()
+
+
+# -- regression audit: no trust-sensitive value ever reaches a URL ---------
+def test_update_url_contains_no_external_id_parameter(tmp_path):
+    ob = _onboarding(tmp_path, runner=FakeAWS("774888247882"))
+    ob.begin()
+    ob.verify(role_arn=ROLE_B)
+
+    updated = ob.begin_update()
+
+    assert "param_ExternalId" not in updated.console_url
+    assert "ExternalId" not in updated.console_url
+
+
+def test_update_url_contains_no_principal_arn_parameter(tmp_path):
+    ob = _onboarding(tmp_path, runner=FakeAWS("774888247882"))
+    ob.begin()
+    ob.verify(role_arn=ROLE_B)
+
+    updated = ob.begin_update()
+
+    assert "param_CryoStackPrincipalArn" not in updated.console_url
+    assert "PrincipalArn" not in updated.console_url
+
+
+def test_the_actual_external_id_value_never_appears_in_the_update_url(tmp_path):
+    """Stronger than checking the parameter NAME is absent: the literal
+    ExternalId VALUE (raw or percent-encoded) must not appear anywhere in
+    the URL, in case of some other accidental leak path."""
+    ob = _onboarding(tmp_path, runner=FakeAWS("774888247882"))
+    ob.begin()
+    ob.verify(role_arn=ROLE_B)
+    external_id = ob.current().external_id
+
+    updated = ob.begin_update()
+
+    from urllib.parse import quote as _quote
+    assert external_id not in updated.console_url
+    assert _quote(external_id, safe="") not in updated.console_url
+    assert external_id not in updated.template_url
+
+
+def test_the_principal_arn_value_never_appears_in_the_update_url(tmp_path):
+    ob = _onboarding(tmp_path, runner=FakeAWS("774888247882"))
+    ob.begin()
+    ob.verify(role_arn=ROLE_B)
+
+    updated = ob.begin_update()
+
+    from urllib.parse import quote as _quote
+    assert PRINCIPAL not in updated.console_url
+    assert _quote(PRINCIPAL, safe="") not in updated.console_url
+    assert PRINCIPAL not in updated.template_url
+
+
+def test_begin_update_does_not_mutate_the_stored_connection_at_all(tmp_path):
+    """Every field, not just the ones exercised above -- a full snapshot
+    comparison before and after begin_update()."""
+    ob = _onboarding(tmp_path, runner=FakeAWS("774888247882"))
+    ob.begin()
+    ob.verify(role_arn=ROLE_B)
+    before = ob.current()
+
+    ob.begin_update()
+
+    after = ob.current()
+    assert after == before
+
+
+def test_connection_identity_fields_survive_begin_update_unchanged(tmp_path):
+    """connection_id, external_id, role_arn, and stack_name must all be
+    exactly what they were before Update role permissions was clicked."""
+    ob = _onboarding(tmp_path, runner=FakeAWS("774888247882"))
+    created = ob.begin()
+    ob.verify(role_arn=ROLE_B)
+    before = ob.current()
+
+    updated = ob.begin_update()
+
+    assert updated.connection.connection_id == before.connection_id
+    assert updated.connection.external_id == before.external_id
+    assert updated.connection.role_arn == before.role_arn == ROLE_B
+    assert updated.stack_name == created.stack_name
+    assert ob.current().connection_id == before.connection_id
+    assert ob.current().external_id == before.external_id
+    assert ob.current().role_arn == before.role_arn
 
 
 def test_pending_replacement_rolled_back_stack_gets_a_fresh_name_transactionally(tmp_path):

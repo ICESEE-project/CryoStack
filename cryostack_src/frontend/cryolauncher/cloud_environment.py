@@ -63,6 +63,12 @@ class CloudEnvironmentWidgets:
     job_name: W.Text
     matlab_license_arn: W.Text
     matlab_license_save_button: W.Button
+    #: the whole MATLAB license row (caption + field + save button) --
+    #: toggled independently of the Advanced accordion, on whether the
+    #: SELECTED WORKFLOW needs MATLAB (see
+    #: cryostack_src.models.workflow_capabilities), never on Basic/Advanced
+    #: mode alone.
+    matlab_license_box: "W.VBox"
 
     #: Advanced: AWS Batch compute environment -- "fargate" (default) or "ec2"
     compute_mode: W.Dropdown
@@ -687,6 +693,59 @@ def set_run_estimate_view(
 def _yn(ready: bool) -> str:
     color = "#2f8f4e" if ready else "#b23c3c"
     return f"<span style='color:{color};'>{'Ready' if ready else 'Not ready'}</span>"
+
+
+def wire_matlab_license_widgets(widgets: "CloudEnvironmentWidgets", *, owner, log_output) -> None:
+    """Prefill ``widgets.matlab_license_arn`` from the owner's AWS connection
+    and wire ``widgets.matlab_license_save_button`` to save it back.
+
+    The MATLAB license ARN is ONE piece of state per connected AWS account
+    (an ``AWSConnection.matlab_license_secret_arn``) -- never a separate
+    implementation per gateway. Every cloud UI that shows
+    ``widgets.matlab_license_box`` (CryoLauncher's own Cloud panel, ICESEE's)
+    calls this ONE function so a direct ISSM run and an ICESEE run using
+    ISSM configure and save the license identically. The license VALUE
+    itself never passes through here or is rendered anywhere -- only the
+    non-secret Secrets Manager ARN.
+
+    ``owner`` is the :class:`~cryostack_src.workspace.identity.WorkspaceUser`
+    whose connection record this ARN is read from / saved to.
+    """
+    from cryostack_src.cloud.connect import AWSConnectionStore
+
+    def _store() -> AWSConnectionStore:
+        return AWSConnectionStore(user=owner)
+
+    try:
+        existing = _store().load()
+        if existing is not None:
+            widgets.matlab_license_arn.value = existing.matlab_license_secret_arn
+    except Exception:
+        pass    # unauthenticated / dev-mode build: leave the field blank
+
+    def _save(_=None) -> None:
+        from cryostack_src.cloud.matlab_license import assert_not_a_license_value
+
+        arn = (widgets.matlab_license_arn.value or "").strip()
+        try:
+            assert_not_a_license_value(arn)
+        except ValueError as e:
+            with log_output:
+                print("[cloud][ERROR]", e)
+            return
+        store = _store()
+        connection = store.load()
+        if connection is None:
+            with log_output:
+                print("[cloud][ERROR] Connect an AWS account before setting "
+                      "a MATLAB license ARN.")
+            return
+        store.save(connection.with_matlab_license_secret(arn))
+        with log_output:
+            print("[cloud] MATLAB license ARN saved." if arn
+                  else "[cloud] MATLAB license ARN cleared.")
+
+    widgets.matlab_license_save_button.on_click(_save)
 
 
 def set_review_panel(widgets: "CloudEnvironmentWidgets", review) -> None:
@@ -1337,6 +1396,23 @@ def build_cloud_environment_card(
             job_name_widget,
             compute_mode_widget,
             ec2_options_box,
+        ],
+        layout=W.Layout(
+            width="100%",
+            gap="5px",
+            padding="6px 0",
+        ),
+    )
+
+    # Independent of the Advanced accordion -- and of Basic/Advanced mode --
+    # so a workflow that needs MATLAB (ISSM, or an ICESEE run whose forecast
+    # model is ISSM) always shows this field, even in Basic mode. Visibility
+    # is set by the caller (the gateway) from
+    # cryostack_src.models.workflow_capabilities, not from a Basic/Advanced
+    # or model-name check here. Defaults hidden; the gateway sets it
+    # correctly on first render.
+    matlab_license_box = W.VBox(
+        [
             matlab_license_caption,
             matlab_license_arn_widget,
             matlab_license_save_button,
@@ -1344,7 +1420,7 @@ def build_cloud_environment_card(
         layout=W.Layout(
             width="100%",
             gap="5px",
-            padding="6px 0",
+            display="none",
         ),
     )
 
@@ -1439,6 +1515,7 @@ def build_cloud_environment_card(
             region_widget,
             aws_account["aws_account_section"],
             advanced,
+            matlab_license_box,
             infra_heading,
             status_panel,
             actions,
@@ -1474,6 +1551,7 @@ def build_cloud_environment_card(
         job_name=job_name_widget,
         matlab_license_arn=matlab_license_arn_widget,
         matlab_license_save_button=matlab_license_save_button,
+        matlab_license_box=matlab_license_box,
 
         compute_mode=compute_mode_widget,
         ec2_max_vcpus=ec2_max_vcpus_widget,

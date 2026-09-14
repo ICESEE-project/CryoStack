@@ -68,7 +68,15 @@ def cloud_run_preflight(
         )
         return reasons
 
-    if m == "issm" and not matlab_license_configured:
+    # single authoritative answer to "does this workflow need MATLAB?" --
+    # never "model == issm" duplicated here and in the UI/review layers,
+    # which would miss e.g. an ICESEE run whose forecast model is ISSM.
+    from cryostack_src.models.workflow_capabilities import (
+        resolve_workflow_capabilities,
+    )
+
+    capabilities = resolve_workflow_capabilities(model=m)
+    if capabilities.requires_matlab_license and not matlab_license_configured:
         reasons.append(_NO_MATLAB_LICENSE)
 
     # AWS Batch compute-mode compatibility matrix lives in ONE place

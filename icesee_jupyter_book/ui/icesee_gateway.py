@@ -97,7 +97,9 @@ from cryostack_src.frontend.cryolauncher.cloud_environment import (
     build_cloud_environment_card,
     set_cloud_status,
     set_run_estimate_view,
+    wire_matlab_license_widgets,
 )
+from cryostack_src.models.workflow_capabilities import resolve_workflow_capabilities
 from cryostack_src.frontend.cryolauncher.cloud_connect_runtime import build_aws_connect_callbacks
 from cryostack_src.frontend.cryolauncher.cloud_runtime import build_cloud_environment_ops
 from cryostack_src.cloud.review import InfrastructureReadiness
@@ -3002,11 +3004,29 @@ def build_icesee_ui():
                 ("Compute backend", backend_label),
                 ("Model environment", model_environment),
             ]
+            _icesee_forecast_model = example_dd.value
             try:
                 identity = da_identity_from_params(build_config_from_widgets())
                 rows += identity.summary_rows()
+                _icesee_forecast_model = (
+                    identity.forecast_model or identity.example_name
+                    or example_dd.value)
             except Exception:
                 pass    # a mid-edit params.yaml must never break the summary
+
+            # MATLAB license visibility is driven EXCLUSIVELY by the single
+            # workflow-capability resolver -- never a duplicated
+            # "model == issm" check -- so an ICESEE run whose forecast model
+            # is ISSM (alone or coupled with Icepack) shows the same field a
+            # direct ISSM run does. Independent of Basic/Advanced mode;
+            # hiding it never clears the value (see wire_matlab_license_
+            # widgets). Reuses the SAME identity this Run Plan row already
+            # computed above -- no second parse of the params.
+            _icesee_capabilities = resolve_workflow_capabilities(
+                model="icesee", forecast_model=_icesee_forecast_model)
+            icesee_cloud_environment.matlab_license_box.layout.display = (
+                "" if _icesee_capabilities.requires_matlab_license else "none")
+
             # Same row markup CryoLauncher's own Run Plan summary already
             # uses (icesee-summary / icesee-summary-k) -- not a second,
             # ICESEE-only convention -- so both apps share one labeled-row
@@ -3088,6 +3108,19 @@ def build_icesee_ui():
         icesee_cloud_environment.change_verify_button.on_click(icesee_aws_connect.change_verify)
         icesee_cloud_environment.change_cancel_button.on_click(icesee_aws_connect.change_cancel)
         icesee_aws_connect.refresh()
+
+        # -- MATLAB license: the SAME shared field/save behavior
+        # CryoLauncher's own Cloud panel uses (cloud_environment.
+        # wire_matlab_license_widgets) -- one implementation, so a direct
+        # ISSM run and an ICESEE run using ISSM configure/save the license
+        # identically. Visibility is wired below in
+        # _update_icesee_run_plan_summary, driven exclusively by
+        # resolve_workflow_capabilities(...).requires_matlab_license.
+        wire_matlab_license_widgets(
+            icesee_cloud_environment,
+            owner=resolve_workspace_user(require_authenticated=False),
+            log_output=log_out,
+        )
 
         # =========================================================
         # INFRASTRUCTURE readiness + Prepare Cloud -- the SAME generic,
@@ -3206,6 +3239,10 @@ def build_icesee_ui():
                 # against the verified runtime contract
                 # (ICESEE_VERIFIED_EXAMPLES / ICESEE_VERIFIED_MAX_NP).
                 example_name=identity.example_name or example_dd.value,
+                matlab_license_configured=bool(
+                    getattr(execution.matlab_license, "configured", False)),
+                compute_mode=getattr(
+                    icesee_cloud_environment.compute_mode, "value", "fargate"),
             )
 
         def _on_icesee_review_click(_=None):

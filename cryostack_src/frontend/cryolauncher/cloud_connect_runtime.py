@@ -34,6 +34,7 @@ from cryostack_src.cloud.connect import OnboardingConfigError, PrincipalNotConfi
 from cryostack_src.cloud.connect.assume_role import AssumeRoleError
 from cryostack_src.frontend.cryolauncher.cloud_environment import (
     escape_attr,
+    escape_text,
     set_aws_account_view,
     set_change_account_panel,
 )
@@ -369,12 +370,14 @@ def build_aws_connect_callbacks(
 
     # -- Update role permissions: connected only, non-destructive ----------
     def update_role(_=None) -> None:
-        """Open a CloudFormation *Update stack* link for the ACTIVE
-        connection's EXISTING stack -- same stack name, same ExternalId,
-        same Role ARN. Never creates a second connection, never disconnects
-        or re-verifies the current one, never rotates any credential; a
-        pure local URL computation, exactly like :func:`connect` for the
-        initial Quick Create link."""
+        """Point at the ACTIVE connection's EXISTING stack for a MANUAL
+        CloudFormation update -- same stack name, same ExternalId, same
+        Role ARN, all unchanged. This is navigation only: neither the
+        ExternalId nor the CryoStack principal ARN is ever placed in a
+        URL (see :meth:`AWSOnboarding.begin_update`'s docstring for why an
+        earlier auto-fill deep link was removed after a live regression).
+        Never creates a second connection, never disconnects or
+        re-verifies the current one, never rotates any credential."""
         if _busy["on"]:
             return
         try:
@@ -394,12 +397,26 @@ def build_aws_connect_callbacks(
             _log("ERROR", err)
             return
         widgets.update_role_link.value = (
-            f"<a href='{escape_attr(step.setup_url)}' target='_blank' rel='noopener' "
-            "style='font-size:12px;font-weight:600;'>▶ Open CloudFormation "
-            "Update Stack</a>"
+            "<div style='font-size:11px;color:#66758d;line-height:1.55;"
+            "background:#f6f8fb;border:1px solid #e4e9f0;border-radius:6px;"
+            "padding:8px;margin-top:4px;'>"
+            "<b>Manual CloudFormation update</b> -- CryoStack cannot apply "
+            "this for you. "
+            f"<a href='{escape_attr(step.console_url)}' target='_blank' "
+            "rel='noopener' style='font-weight:600;'>▶ Open your stack in "
+            "the AWS Console</a><br>"
+            f"Select stack <code>{escape_text(step.stack_name)}</code>, "
+            "choose <b>Update</b> &rarr; <b>Replace current template</b>, "
+            "paste this template URL:<br>"
+            f"<code style='word-break:break-all;'>{escape_text(step.template_url)}</code><br>"
+            "and leave every existing parameter as <b>Use existing value</b> "
+            "-- do not change the ExternalId or CryoStack principal "
+            "parameters."
+            "</div>"
         )
-        _log("update — opening the current template against the existing "
-             f"stack ({step.stack_name}); same role, same ExternalId")
+        _log("update — opening the existing stack's console page "
+             f"({step.stack_name}) for a manual template update; "
+             "same role, same ExternalId, nothing auto-applied")
 
     return AWSConnectCallbacks(
         connect=connect,

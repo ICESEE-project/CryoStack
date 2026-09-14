@@ -339,7 +339,6 @@ class AWSDriver(
                 ec2_provisioning = EC2Provisioning(
                     instance_role_arn=instance_role,
                     ec2_config=ec2_config or EC2ComputeConfig(),
-                    service_role_arn=getattr(iam, "batch_service_role", None),
                 )
 
         result = ensure_batch_resources(

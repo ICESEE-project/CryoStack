@@ -74,7 +74,7 @@ from urllib.parse import quote, urlencode
 #: LOGICAL id -- no longer the role's PHYSICAL name (see module docstring).
 EXECUTION_ROLE_NAME = "CryoStackExecutionRole"
 DEFAULT_STACK_NAME = "cryostack-access"
-TEMPLATE_VERSION = "2026-09-11"
+TEMPLATE_VERSION = "2026-09-14"
 
 _STACK_NAME_MAX_LENGTH = 128
 _STACK_SLUG_RE = re.compile(r"[^a-z0-9]+")
@@ -236,18 +236,38 @@ def _permissions_policy() -> dict:
                 "Resource": sub(f"arn:{partition}:batch:*:{account}:job/*"),
             },
             # -- CloudWatch Logs: read job output; create the group ------
+            #
+            # `logs:GetLogEvents` is the ONLY CloudWatch Logs read operation
+            # this codebase calls (cryostack_src/cloud/legacy/aws_batch.py's
+            # `batch_logs` -- `aws logs get-log-events`); it does not use
+            # `FilterLogEvents`, `DescribeLogStreams` or `DescribeLogGroups`,
+            # so those are intentionally NOT granted (least privilege -- an
+            # unused permission is a permission that cannot regress into a
+            # future overbroad grant). The stream/log-group NAME it reads
+            # comes from Batch's own `DescribeJobs` (`CryoStackBatchRead`
+            # above), never from a `Describe*`/`Filter*` Logs call.
+            #
+            # Two resource families, both granted -- `batch_logs` currently
+            # reads the AWS Batch DEFAULT group (`/aws/batch/job`, used
+            # whenever a job definition's `logConfiguration` does not
+            # override `awslogs-group`, and the group this permission fix
+            # was written against: a live AccessDeniedException on
+            # `logs:GetLogEvents` for
+            # `log-group:/aws/batch/job:log-stream:icepack/default/...`),
+            # while newly-registered job definitions
+            # (`batch_config.py:container_properties_payload`) explicitly
+            # set `awslogs-group` to the CryoStack-managed
+            # `/cryostack/batch/<model>` group `ensure_log_group` creates.
+            # Granting both means log reads work against either, without
+            # widening past AWS Batch's own log-group namespaces.
             {
                 "Sid": "CryoStackLogsRead",
                 "Effect": "Allow",
-                "Action": [
-                    "logs:GetLogEvents",
-                    "logs:FilterLogEvents",
-                    "logs:DescribeLogStreams",
-                    "logs:DescribeLogGroups",
+                "Action": "logs:GetLogEvents",
+                "Resource": [
+                    sub(f"arn:{partition}:logs:*:{account}:log-group:/cryostack/*"),
+                    sub(f"arn:{partition}:logs:*:{account}:log-group:/aws/batch/job:*"),
                 ],
-                "Resource": sub(
-                    f"arn:{partition}:logs:*:{account}:log-group:/cryostack/*"
-                ),
             },
             {
                 "Sid": "CryoStackLogsGroup",
@@ -524,55 +544,49 @@ def quick_create_url(
 
 
 # ---------------------------------------------------------------------------
-# Quick Update URL -- for an EXISTING, already-created stack
+# Existing-stack console link -- navigation only, no pre-filled parameters
 # ---------------------------------------------------------------------------
-def quick_update_url(
-    *,
-    template_url: str,
-    external_id: str,
-    region: str,
-    principal_arn: str,
-    stack_name: str,
-) -> str:
-    """A CloudFormation console *Update stack* deep link for a stack that
-    already exists, re-pointed at the CURRENT ``template_url``.
+def existing_stack_console_url(*, region: str, stack_name: str) -> str:
+    """A CloudFormation console link to the region's Stacks list, filtered
+    to the existing stack by name. Navigation only -- deliberately carries
+    NO ExternalId, NO CryoStackPrincipalArn, and no other trust-sensitive
+    value in the URL at all.
 
-    Quick Create (:func:`quick_create_url`) always performs ``CreateStack``
-    -- it fails with ``AlreadyExistsException`` if the target stack name is
-    already taken, so it can never be used to pick up a template change on
-    an account that already completed onboarding. This builds the
-    console's *Update* deep link instead (``#/stacks/update/template``,
-    identical query-parameter shape to Quick Create otherwise), which
-    performs ``UpdateStack`` against the SAME stack -- the same physical
-    IAM role, same Role ARN, same ExternalId -- so a connected user never
-    has to disconnect, reconnect, or re-paste a new Role ARN just to pick
-    up a permissions fix. The console still shows a full changeset review
-    before the user clicks **Update stack**.
+    An earlier revision tried to build an *Update stack* deep link
+    (``#/stacks/update/template?stackId=...&param_ExternalId=...``) that
+    pre-filled the SAME ExternalId/PrincipalArn Quick Create uses. That
+    scheme is **not** a documented or supported AWS CloudFormation console
+    feature -- AWS documents URL-based parameter pre-fill only for
+    *creating* a brand-new stack (quick-create links); there is no
+    equivalent for updating an existing one, and ``ExternalId`` is a
+    ``NoEcho`` template parameter, which the real Update Stack wizard
+    always renders blank regardless of the query string. Using it caused a
+    live AssumeRole regression on a connected account (774888247882):
+    whatever the fragment actually resolved to did not reproduce the
+    stack's original trust-policy inputs.
+
+    This link only gets the user to the right region's Stacks page, with a
+    text filter set to the stack name -- a plain, best-effort search-box
+    value, not a sensitive form field. Every subsequent step (select the
+    stack, choose Update, "Replace current template", paste in the current
+    CryoStack template URL, and leave every existing parameter as "Use
+    existing value") is manual, and is spelled out in the UI text rather
+    than asserted as automatic.
     """
-    for name, value in (
-        ("template_url", template_url),
-        ("external_id", external_id),
-        ("region", region),
-        ("principal_arn", principal_arn),
-        ("stack_name", stack_name),
-    ):
+    for name, value in (("region", region), ("stack_name", stack_name)):
         if not (value or "").strip():
-            raise ValueError(f"quick_update_url: {name} is required")
+            raise ValueError(f"existing_stack_console_url: {name} is required")
 
     region = region.strip()
     base = (
         f"https://{region}.console.aws.amazon.com/cloudformation/home"
-        f"?region={quote(region, safe='')}#/stacks/update/template"
+        f"?region={quote(region, safe='')}#/stacks"
     )
     params = urlencode(
         {
-            # the console resolves a bare stack NAME (not just an ARN) for
-            # `stackId` -- CryoStack never captures the stack's ARN, only
-            # the name it minted, so this must work from the name alone.
-            "stackId": stack_name.strip(),
-            "templateURL": template_url.strip(),
-            "param_ExternalId": external_id.strip(),
-            "param_CryoStackPrincipalArn": principal_arn.strip(),
+            "filteringText": stack_name.strip(),
+            "filteringStatus": "active",
+            "viewNested": "true",
         },
         quote_via=quote,
     )

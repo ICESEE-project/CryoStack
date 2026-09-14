@@ -235,17 +235,10 @@ def _freevar(fn, name):
     return fn.__closure__[idx].cell_contents
 
 
-def _build_gateway_and_launch_handler(monkeypatch, tmp_path, *, user):
-    monkeypatch.setenv("CRYOSTACK_WORKSPACE_USER", user)
-    monkeypatch.setenv("USER", "cloud-wire-service")
-    monkeypatch.setenv("CRYOSTACK_WORKSPACE_ROOT", str(tmp_path / "ws"))
-    monkeypatch.delenv("CRYOSTACK_AWS_PRINCIPAL_ARN", raising=False)
-    monkeypatch.delenv("CRYOSTACK_CF_TEMPLATE_URL", raising=False)
-    import matplotlib
-    matplotlib.use("Agg")
-    from icesee_jupyter_book.ui.icesheets_gateway import build_icesheets_ui
-    page = build_icesheets_ui()
-
+def _find_launch_review(page):
+    """Return (launch_handler, review_launch) -- ``review_launch`` is
+    ``cloud_review_runtime.launch``, ``launch_handler`` is
+    ``_launch_cloud_run`` -- for an already-built page."""
     launch_button = None
 
     def walk(w):
@@ -261,7 +254,49 @@ def _build_gateway_and_launch_handler(monkeypatch, tmp_path, *, user):
 
     review_launch = launch_button._click_handlers.callbacks[0]   # cloud_review_runtime.launch
     launch_handler = _freevar(review_launch, "launch_handler")   # _launch_cloud_run
+    return launch_handler, review_launch
+
+
+def _build_gateway_and_launch_handler(monkeypatch, tmp_path, *, user):
+    page = _build_gateway_page(monkeypatch, tmp_path, user=user)
+    launch_handler, _ = _find_launch_review(page)
     return launch_handler
+
+
+def _gateway_state(monkeypatch, tmp_path, *, user):
+    """Build one real gateway page and return every widget/closure needed to
+    drive Basic/Advanced + compute-mode state through Run Plan, Review &
+    Launch, cost estimate and submission -- all from the SAME page, so the
+    state is genuinely shared exactly as it is live."""
+    page = _build_gateway_page(monkeypatch, tmp_path, user=user)
+
+    launch_handler, review_launch = _find_launch_review(page)
+    submit_fn = _freevar(launch_handler, "_submit_cloud_run")
+    _run = _freevar(review_launch, "_run")
+    build_review = _freevar(_run, "review_builder")
+
+    _, update_visibility = _find_widget_by_observer(page, "update_visibility")
+    update_summary = _freevar(update_visibility, "update_summary")
+
+    return {
+        "page": page,
+        "submit_fn": submit_fn,
+        "build_review": build_review,
+        "update_visibility": update_visibility,
+        "update_summary": update_summary,
+        "summary_html": _freevar(update_summary, "summary_html"),
+        "model_dd": _freevar(submit_fn, "model_dd"),
+        "mode_dd": _freevar(update_summary, "mode_dd"),
+        "ui_mode_dd": _freevar(update_visibility, "ui_mode_dd"),
+        "cloud_environment": _freevar(submit_fn, "cloud_environment"),
+        "example_dir": _freevar(submit_fn, "example_dir"),
+        "run_target": _freevar(submit_fn, "run_target"),
+        "aws_region": _freevar(submit_fn, "aws_region"),
+        "cloud_bucket": _freevar(submit_fn, "cloud_bucket"),
+        "batch_job_queue": _freevar(submit_fn, "batch_job_queue"),
+        "batch_job_def": _freevar(submit_fn, "batch_job_def"),
+        "_cloud": _freevar(submit_fn, "_cloud"),
+    }
 
 
 @pytest.mark.parametrize("model", ["icepack", "issm"])
@@ -701,6 +736,326 @@ def test_issm_cloud_submit_never_gets_the_icepack_extra_file(monkeypatch, tmp_pa
         assert ICEPACK_POSTPROCESS_FILENAME not in captured["extra_files"]
 
 
+# ── compute-mode selection must reach actual submission resources ────────
+# Live bug: Prepare Cloud correctly created ec2_compute_environment /
+# ec2_job_queue / icepack_job_definition_ec2, but Review & Launch / submit
+# still resolved to the Fargate queue + job definition because
+# resolve_job_definition() (Fargate-only allow_list, compute-mode-blind)
+# always won over resolve_cloud_config()'s compute-mode-aware fallback. This
+# traces the SAME path Review & Launch/direct-submit use, all the way to the
+# kwargs handed to CloudRunController.submit() -- the actual submission
+# resource resolution, not just a displayed label.
+def _submit_and_capture(monkeypatch, tmp_path, *, user, model="icepack",
+                         compute_mode="fargate", capacity="on_demand"):
+    launch_handler = _build_gateway_and_launch_handler(monkeypatch, tmp_path, user=user)
+    submit_fn = _freevar(launch_handler, "_submit_cloud_run")
+
+    model_dd = _freevar(submit_fn, "model_dd")
+    example_dir = _freevar(submit_fn, "example_dir")
+    run_target = _freevar(submit_fn, "run_target")
+    aws_region = _freevar(submit_fn, "aws_region")
+    cloud_bucket = _freevar(submit_fn, "cloud_bucket")
+    aws_profile = _freevar(submit_fn, "aws_profile")
+    batch_job_queue = _freevar(submit_fn, "batch_job_queue")
+    batch_job_def = _freevar(submit_fn, "batch_job_def")
+    cloud_environment = _freevar(submit_fn, "cloud_environment")
+    _cloud = _freevar(submit_fn, "_cloud")
+
+    model_dd.value = model
+    example_dir.value = str(tmp_path / "Example")
+    run_target.value = "run.py" if model == "icepack" else "runme.m"
+    aws_region.value = "us-east-2"
+    cloud_bucket.value = "cryostack-runs-774888247882"
+    aws_profile.value = ""
+    # the documented Advanced Cloud Settings contract: blank -> CryoStack
+    # derives the resource names from the selected compute mode.
+    batch_job_queue.value = ""
+    batch_job_def.value = ""
+    cloud_environment.compute_mode.value = compute_mode
+    cloud_environment.ec2_capacity.value = capacity
+
+    import icesee_jupyter_book.ui.icesheets_gateway as _gw
+    monkeypatch.setattr(_gw, "cloud_run_preflight", lambda **kw: [])
+
+    captured = {}
+
+    def fake_submit(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(_cloud["controller"], "submit", fake_submit)
+
+    # staged_dir deliberately != example_dir.value -- skips the local
+    # staging branch (irrelevant here) and goes straight to submit().
+    submit_fn(str(tmp_path / "already-staged"), {}, review=None)
+    assert captured, "submit() was never reached"
+    return captured
+
+
+def test_ec2_on_demand_selection_submits_to_the_ec2_queue_and_job_definition(
+    monkeypatch, tmp_path
+):
+    captured = _submit_and_capture(
+        monkeypatch, tmp_path, user="ec2-ondemand-submit-user",
+        compute_mode="ec2", capacity="on_demand",
+    )
+    assert captured["compute_mode"] == "ec2"
+    assert captured["job_queue"] == "cryostack-ec2-queue"
+    assert captured["job_definition"] == "cryostack-icepack-ec2"
+    # the exact regression: must NOT resolve to Fargate
+    assert captured["job_queue"] != "cryostack-queue"
+    assert captured["job_definition"] != "cryostack-icepack"
+    assert captured["compute_mode"] != "fargate"
+
+
+def test_fargate_selection_still_submits_to_the_fargate_queue_and_job_definition(
+    monkeypatch, tmp_path
+):
+    """The working Fargate path is unaffected by the EC2 fix."""
+    captured = _submit_and_capture(
+        monkeypatch, tmp_path, user="fargate-submit-user", compute_mode="fargate",
+    )
+    assert captured["compute_mode"] == "fargate"
+    assert captured["job_queue"] == "cryostack-queue"
+    assert captured["job_definition"] == "cryostack-icepack"
+
+
+def test_ec2_spot_selection_submits_to_the_spot_queue_and_ec2_job_definition(
+    monkeypatch, tmp_path
+):
+    captured = _submit_and_capture(
+        monkeypatch, tmp_path, user="ec2-spot-submit-user",
+        compute_mode="ec2", capacity="spot",
+    )
+    assert captured["compute_mode"] == "ec2"
+    assert captured["job_queue"] == "cryostack-ec2-spot-queue"
+    # capacity never changes the job definition -- On-Demand and Spot share it
+    assert captured["job_definition"] == "cryostack-icepack-ec2"
+
+
+def test_gpu_and_multinode_stay_guarded_by_the_existing_qualification_flags(
+    monkeypatch, tmp_path
+):
+    """This fix only corrects NAME resolution -- it must never loosen the
+    existing GPU/multi-node submission gate (unqualified image / unsupported
+    distributed runtime). Both stay blocked before submit() is ever reached."""
+    from cryostack_src.cloud.drivers.aws.batch_config import EC2ComputeConfig
+
+    launch_handler = _build_gateway_and_launch_handler(
+        monkeypatch, tmp_path, user="gpu-mnp-guard-user")
+    submit_fn = _freevar(launch_handler, "_submit_cloud_run")
+
+    model_dd = _freevar(submit_fn, "model_dd")
+    example_dir = _freevar(submit_fn, "example_dir")
+    run_target = _freevar(submit_fn, "run_target")
+    aws_region = _freevar(submit_fn, "aws_region")
+    cloud_bucket = _freevar(submit_fn, "cloud_bucket")
+    aws_profile = _freevar(submit_fn, "aws_profile")
+    batch_job_queue = _freevar(submit_fn, "batch_job_queue")
+    batch_job_def = _freevar(submit_fn, "batch_job_def")
+    cloud_environment = _freevar(submit_fn, "cloud_environment")
+    _cloud = _freevar(submit_fn, "_cloud")
+
+    model_dd.value = "icepack"
+    example_dir.value = str(tmp_path / "Example")
+    run_target.value = "run.py"
+    aws_region.value = "us-east-2"
+    cloud_bucket.value = "cryostack-runs-774888247882"
+    aws_profile.value = ""
+    batch_job_queue.value = ""
+    batch_job_def.value = ""
+    cloud_environment.compute_mode.value = "ec2"
+
+    submitted = {"called": False}
+    monkeypatch.setattr(
+        _cloud["controller"], "submit",
+        lambda **kw: submitted.__setitem__("called", True))
+
+    for accelerator, topology in (("gpu", "single_node"), ("none", "multi_node")):
+        submitted["called"] = False
+        cloud_environment.ec2_accelerator.value = accelerator
+        cloud_environment.ec2_topology.value = topology
+        submit_fn(str(tmp_path / "already-staged"), {}, review=None)
+        assert not submitted["called"], (
+            f"accelerator={accelerator!r} topology={topology!r} must stay "
+            "blocked by the existing qualification flags"
+        )
+
+
+# ── Basic/Advanced mode must drive the ACTUAL resolved execution config,
+# not just widget visibility -- live bug: switching Compute to EC2 never
+# re-rendered Run Plan (no observer was wired on compute_mode at all), and
+# Basic mode never forced the active compute_mode back to Fargate even
+# though its own Advanced Cloud Settings were supposed to be irrelevant.
+def _setup_common(state, *, model="icepack"):
+    state["model_dd"].value = model
+    state["mode_dd"].value = "cloud"
+    state["example_dir"].value = str(Path("/tmp") / "GatewayStateExample")
+    state["run_target"].value = "run.py" if model != "issm" else "runme.m"
+    state["aws_region"].value = "us-east-2"
+    state["cloud_bucket"].value = "cryostack-runs-774888247882"
+    state["batch_job_queue"].value = ""
+    state["batch_job_def"].value = ""
+
+
+def _capture_submit(state, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        state["_cloud"]["controller"], "submit",
+        lambda **kw: captured.update(kw))
+    state["submit_fn"](
+        str(Path("/tmp") / "already-staged"), {}, review=None)
+    assert captured, "submit() was never reached"
+    return captured
+
+
+def test_basic_mode_hides_advanced_settings_and_stays_on_fargate(monkeypatch, tmp_path):
+    state = _gateway_state(monkeypatch, tmp_path, user="basic-icepack-user")
+    _setup_common(state)
+    state["ui_mode_dd"].value = "basic"
+
+    ce = state["cloud_environment"]
+    assert ce.advanced.layout.display == "none"
+    assert ce.compute_mode.value == "fargate"
+
+    html = state["summary_html"].value
+    assert "Cloud backend:</span> AWS Batch (Fargate)" in html
+    assert "AWS Batch (EC2)" not in html
+
+    captured = _capture_submit(state, monkeypatch)
+    assert captured["compute_mode"] == "fargate"
+    assert captured["job_queue"] == "cryostack-queue"
+    assert captured["job_definition"] == "cryostack-icepack"
+
+
+def test_advanced_mode_ec2_selection_flows_end_to_end(monkeypatch, tmp_path):
+    """The success criterion: Run Plan, Review & Launch's resolved config,
+    its cost basis, and the final submit kwargs all agree on EC2 -- from
+    ONE widget change, with no manual re-render needed (the fix for the
+    live staleness bug)."""
+    state = _gateway_state(monkeypatch, tmp_path, user="advanced-ec2-user")
+    _setup_common(state)
+    state["ui_mode_dd"].value = "advanced"
+
+    ce = state["cloud_environment"]
+    assert ce.advanced.layout.display == ""
+
+    ce.compute_mode.value = "ec2"
+    ce.ec2_capacity.value = "on_demand"
+    ce.ec2_instance_types.value = "optimal"
+    ce.ec2_topology.value = "single_node"
+
+    # Run Plan updated itself -- no manual update_summary() call here.
+    html = state["summary_html"].value
+    assert "Cloud backend:</span> AWS Batch (EC2)" in html
+    assert "AWS Batch (Fargate)" not in html
+    assert "Capacity:</span> On-Demand" in html
+
+    review = state["build_review"]()
+    assert review.config.compute_mode == "ec2"
+    assert review.config.job_queue == "cryostack-ec2-queue"
+    assert review.config.job_definition == "cryostack-icepack-ec2"
+    basis = " ".join(review.estimate_basis_lines())
+    assert "EC2 cost estimate unavailable" in basis
+    assert "AWS Fargate pricing" not in basis
+
+    captured = _capture_submit(state, monkeypatch)
+    assert captured["compute_mode"] == "ec2"
+    assert captured["job_queue"] == "cryostack-ec2-queue"
+    assert captured["job_definition"] == "cryostack-icepack-ec2"
+
+
+def test_advanced_to_basic_reverts_the_active_backend_to_fargate(monkeypatch, tmp_path):
+    state = _gateway_state(monkeypatch, tmp_path, user="advanced-to-basic-user")
+    _setup_common(state)
+    ce = state["cloud_environment"]
+
+    state["ui_mode_dd"].value = "advanced"
+    ce.compute_mode.value = "ec2"
+    ce.ec2_capacity.value = "spot"
+
+    state["ui_mode_dd"].value = "basic"
+    assert ce.compute_mode.value == "fargate"
+    assert ce.advanced.layout.display == "none"
+
+    html = state["summary_html"].value
+    assert "Cloud backend:</span> AWS Batch (Fargate)" in html
+
+    captured = _capture_submit(state, monkeypatch)
+    assert captured["compute_mode"] == "fargate"
+    assert captured["job_queue"] == "cryostack-queue"
+    assert captured["job_definition"] == "cryostack-icepack"
+
+
+def test_basic_to_advanced_restores_the_prior_ec2_selection(monkeypatch, tmp_path):
+    state = _gateway_state(monkeypatch, tmp_path, user="basic-to-advanced-user")
+    _setup_common(state)
+    ce = state["cloud_environment"]
+
+    state["ui_mode_dd"].value = "advanced"
+    ce.compute_mode.value = "ec2"
+    ce.ec2_capacity.value = "spot"
+    ce.ec2_instance_types.value = "c5,m5"
+
+    state["ui_mode_dd"].value = "basic"
+    assert ce.compute_mode.value == "fargate"          # reverted
+
+    state["ui_mode_dd"].value = "advanced"
+    assert ce.compute_mode.value == "ec2"              # restored
+    assert ce.ec2_capacity.value == "spot"
+    assert ce.ec2_instance_types.value == "c5,m5"
+
+    html = state["summary_html"].value
+    assert "Cloud backend:</span> AWS Batch (EC2)" in html
+    assert "Capacity:</span> Spot" in html
+
+
+# ── MATLAB license visibility: driven by workflow capability, never
+# Basic/Advanced mode alone ──────────────────────────────────────────────
+def test_issm_shows_matlab_license_in_basic_and_advanced(monkeypatch, tmp_path):
+    state = _gateway_state(monkeypatch, tmp_path, user="issm-matlab-basic-user")
+    _setup_common(state, model="issm")
+
+    state["ui_mode_dd"].value = "basic"
+    assert state["cloud_environment"].matlab_license_box.layout.display == ""
+
+    state["ui_mode_dd"].value = "advanced"
+    assert state["cloud_environment"].matlab_license_box.layout.display == ""
+
+
+def test_icepack_hides_matlab_license(monkeypatch, tmp_path):
+    state = _gateway_state(monkeypatch, tmp_path, user="icepack-matlab-hide-user")
+    _setup_common(state, model="icepack")
+    assert state["cloud_environment"].matlab_license_box.layout.display == "none"
+
+
+def test_matlab_license_value_survives_being_hidden(monkeypatch, tmp_path):
+    state = _gateway_state(monkeypatch, tmp_path, user="matlab-preserve-user")
+    ce = state["cloud_environment"]
+    _setup_common(state, model="issm")
+    assert ce.matlab_license_box.layout.display == ""
+
+    arn = "arn:aws:secretsmanager:us-east-2:774888247882:secret:cryostack/issm-matlab-Ab1"
+    ce.matlab_license_arn.value = arn
+
+    state["model_dd"].value = "icepack"
+    assert ce.matlab_license_box.layout.display == "none"
+    assert ce.matlab_license_arn.value == arn          # never cleared
+
+    state["model_dd"].value = "issm"
+    assert ce.matlab_license_box.layout.display == ""
+    assert ce.matlab_license_arn.value == arn
+
+
+def test_fargate_review_cost_basis_says_fargate_pricing(monkeypatch, tmp_path):
+    state = _gateway_state(monkeypatch, tmp_path, user="fargate-cost-basis-user")
+    _setup_common(state)
+    state["ui_mode_dd"].value = "basic"
+    review = state["build_review"]()
+    basis = " ".join(review.estimate_basis_lines())
+    assert "AWS Fargate pricing" in basis
+    assert "EC2" not in basis
+
+
 # ── checkpoint: container provenance + execution-summary semantics ───────
 def _summary_internals(monkeypatch, tmp_path, *, user):
     page = _build_gateway_page(monkeypatch, tmp_path, user=user)
@@ -719,6 +1074,7 @@ def _summary_internals(monkeypatch, tmp_path, *, user):
         "STATUS": _freevar(update_summary, "STATUS"),
         "md_config_panel": _freevar(update_visibility, "md_config_panel"),
         "icepack_config_panel": _freevar(update_visibility, "icepack_config_panel"),
+        "cloud_environment": _freevar(update_summary, "cloud_environment"),
     }
 
 
@@ -747,6 +1103,43 @@ def test_execution_summary_has_an_explicit_cloud_branch(monkeypatch, tmp_path):
     cmd = g["command_preview"].value
     assert "aws batch submit-job" in cmd
     assert "apptainer" not in cmd and "spack" not in cmd.lower()
+
+
+def test_execution_summary_shows_ec2_backend_when_ec2_is_selected(monkeypatch, tmp_path):
+    """Regression: the Run Plan / Execution summary used to hardcode
+    'Cloud backend: AWS Batch (Fargate)' for every cloud run, regardless of
+    the Advanced Cloud Settings Compute selection. Selecting EC2 must change
+    the displayed backend, capacity and instance types -- not just leave the
+    Fargate label standing while EC2 is what actually gets provisioned/
+    submitted."""
+    g = _summary_internals(monkeypatch, tmp_path, user="cloud-summary-ec2-user")
+    g["model_dd"].value = "icepack"
+    g["mode_dd"].value = "cloud"
+    ce = g["cloud_environment"]
+    ce.compute_mode.value = "ec2"
+    ce.ec2_capacity.value = "on_demand"
+    ce.ec2_instance_types.value = "optimal"
+    ce.ec2_topology.value = "single_node"
+    g["update_summary"]()
+
+    html = g["summary_html"].value
+    assert "Cloud backend:</span> AWS Batch (EC2)" in html
+    assert "AWS Batch (Fargate)" not in html            # the exact regression
+    assert "Capacity:</span> On-Demand" in html
+    assert "Instance types:</span> optimal" in html
+    assert "Single node" in html
+
+    # Spot capacity is reflected too
+    ce.ec2_capacity.value = "spot"
+    g["update_summary"]()
+    assert "Capacity:</span> Spot" in g["summary_html"].value
+
+    # switching back to Fargate restores the original label
+    ce.compute_mode.value = "fargate"
+    g["update_summary"]()
+    html_back = g["summary_html"].value
+    assert "Cloud backend:</span> AWS Batch (Fargate)" in html_back
+    assert "Capacity:</span>" not in html_back
 
 
 def test_execution_summary_remote_spack_and_container_unchanged(monkeypatch, tmp_path):

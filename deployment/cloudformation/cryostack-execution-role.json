@@ -1,6 +1,6 @@
 {
   "AWSTemplateFormatVersion": "2010-09-09",
-  "Description": "CryoStack cross-account access role. Grants CryoStack least-privilege access to run scientific experiments on AWS Batch in your account, assumable only with your unique ExternalId. (template 2026-09-11)",
+  "Description": "CryoStack cross-account access role. Grants CryoStack least-privilege access to run scientific experiments on AWS Batch in your account, assumable only with your unique ExternalId. (template 2026-09-14)",
   "Parameters": {
     "ExternalId": {
       "Type": "String",
@@ -180,15 +180,15 @@
                 {
                   "Sid": "CryoStackLogsRead",
                   "Effect": "Allow",
-                  "Action": [
-                    "logs:GetLogEvents",
-                    "logs:FilterLogEvents",
-                    "logs:DescribeLogStreams",
-                    "logs:DescribeLogGroups"
-                  ],
-                  "Resource": {
-                    "Fn::Sub": "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/cryostack/*"
-                  }
+                  "Action": "logs:GetLogEvents",
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/cryostack/*"
+                    },
+                    {
+                      "Fn::Sub": "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/aws/batch/job:*"
+                    }
+                  ]
                 },
                 {
                   "Sid": "CryoStackLogsGroup",

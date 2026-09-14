@@ -15,6 +15,7 @@ from cryostack_src.cloud.config import (
     resolve_cloud_config,
     validate_cloud_config,
 )
+from cryostack_src.cloud.drivers.aws.batch_config import EC2ComputeConfig
 
 
 def test_deterministic_queue_and_definition_when_not_supplied():
@@ -74,6 +75,47 @@ def test_non_s3_scheme_is_flagged():
 def test_unsupported_provider_is_flagged():
     cfg = resolve_cloud_config(provider="gcp", bucket="b")
     assert any("not supported" in p for p in validate_cloud_config(cfg))
+
+
+# ── EC2 compute mode: the queue/job-definition fallback must never
+# silently stay Fargate-shaped just because it is unaware of the selection ──
+def test_ec2_on_demand_resolves_the_ec2_queue_and_job_definition():
+    cfg = resolve_cloud_config(bucket="cryostack-runs-1", model="icepack",
+                                aws_batch_compute="ec2")
+    assert cfg.compute_mode == "ec2" and cfg.is_ec2
+    assert cfg.job_queue == "cryostack-ec2-queue"
+    assert cfg.job_definition == "cryostack-icepack-ec2"
+    # the exact regression this guards against
+    assert cfg.job_queue != "cryostack-queue"
+    assert cfg.job_definition != "cryostack-icepack"
+
+
+def test_fargate_selection_is_unaffected():
+    cfg = resolve_cloud_config(bucket="cryostack-runs-1", model="icepack",
+                                aws_batch_compute="fargate")
+    assert cfg.compute_mode == "fargate" and not cfg.is_ec2
+    assert cfg.job_queue == "cryostack-queue"
+    assert cfg.job_definition == "cryostack-icepack"
+
+
+def test_ec2_spot_resolves_the_spot_queue_but_the_same_plain_job_definition():
+    cfg = resolve_cloud_config(bucket="cryostack-runs-1", model="icepack",
+                                aws_batch_compute="ec2",
+                                ec2=EC2ComputeConfig(capacity="spot"))
+    assert cfg.job_queue == "cryostack-ec2-spot-queue"
+    # capacity is a compute-environment/queue property only -- same job def
+    # as On-Demand EC2
+    assert cfg.job_definition == "cryostack-icepack-ec2"
+
+
+def test_ec2_gpu_and_multinode_get_their_own_job_definition_suffix():
+    gpu_cfg = resolve_cloud_config(bucket="b", model="issm", aws_batch_compute="ec2",
+                                    ec2=EC2ComputeConfig(accelerator="gpu"))
+    assert gpu_cfg.job_definition == "cryostack-issm-ec2-gpu"
+
+    mnp_cfg = resolve_cloud_config(bucket="b", model="issm", aws_batch_compute="ec2",
+                                    ec2=EC2ComputeConfig(topology="multi_node"))
+    assert mnp_cfg.job_definition == "cryostack-issm-ec2-mnp"
 
 
 def test_provenance_carries_only_non_secret_facts():

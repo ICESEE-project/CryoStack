@@ -44,6 +44,19 @@ def test_unknown_model_is_blocked():
     assert cloud_run_preflight(model="firedrake", matlab_license_configured=True)
 
 
+def test_preflight_uses_the_single_workflow_capability_resolver():
+    """The MATLAB-license gate must be one authoritative answer
+    (cryostack_src.models.workflow_capabilities), not a duplicated
+    ``model == "issm"`` string check re-derived here."""
+    import inspect
+
+    from cryostack_src.cloud import preflight as preflight_module
+
+    src = inspect.getsource(preflight_module.cloud_run_preflight)
+    assert "resolve_workflow_capabilities" in src
+    assert '== "issm"' not in src
+
+
 def test_the_default_aws_compute_profile_has_no_license():
     """The AWS profile must stay unconfigured for MATLAB until a real cloud
     license mechanism exists -- so ISSM cloud is blocked by default."""

@@ -65,6 +65,11 @@ EXEC_ROLE = "arn:aws:iam::123456789012:role/cryostack-ecs-execution-role"
 INSTANCE_PROFILE = "arn:aws:iam::123456789012:instance-profile/cryostack-ec2-instance-profile"
 IMAGE = "123456789012.dkr.ecr.us-east-2.amazonaws.com/cryostack-issm@sha256:" + "a" * 64
 SECRET = "arn:aws:secretsmanager:us-east-2:123456789012:secret:cryostack/issm-matlab-Ab1"
+_FAKE_SERVICE_LINKED_ROLE = (
+    "arn:aws:iam::123456789012:role/aws-service-role/"
+    "batch.amazonaws.com/AWSServiceRoleForBatch"
+)
+_LEGACY_SERVICE_ROLE = "arn:aws:iam::123456789012:role/cryostack-batch-service-role"
 
 
 # ── names / compute-mode normalisation ──────────────────────────────────
@@ -118,7 +123,7 @@ def test_ec2_container_properties_omit_every_fargate_only_key():
         command=["bash", "-c", "run"], secrets=[{"name": "MLM_LICENSE_FILE",
                                                  "valueFrom": SECRET}])
     for fargate_only in ("networkConfiguration", "fargatePlatformConfiguration",
-                         "ephemeralStorage"):
+                         "ephemeralStorage", "runtimePlatform"):
         assert fargate_only not in cp
     # kept, identical to Fargate
     assert cp["image"] == IMAGE
@@ -126,9 +131,33 @@ def test_ec2_container_properties_omit_every_fargate_only_key():
     assert cp["jobRoleArn"] == JOB_ROLE and cp["executionRoleArn"] == EXEC_ROLE
     assert {"type": "VCPU", "value": "2"} in cp["resourceRequirements"]
     assert cp["logConfiguration"]["logDriver"] == "awslogs"
-    assert cp["runtimePlatform"]["cpuArchitecture"] == "X86_64"
     # MATLAB license: ARN reference only, exactly like Fargate
     assert cp["secrets"] == [{"name": "MLM_LICENSE_FILE", "valueFrom": SECRET}]
+
+
+def test_ec2_container_properties_never_carry_runtime_platform():
+    """The live-run defect: AWS Batch rejects ``runtimePlatform`` on a job
+    definition registered with ``platformCapabilities=["EC2"]``
+    (``ClientException: runtimePlatform is not applicable for EC2``).
+    ``ec2_container_properties_payload`` must never emit that key, in any
+    EC2 sub-mode (On-Demand, Spot, GPU, multi-node all build on it)."""
+    cp = ec2_container_properties_payload(
+        model="issm", image=IMAGE, job_role_arn=JOB_ROLE,
+        execution_role_arn=EXEC_ROLE, region="us-east-2")
+    assert "runtimePlatform" not in cp
+    gpu_cp = ec2_container_properties_payload(
+        model="issm", image=IMAGE, job_role_arn=JOB_ROLE,
+        execution_role_arn=EXEC_ROLE, region="us-east-2", compute=_GPU)
+    assert "runtimePlatform" not in gpu_cp
+
+
+def test_fargate_container_properties_still_carry_runtime_platform():
+    """Fargate is unaffected: runtimePlatform stays required there."""
+    cp = container_properties_payload(
+        model="issm", image=IMAGE, job_role_arn=JOB_ROLE,
+        execution_role_arn=EXEC_ROLE, region="us-east-2")
+    assert cp["runtimePlatform"] == {
+        "cpuArchitecture": "X86_64", "operatingSystemFamily": "LINUX"}
 
 
 def test_ec2_container_properties_reject_a_raw_license_value():
@@ -203,11 +232,33 @@ class _FakeBatchAWS:
                 [{**e, "status": "VALID"}] if e else [])}), "")
         if a[:2] == ["batch", "create-compute-environment"]:
             n = self._opt(a, "--compute-environment-name")
-            self.ces[n] = {"computeEnvironmentName": n, "state": "ENABLED",
-                           "computeResources": json.loads(
-                               self._opt(a, "--compute-resources"))}
+            self.ces[n] = {
+                "computeEnvironmentName": n, "state": "ENABLED",
+                "computeResources": json.loads(
+                    self._opt(a, "--compute-resources")),
+                # real AWS Batch always reports SOME serviceRole; when the
+                # caller never passes --service-role (the only supported
+                # path now), that is the service-linked role it created.
+                "serviceRole": (
+                    self._opt(a, "--service-role") if "--service-role" in a
+                    else _FAKE_SERVICE_LINKED_ROLE
+                ),
+            }
             return (0, "{}", "")
         if a[:2] == ["batch", "update-compute-environment"]:
+            n = self._opt(a, "--compute-environment")
+            ce = self.ces.get(n)
+            if ce is not None:
+                if "--state" in a:
+                    ce["state"] = self._opt(a, "--state")
+                if "--compute-resources" in a:
+                    ce["computeResources"] = {
+                        **ce.get("computeResources", {}),
+                        **json.loads(self._opt(a, "--compute-resources")),
+                    }
+            return (0, "{}", "")
+        if a[:2] == ["batch", "delete-compute-environment"]:
+            self.ces.pop(self._opt(a, "--compute-environment"), None)
             return (0, "{}", "")
         if a[:2] == ["batch", "describe-job-queues"]:
             want = self._opt(a, "--job-queues")
@@ -222,6 +273,19 @@ class _FakeBatchAWS:
                     self._opt(a, "--compute-environment-order"))}
             return (0, "{}", "")
         if a[:2] == ["batch", "update-job-queue"]:
+            n = self._opt(a, "--job-queue")
+            q = self.queues.get(n)
+            if q is not None:
+                if "--state" in a:
+                    q["state"] = self._opt(a, "--state")
+                if "--priority" in a:
+                    q["priority"] = int(self._opt(a, "--priority"))
+                if "--compute-environment-order" in a:
+                    q["computeEnvironmentOrder"] = json.loads(
+                        self._opt(a, "--compute-environment-order"))
+            return (0, "{}", "")
+        if a[:2] == ["batch", "delete-job-queue"]:
+            self.queues.pop(self._opt(a, "--job-queue"), None)
             return (0, "{}", "")
         if a[:2] == ["batch", "describe-job-definitions"]:
             want = self._opt(a, "--job-definition-name")
@@ -275,6 +339,7 @@ def test_fargate_only_provisioning_is_unchanged(fake_batch):
     (jd,) = fake_batch.registered("cryostack-issm")
     assert jd["platformCapabilities"] == "FARGATE"
     assert "fargatePlatformConfiguration" in jd["containerProperties"]
+    assert "runtimePlatform" in jd["containerProperties"]     # Fargate needs it
     assert not any("-ec2" in d["jobDefinitionName"] for d in fake_batch.jobdefs)
 
 
@@ -301,11 +366,168 @@ def test_ec2_provisioning_adds_separate_resources_without_touching_fargate(fake_
     # EC2 job def: no Fargate-only keys, SAME image, SAME command, SAME secret
     ecp = ejd["containerProperties"]
     for k in ("fargatePlatformConfiguration", "networkConfiguration",
-              "ephemeralStorage"):
+              "ephemeralStorage", "runtimePlatform"):
         assert k not in ecp
     assert ecp["image"] == fjd["containerProperties"]["image"] == IMAGE
     assert ecp["command"] == fjd["containerProperties"]["command"]
     assert ecp["secrets"] == fjd["containerProperties"]["secrets"]
+
+
+# ── Batch service role: EC2 CEs must use the AWS service-linked role ────────
+# https://docs.aws.amazon.com/batch/latest/userguide/troubleshooting.html --
+# UpdateComputeEnvironment only allows touching infrastructure fields
+# (instanceRole/instanceTypes/allocationStrategy/subnets/securityGroupIds/...)
+# on a MANAGED compute environment that runs on AWS Batch's own
+# AWSServiceRoleForBatch. CryoStack's custom cryostack-batch-service-role
+# used to be wired into the EC2 create call, which produced a compute
+# environment AWS Batch could never update in place.
+def test_new_ec2_ce_never_passes_a_custom_service_role(fake_batch):
+    outcome = bp.ensure_ec2_compute_environment(
+        CONFIG, subnets=SUBNETS, security_groups=SGS,
+        instance_role_arn=INSTANCE_PROFILE, name="cryostack-ec2",
+        sleep=lambda _s: None,
+    )
+    assert outcome == "created"
+    create_calls = [c for c in fake_batch.calls
+                     if c[:2] == ["batch", "create-compute-environment"]]
+    (create_call,) = create_calls
+    assert "--service-role" not in create_call
+    # AWS Batch's own default for an EC2 CE created without --service-role
+    assert "aws-service-role/batch.amazonaws.com" in \
+        fake_batch.ces["cryostack-ec2"]["serviceRole"]
+
+
+def test_matching_ec2_ce_on_the_service_linked_role_is_reused(fake_batch):
+    bp.ensure_ec2_compute_environment(
+        CONFIG, subnets=SUBNETS, security_groups=SGS,
+        instance_role_arn=INSTANCE_PROFILE, name="cryostack-ec2",
+        sleep=lambda _s: None,
+    )
+    calls_so_far = len(fake_batch.calls)
+    outcome = bp.ensure_ec2_compute_environment(
+        CONFIG, subnets=SUBNETS, security_groups=SGS,
+        instance_role_arn=INSTANCE_PROFILE, name="cryostack-ec2",
+        sleep=lambda _s: None,
+    )
+    assert outcome == "reused"
+    new_calls = fake_batch.calls[calls_so_far:]
+    assert not any(c[:2] in (["batch", "update-compute-environment"],
+                              ["batch", "delete-compute-environment"])
+                   for c in new_calls)
+
+
+def _seed_legacy_ec2_ce(fake_batch, *, name="cryostack-ec2", queue_name="cryostack-ec2-queue"):
+    """A pre-existing EC2 compute environment + queue exactly like the live
+    failure this fixes: created with CryoStack's own regular Batch service
+    role (never AWS Batch's service-linked role), so it can never accept an
+    in-place infrastructure update."""
+    fake_batch.ces[name] = {
+        "computeEnvironmentName": name, "state": "ENABLED",
+        "serviceRole": _LEGACY_SERVICE_ROLE,
+        "computeResources": {
+            "type": "EC2", "maxvCpus": 4, "minvCpus": 0, "desiredvCpus": 0,
+            "instanceTypes": ["m5.large"],           # differs from desired
+            "subnets": ["subnet-old"], "securityGroupIds": ["sg-old"],
+        },
+    }
+    fake_batch.queues[queue_name] = {
+        "jobQueueName": queue_name, "state": "ENABLED", "priority": 1,
+        "computeEnvironmentOrder": [{"order": 1, "computeEnvironment": name}],
+    }
+
+
+def test_stale_legacy_role_ec2_ce_is_never_sent_an_invalid_infrastructure_update(fake_batch):
+    _seed_legacy_ec2_ce(fake_batch)
+    bp.ensure_ec2_compute_environment(
+        CONFIG, subnets=SUBNETS, security_groups=SGS,
+        instance_role_arn=INSTANCE_PROFILE, name="cryostack-ec2",
+        sleep=lambda _s: None,
+    )
+    # never an update carrying infrastructure fields (the exact request
+    # AWS Batch rejects for a non-service-linked-role compute environment)
+    invalid_updates = [
+        c for c in fake_batch.calls
+        if c[:2] == ["batch", "update-compute-environment"]
+        and "--compute-resources" in c
+    ]
+    assert invalid_updates == []
+
+
+def test_stale_legacy_role_ec2_ce_takes_the_migration_path(fake_batch):
+    _seed_legacy_ec2_ce(fake_batch)
+    outcome = bp.ensure_ec2_compute_environment(
+        CONFIG, subnets=SUBNETS, security_groups=SGS,
+        instance_role_arn=INSTANCE_PROFILE, name="cryostack-ec2",
+        sleep=lambda _s: None,
+    )
+    assert outcome == "migrated"
+
+    mutating = [c[:2] for c in fake_batch.calls
+                if c[1] not in ("describe-compute-environments", "describe-job-queues")]
+    assert mutating == [
+        ["batch", "update-job-queue"],           # disable the stale queue
+        ["batch", "delete-job-queue"],
+        ["batch", "update-compute-environment"],  # disable the stale CE
+        ["batch", "delete-compute-environment"],
+        ["batch", "create-compute-environment"],  # fresh, service-linked role
+    ]
+    # the disable call is state-only -- never an infra update
+    ce_disable = next(c for c in fake_batch.calls
+                       if c[:2] == ["batch", "update-compute-environment"])
+    assert "--compute-resources" not in ce_disable
+    assert "DISABLED" in ce_disable
+
+    new_ce = fake_batch.ces["cryostack-ec2"]
+    assert new_ce["serviceRole"] != _LEGACY_SERVICE_ROLE
+    assert "aws-service-role/batch.amazonaws.com" in new_ce["serviceRole"]
+    # the queue was deleted as part of migration -- ensure_batch_resources'
+    # subsequent ensure_job_queue() call is what reconnects it (see below)
+    assert "cryostack-ec2-queue" not in fake_batch.queues
+
+
+def test_stale_legacy_role_spot_ec2_ce_also_migrates(fake_batch):
+    _seed_legacy_ec2_ce(fake_batch, name="cryostack-ec2-spot",
+                        queue_name="cryostack-ec2-spot-queue")
+    outcome = bp.ensure_ec2_compute_environment(
+        CONFIG, subnets=SUBNETS, security_groups=SGS,
+        instance_role_arn=INSTANCE_PROFILE, name="cryostack-ec2-spot",
+        ec2_config=EC2ComputeConfig(capacity="spot"),
+        sleep=lambda _s: None,
+    )
+    assert outcome == "migrated"
+    assert "aws-service-role/batch.amazonaws.com" in \
+        fake_batch.ces["cryostack-ec2-spot"]["serviceRole"]
+    assert "cryostack-ec2-spot-queue" not in fake_batch.queues
+
+
+def test_ec2_provisioning_migrates_a_legacy_ce_and_reconnects_the_queue(fake_batch):
+    """End-to-end through ensure_batch_resources (what Prepare Cloud calls):
+    a stale legacy-role EC2 CE is migrated AND the queue --
+    deleted as part of that migration -- is reconnected by the orchestrator's
+    normal (unchanged) ensure_job_queue() call right after. Fargate is
+    provisioned exactly as before, untouched."""
+    _seed_legacy_ec2_ce(fake_batch)
+    res = bp.ensure_batch_resources(
+        CONFIG, subnets=SUBNETS, security_groups=SGS,
+        job_role_arn=JOB_ROLE, execution_role_arn=EXEC_ROLE, issm_image=IMAGE,
+        job_command=["bash", "-c", "run"],
+        ec2=bp.EC2Provisioning(instance_role_arn=INSTANCE_PROFILE),
+        sleep=lambda _s: None,
+    )
+    assert "ec2_compute_environment" in res.updated
+    assert any("service-linked role" in m for m in res.messages)
+
+    # Fargate unaffected
+    assert fake_batch.ces["cryostack-fargate"]["computeResources"]["type"] == "FARGATE"
+    (fjd,) = fake_batch.registered("cryostack-issm")
+    assert fjd["platformCapabilities"] == "FARGATE"
+
+    # EC2 CE migrated off the legacy role, queue reconnected to it
+    assert "aws-service-role/batch.amazonaws.com" in \
+        fake_batch.ces["cryostack-ec2"]["serviceRole"]
+    assert "cryostack-ec2-queue" in fake_batch.queues
+    assert (fake_batch.queues["cryostack-ec2-queue"]["computeEnvironmentOrder"][0]
+            ["computeEnvironment"] == "cryostack-ec2")
 
 
 def test_ec2_provisioning_without_instance_profile_is_skipped_cleanly(fake_batch):
@@ -559,6 +781,7 @@ def test_spot_provisioning_adds_its_own_ce_and_queue(fake_batch):
     # same job definition as on-demand EC2 -- capacity is a CE/queue property
     (jd,) = fake_batch.registered("cryostack-issm-ec2")
     assert jd["platformCapabilities"] == "EC2"
+    assert "runtimePlatform" not in jd["containerProperties"]
 
 
 def test_submit_ec2_spot_targets_the_spot_queue(monkeypatch):
@@ -619,6 +842,7 @@ def test_gpu_container_properties_add_a_gpu_resource_requirement():
         execution_role_arn=EXEC_ROLE, region="us-east-2", compute=_GPU)
     kinds = {r["type"] for r in cp["resourceRequirements"]}
     assert kinds == {"VCPU", "MEMORY", "GPU"}
+    assert "runtimePlatform" not in cp
 
 
 def test_gpu_job_definition_name_gets_its_own_deterministic_suffix():
@@ -741,8 +965,13 @@ def test_multinode_job_definition_registers_with_node_properties(fake_batch, mon
     assert outcome == "created"
     (jd,) = [d for d in fake_batch.jobdefs
              if d["jobDefinitionName"] == "cryostack-issm-ec2-mnp"]
+    assert jd["platformCapabilities"] == "EC2"
     assert jd["nodeProperties"]["numNodes"] == 4
     assert "containerProperties" not in jd
+    # the container spec embedded in every node range must never carry the
+    # Fargate-only runtimePlatform key either
+    (node_range,) = jd["nodeProperties"]["nodeRangeProperties"]
+    assert "runtimePlatform" not in node_range["container"]
 
 
 # ── centralized compatibility matrix ─────────────────────────────────────

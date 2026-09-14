@@ -94,6 +94,79 @@ def test_np_greater_than_one_is_blocked_with_the_exact_reason():
     assert "NP=4" in review.parallel_mode_label
 
 
+# ── MATLAB license: driven by the single workflow-capability resolver,
+# never a duplicated "model == issm" check -- an ICESEE run whose forecast
+# model is ISSM needs a license exactly like a direct ISSM run does. ──────
+def test_icesee_forecast_model_issm_requires_a_matlab_license():
+    review = build_icesee_cloud_review(
+        forecast_model="issm", filter_alg="EnKF", ensemble_size=30,
+        parallel_processes=1, account_id="774888247882", region="us-east-2",
+        infrastructure=_READY_INFRA, account_freshly_verified=True,
+        example_name="lorenz96", matlab_license_configured=False,
+    )
+    assert review.requires_matlab_license is True
+    assert review.can_launch is False
+    assert any("MATLAB license" in r for r in review.blocked_reasons)
+
+
+def test_icesee_forecast_model_issm_launches_once_licensed():
+    review = build_icesee_cloud_review(
+        forecast_model="issm", filter_alg="EnKF", ensemble_size=30,
+        parallel_processes=1, account_id="774888247882", region="us-east-2",
+        infrastructure=_READY_INFRA, account_freshly_verified=True,
+        example_name="lorenz96", matlab_license_configured=True,
+    )
+    assert review.requires_matlab_license is True
+    assert review.matlab_license_configured is True
+    assert review.can_launch is True
+    assert review.blocked_reasons == []
+
+
+def test_icesee_forecast_model_icepack_never_needs_matlab():
+    review = build_icesee_cloud_review(
+        forecast_model="icepack", filter_alg="EnKF", ensemble_size=30,
+        parallel_processes=1, account_id="774888247882", region="us-east-2",
+        infrastructure=_READY_INFRA, account_freshly_verified=True,
+        example_name="lorenz96", matlab_license_configured=False,
+    )
+    assert review.requires_matlab_license is False
+    assert not any("MATLAB" in r for r in review.blocked_reasons)
+
+
+def test_icesee_forecast_model_coupled_issm_and_icepack_requires_matlab():
+    review = build_icesee_cloud_review(
+        forecast_model="issm+icepack coupled", filter_alg="EnKF",
+        ensemble_size=30, parallel_processes=1, account_id="774888247882",
+        region="us-east-2", infrastructure=_READY_INFRA,
+        account_freshly_verified=True, example_name="lorenz96",
+        matlab_license_configured=False,
+    )
+    assert review.requires_matlab_license is True
+    assert any("MATLAB license" in r for r in review.blocked_reasons)
+
+
+# ── compute backend must reflect the ACTUAL selected mode, never a
+# hardcoded "AWS Batch (Fargate)" regardless of what was selected ─────────
+def test_icesee_backend_defaults_to_fargate():
+    review = build_icesee_cloud_review(
+        forecast_model="lorenz96", filter_alg="EnKF", ensemble_size=30,
+        parallel_processes=1, account_id="774888247882", region="us-east-2",
+        infrastructure=_READY_INFRA, account_freshly_verified=True,
+        example_name="lorenz96",
+    )
+    assert review.compute_backend == "AWS Batch (Fargate)"
+
+
+def test_icesee_backend_reflects_ec2_selection():
+    review = build_icesee_cloud_review(
+        forecast_model="lorenz96", filter_alg="EnKF", ensemble_size=30,
+        parallel_processes=1, account_id="774888247882", region="us-east-2",
+        infrastructure=_READY_INFRA, account_freshly_verified=True,
+        example_name="lorenz96", compute_mode="ec2",
+    )
+    assert review.compute_backend == "AWS Batch (EC2)"
+
+
 def test_unsupported_icesee_examples_remain_blocked():
     """An example besides lorenz96 must remain blocked even at NP=1 -- only
     lorenz96 has ever been run against this image."""

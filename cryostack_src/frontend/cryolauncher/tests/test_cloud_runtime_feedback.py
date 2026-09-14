@@ -337,6 +337,46 @@ def test_failure_classifies_and_marks_failed():
     assert "[cloud][detail] AccessDenied calling sts" in h["log"].text
 
 
+def test_logs_button_reports_cloudwatch_permission_denial_as_non_fatal():
+    """A `logs:GetLogEvents` AccessDenied is read-only and independent of the
+    Batch job -- it must NOT flip the status pill to failed (the Results
+    view must stay usable), and the Run Log must show the specific,
+    non-misleading explanation rather than the generic 'Access denied by
+    AWS...' bucket message."""
+    status_widget = _HtmlW()
+    cb, h = _full(
+        runtime_status={"batch_job_id": "job-1"},
+        status_widget=status_widget,
+        bridge_factory=lambda: type("B", (), {
+            "logs": staticmethod(lambda *, job_id: (_ for _ in ()).throw(RuntimeError(
+                "An error occurred (AccessDeniedException) when calling the "
+                "GetLogEvents operation: User: arn:aws:sts::774888247882:"
+                "assumed-role/cryostack-access-conn-6fb767-CryoStackExecutionRole-x/"
+                "cryostack-run is not authorized to perform: logs:GetLogEvents on "
+                "resource: arn:aws:logs:us-east-2:774888247882:log-group:/aws/batch/"
+                "job:log-stream:icepack/default/y because no identity-based policy "
+                "allows the logs:GetLogEvents action")))})())
+    cb.logs()
+    assert status_widget.value == "done"          # NOT flipped to failed
+    assert "Access denied by AWS" not in h["log"].text
+    assert "logs:GetLogEvents permission" in h["log"].text
+    assert "does not affect the job or its results" in h["log"].text
+
+
+def test_logs_button_still_fails_for_a_non_permission_error():
+    status_widget = _HtmlW()
+    cb, h = _full(
+        runtime_status={"batch_job_id": "job-1"},
+        status_widget=status_widget,
+        bridge_factory=lambda: type("B", (), {
+            "logs": staticmethod(
+                lambda *, job_id: (_ for _ in ()).throw(RuntimeError(
+                    "Unable to locate credentials")))})())
+    cb.logs()
+    assert status_widget.value == "fail"
+    assert "credentials are not configured" in h["log"].text.lower()
+
+
 def test_prepare_early_stage_failure_does_not_falsely_fail_downstream_rows():
     # bootstrap aborts on storage; Containers/Compute were never attempted and
     # must NOT read as an independent failure (they show neutral "Not prepared").

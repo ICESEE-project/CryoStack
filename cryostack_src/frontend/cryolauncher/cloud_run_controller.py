@@ -83,10 +83,25 @@ def normalize_aws_state(raw: str) -> str:
 
 
 # ── failure classification ────────────────────────────────────────────────
+#: matches the ONE CloudWatch Logs permission this codebase actually needs
+#: (`legacy/aws_batch.py`'s `batch_logs` -> `aws logs get-log-events`). A
+#: role missing this permission cannot read CloudWatch Logs, but that is
+#: entirely independent of whether the Batch job ran or its S3 results are
+#: retrievable -- see :func:`is_log_read_permission_error`.
+_LOG_READ_DENIED_PATTERN = r"logs:getlogevents"
+
 #: (predicate on the lowercased message, short user-facing message)
 _FAILURE_RULES: tuple[tuple[str, str], ...] = (
     (r"could not connect to the endpoint|name resolution|network is unreachable",
      "Cannot reach AWS. Check your network and region."),
+    # Must come before the generic accessdenied rule below: a log-read
+    # AccessDenied is never a job/result failure (the run and its S3
+    # outputs are unaffected by a role that cannot read CloudWatch Logs).
+    (_LOG_READ_DENIED_PATTERN,
+     "CloudWatch logs could not be read: the connected AWS role lacks "
+     "logs:GetLogEvents permission. This does not affect the job or its "
+     "results -- reconnect the AWS account after updating its CloudFormation "
+     "role to restore log access."),
     (r"unable to locate credentials|no credentials|credentials not found|"
      r"expiredtoken|invalidclienttokenid|the security token included in the request is",
      "AWS credentials are not configured. Run `aws configure` (or set a profile) and retry."),
@@ -169,25 +184,68 @@ def classify_cloud_failure(error: Any) -> tuple[str, str]:
     return ("The cloud operation failed. See the log for details.", detail or "unknown error")
 
 
+def is_log_read_permission_error(error: Any) -> bool:
+    """True when ``error`` is specifically a CloudWatch ``logs:GetLogEvents``
+    AccessDenied -- the one AWS failure a caller must never present as a job
+    or results failure. A log-fetch is read-only and entirely separate from
+    Batch execution and S3 result retrieval, so a caller that already knows
+    (or does not care) whether the job succeeded can use this to keep its
+    status UI non-fatal for this one failure while still surfacing the
+    (informational) message from :func:`classify_cloud_failure`."""
+    return bool(re.search(_LOG_READ_DENIED_PATTERN, str(error).lower()))
+
+
 # ── job-definition controlled selection ───────────────────────────────────
 def resolve_job_definition(
     model: str, override: str, *, allow_list: dict[str, str],
+    compute_mode: str = "fargate", ec2: "EC2ComputeConfig | None" = None,
 ) -> tuple[str, list[str]]:
     """Return ``(job_definition, warnings)``.
 
-    Selection is controlled: the model's deterministic name is the default, and
-    an override is accepted **only** if it names a known CryoStack job
-    definition (optionally with a ``:revision`` suffix). Anything else is
-    ignored with a warning -- a UI/agent free string can never pick an
-    arbitrary Batch job definition.
+    Selection is controlled: the model's deterministic name for the
+    SELECTED compute mode is the default, and an override is accepted
+    **only** if it names a known CryoStack job definition for this model --
+    Fargate or any EC2 sub-mode -- (optionally with a ``:revision`` suffix).
+    Anything else is ignored with a warning -- a UI/agent free string can
+    never pick an arbitrary Batch job definition.
+
+    ``compute_mode``/``ec2`` select which CryoStack-managed name is the
+    default: ``allow_list``'s Fargate name unless ``compute_mode == "ec2"``,
+    in which case the deterministic EC2 (optionally GPU/multi-node) name
+    from ``ec2``. This must stay in sync with the SAME compute-mode
+    selection Prepare Cloud uses, or Review & Launch / submit silently
+    falls back to the Fargate job definition even while EC2 is selected.
+    Every CryoStack-managed name for this model -- across BOTH compute
+    modes -- is always an acceptable override, so a manually-typed EC2
+    job definition is never rejected merely because Fargate is the
+    allow_list's implicit default.
     """
+    from cryostack_src.cloud.drivers.aws.batch_config import (
+        job_definition_name,
+        normalize_compute_mode,
+    )
+
     model = (model or "").strip().lower()
-    default = allow_list.get(model, f"cryostack-{model}")
+    mode = normalize_compute_mode(compute_mode)
+    fargate_default = allow_list.get(model, f"cryostack-{model}")
+    if mode == "ec2":
+        default = job_definition_name(
+            model, mode,
+            accelerator=getattr(ec2, "accelerator", None),
+            topology=getattr(ec2, "topology", None),
+        )
+    else:
+        default = fargate_default
+    known = set(allow_list.values()) | {
+        job_definition_name(model, "ec2"),
+        job_definition_name(model, "ec2", accelerator="gpu"),
+        job_definition_name(model, "ec2", topology="multi_node"),
+    }
     ov = (override or "").strip()
     if not ov:
         return default, []
     base = ov.split(":", 1)[0]
-    if base in allow_list.values() or base == default:
+    if base in known or base == default:
         return ov, []
     return default, [
         f"Ignoring job-definition override {ov!r}: not a CryoStack job "

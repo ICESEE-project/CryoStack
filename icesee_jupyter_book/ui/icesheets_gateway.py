@@ -110,8 +110,10 @@ from cryostack_src.frontend.shared import (
 from cryostack_src.frontend.cryolauncher.cloud_environment import (
     build_cloud_environment_card,
     set_cloud_status,
+    wire_matlab_license_widgets,
 )
 from cryostack_src.frontend.cryolauncher.cloud_runtime import (
+    _ec2_config_from_widgets,
     build_cloud_runtime_callbacks,
 )
 from cryostack_src.frontend.cryolauncher.cloud_connect_runtime import (
@@ -125,6 +127,9 @@ from cryostack_src.frontend.cryolauncher.cloud_run_controller import (
 )
 from cryostack_src.cloud.drivers.aws.batch_config import (
     JOB_DEFINITION_NAMES as _CLOUD_JOB_DEFS,
+)
+from cryostack_src.models.workflow_capabilities import (
+    resolve_workflow_capabilities,
 )
 from cryostack_src.frontend.cryolauncher.remote_runtime import (
     build_remote_runtime_callbacks,
@@ -925,8 +930,12 @@ def build_icesheets_ui():
                     return None
                 _cfg = review.config
             else:
+                _compute_mode = getattr(
+                    cloud_environment.compute_mode, "value", "fargate")
+                _ec2_cfg = _ec2_config_from_widgets(cloud_environment)
                 _job_def, _jd_warnings = resolve_job_definition(
                     _model, batch_job_def.value.strip(), allow_list=_CLOUD_JOB_DEFS,
+                    compute_mode=_compute_mode, ec2=_ec2_cfg,
                 )
                 _cfg = resolve_cloud_config(
                     provider="aws",
@@ -936,13 +945,14 @@ def build_icesheets_ui():
                     model=_model,
                     job_queue=batch_job_queue.value.strip(),
                     job_definition=_job_def,
-                    aws_batch_compute=getattr(
-                        cloud_environment.compute_mode, "value", "fargate"),
+                    aws_batch_compute=_compute_mode,
+                    ec2=_ec2_cfg,
                 )
             _lic = _cloud_matlab_license_configured()
             _problems = validate_cloud_config(_cfg, model=_model)
             _problems += cloud_run_preflight(
-                model=_model, matlab_license_configured=_lic
+                model=_model, matlab_license_configured=_lic,
+                compute_mode=_cfg.compute_mode, ec2_config=_cfg.ec2,
             )
             if _problems:
                 status_chip.value = status_html("fail")
@@ -1033,6 +1043,7 @@ def build_icesheets_ui():
                 job_queue=_cfg.job_queue,
                 job_definition=_cfg.job_definition,
                 compute_mode=_cfg.compute_mode,
+                ec2_config=_cfg.ec2,
                 job_name=(batch_job_name.value.strip() or "cryostack"),
                 matlab_license_configured=_lic,
                 _region=_cfg.region,
@@ -1564,6 +1575,9 @@ def build_icesheets_ui():
                 _img = _default_tested_image(_m)
                 _jd, _ = resolve_job_definition(
                     _m, batch_job_def.value.strip(), allow_list=_CLOUD_JOB_DEFS,
+                    compute_mode=getattr(
+                        cloud_environment.compute_mode, "value", "fargate"),
+                    ec2=_ec2_config_from_widgets(cloud_environment),
                 )
                 return (
                     "aws batch submit-job \\\n"
@@ -1762,7 +1776,48 @@ def build_icesheets_ui():
         # =========================================================
         # Dynamic logic
         # =========================================================
+        # Basic <-> Advanced must revert/restore the ACTUAL cloud execution
+        # configuration, not just hide widgets: Advanced -> Basic snapshots
+        # the current EC2 selection and forces the ONE piece of state every
+        # cloud code path reads (cloud_environment.compute_mode.value) back
+        # to "fargate"; Basic -> Advanced restores it. Empty until the first
+        # Advanced -> Basic transition.
+        _advanced_cloud_snapshot: dict = {}
+        _prev_ui_mode = {"value": ui_mode_dd.value}
+        _EC2_SNAPSHOT_FIELDS = (
+            "compute_mode", "ec2_capacity", "ec2_accelerator", "ec2_network",
+            "ec2_topology", "ec2_max_vcpus", "ec2_instance_types",
+        )
+
+        def _sync_cloud_compute_mode_with_ui_mode() -> None:
+            prev, cur = _prev_ui_mode["value"], ui_mode_dd.value
+            if prev == cur:
+                return
+            if cur == "basic" and prev != "basic":
+                _advanced_cloud_snapshot.clear()
+                _advanced_cloud_snapshot.update({
+                    name: getattr(cloud_environment, name).value
+                    for name in _EC2_SNAPSHOT_FIELDS
+                })
+                # Full reset, not just compute_mode: a lingering EC2-only
+                # sub-selection (e.g. Spot capacity) on an otherwise-hidden
+                # widget would still be read by _ec2_config_from_widgets()
+                # and trip the Fargate/EC2 compatibility gate
+                # ("Spot capacity is an EC2-only option; not valid with
+                # Fargate") even though the user never touched it in Basic
+                # mode.
+                cloud_environment.compute_mode.value = "fargate"
+                cloud_environment.ec2_capacity.value = "on_demand"
+                cloud_environment.ec2_accelerator.value = "none"
+                cloud_environment.ec2_network.value = "default"
+                cloud_environment.ec2_topology.value = "single_node"
+            elif cur != "basic" and prev == "basic" and _advanced_cloud_snapshot:
+                for name, val in _advanced_cloud_snapshot.items():
+                    getattr(cloud_environment, name).value = val
+            _prev_ui_mode["value"] = cur
+
         def update_visibility(_=None):
+            _sync_cloud_compute_mode_with_ui_mode()
             is_container = backend_dd.value == "container"
             is_oci = is_container and container_source.value in ("docker", "oci")
 
@@ -1784,6 +1839,24 @@ def build_icesheets_ui():
             is_basic = ui_mode_dd.value == "basic" or (not is_agent and not
                                                        ui_mode_dd.value == "advanced")
             is_advanced = ui_mode_dd.value == "advanced"
+
+            # Advanced Cloud Settings (Compute/Max vCPUs/Instance types/
+            # Capacity/Accelerator/Network/Execution + the queue/job-def/
+            # profile overrides) are Advanced-mode-only. Basic mode uses the
+            # validated default (Fargate) path -- _sync_cloud_compute_mode_
+            # with_ui_mode() above already forced the actual execution
+            # config to match; this just keeps the controls themselves out
+            # of Basic mode's view.
+            cloud_environment.advanced.layout.display = "none" if is_basic else ""
+
+            # MATLAB license visibility/requirement is a property of the
+            # SELECTED WORKFLOW (cryostack_src.models.workflow_capabilities)
+            # -- independent of Basic/Advanced -- so an ISSM (or an ICESEE
+            # run whose forecast model is ISSM) run always shows this field,
+            # even in Basic mode. Hiding the widget never clears its value.
+            _cloud_capabilities = resolve_workflow_capabilities(model=model_dd.value)
+            cloud_environment.matlab_license_box.layout.display = (
+                "" if _cloud_capabilities.requires_matlab_license else "none")
 
             # Agent is a peer interaction mode: when it is selected, the manual
             # Basic / Advanced configuration is hidden and only the Run
@@ -1941,16 +2014,48 @@ def build_icesheets_ui():
                     + (f" <span class='icesee-subtle'>@ {html.escape(_short)}</span>" if _short else "")
                     + "</div>"
                 )
+                # backend must reflect the SAME compute-mode selection
+                # Prepare Cloud and submission use -- never a hardcoded
+                # "Fargate" regardless of what is actually selected.
+                _is_ec2 = getattr(
+                    cloud_environment.compute_mode, "value", "fargate") == "ec2"
+                _backend_lines = (
+                    '<div><span class="icesee-summary-k">Cloud backend:</span> '
+                    'AWS Batch (Fargate)</div>'
+                )
+                _exec_note = (
+                    "Runs the tested combined image on AWS Batch (Fargate); "
+                    "run inputs and outputs sync via S3."
+                )
+                if _is_ec2:
+                    _cap = ("Spot" if getattr(
+                        cloud_environment.ec2_capacity, "value", "on_demand")
+                        == "spot" else "On-Demand")
+                    _itypes = (getattr(
+                        cloud_environment.ec2_instance_types, "value", "") or
+                        "optimal").strip() or "optimal"
+                    _topology = ("Multi-node" if getattr(
+                        cloud_environment.ec2_topology, "value", "single_node")
+                        == "multi_node" else "Single node")
+                    _backend_lines = f"""
+                  <div><span class="icesee-summary-k">Cloud backend:</span> AWS Batch (EC2)</div>
+                  <div><span class="icesee-summary-k">Capacity:</span> {html.escape(_cap)}</div>
+                  <div><span class="icesee-summary-k">Instance types:</span> {html.escape(_itypes)}</div>
+                    """
+                    _exec_note = (
+                        f"{_topology} -- runs the tested combined image on "
+                        "AWS Batch (EC2); run inputs and outputs sync via S3."
+                    )
                 summary_html.value = f"""
                 <div class="icesee-summary">
                   <div><span class="icesee-summary-k">User mode:</span> {user_mode.title()}</div>
                   <div><span class="icesee-summary-k">Execution mode:</span> Cloud</div>
-                  <div><span class="icesee-summary-k">Cloud backend:</span> AWS Batch (Fargate)</div>
+                  {_backend_lines}
                   <div><span class="icesee-summary-k">Model environment:</span> ICESEE-Container (Spack-built stack)</div>
                   <div><span class="icesee-summary-k">Model:</span> {model.upper()}</div>
                   {_img_line}
                   {_cloud_source_lines()}
-                  <div><span class="icesee-summary-k">Execution:</span> Runs the tested combined image on AWS Batch/Fargate; run inputs and outputs sync via S3.</div>
+                  <div><span class="icesee-summary-k">Execution:</span> {_exec_note}</div>
                 </div>
                 """
                 command_preview.value = build_model_command()
@@ -2065,6 +2170,17 @@ def build_icesheets_ui():
         example_dir.observe(_summary, names="value")
         exec_dir.observe(_summary, names="value")
         slurm_ntasks.observe(_summary, names="value")
+        # The Advanced Cloud Settings compute selection must drive the Run
+        # Plan / Execution summary live -- previously nothing observed these
+        # widgets at all, so switching Compute to EC2 left the summary
+        # (and its "Cloud backend" line) showing whatever was rendered
+        # before, even though the resolution logic itself was correct.
+        cloud_environment.compute_mode.observe(_summary, names="value")
+        cloud_environment.ec2_capacity.observe(_summary, names="value")
+        cloud_environment.ec2_accelerator.observe(_summary, names="value")
+        cloud_environment.ec2_network.observe(_summary, names="value")
+        cloud_environment.ec2_topology.observe(_summary, names="value")
+        cloud_environment.ec2_instance_types.observe(_summary, names="value")
 
         def _sync_resource_facts(_=None):
             # RESOURCE facts follow the selected resource. Personal fields
@@ -2952,46 +3068,15 @@ def build_icesheets_ui():
         cloud_environment.disconnect_button.on_click(aws_connect.disconnect)
         cloud_environment.update_role_button.on_click(aws_connect.update_role)
 
-        # -- ISSM cloud MATLAB license: a non-secret Secrets Manager ARN on
-        # the connected AWS account (cryostack_src/cloud/matlab_license.py).
+        # -- MATLAB license: a non-secret Secrets Manager ARN on the
+        # connected AWS account (cryostack_src/cloud/matlab_license.py).
         # CryoStack only ever stores/threads the ARN -- never the license
         # value -- through to cloud_run_preflight via _resolve_cloud_execution.
-        def _matlab_license_connection_store():
-            from cryostack_src.cloud.connect import AWSConnectionStore
-            return AWSConnectionStore(user=workspace_manager.owner)
-
-        try:
-            _existing_connection = _matlab_license_connection_store().load()
-            if _existing_connection is not None:
-                cloud_environment.matlab_license_arn.value = (
-                    _existing_connection.matlab_license_secret_arn
-                )
-        except Exception:
-            pass    # unauthenticated / dev-mode build: leave the field blank
-
-        def _save_matlab_license_arn(_=None):
-            from cryostack_src.cloud.matlab_license import assert_not_a_license_value
-
-            arn = (cloud_environment.matlab_license_arn.value or "").strip()
-            try:
-                assert_not_a_license_value(arn)
-            except ValueError as e:
-                with log_out:
-                    print("[cloud][ERROR]", e)
-                return
-            store = _matlab_license_connection_store()
-            connection = store.load()
-            if connection is None:
-                with log_out:
-                    print("[cloud][ERROR] Connect an AWS account before setting "
-                          "a MATLAB license ARN.")
-                return
-            store.save(connection.with_matlab_license_secret(arn))
-            with log_out:
-                print("[cloud] MATLAB license ARN saved." if arn
-                      else "[cloud] MATLAB license ARN cleared.")
-
-        cloud_environment.matlab_license_save_button.on_click(_save_matlab_license_arn)
+        # Shared with every other gateway that offers this field (e.g.
+        # ICESEE's) via wire_matlab_license_widgets -- one implementation,
+        # not a duplicated one per gateway.
+        wire_matlab_license_widgets(
+            cloud_environment, owner=workspace_manager.owner, log_output=log_out)
         # failed-verification recovery: repair the same account, or start a
         # STAGED switch to a different one (C7 live-acceptance fix -- an
         # "error" connection used to have no reachable action). Change AWS
@@ -3072,6 +3157,7 @@ def build_icesheets_ui():
 
         # -- RUN ESTIMATE + Review & Launch (C7.4) --------------------------
         from cryostack_src.cloud.estimate import (
+            CloudCostEstimate,
             estimate_cloud_cost,
             estimate_runtime,
             resolve_fargate_prices,
@@ -3093,8 +3179,12 @@ def build_icesheets_ui():
             derived from whichever model is currently selected. The Review
             card and the submit path both read this; no second copy."""
             _model = (model_dd.value or "issm").strip().lower()
+            _compute_mode = getattr(
+                cloud_environment.compute_mode, "value", "fargate")
+            _ec2_cfg = _ec2_config_from_widgets(cloud_environment)
             _job_def, _ = resolve_job_definition(
                 _model, batch_job_def.value.strip(), allow_list=_CLOUD_JOB_DEFS,
+                compute_mode=_compute_mode, ec2=_ec2_cfg,
             )
             return resolve_cloud_config(
                 provider="aws",
@@ -3104,8 +3194,8 @@ def build_icesheets_ui():
                 model=_model,
                 job_queue=batch_job_queue.value.strip(),
                 job_definition=_job_def,
-                aws_batch_compute=getattr(
-                    cloud_environment.compute_mode, "value", "fargate"),
+                aws_batch_compute=_compute_mode,
+                ec2=_ec2_cfg,
             )
 
         def _cloud_run_history():
@@ -3194,15 +3284,26 @@ def build_icesheets_ui():
                 time_limit_minutes=cfg.time_limit_minutes,
                 history_provider=_cloud_run_history,
             )
-            prices = resolve_fargate_prices(region)          # ambient; account-neutral
-            cost = estimate_cloud_cost(
-                region=region, vcpu=cfg.vcpu, memory_gib=cfg.memory_gib,
-                expected_runtime_minutes=rt.minutes, ephemeral_gib=cfg.ephemeral_gib,
-                prices=prices, runtime_source=rt.source,
-            )
-            # the MATLAB-license gate is ISSM-only (cloud_run_preflight skips
-            # it for every other model) -- unchanged behaviour, just no
-            # longer computed against a hardcoded "issm".
+            if cfg.is_ec2:
+                # no EC2 pricing model is implemented yet -- never claim
+                # Fargate pricing for a run that will not run on Fargate.
+                cost = CloudCostEstimate(
+                    region=region, vcpu=cfg.vcpu, memory_gib=cfg.memory_gib,
+                    expected_runtime_minutes=rt.minutes, source=rt.source,
+                    available=False, warning="EC2 cost estimate unavailable",
+                )
+            else:
+                prices = resolve_fargate_prices(region)      # ambient; account-neutral
+                cost = estimate_cloud_cost(
+                    region=region, vcpu=cfg.vcpu, memory_gib=cfg.memory_gib,
+                    expected_runtime_minutes=rt.minutes, ephemeral_gib=cfg.ephemeral_gib,
+                    prices=prices, runtime_source=rt.source,
+                )
+            # single authoritative answer to "does this workflow need
+            # MATLAB?" -- cryostack_src.models.workflow_capabilities, never
+            # a duplicated "model == issm" check (which would miss e.g. an
+            # ICESEE run whose forecast model is ISSM).
+            _capabilities = resolve_workflow_capabilities(model=_model)
             _lic = _cloud_matlab_license_configured()
             return build_cloud_run_review(
                 config=cfg, model=_model, example=_cloud_example_name(),
@@ -3212,9 +3313,10 @@ def build_icesheets_ui():
                 account_freshly_verified=account_fresh,
                 config_problems=validate_cloud_config(cfg, model=_model),
                 preflight_problems=cloud_run_preflight(
-                    model=_model, matlab_license_configured=_lic),
+                    model=_model, matlab_license_configured=_lic,
+                    compute_mode=cfg.compute_mode, ec2_config=cfg.ec2),
                 scientific_overrides=(md_panel.overrides() if model_dd.value == "issm" else {}),
-                issm_runtime_ready=(_lic if _model == "issm" else None),
+                issm_runtime_ready=(_lic if _capabilities.requires_matlab_license else None),
             )
 
         _cloud_review = build_cloud_review_callbacks(

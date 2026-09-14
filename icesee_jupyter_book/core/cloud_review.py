@@ -91,6 +91,11 @@ class IceseeCloudReview:
     #: human-readable parallel-mode line for the Review card, e.g.
     #: "Single-rank verified" or "Unverified (NP=4)".
     parallel_mode_label: str = ""
+    #: True when this run's forecast model is ISSM (resolved via
+    #: cryostack_src.models.workflow_capabilities) -- a non-secret status
+    #: fact, never the license value itself.
+    requires_matlab_license: bool = False
+    matlab_license_configured: bool = False
     # gating
     can_launch: bool = False
     blocked_reasons: list = field(default_factory=list)
@@ -114,6 +119,8 @@ class IceseeCloudReview:
             "example_name": self.example_name,
             "runtime_contract_ok": self.runtime_contract_ok,
             "parallel_mode_label": self.parallel_mode_label,
+            "requires_matlab_license": self.requires_matlab_license,
+            "matlab_license_configured": self.matlab_license_configured,
             "can_launch": self.can_launch,
             "blocked_reasons": list(self.blocked_reasons),
             "digest": self.digest,
@@ -150,14 +157,42 @@ def build_icesee_cloud_review(
     infrastructure: InfrastructureReadiness,
     account_freshly_verified: bool,
     example_name: str,
+    matlab_license_configured: bool = False,
+    compute_mode: str = "fargate",
 ) -> IceseeCloudReview:
     """Assemble an ICESEE cloud review and decide whether Launch is
     allowed. Launch is gated on: fresh account verification + storage/
     compute infrastructure Ready + a registered ICESEE tested runtime +
-    this run's OWN example/NP being inside the verified runtime contract
-    -- never faked, never inherited from CryoLauncher's own model gate, and
-    never silently coerced to a value that WOULD be verified."""
+    this run's OWN example/NP being inside the verified runtime contract +
+    (when this run's ``forecast_model`` names ISSM) a configured MATLAB
+    license -- never faked, never inherited from CryoLauncher's own model
+    gate, and never silently coerced to a value that WOULD be verified.
+
+    ``forecast_model`` is resolved through the SAME authoritative
+    :func:`~cryostack_src.models.workflow_capabilities.resolve_workflow_capabilities`
+    every other MATLAB-license check uses -- an ICESEE run whose forecast
+    model is ISSM needs a license exactly like a direct ISSM run does, and
+    is blocked here (independent of whatever the UI happens to show) if one
+    is not configured.
+    """
+    from cryostack_src.cloud.drivers.aws.batch_config import normalize_compute_mode
+    from cryostack_src.models.workflow_capabilities import (
+        resolve_workflow_capabilities,
+    )
+
+    capabilities = resolve_workflow_capabilities(
+        model="icesee", forecast_model=forecast_model)
+
     reasons: list[str] = []
+
+    if capabilities.requires_matlab_license and not matlab_license_configured:
+        reasons.append(
+            "This ICESEE run's forecast model is ISSM, which needs a MATLAB "
+            "license reachable from AWS. Add an AWS Secrets Manager secret "
+            "(MLM_LICENSE_FILE value) in your AWS account and give CryoStack "
+            "its ARN in Cloud Environment. The license value never leaves "
+            "your account."
+        )
 
     if not account_freshly_verified:
         reasons.append(
@@ -225,10 +260,16 @@ def build_icesee_cloud_review(
         region=region, account_id=account_id, example_name=example_name,
     )
 
+    compute_backend = (
+        "AWS Batch (EC2)"
+        if normalize_compute_mode(compute_mode) == "ec2"
+        else "AWS Batch (Fargate)"
+    )
+
     return IceseeCloudReview(
         forecast_model=forecast_model, filter_alg=filter_alg,
         ensemble_size=ensemble_size, execution_mode="cloud",
-        compute_backend="AWS Batch (Fargate)",
+        compute_backend=compute_backend,
         parallel_processes=parallel_processes,
         account_id=account_id, region=region,
         image_label=image_label, image_reference=image_reference,
@@ -236,6 +277,8 @@ def build_icesee_cloud_review(
         infrastructure=infrastructure, icesee_runtime_ready=runtime_ready,
         example_name=example_name, runtime_contract_ok=contract_ok,
         parallel_mode_label=parallel_mode_label,
+        requires_matlab_license=capabilities.requires_matlab_license,
+        matlab_license_configured=matlab_license_configured,
         can_launch=not reasons, blocked_reasons=reasons, digest=digest,
     )
 
@@ -263,6 +306,16 @@ def render_icesee_review_panel(widgets, review: IceseeCloudReview) -> None:
             "border:1px solid #f0d5d5;border-radius:6px;padding:8px;margin-top:6px;'>"
             f"<b>Launch is blocked:</b><ul style='margin:4px 0 0 16px;padding:0;'>{items}</ul>"
             "</div>"
+        )
+
+    matlab_row = ""
+    if review.requires_matlab_license:
+        val = ("<span style='color:#2f8f4e;'>Configured</span>"
+               if review.matlab_license_configured
+               else "<span style='color:#b23c3c;'>Needs a MATLAB license</span>")
+        matlab_row = (
+            '<tr><td style="padding:1px 12px 1px 0;">MATLAB license</td>'
+            f'<td>{val}</td></tr>'
         )
 
     if review.image_reference:
@@ -302,6 +355,7 @@ def render_icesee_review_panel(widgets, review: IceseeCloudReview) -> None:
         <tr><td style="padding:1px 12px 1px 0;">Mode</td><td>Cloud</td></tr>
         <tr><td style="padding:1px 12px 1px 0;">Backend</td><td>{escape_text(review.compute_backend)}</td></tr>
         <tr><td style="padding:1px 12px 1px 0;">Parallel processes</td><td>{review.parallel_processes}</td></tr>
+        {matlab_row}
         {image_rows}
         <tr><td colspan="2" style="padding-top:6px;font-weight:700;color:#172033;">AWS</td></tr>
         <tr><td style="padding:1px 12px 1px 0;">Account</td><td><code>{escape_text(review.account_id or "—")}</code></td></tr>

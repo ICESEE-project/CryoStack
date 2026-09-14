@@ -15,8 +15,8 @@ import pytest
 from cryostack_src.cloud.connect.cloudformation import (
     EXECUTION_ROLE_NAME,
     execution_role_template,
+    existing_stack_console_url,
     quick_create_url,
-    quick_update_url,
     render_template,
 )
 
@@ -203,11 +203,34 @@ def test_provisioned_role_names_are_inside_the_iam_scope():
     assert not EXECUTION_ROLE_NAME.startswith("cryostack-")
 
 
-def test_cloudwatch_log_reads_are_scoped_to_the_cryostack_group(template):
+def test_cloudwatch_log_reads_are_scoped_to_the_cryostack_and_batch_default_groups(template):
+    """`logs:GetLogEvents` -- the only CloudWatch Logs read op the codebase
+    calls (legacy/aws_batch.py's `batch_logs`) -- must be scoped to BOTH the
+    CryoStack-managed group (`/cryostack/*`, what newly-registered job
+    definitions configure) and the AWS Batch default group
+    (`/aws/batch/job:*`, what `batch_logs` actually reads by default and
+    where a live AccessDeniedException was observed). Never `log-group:*`,
+    never `logs:*`."""
     sids = {s["Sid"]: s for s in _all_statements(template)}
     read = sids["CryoStackLogsRead"]
-    assert "logs:GetLogEvents" in read["Action"]
-    assert "log-group:/cryostack/*" in read["Resource"]["Fn::Sub"]
+    assert read["Action"] == "logs:GetLogEvents"
+    resources = [r["Fn::Sub"] for r in read["Resource"]]
+    assert any(r.endswith("log-group:/cryostack/*") for r in resources)
+    assert any(r.endswith("log-group:/aws/batch/job:*") for r in resources)
+
+
+def test_cloudwatch_log_reads_do_not_grant_unused_describe_or_filter_actions(template):
+    """FilterLogEvents / DescribeLogStreams / DescribeLogGroups are not
+    called anywhere in the codebase -- granting them would be an unused,
+    regressable permission. Log-stream/group names come from Batch's own
+    DescribeJobs, never a Logs Describe/Filter call."""
+    sids = {s["Sid"]: s for s in _all_statements(template)}
+    granted: set[str] = set()
+    for s in sids.values():
+        action = s["Action"]
+        granted |= {action} if isinstance(action, str) else set(action)
+    unused = {"logs:FilterLogEvents", "logs:DescribeLogStreams", "logs:DescribeLogGroups"}
+    assert not (granted & unused), f"unused Logs permissions granted: {granted & unused}"
 
 
 def test_passrole_is_tightly_scoped_to_cryostack_roles_and_services(template):
@@ -337,36 +360,31 @@ def test_quick_create_url_is_well_formed_and_encoded():
     assert "sekret%2Brandom%2Fvalue" in raw
 
 
-def test_quick_update_url_targets_update_template_action():
-    """UpdateStack, never CreateStack -- a stack that already exists must be
-    updated, not re-created (which fails with AlreadyExistsException)."""
-    url = quick_update_url(
-        template_url=TEMPLATE_URL, external_id=EXTERNAL_ID,
-        region="us-east-2", principal_arn=PRINCIPAL,
-        stack_name="cryostack-access-conn-abc123",
+def test_existing_stack_console_url_is_plain_navigation_not_a_deep_link():
+    """Regression for the live AssumeRole denial: the update path must never
+    reuse the undocumented `#/stacks/update/template` scheme, or embed
+    ExternalId/PrincipalArn anywhere -- it is a plain Stacks-list link,
+    filtered by name, nothing else."""
+    url = existing_stack_console_url(
+        region="us-east-2", stack_name="cryostack-access-conn-abc123",
     )
     parsed = urlparse(url)
-    assert parsed.fragment.startswith("/stacks/update/template")
+    assert parsed.fragment.startswith("/stacks?")
     assert "quickcreate" not in url
+    assert "update/template" not in url
+    assert "stackId" not in url
+    assert "param_ExternalId" not in url
+    assert "param_CryoStackPrincipalArn" not in url
 
     query = parse_qs(parsed.fragment.split("?", 1)[1])
-    assert query["stackId"] == ["cryostack-access-conn-abc123"]
-    assert query["templateURL"] == [TEMPLATE_URL]
-    assert query["param_ExternalId"] == [EXTERNAL_ID]
-    assert query["param_CryoStackPrincipalArn"] == [PRINCIPAL]
+    assert query["filteringText"] == ["cryostack-access-conn-abc123"]
 
 
-def test_quick_update_url_requires_every_input_including_stack_name():
-    base_kwargs = dict(
-        template_url=TEMPLATE_URL, external_id=EXTERNAL_ID,
-        region="us-east-2", principal_arn=PRINCIPAL,
-        stack_name="cryostack-access-conn-abc123",
-    )
-    for missing in ("template_url", "external_id", "region", "principal_arn", "stack_name"):
-        kwargs = dict(base_kwargs)
-        kwargs[missing] = ""
-        with pytest.raises(ValueError):
-            quick_update_url(**kwargs)
+def test_existing_stack_console_url_requires_region_and_stack_name():
+    with pytest.raises(ValueError):
+        existing_stack_console_url(region="", stack_name="cryostack-access-conn-abc123")
+    with pytest.raises(ValueError):
+        existing_stack_console_url(region="us-east-2", stack_name="")
 
 
 def test_quick_create_url_requires_every_input():

@@ -204,6 +204,54 @@ def test_resolve_job_definition_is_controlled():
     assert jd == "cryostack-icepack" and not warn        # a known name, still allowed
 
 
+# ── compute-mode aware default -- the live Review & Launch/submit bug ────
+# Before this fix, resolve_job_definition() always returned the Fargate name
+# (allow_list is Fargate-only) regardless of the selected compute mode, so a
+# blank job-definition field silently submitted to Fargate even with EC2
+# selected -- and a manually-typed EC2 override was REJECTED as "not a
+# CryoStack job definition" because allow_list.values() never contained an
+# EC2 name.
+def test_resolve_job_definition_defaults_to_fargate_when_compute_mode_is_unspecified():
+    # backward compatible: identical to the pre-EC2 behaviour
+    assert resolve_job_definition(
+        "icepack", "", allow_list=_ALLOW) == ("cryostack-icepack", [])
+    assert resolve_job_definition(
+        "icepack", "", allow_list=_ALLOW, compute_mode="fargate"
+    ) == ("cryostack-icepack", [])
+
+
+def test_resolve_job_definition_ec2_default_is_never_the_fargate_name():
+    jd, warn = resolve_job_definition(
+        "icepack", "", allow_list=_ALLOW, compute_mode="ec2")
+    assert jd == "cryostack-icepack-ec2" and not warn
+    assert jd != "cryostack-icepack"           # the exact regression this guards
+
+
+def test_resolve_job_definition_ec2_gpu_and_multinode_suffixes():
+    from cryostack_src.cloud.drivers.aws.batch_config import EC2ComputeConfig
+
+    jd, _ = resolve_job_definition(
+        "issm", "", allow_list=_ALLOW, compute_mode="ec2",
+        ec2=EC2ComputeConfig(accelerator="gpu"))
+    assert jd == "cryostack-issm-ec2-gpu"
+
+    jd, _ = resolve_job_definition(
+        "issm", "", allow_list=_ALLOW, compute_mode="ec2",
+        ec2=EC2ComputeConfig(topology="multi_node"))
+    assert jd == "cryostack-issm-ec2-mnp"
+
+
+def test_resolve_job_definition_accepts_a_manually_typed_ec2_override():
+    # an EC2 name is a known CryoStack job definition even while the current
+    # selection's own default would be Fargate -- never silently rejected
+    jd, warn = resolve_job_definition(
+        "icepack", "cryostack-icepack-ec2", allow_list=_ALLOW, compute_mode="fargate")
+    assert jd == "cryostack-icepack-ec2" and not warn
+    jd, warn = resolve_job_definition(
+        "icepack", "cryostack-icepack-ec2:3", allow_list=_ALLOW, compute_mode="ec2")
+    assert jd == "cryostack-icepack-ec2:3" and not warn
+
+
 def test_user_run_prefix_is_one_safe_segment():
     assert user_run_prefix("alice-abc123def456").rstrip("/") == "alice-abc123def456"
     p = user_run_prefix("weird id/../with spaces!@#")
