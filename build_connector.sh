@@ -1,84 +1,230 @@
 #!/usr/bin/env bash
+# =============================================================================
+# CryoStack Connector — build one platform artifact on the current host.
+#
+# This is a single-host PyInstaller build. It produces the artifact for the
+# machine it runs on:
+#
+#     linux-x86_64   ->  CryoStack-Connector-linux-x86_64.tar.gz
+#     macos-arm64    ->  CryoStack-Connector-macos-arm64.dmg
+#     macos-x86_64   ->  CryoStack-Connector-macos-x86_64.dmg
+#     windows-x86_64 ->  CryoStack-Connector-windows-x86_64.exe
+#
+# It cannot cross-build. To publish every platform, run this script once on a
+# Linux host, once on a Mac, and once on Windows, then collect the artifacts
+# into dist/packages/ before running build_deploy_connector.sh.
+# =============================================================================
 set -euo pipefail
 
-python3 -m pip install --upgrade pip
-python3 -m pip install pyinstaller websockets requests paramiko
+# ---- configuration ---------------------------------------------------------
+REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$REPO_ROOT"
 
-OS="$(uname -s)"
-ARCH="$(uname -m)"
+APP_BRAND="CryoStack Connector"          # human-readable application name
+APP_BASENAME="CryoStack-Connector"       # PyInstaller --name / artifact stem
+SRC_ENTRY="icesee_hpc_connector/connector_menubar_app.py"
+
+BUILD_DIR="$REPO_ROOT/build/connector"   # PyInstaller work + spec
+DIST_DIR="$REPO_ROOT/dist/connector"     # PyInstaller output (binary / .app)
+PKG_DIR="$REPO_ROOT/dist/packages"       # final distributable artifacts
+
+# ---- host platform -------------------------------------------------------
+OS="${CRYOSTACK_BUILD_OS:-$(uname -s)}"
+ARCH="${CRYOSTACK_BUILD_ARCH:-$(uname -m)}"
 
 case "$OS" in
-  Darwin) OS_TAG="macOS" ;;
-  Linux)  OS_TAG="Linux" ;;
-  MINGW*|MSYS*|CYGWIN*) OS_TAG="Windows" ;;
-  *) OS_TAG="$OS" ;;
+  Darwin)               OS_TAG="macos" ;;
+  Linux)                OS_TAG="linux" ;;
+  MINGW*|MSYS*|CYGWIN*|Windows_NT) OS_TAG="windows" ;;
+  *) echo "ERROR: unsupported build OS: $OS" >&2; exit 2 ;;
 esac
 
 case "$ARCH" in
-  x86_64|amd64) ARCH_TAG="x86_64" ;;
-  arm64|aarch64) ARCH_TAG="arm64" ;;
-  *) ARCH_TAG="$ARCH" ;;
+  x86_64|amd64|AMD64)   ARCH_TAG="x86_64" ;;
+  arm64|aarch64)        ARCH_TAG="arm64" ;;
+  *) echo "ERROR: unsupported build architecture: $ARCH" >&2; exit 2 ;;
 esac
 
-APP_BASENAME="Cryolauncher_Connector"
-DIST_NAME="${APP_BASENAME}_${OS_TAG}_${ARCH_TAG}"
+PLATFORM="${OS_TAG}-${ARCH_TAG}"
 
-rm -rf build dist *.spec
-mkdir -p dist/packages
+case "$PLATFORM" in
+  linux-*)   ARTIFACT="${APP_BASENAME}-${PLATFORM}.tar.gz" ;;
+  macos-*)   ARTIFACT="${APP_BASENAME}-${PLATFORM}.dmg" ;;
+  windows-*) ARTIFACT="${APP_BASENAME}-${PLATFORM}.exe" ;;
+  *) echo "ERROR: no packaging rule for platform: $PLATFORM" >&2; exit 2 ;;
+esac
+ARTIFACT_PATH="$PKG_DIR/$ARTIFACT"
 
-COMMON_ARGS=(
+echo "=============================================================="
+echo " CryoStack Connector build"
+echo "   host platform : $PLATFORM"
+echo "   entrypoint    : $SRC_ENTRY"
+echo "   artifact      : dist/packages/$ARTIFACT"
+echo "=============================================================="
+
+# ---- dependencies -------------------------------------------------------
+python3 -m pip install --quiet --upgrade pip
+python3 -m pip install --quiet pyinstaller websockets requests paramiko pillow
+
+# ---- branding: derive every icon from the ONE canonical CryoStack logo ---
+python3 "$REPO_ROOT/scripts/build_brand_assets.py"
+ASSETS_DIR="$REPO_ROOT/icesee_hpc_connector/assets"
+ICON_ICNS="$ASSETS_DIR/cryostack-connector.icns"
+ICON_ICO="$ASSETS_DIR/cryostack-connector.ico"
+
+# ---- clean --------------------------------------------------------------
+rm -rf "$BUILD_DIR" "$DIST_DIR"
+mkdir -p "$BUILD_DIR" "$DIST_DIR" "$PKG_DIR"
+rm -f "$ARTIFACT_PATH"
+
+# --add-data separator is ':' on posix, ';' on windows
+DATA_SEP=":"; [[ "$OS_TAG" == "windows" ]] && DATA_SEP=";"
+
+PYI_ARGS=(
   --name "$APP_BASENAME"
-  --onefile
   --windowed
   --clean
-  --paths "$PWD"
+  --noconfirm
+  --paths "$REPO_ROOT"
+  --workpath "$BUILD_DIR"
+  --specpath "$BUILD_DIR"
+  --distpath "$DIST_DIR"
   --collect-submodules icesee_hpc_connector
   --collect-all paramiko
   --hidden-import paramiko
+  --add-data "${ASSETS_DIR}${DATA_SEP}icesee_hpc_connector/assets"
 )
 
-if [[ "$OS" == "Darwin" ]]; then
-  python3 -m pip install rumps
+# ---- build per platform ----------------------------------------------
+if [[ "$OS_TAG" == "macos" ]]; then
+  python3 -m pip install --quiet rumps
+  # --onedir (NOT --onefile) for the .app: a --onefile macOS app re-extracts to
+  # $TMPDIR/_MEIxxxx on every launch; a stale/locked dir from a previously
+  # crashed instance can make the next launch hang ("Application Not Responding").
+  PYTHONPATH="$REPO_ROOT" pyinstaller "${PYI_ARGS[@]}" \
+    --onedir \
+    --icon "$ICON_ICNS" \
+    --osx-bundle-identifier "edu.gatech.cryostack.connector" \
+    --hidden-import rumps --hidden-import Foundation --hidden-import AppKit \
+    --hidden-import objc \
+    "$SRC_ENTRY"
 
-  PYTHONPATH="$PWD" pyinstaller \
-    "${COMMON_ARGS[@]}" \
-    --hidden-import rumps \
-    --hidden-import Foundation \
-    --hidden-import AppKit \
-    icesee_hpc_connector/connector_menubar_app.py
+  APP_BUNDLE="$DIST_DIR/${APP_BASENAME}.app"
+  [[ -d "$APP_BUNDLE" ]] || { echo "ERROR: PyInstaller did not produce $APP_BUNDLE" >&2; exit 1; }
+
+  # Ad-hoc sign the bundle. An unsigned app copied into /Applications is subject
+  # to Gatekeeper "App Translocation" (runs from a random read-only path), which
+  # can make a large --onedir PyInstaller app appear to hang on first launch.
+  # An ad-hoc signature disables translocation. (Real notarization is a
+  # separate, later step and needs an Apple Developer ID.)
+  if command -v codesign >/dev/null 2>&1; then
+    codesign --force --deep --sign - --timestamp=none "$APP_BUNDLE" \
+      && echo "[build] ad-hoc signed $APP_BUNDLE" \
+      || echo "[build][WARN] ad-hoc codesign failed; first launch from /Applications may translocate" >&2
+  fi
+
+  # Stage a drag-to-install DMG: the .app + an /Applications alias + volume icon.
+  DMG_STAGE="$BUILD_DIR/dmg"
+  rm -rf "$DMG_STAGE"; mkdir -p "$DMG_STAGE"
+  cp -R "$APP_BUNDLE" "$DMG_STAGE/"
+  ln -s /Applications "$DMG_STAGE/Applications"
+  cp "$ICON_ICNS" "$DMG_STAGE/.VolumeIcon.icns" 2>/dev/null || true
 
   hdiutil create \
-    -volname "ICESEE Connector" \
-    -srcfolder "dist/${APP_BASENAME}.app" \
-    -ov \
-    -format UDZO \
-    "dist/packages/${DIST_NAME}.dmg"
+    -volname "$APP_BRAND" \
+    -srcfolder "$DMG_STAGE" \
+    -ov -format UDZO \
+    "$ARTIFACT_PATH"
 
-elif [[ "$OS" == "Linux" ]]; then
-  python3 -m pip install pystray pillow
+elif [[ "$OS_TAG" == "linux" ]]; then
+  # On a headless build host, pystray's X backend import can fail during
+  # PyInstaller analysis; run under xvfb:  xvfb-run bash build_connector.sh
+  python3 -m pip install --quiet pystray
+  PYTHONPATH="$REPO_ROOT" pyinstaller "${PYI_ARGS[@]}" \
+    --onefile \
+    --hidden-import pystray --hidden-import PIL \
+    --hidden-import tkinter --hidden-import tkinter.simpledialog \
+    "$SRC_ENTRY"
 
-  PYTHONPATH="$PWD" pyinstaller \
-    "${COMMON_ARGS[@]}" \
-    --hidden-import pystray \
-    --hidden-import PIL \
-    icesee_hpc_connector/connector_menubar_app.py
+  BIN="$DIST_DIR/${APP_BASENAME}"
+  [[ -f "$BIN" ]] || { echo "ERROR: PyInstaller did not produce $BIN" >&2; exit 1; }
+  chmod +x "$BIN"
+  tar -czf "$ARTIFACT_PATH" -C "$DIST_DIR" "${APP_BASENAME}"
 
-  tar -czf "dist/packages/${DIST_NAME}.tar.gz" \
-    -C dist "$APP_BASENAME"
+else  # windows
+  python3 -m pip install --quiet pystray
+  PYTHONPATH="$REPO_ROOT" pyinstaller "${PYI_ARGS[@]}" \
+    --onefile \
+    --icon "$ICON_ICO" \
+    --hidden-import pystray --hidden-import PIL \
+    --hidden-import tkinter --hidden-import tkinter.simpledialog \
+    "$SRC_ENTRY"
 
-else
-  python3 -m pip install pystray pillow
-
-  PYTHONPATH="$PWD" pyinstaller \
-    "${COMMON_ARGS[@]}" \
-    --hidden-import pystray \
-    --hidden-import PIL \
-    icesee_hpc_connector/connector_menubar_app.py
-
-  cp "dist/${APP_BASENAME}.exe" \
-     "dist/packages/${DIST_NAME}.exe"
+  EXE="$DIST_DIR/${APP_BASENAME}.exe"
+  [[ -f "$EXE" ]] || { echo "ERROR: PyInstaller did not produce $EXE" >&2; exit 1; }
+  cp "$EXE" "$ARTIFACT_PATH"
 fi
 
+# ---- verify -----------------------------------------------------------
+if [[ ! -s "$ARTIFACT_PATH" ]]; then
+  echo "ERROR: build reported success but the artifact is missing or empty:" >&2
+  echo "       $ARTIFACT_PATH" >&2
+  exit 1
+fi
+
+# ---- build-metadata sidecar (authoritative build time, survives host copy) --
+if command -v sha256sum >/dev/null 2>&1; then
+  SHA="$(cd "$PKG_DIR" && sha256sum "$ARTIFACT" | awk '{print $1}')"
+else
+  SHA="$(cd "$PKG_DIR" && shasum -a 256 "$ARTIFACT" | awk '{print $1}')"
+fi
+SIZE_BYTES="$(wc -c < "$ARTIFACT_PATH" | tr -d ' ')"
+BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+# Pairing protocol this connector speaks (from the source it was built from) and
+# the exact source revision, so the release pipeline can refuse to publish an
+# incompatible binary as current even when the filename matches.
+PAIRING_PROTOCOL="$(
+  PYTHONPATH="$REPO_ROOT" python3 -c \
+    'from icesee_hpc_connector.connector_core import PAIRING_PROTOCOL; print(PAIRING_PROTOCOL)'
+)"
+BUILD_REV="$(git -C "$REPO_ROOT" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
+if ! git -C "$REPO_ROOT" diff --quiet HEAD -- icesee_hpc_connector 2>/dev/null; then
+  BUILD_REV="${BUILD_REV}-dirty"
+fi
+
+cat > "${ARTIFACT_PATH}.build.json" <<JSON
+{
+  "platform": "${PLATFORM}",
+  "filename": "${ARTIFACT}",
+  "sha256": "${SHA}",
+  "size_bytes": ${SIZE_BYTES},
+  "built_at": "${BUILT_AT}",
+  "pairing_protocol": "${PAIRING_PROTOCOL}",
+  "connector_build_revision": "${BUILD_REV}"
+}
+JSON
+
+echo "[build] pairing protocol: ${PAIRING_PROTOCOL}   source revision: ${BUILD_REV}"
+
+# Next steps (do NOT publish straight from dist/packages):
+#   bash publish_connector_artifact.sh     # register this artifact into the store
+#   bash release_connector.sh              # regenerate + promote the public release
+
+# ---- summary --------------------------------------------------------
+HUMAN_SIZE="$(du -h "$ARTIFACT_PATH" | awk '{print $1}')"
 echo
-echo "Built package(s):"
-ls -lh dist/packages
+echo "=============================================================="
+echo " Built for this host:"
+echo "   $ARTIFACT   (${HUMAN_SIZE}, ${SIZE_BYTES} bytes)"
+echo "   sha256: $SHA"
+echo
+echo " NOT built on this host (single-host build cannot cross-compile):"
+for p in linux-x86_64 macos-arm64 macos-x86_64 windows-x86_64; do
+  [[ "$p" == "$PLATFORM" ]] && continue
+  echo "   - $p  (run build_connector.sh on that platform)"
+done
+echo
+echo " Artifacts collected in: dist/packages/"
+ls -lh "$PKG_DIR"
+echo "=============================================================="

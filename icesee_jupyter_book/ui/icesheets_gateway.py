@@ -4,6 +4,8 @@ import os
 import io
 import html
 import json
+import shutil
+import time as _time
 import yaml
 import subprocess
 from pathlib import Path
@@ -34,6 +36,12 @@ from icesee_jupyter_book.core.remote_runner import (
     connector_get_public_key,
 )
 from cryostack_src.cloud.bridge import CloudBridge
+from cryostack_src.cloud import (
+    DEFAULT_CLOUD_REGION,
+    cloud_run_preflight,
+    resolve_cloud_config,
+    validate_cloud_config,
+)
 
 from icesee_jupyter_book.core.local_connector import build_connector_panel
 from icesee_jupyter_book.ui.shared_ssh_widgets import build_ssh_key_manager
@@ -51,22 +59,42 @@ from icesee_jupyter_book.ui.application_menus import (
 from icesee_jupyter_book.ui.shared_app_styles import (
     shared_application_styles,
 )
+from icesee_jupyter_book.ui.shared_remote_connection_panel import (
+    build_remote_connection_panel,
+    classify_bootstrap_result,
+)
+from icesee_jupyter_book.ui.shared_slurm_resources_panel import (
+    build_slurm_resources_panel,
+)
+from icesee_jupyter_book.ui.shared_validation import (
+    validate_slurm_resources,
+)
+from icesee_jupyter_book.ui.shared_observer_guard import UIRefreshCoordinator
+from icesee_jupyter_book.ui.shared_agent_panel import build_agent_accordion
+from cryostack_src import perf
 
 from icesee_jupyter_book.ui.experiment_bridge import (
     ExperimentBridge,
     load_experiment_bridge,
 )
 
+import getpass
+
 from icesee_jupyter_book.ui.workspace_bridge import (
     WorkspaceBridge as WorkspacePersistenceBridge,
     load_workspace_bridge,
 )
+from icesee_jupyter_book.ui.workspace_persistence import make_state_io
 
 from cryostack_src.workspace import (
     WorkspaceBridge,
     WorkspaceManager,
     build_workspace_logs,
     resolve_workspace_user,
+)
+from cryostack_src.workspace.resource_state import (
+    ResourceStateController,
+    strip_secrets,
 )
 
 from icesee_jupyter_book.core.experiment_status import (
@@ -82,14 +110,39 @@ from cryostack_src.frontend.shared import (
 from cryostack_src.frontend.cryolauncher.cloud_environment import (
     build_cloud_environment_card,
     set_cloud_status,
+    wire_matlab_license_widgets,
 )
 from cryostack_src.frontend.cryolauncher.cloud_runtime import (
+    _ec2_config_from_widgets,
     build_cloud_runtime_callbacks,
+)
+from cryostack_src.frontend.cryolauncher.cloud_connect_runtime import (
+    build_aws_connect_callbacks,
+)
+from cryostack_src.frontend.cryolauncher.cloud_run_controller import (
+    CloudRunController,
+    cloud_run_plan_summary,
+    resolve_job_definition,
+    user_run_prefix,
+)
+from cryostack_src.cloud.drivers.aws.batch_config import (
+    JOB_DEFINITION_NAMES as _CLOUD_JOB_DEFS,
+)
+from cryostack_src.models.workflow_capabilities import (
+    resolve_workflow_capabilities,
 )
 from cryostack_src.frontend.cryolauncher.remote_runtime import (
     build_remote_runtime_callbacks,
 )
 from cryostack_src.remote import RemoteBridge, expand_remote_home, normalize_remote_path
+from cryostack_src.remote.access_state import (
+    enforce_remote_access,
+    verify_remote_identity,
+    identity_result_from_output,
+    can_reuse_connectivity_identity,
+    classify_ssh_failure,
+    SSH_KEY_NOT_AUTHORIZED,
+)
 from cryostack_src.remote.spack_env import SetupSlurmOpts
 from cryostack_src.frontend.cryolauncher.spack_runtime import build_spack_runtime_callbacks
 from cryostack_src.models import get_model_adapter
@@ -109,10 +162,15 @@ from cryostack_src.models.submission import (
     submit_remote_icesheets,
     submit_remote_icesheets_via_connector,
 )
-from cryostack_src.resources.profiles import get_compute_profile
+from cryostack_src.resources.profiles import get_compute_profile, initial_remote_fields
 from cryostack_src.frontend.cryolauncher.software_stack import build_software_stack_panel
 from cryostack_src.frontend.cryolauncher.container_image import build_container_image_panel
 from cryostack_src.frontend.cryolauncher.issm_md_panel import build_issm_md_panel
+from cryostack_src.frontend.cryolauncher.icepack_basic_panel import build_icepack_basic_panel
+from cryostack_src.models.icepack.parameters import (
+    IcepackOverrideError, IcepackParameterError, entrypoint_transform_for,
+)
+from cryostack_src.models.icepack.notebook import NotebookConversionError
 
 from cryostack_src.frontend.cryolauncher.panels import (
     build_logs_panel,
@@ -251,7 +309,7 @@ def build_sidebar():
         <a href="/index.html">Home</a>
 
         <div class="icesee-nav-group">Getting Started</div>
-        <a href="/intro.html">ICESEE on GHUB</a>
+        <a href="/intro.html">ICESEE Overview</a>
         <a href="/quickstart.html">Quickstart</a>
         <a href="/icesee_workflow.html">ICESEE Workflow Overview</a>
 
@@ -340,7 +398,69 @@ def build_backend_check_cmd(backend: str, model: str, remote_base: str, remote_t
         backend=backend,
     )
 
+def _agent_mode_enabled() -> bool:
+    """Agent is a third interaction mode only when opted in -- otherwise the
+    mode selector is exactly Basic / Advanced and nothing agent-related is
+    built or shown."""
+    return os.environ.get("CRYOSTACK_AGENT_PANEL", "").strip().lower() in (
+        "1", "true", "yes", "on")
+
+
+def _build_agent_panel(workspace_manager):
+    """Construct the Run Assistant (Beta) panel for the IceSheets gateway's
+    **Agent** interaction mode.
+
+    * context: the authenticated CryoStack user, hard-capped at PLAN, scoped to
+      this gateway's ``workspace_manager``;
+    * assistant: the deterministic ``RuleBasedAdapter`` (no network / no key)
+      unless a provider adapter is wired elsewhere;
+    * on_approve: records + persists a digest-bound ``Approval`` in the user's
+      own ``AgentStore``. There is no submit step -- no ``SubmitBackend`` is
+      wired -- so an approved plan simply waits.
+
+    Agent mode orchestrates the *same* CryoStack services as Basic / Advanced:
+    the plan converges on the existing working-copy + validation (B3/B4/
+    Basic-mode/preflight) + approval boundary. No parallel execution path.
+    """
+    from cryostack_src.agents import (
+        AgentStore, Permission, RuleBasedAdapter, RunAssistant, RunPlan,
+        build_tool_context,
+    )
+    from cryostack_src.workspace.identity import resolve_workspace_user
+    from icesee_jupyter_book.ui.shared_agent_panel import build_agent_panel
+
+    def _context():
+        return build_tool_context(
+            application="icesheets", max_permission=Permission.PLAN,
+            workspace_manager=workspace_manager)
+
+    def _on_approve(plan_dict: dict) -> str:
+        user = resolve_workspace_user(require_authenticated=True)
+        store = AgentStore(user=user)
+        mp = store.plans.create(RunPlan.from_dict(plan_dict))
+        mp.mark_validated(mp.plan)
+        mp.submit_for_approval()
+        # bind the approval to the *content* of the example / run-target /
+        # datasets, not just the intent digest, so a later edit blocks a run.
+        fp_digest = ""
+        try:
+            from cryostack_src.agents.planning_tools import fingerprint_run_inputs
+            fp_digest = fingerprint_run_inputs(_context(), plan=plan_dict).get("digest", "")
+        except Exception:
+            fp_digest = ""            # falls back to intent-only binding
+        mp.approve(user, input_fingerprint=fp_digest)
+        store.plans.save(mp)
+        return mp.plan_id
+
+    return build_agent_panel(
+        assistant=RunAssistant(llm=RuleBasedAdapter()),
+        build_context=_context,
+        on_approve=_on_approve,
+    )
+
+
 def build_icesheets_ui():
+    _perf_t0 = _time.perf_counter()
     try:
         load_cryostack_account_assets()
         load_experiment_bridge()
@@ -378,6 +498,19 @@ def build_icesheets_ui():
         mode_dd = run_settings.execution_mode
         backend_dd = run_settings.backend
         model_dd = run_settings.model
+
+        # Interaction mode: Basic | Advanced are always present; Agent is a
+        # third, deliberately-optional mode only when opted in. Without the
+        # opt-in the selector and behaviour are byte-identical to before.
+        # The Agent panel itself is built later (needs workspace_manager).
+        _agent_mode = _agent_mode_enabled()
+        agent_panel = None
+        if _agent_mode:
+            ui_mode_dd.options = [
+                ("Basic", "basic"),
+                ("Advanced", "advanced"),
+                ("Agent · Beta", "agent"),
+            ]
 
         software_panel = build_software_stack_panel()
         image_panel = build_container_image_panel()
@@ -424,9 +557,9 @@ def build_icesheets_ui():
 
         access_mode_dd = W.Dropdown(
             options=[
+                ("CryoStack Connector (recommended)", "connector"),
+                ("Direct SSH from server (shared-trust / developer)", "direct"),
                 ("Auto", "auto"),
-                ("Direct SSH from server", "direct"),
-                ("Local Connector / VPN bridge", "connector"),
             ],
             value="connector",
             layout=W.Layout(width="100%"),
@@ -467,20 +600,36 @@ def build_icesheets_ui():
 
         # -----------------------------
         # Remote controls
+        #
+        # Ownership:
+        #   RESOURCE (from ComputeProfile) : login host, ssh port, partition,
+        #                                    wall time -- follow the resource.
+        #   USER x RESOURCE / USER         : HPC username, remote directory,
+        #                                    Slurm account, notification email --
+        #                                    BLANK until B2 persistence. Never
+        #                                    inferred from the server $USER.
+        #   RUN                            : job name, nodes, tasks, tasks/node,
+        #                                    memory, per-run overrides.
         # -----------------------------
-        cluster_host = W.Text(value="login-phoenix-rh9.pace.gatech.edu", layout=W.Layout(width="320px"))
-        cluster_user = W.Text(value=os.environ.get("USER", ""), placeholder="username", layout=W.Layout(width="320px"))
-        cluster_port = W.IntText(value=22, layout=W.Layout(width="120px"))
-        # cluster_name_for_keys = W.Text(value="pace" , layout=W.Layout(width="320px"))
-        cluster_name_for_keys = W.Text(value="pace", placeholder="e.g. pace, ub-ccr, frontera", layout=W.Layout(width="320px"))
+        _INITIAL_CLUSTER = "pace"
+        _rf = initial_remote_fields(_INITIAL_CLUSTER)
 
-        remote_base_dir = W.Text(value="~/r-arobel3-0", layout=W.Layout(width="320px"))
+        cluster_name_for_keys = W.Text(
+            value=_INITIAL_CLUSTER, placeholder="e.g. pace, ub-ccr, frontera",
+            continuous_update=False,   # resource switch on commit, not per keystroke
+            layout=W.Layout(width="320px"),
+        )
+        cluster_host = W.Text(value=_rf["login_host"], placeholder="resource login host", layout=W.Layout(width="320px"))
+        cluster_user = W.Text(value=_rf["hpc_username"], placeholder=_rf["username_hint"], layout=W.Layout(width="320px"))
+        cluster_port = W.IntText(value=_rf["ssh_port"], layout=W.Layout(width="120px"))
+
+        remote_base_dir = W.Text(value=_rf["remote_directory"], placeholder="your remote working directory (required)", layout=W.Layout(width="320px"))
         remote_tag = W.Text(value="icesheets", layout=W.Layout(width="220px"))
 
         auth_mode = W.ToggleButtons(
             options=[("Key-only", "key"), ("Bootstrap with password (one-time)", "bootstrap")],
             value="key",
-            layout=W.Layout(width="420px"),
+            layout=W.Layout(width="auto", max_width="100%"),
         )
 
         cluster_password = W.Password(
@@ -501,15 +650,24 @@ def build_icesheets_ui():
             button_style="info",
         )
 
-        slurm_job_name = W.Text(value="ICESHEETS", layout=W.Layout(width="100%"))
-        slurm_time = W.Text(value="04:00:00", layout=W.Layout(width="100%"))
-        slurm_nodes = W.IntText(value=1, layout=W.Layout(width="100%"))
-        slurm_ntasks = W.IntText(value=8, layout=W.Layout(width="100%"))
-        slurm_tpn = W.IntText(value=8, layout=W.Layout(width="100%"))
-        slurm_part = W.Text(value="cpu-large", layout=W.Layout(width="100%"))
-        slurm_mem = W.Text(value="64G", layout=W.Layout(width="100%"))
-        slurm_account = W.Text(value="gts-arobel3-atlas", layout=W.Layout(width="100%"))
-        slurm_mail = W.Text(value="bankyanjo@gmail.com", layout=W.Layout(width="100%"))
+        slurm_job_name = W.Text(value="ICESHEETS", layout=W.Layout(width="100%"))          # RUN
+        slurm_time = W.Text(value=_rf["wall_time"], layout=W.Layout(width="100%"))          # RESOURCE default
+        slurm_nodes = W.IntText(value=1, layout=W.Layout(width="100%"))                     # RUN
+        slurm_ntasks = W.IntText(value=8, layout=W.Layout(width="100%"))                    # RUN
+        slurm_tpn = W.IntText(value=8, layout=W.Layout(width="100%"))                       # RUN
+        slurm_part = W.Text(value=_rf["partition"], layout=W.Layout(width="100%"))          # RESOURCE default
+        slurm_mem = W.Text(value="64G", layout=W.Layout(width="100%"))                      # RUN
+        slurm_account = W.Text(                                                             # USER x RESOURCE -- blank
+            value=_rf["slurm_account"],
+            placeholder=("Slurm allocation (required for this resource)"
+                         if _rf["account_required"] else "Slurm allocation"),
+            layout=W.Layout(width="100%"),
+        )
+        slurm_mail = W.Text(                                                                # USER -- blank
+            value=_rf["notification_email"],
+            placeholder="notification email (optional)",
+            layout=W.Layout(width="100%"),
+        )
 
         connect_btn = W.Button(description="Test SSH", icon="terminal", button_style="info")
         status_btn = W.Button(description="Check status", icon="tasks")
@@ -525,24 +683,376 @@ def build_icesheets_ui():
         # Basic-mode ISSM configuration: a curated, solver-aware, validated panel
         # (replaces the old raw md.<section>.<field> editor).
         md_panel = build_issm_md_panel()
+        # Basic-mode Icepack configuration: deliberately minimal (ice temperature,
+        # timestep count) -- see cryostack_src/models/icepack/parameters.py.
+        icepack_basic_panel = build_icepack_basic_panel()
 
-        def current_cloud_bridge():
+        def _resolve_cloud_execution():
+            """Fresh per-operation credential context for the authenticated
+            user: BYO-AWS assumed role (fresh sts:AssumeRole), or developer
+            mode (ambient/profile). Never persisted. Raises CloudAccessError
+            for a broken BYO connection -- callers fail closed."""
+            from cryostack_src.cloud.connect import resolve_cloud_execution
+
+            return resolve_cloud_execution(
+                user=workspace_manager.owner,
+                region_hint=aws_region.value.strip() or DEFAULT_CLOUD_REGION,
+                profile_hint=aws_profile.value.strip() or None,
+                # derives job_definition/ecr_repository for whichever model
+                # is currently selected -- cryostack-issm / cryostack-icepack
+                model=(model_dd.value or "issm").strip().lower(),
+            )
+
+        def current_cloud_bridge(*, credentials=None, region=None):
+            """A CloudBridge for a cloud operation.
+
+            When ``credentials`` is not supplied and the authenticated user has
+            a connected BYO-AWS account, this performs a FRESH sts:AssumeRole
+            and binds the bridge to those temporary credentials -- there is no
+            fallback to the CryoStack host's ambient credentials for a
+            connected account. Developer mode (no connection record) keeps the
+            existing profile/ambient bridge.
+            """
             selected_run = workspace_manager.selected_run()
             selected_metadata = selected_run.metadata if selected_run and selected_run.execution_mode == "cloud" else {}
+            if credentials is None:
+                _ex = _resolve_cloud_execution()          # may raise CloudAccessError
+                if getattr(_ex, "is_byo", False):
+                    credentials = _ex.credentials
+                    region = region or _ex.region
             return CloudBridge(
                 provider="aws",
                 region=(
-                    selected_metadata.get("region")
+                    region
+                    or selected_metadata.get("region")
                     or aws_region.value.strip()
-                    or "us-east-2"
+                    or DEFAULT_CLOUD_REGION
                 ),
                 profile=(
-                    selected_metadata.get("profile")
-                    or aws_profile.value.strip()
-                    or None
+                    None if credentials else (
+                        selected_metadata.get("profile")
+                        or aws_profile.value.strip()
+                        or None
+                    )
                 ),
+                credentials=credentials,
                 results_sync=workspace_manager.sync_cloud_results,
             )
+
+        # -- Cloud run state chip: Not configured -> Checking -> Ready ->
+        #    Submitting -> Queued -> Running -> Completed / Failed --------
+        _CLOUD_STATES = {
+            "not_configured": ("icesee-idle", "Not configured"),
+            # AWS ACCOUNT has a connection record but it is not yet verified
+            # (the user started onboarding, or a page reload found a pending
+            # attempt) -- distinct from "nothing configured at all".
+            "connection_required": ("icesee-running", "Connection required"),
+            # the last verification attempt failed (bad/forgotten Role ARN,
+            # AssumeRole denied, account mismatch, ...). The AWS ACCOUNT block
+            # carries Retry connection / Change AWS account -- this is never
+            # a dead end.
+            "connection_issue": ("icesee-fail", "Connection issue"),
+            "checking": ("icesee-running", "Checking…"),
+            "testing": ("icesee-running", "Testing connection…"),
+            "preparing": ("icesee-running", "Preparing…"),
+            "smoke_testing": ("icesee-running", "Testing infrastructure…"),
+            "connected": ("icesee-done", "Connected"),
+            "ready": ("icesee-done", "Ready"),
+            "staging": ("icesee-running", "Staging…"),
+            "submitting": ("icesee-running", "Submitting…"),
+            "queued": ("icesee-running", "Queued"),
+            "running": ("icesee-running", "Running"),
+            "completed": ("icesee-done", "Completed"),
+            "failed": ("icesee-fail", "Failed"),
+            "cancelled": ("icesee-idle", "Cancelled"),
+        }
+
+        def _set_cloud_state(kind: str) -> None:
+            cls, label = _CLOUD_STATES.get(kind, _CLOUD_STATES["not_configured"])
+            cloud_state_chip.value = (
+                f"<span class='icesee-status {cls}'>Cloud: {label}</span>"
+            )
+            if kind == "completed":
+                status_chip.value = status_html("done")
+            elif kind in ("failed", "cancelled"):
+                status_chip.value = status_html("fail")
+
+        #: late-bound; assigned once the CloudRunController is built (below).
+        _cloud = {"controller": None}
+
+        def _cloud_matlab_license_configured() -> bool:
+            """True when the connected BYO account has an ISSM cloud MATLAB
+            license mechanism configured (a Secrets Manager ARN). Non-secret;
+            the license value never reaches CryoStack. Fail closed."""
+            try:
+                return bool(_resolve_cloud_execution().matlab_license.configured)
+            except Exception:  # noqa: BLE001
+                return False
+
+        def _default_tested_image(model: str):
+            """The CryoStack tested container image for ``model`` (what Prepare
+            Cloud mirrored into ECR). Deterministic; no AWS call."""
+            try:
+                from cryostack_src.models.stack import default_tested_image_for_model
+
+                return default_tested_image_for_model((model or "").strip().lower())
+            except Exception:  # noqa: BLE001
+                return None
+
+        def _cloud_container_provenance(handle):
+            """Reuse the SAME container/software provenance schema the Remote
+            container path records (manifest schema v2), anchored to the exact
+            tested-image key frozen on the handle at submit -- so a cloud run's
+            recorded image never drifts when CryoStack's default image
+            changes. Returns ``(container, software)`` (``{}, {}`` if there is
+            no tested image, e.g. developer mode)."""
+            key = getattr(handle, "image_key", "") or ""
+            if not key:
+                return {}, {}
+            try:
+                from cryostack_src.models.stack import resolve_stack
+
+                resolved = resolve_stack(
+                    model=(handle.model or "").strip().lower(),
+                    profile="tested", selections=None,
+                    container_source="docker", image_uri="",
+                    tested_image_key=key, digest_resolver=None,
+                )
+                return (resolved.get("container") or {},
+                        resolved.get("software") or {})
+            except Exception as _prov_err:  # noqa: BLE001 - never block a real run
+                with log_out:
+                    print("[cloud][provenance] (non-fatal)",
+                          type(_prov_err).__name__, _prov_err)
+                return {}, {}
+
+        def _register_cloud_run(*, handle, result):
+            """Enter a submitted cloud run into the experiment/workspace system --
+            the same registration the Remote path uses."""
+            meta = getattr(result, "metadata", {}) or {}
+            s3_run = handle.s3_run
+            s3_outputs = meta.get("s3_outputs") or (
+                f"{s3_run.rstrip('/')}/outputs" if s3_run else None
+            )
+            STATUS["batch_job_id"] = handle.job_id
+            STATUS["cloud_run"] = s3_run
+            _container, _software = _cloud_container_provenance(handle)
+            workspace_bridge.start_run(
+                name=str(handle.run_id or handle.job_id),
+                model=handle.model,
+                backend="aws",
+                execution_mode="cloud",
+                jobid=handle.job_id,
+                remote_directory=Path(str(s3_run)),
+                log_file=None,
+                metadata={
+                    **(handle.metadata or {}),
+                    "cloud_run": s3_run,
+                    "s3_outputs": s3_outputs,
+                    "run_id": handle.run_id,
+                    "region": handle.region,
+                    "job_queue": meta.get("job_queue"),
+                    "job_definition": meta.get("job_definition"),
+                    "provider": "aws",
+                    # C7.5: non-secret -- lets a page refresh re-check this run
+                    # with a fresh AssumeRole for the right account. No STS
+                    # credentials are ever persisted.
+                    "account_id": getattr(handle, "account_id", "") or "",
+                    "example": getattr(handle, "example", "") or "",
+                    "run_target": getattr(handle, "run_target", "") or "",
+                    "source": getattr(handle, "source", "") or "",
+                    "vcpu": getattr(handle, "vcpu", 0) or 0,
+                    "memory_gib": getattr(handle, "memory_gib", 0) or 0,
+                    "expected_runtime_minutes": getattr(
+                        handle, "expected_runtime_minutes", 0) or 0,
+                    "cost_estimate": getattr(handle, "cost_public", {}) or {},
+                    # exact image this run used -- also in metadata so the
+                    # CLOUD RUN card can restore it on a page-refresh reattach
+                    "image_key": getattr(handle, "image_key", "") or "",
+                    "image_label": getattr(handle, "image_label", "") or "",
+                    "image_reference": getattr(handle, "image_reference", "") or "",
+                    "image_digest": getattr(handle, "image_digest", "") or "",
+                    # non-secret AWS resource identity -- seeded now, grown by
+                    # each DescribeJobs poll (see _persist_cloud_resources)
+                    "aws_resources": dict(getattr(handle, "aws_resources", {}) or {}),
+                },
+                container=_container,
+                software=_software,
+            )
+            # The just-submitted run is the active run (it is the subject of the
+            # CLOUD RUN card). Make it the Workspace's selected run too, so the
+            # result sync, Run Log and Results all target THIS run by default.
+            try:
+                _new = workspace_manager._run_by_job_id(handle.job_id)
+                if _new is not None:
+                    workspace_manager.select_run(_new.id)
+            except Exception:  # noqa: BLE001 - selection is best-effort
+                pass
+
+        def _icepack_cloud_postprocess_files() -> dict:
+            """Icepack's cloud output-collector, staged as an ordinary file
+            alongside run.py -- never embedded into the Batch runner script.
+            See cryostack_src/cloud/runtime.py's execution-artifact contract."""
+            from cryostack_src.cloud.runtime import icepack_postprocess_extra_files
+
+            return icepack_postprocess_extra_files()
+
+        def _submit_cloud_run(staged_dir, md_provenance, *, review=None):
+            """Validate + preflight + stage the user-owned working copy
+            (synchronous, local, fast), then hand the run to the
+            CloudRunController -- staging to S3, submit-job, polling and result
+            retrieval all run off the event loop. Never billable on a config
+            error.
+
+            When ``review`` (a CloudRunReview from Review & Launch) is given,
+            **its** ``config`` is the run configuration -- no second
+            CloudRunConfig is built -- and its drift digest + launch gate are
+            re-checked here so a change since Review cannot launch.
+            """
+            _model = model_dd.value
+            _jd_warnings: list[str] = []
+            if review is not None:
+                # the reviewed config IS the run config
+                if not review.can_launch:
+                    status_chip.value = status_html("fail")
+                    _set_cloud_state("failed")
+                    with log_out:
+                        print("[cloud][ERROR] The reviewed run is blocked:")
+                        for _r in review.blocked_reasons:
+                            print("  -", _r)
+                    return None
+                if _cloud_review_digest() != review.digest:
+                    status_chip.value = status_html("fail")
+                    _set_cloud_state("failed")
+                    with log_out:
+                        print("[cloud][ERROR] The run configuration changed since "
+                              "you reviewed it. Open Review & Launch again.")
+                    return None
+                _cfg = review.config
+            else:
+                _compute_mode = getattr(
+                    cloud_environment.compute_mode, "value", "fargate")
+                _ec2_cfg = _ec2_config_from_widgets(cloud_environment)
+                _job_def, _jd_warnings = resolve_job_definition(
+                    _model, batch_job_def.value.strip(), allow_list=_CLOUD_JOB_DEFS,
+                    compute_mode=_compute_mode, ec2=_ec2_cfg,
+                )
+                _cfg = resolve_cloud_config(
+                    provider="aws",
+                    region=aws_region.value.strip(),
+                    bucket=cloud_bucket.value.strip(),
+                    profile=aws_profile.value.strip(),
+                    model=_model,
+                    job_queue=batch_job_queue.value.strip(),
+                    job_definition=_job_def,
+                    aws_batch_compute=_compute_mode,
+                    ec2=_ec2_cfg,
+                )
+            _lic = _cloud_matlab_license_configured()
+            _problems = validate_cloud_config(_cfg, model=_model)
+            _problems += cloud_run_preflight(
+                model=_model, matlab_license_configured=_lic,
+                compute_mode=_cfg.compute_mode, ec2_config=_cfg.ec2,
+            )
+            if _problems:
+                status_chip.value = status_html("fail")
+                _set_cloud_state("failed")
+                with log_out:
+                    print("[cloud][ERROR] Fix the cloud configuration before submitting:")
+                    for _p in _problems:
+                        print("  -", _p)
+                return None
+
+            _target = (Path(run_target.value or "runme.m").name) or "runme.m"
+            # the canonical example SOURCE, recorded distinctly from the
+            # executable run target (a converted Icepack notebook: source is
+            # the .ipynb, run target is run.py). "" when they are the same.
+            _sel_path = Path(STATUS.get("selected_example_path") or example_dir.value or "")
+            _source = _sel_path.name if _sel_path.suffix.lower() == ".ipynb" else ""
+
+            # cloud always uploads a user-owned working copy (parity with Remote)
+            if str(staged_dir) == str(example_dir.value):
+                try:
+                    _sc = workspace_manager.stage_example_for_run(
+                        source_example=example_dir.value,
+                        # Icepack: stage the output collector as an ACTUAL
+                        # FILE alongside run.py -- never embedded into the
+                        # Batch runner script itself (see cloud/runtime.py's
+                        # execution-artifact contract; this is what fixed
+                        # "Container Overrides length must be at most 8192").
+                        extra_files=(
+                            _icepack_cloud_postprocess_files()
+                            if _model == "icepack" else None
+                        ),
+                    )
+                    staged_dir = str(_sc.path)
+                except Exception as _e:
+                    status_chip.value = status_html("fail")
+                    _set_cloud_state("failed")
+                    with log_out:
+                        print("[cloud][stage][ERROR]", type(_e).__name__, _e)
+                    return None
+
+            with log_out:
+                for _w in _jd_warnings:
+                    print("[cloud]", _w)
+                print(cloud_run_plan_summary(
+                    model=_model, region=_cfg.region, bucket=_cfg.bucket,
+                    job_queue=_cfg.job_queue, job_definition=_cfg.job_definition,
+                ))
+
+            status_chip.value = status_html("running")
+            # the tested container image this run executes in -- frozen into
+            # the run's provenance at submit so a historical run always shows
+            # the image it ACTUALLY used, even after the default changes.
+            _img = _default_tested_image(_model)
+            _submit_extra = {
+                "_image_key": getattr(_img, "key", "") or "",
+                "_image_label": getattr(_img, "label", "") or "",
+                "_image_reference": getattr(_img, "reference", "") or "",
+                "_image_digest": getattr(_img, "digest", "") or "",
+            }
+            if review is not None:
+                _submit_extra.update({
+                    "_account_id": review.account_id,
+                    "_example": review.example,
+                    "_vcpu": review.vcpu,
+                    "_memory_gib": review.memory_gib,
+                    "_expected_runtime_minutes": review.expected_runtime_minutes,
+                    "_cost_public": review.cost.to_public_dict(),
+                    "_review_digest": review.digest,
+                })
+                # prefer the exact image the review resolved (identical here,
+                # but keeps submit anchored to what the user reviewed)
+                if getattr(review, "image_reference", ""):
+                    _submit_extra.update({
+                        "_image_key": review.image_key,
+                        "_image_label": review.image_label,
+                        "_image_reference": review.image_reference,
+                        "_image_digest": review.image_digest,
+                    })
+            _cloud["controller"].submit(
+                staged_source=str(staged_dir),
+                model=_model,
+                run_target=_target,
+                bucket=_cfg.bucket,
+                run_prefix=(
+                    (f"{_cfg.base_prefix.strip('/')}/" if _cfg.base_prefix else "")
+                    + user_run_prefix(workspace_manager.owner.safe_id)
+                ),
+                job_queue=_cfg.job_queue,
+                job_definition=_cfg.job_definition,
+                compute_mode=_cfg.compute_mode,
+                ec2_config=_cfg.ec2,
+                job_name=(batch_job_name.value.strip() or "cryostack"),
+                matlab_license_configured=_lic,
+                _region=_cfg.region,
+                _profile=_cfg.profile,
+                _md_provenance=md_provenance,
+                _source=_source,
+                **_submit_extra,
+            )
+            return None
 
         def current_remote_bridge(*, mode=None):
             return RemoteBridge(
@@ -635,6 +1145,8 @@ def build_icesheets_ui():
             result = connector_get_public_key(
                 SESSION["id"],
                 cluster_name=cluster_name_for_keys.value or "pace",
+                hpc_username=cluster_user.value.strip(),
+                host=cluster_host.value.strip(),
             )
 
             with log_out:
@@ -651,6 +1163,12 @@ def build_icesheets_ui():
 
             return result
 
+        def _bootstrap_panel(state, detail=""):
+            try:
+                remote_conn_panel.set_bootstrap_state(state, detail)
+            except (NameError, AttributeError):
+                pass
+
         def on_bootstrap_keys(_=None):
             log_out.clear_output()
             status_chip.value = status_html("running")
@@ -662,15 +1180,21 @@ def build_icesheets_ui():
 
             if not host or not user:
                 status_chip.value = status_html("fail")
+                _bootstrap_panel("connector_failed", "Provide Host + HPC username first.")
                 with log_out:
                     print("[auth][ERROR] Provide Host + User first.")
                 return
 
             if not password:
                 status_chip.value = status_html("fail")
+                _bootstrap_panel("password_failed", "Enter your HPC password (used once, never stored).")
                 with log_out:
                     print("[auth][ERROR] Enter your password. It is used once and not stored.")
                 return
+
+            # Immediate feedback: the button must never look inert.
+            bootstrap_btn.disabled = True
+            _bootstrap_panel("registering")
 
             try:
                 use_connector = should_use_connector()
@@ -679,12 +1203,14 @@ def build_icesheets_ui():
                     if not SESSION.get("id"):
                         create_or_refresh_connector_session()
 
-                    st = relay_check_status(SESSION["id"])
+                    st = relay_check_status(SESSION["id"], force=True)
                     if not st.get("online"):
                         status_chip.value = status_html("fail")
+                        _bootstrap_panel("connector_failed",
+                                         "The CryoStack Connector is not connected. "
+                                         "Pair it, then try again.")
                         with log_out:
                             print("[connector][ERROR] Connector session is not online.")
-                            print("Open the connector setup page and start the local connector first.")
                         return
 
                 result = bootstrap_passwordless_ssh(
@@ -692,56 +1218,74 @@ def build_icesheets_ui():
                     user=user,
                     port=port,
                     password=password,
-                    access_mode="connector" if access_mode_dd.value == "connector" else "direct",
+                    access_mode="connector" if use_connector else "direct",
                     session_id=SESSION.get("id"),
                     cluster_name=cluster_name_for_keys.value or "pace",
                 )
 
+                # scrub the password from the widget the moment the call returns
+                cluster_password.value = ""
+
                 with log_out:
                     for msg in result.get("messages", []):
                         print(msg)
-
                     if (result.get("stdout") or "").strip():
-                        print("--- stdout ---")
-                        print(result["stdout"].strip())
-
+                        print("--- stdout ---"); print(result["stdout"].strip())
                     if (result.get("stderr") or "").strip():
-                        print("--- stderr ---")
-                        print(result["stderr"].strip())
+                        print("--- stderr ---"); print(result["stderr"].strip())
 
-                if result.get("ok"):
+                verdict = classify_bootstrap_result(result)
+                if verdict == "installed":
                     status_chip.value = status_html("done")
                     auth_mode.value = "key"
-                    cluster_password.value = ""
+                    _bootstrap_panel("verifying")
                     with log_out:
-                        print("[auth] ✅ Passwordless SSH is working.")
+                        print("[auth] Public key installed on the resource — verifying access…")
+                    # The real B3 identity check decides Verified / mismatch / failed.
+                    try:
+                        on_test_remote(None)
+                    except Exception as _e:
+                        _bootstrap_panel("connector_failed")
+                        with log_out:
+                            print("[auth] re-check skipped:", type(_e).__name__, _e)
                 else:
                     status_chip.value = status_html("fail")
-
-                    if should_use_connector():
-                        show_connector_public_key_help()
-                    else:
-                        with log_out:
-                            print()
-                            print("[ssh] Direct/server-side bootstrap failed.")
-                            print("[ssh] Use the SSH Key Manager below only for direct SSH from this server.")
+                    _bootstrap_panel(verdict)
+                    with log_out:
+                        print(f"[auth] bootstrap did not complete (reason: "
+                              f"{result.get('reason') or verdict}).")
 
             except Exception as e:
+                cluster_password.value = ""
                 status_chip.value = status_html("fail")
+                _bootstrap_panel("timed_out" if "timeout" in type(e).__name__.lower()
+                                 else "connector_failed")
                 with log_out:
                     print("[auth][ERROR]", type(e).__name__, e)
+            finally:
+                bootstrap_btn.disabled = False
+                cluster_password.value = ""     # never persisted/logged
 
         def create_or_refresh_connector_session(_=None):
             log_out.clear_output()
 
             try:
+                # A relay-side session that is gone/expired/superseded must be
+                # recreated, not reused -- otherwise commands fail closed later.
+                if SESSION.get("id"):
+                    prior = relay_check_status(SESSION["id"], force=True)
+                    if prior.get("state") in {"unknown", "expired", "superseded"}:
+                        SESSION.clear()
+
                 if SESSION.get("id") is None:
-                    sess = create_session()
+                    owner = resolve_workspace_user(require_authenticated=True)
+                    sess = create_session(owner_user_id=owner.user_id)
                     SESSION["id"] = sess["session_id"]
                     SESSION["ws_url"] = sess["ws_url"]
+                    SESSION["pairing_code"] = sess["pairing_code"]
 
                     connector_setup_link.value = f"""
-                    <a href="https://cryostack.eas.gatech.edu/connect/?session={SESSION['id']}"
+                    <a href="https://cryostack.eas.gatech.edu/connect/?session={SESSION['id']}&app=icesheets"
                     target="_blank"
                     style="
                         display:inline-block;
@@ -752,46 +1296,41 @@ def build_icesheets_ui():
                         text-decoration:none;
                         font-weight:700;
                         margin:6px 0;">
-                    Open ICESEE Connector Setup
+                    Open CryoStack Connector Setup
                     </a>
                     """
 
                 st = relay_check_status(SESSION["id"])
+                online = bool(st.get("online"))
 
                 relay_status.value = f"""
                 <div style="
-                    border:1px solid rgba(13,110,253,.18);
-                    background:rgba(13,110,253,.06);
-                    border-radius:12px;
-                    padding:12px;
-                    line-height:1.5;
-                    margin:8px 0;
+                    border:1px solid {'rgba(25,135,84,.25)' if online else 'rgba(13,110,253,.18)'};
+                    background:{'rgba(25,135,84,.08)' if online else 'rgba(13,110,253,.06)'};
+                    border-radius:12px; padding:12px; line-height:1.6; margin:8px 0;
                 ">
-                <b>Connector session:</b> {SESSION["id"]}<br>
-                <b>Status:</b> {"online" if st.get("online") else "waiting for connector"}<br>
-                <b>WebSocket path:</b> {SESSION["ws_url"]}
+                  <b>Connector:</b> {'connected ✅' if online else 'waiting for connector'}<br>
+                  <b>Pairing code:</b>
+                  <code style="font-size:15px;background:#eef1f4;padding:2px 8px;border-radius:6px;">
+                  {SESSION.get('pairing_code', '—')}</code><br>
+                  <span style="color:#5f6b7a;font-size:13px;">
+                  Enter this code in the CryoStack Connector on your workstation
+                  (“Pair with CryoStack…”). It is one-time and expires with this session.
+                  </span>
+                  <details style="margin-top:8px;">
+                    <summary style="cursor:pointer;color:#5f6b7a;font-size:13px;">Diagnostics</summary>
+                    <div style="font-size:12px;color:#5f6b7a;margin-top:4px;">
+                      session id: {SESSION['id']}<br>
+                      ws path: {SESSION['ws_url']}<br>
+                      relay state: {st.get('state', 'unknown')}
+                    </div>
+                  </details>
                 </div>
                 """
-                # is_online = st.get("online")
-
-                # relay_status.value = f"""
-                # <div style="
-                #     border:1px solid {'rgba(25,135,84,.25)' if is_online else 'rgba(13,110,253,.18)'};
-                #     background:{'rgba(25,135,84,.08)' if is_online else 'rgba(13,110,253,.06)'};
-                #     border-radius:12px;
-                #     padding:12px;
-                #     line-height:1.55;
-                #     margin:8px 0;
-                # ">
-                # <b>Connector session:</b> {SESSION["id"]}<br>
-                # <b>Status:</b> {'online ✅' if is_online else 'waiting for connector'}<br>
-                # <b>WebSocket path:</b> {SESSION["ws_url"]}
-                # </div>
-                # """
 
                 with log_out:
-                    print("[connector] Session ID:", SESSION["id"])
-                    print("[connector] Status:", st)
+                    print("[connector] pairing code:", SESSION.get("pairing_code"))
+                    print("[connector] relay state:", st.get("state"))
 
             except Exception as e:
                 relay_status.value = ""
@@ -801,15 +1340,21 @@ def build_icesheets_ui():
         # Cloud controls
         # -----------------------------
         cloud_environment = build_cloud_environment_card(
-            region="us-east-1",
+            region=DEFAULT_CLOUD_REGION,
             profile="",
             s3_prefix="",
             job_queue="",
             job_definition="",
-            job_name="icesheets",
+            job_name="cryostack",
         )
 
-        cloud_box = cloud_environment.container
+        cloud_state_chip = W.HTML(
+            "<span class='icesee-status icesee-idle'>Cloud: Not configured</span>"
+        )
+        cloud_box = W.VBox(
+            [cloud_state_chip, cloud_environment.container],
+            layout=W.Layout(width="100%", gap="8px"),
+        )
 
         aws_region = cloud_environment.region
         aws_profile = cloud_environment.profile
@@ -820,6 +1365,8 @@ def build_icesheets_ui():
 
         cloud_status_btn = W.Button(description="Check status", icon="search")
         cloud_logs_btn = W.Button(description="Logs hint", icon="file-text")
+        cloud_smoke_btn = W.Button(
+            description="Infrastructure smoke test", icon="stethoscope")
 
         # =========================================================
         # Outputs
@@ -836,11 +1383,13 @@ def build_icesheets_ui():
 
         connector_setup_link = W.HTML("")
 
+        # The Run Log viewer: a useful minimum height, grows with the log, then
+        # scrolls internally once it reaches the usable viewport bottom (cap set
+        # by the scoped viewer-sizing script; relaxed on narrow screens).
         log_out = W.Output(
             layout=W.Layout(
                 width="100%",
-                min_height="0",
-                flex="1 1 0",
+                min_height="280px",
                 overflow_y="auto",
                 overflow_x="auto",
                 border="1px solid rgba(0,0,0,.10)",
@@ -852,7 +1401,6 @@ def build_icesheets_ui():
             layout=W.Layout(
                 width="100%",
                 min_height="0",
-                flex="1 1 0",
                 overflow_y="auto",
                 overflow_x="auto",
                 border="1px solid rgba(0,0,0,.10)",
@@ -861,75 +1409,14 @@ def build_icesheets_ui():
         )
 
         log_out.add_class("cryostack-live-log")
+        log_out.add_class("cryostack-log-viewer")
         results_out.add_class("cryostack-live-log")
 
-        auto_scroll_script = W.HTML(
-            """
-            <script>
-            (() => {
-
-                function installCryoStackLogScroll() {
-
-                    const root = document.querySelector(
-                        ".cryostack-live-log"
-                    );
-
-                    if (!root) {
-                        setTimeout(
-                            installCryoStackLogScroll,
-                            250
-                        );
-                        return;
-                    }
-
-                    if (
-                        root.dataset.cryoAutoScroll === "1"
-                    ) {
-                        return;
-                    }
-
-                    root.dataset.cryoAutoScroll = "1";
-
-                    const findScroller = () => {
-                        return (
-                            root.querySelector(
-                                ".jupyter-widgets-output-area"
-                            )
-                            || root
-                        );
-                    };
-
-                    const scrollToBottom = () => {
-                        const scroller = findScroller();
-
-                        requestAnimationFrame(() => {
-                            scroller.scrollTop =
-                                scroller.scrollHeight;
-                        });
-                    };
-
-                    const observer = new MutationObserver(
-                        scrollToBottom
-                    );
-
-                    observer.observe(
-                        root,
-                        {
-                            childList: true,
-                            subtree: true,
-                            characterData: true
-                        }
-                    );
-
-                    scrollToBottom();
-                }
-
-                installCryoStackLogScroll();
-
-            })();
-            </script>
-            """
-        )
+        # Log auto-scroll / live-tail follow is handled by the Workspace
+        # viewer-sizing module (workspace/viewer_geometry.js, mounted via
+        # build_workspace_explorer) -- it follows the tail while the user is at
+        # the bottom and offers "Jump to latest" once they scroll up.
+        auto_scroll_script = W.HTML("")
 
         # =========================================================
         # Helpers
@@ -942,7 +1429,9 @@ def build_icesheets_ui():
         def form_pair(label: str, widget, label_width: str = "80px"):
             lbl = W.HTML(f"<div class='icesee-lbl'>{label}</div>")
             lbl.layout = W.Layout(width=label_width, min_width=label_width)
-            return W.HBox([lbl, widget], layout=W.Layout(gap="10px", width="100%"))
+            row = W.HBox([lbl, widget], layout=W.Layout(gap="10px", width="100%"))
+            row.add_class("cryostack-field-row")
+            return row
 
         def selected_text(dd: W.Dropdown) -> str:
             for label, value in dd.options:
@@ -999,8 +1488,38 @@ def build_icesheets_ui():
                            if str(e.path) == selected), None)
             example_info.value = _example_summary(ex, selected)
 
+            _materialized_entrypoint = None      # e.g. "run.py" -- set below
             if selected:
-                example_dir.value = selected
+                _selected_path = Path(selected)
+                if model_dd.value == "icepack" and _selected_path.is_file():
+                    # A canonical Icepack example is one loose notebook FILE
+                    # (there is no "example directory" the way ISSM has) --
+                    # materialize the SAME deterministic {notebook, run.py}
+                    # working copy staging itself uses (workspace/manager.py
+                    # :meth:`stage_example_for_run`), so the Advanced Editor
+                    # shows the runnable Python representation -- not raw
+                    # notebook JSON -- and every downstream consumer
+                    # (run-target resolution, Local/Remote/Cloud staging)
+                    # sees an ordinary example directory from here on.
+                    try:
+                        _staged = workspace_manager.stage_example_for_run(
+                            source_example=selected
+                        )
+                        example_dir.value = str(_staged.path)
+                        _materialized_entrypoint = _staged.provenance.get("entrypoint")
+                    except NotebookConversionError as _conv_err:
+                        example_dir.value = selected
+                        with log_out:
+                            print("[icepack][ERROR]", _conv_err)
+                    except Exception as _conv_err:                  # noqa: BLE001
+                        example_dir.value = selected
+                        with log_out:
+                            print(
+                                "[stage][ERROR] Could not prepare this notebook "
+                                "example:", type(_conv_err).__name__, _conv_err,
+                            )
+                else:
+                    example_dir.value = selected
 
             editor_panel.controller.refresh()
             refresh_run_target_options()
@@ -1009,8 +1528,22 @@ def build_icesheets_ui():
             run_target.value = ""
             auto_set_run_target()
 
+            if _materialized_entrypoint:
+                # A fresh example selection only -- editor_panel.controller
+                # .refresh() itself always keeps whatever file the user
+                # already has open across a plain Refresh (its own
+                # prev-file/prev-name preservation, untouched here), so this
+                # can never "unexpectedly" pull an in-progress edit of
+                # run.py back to the notebook later. run.py is a generated
+                # artifact regenerated on every (re)stage above -- this only
+                # steers which already-staged file the editor shows first,
+                # it never overwrites the buffer of one already open.
+                editor_panel.controller.open_file_by_name(_materialized_entrypoint)
+
             if model_dd.value == "issm":
                 md_panel.set_example(example_dir.value)
+            elif model_dd.value == "icepack":
+                icepack_basic_panel.set_example(example_dir.value)
             update_summary()
 
         def _example_summary(ex, selected: str) -> str:
@@ -1032,6 +1565,31 @@ def build_icesheets_ui():
             backend = backend_dd.value
             run_file = selected_run_file()
             run_file_name = Path(run_file).name if run_file else ""
+            # Cloud runs are described to AWS Batch by three non-secret env
+            # values (see cryostack_src/cloud/drivers/aws/submit.py) -- the
+            # generic runner + model command are baked into the job
+            # definition, not composed here. Show the submission summary, not
+            # a spack / apptainer command that does not apply.
+            if mode_dd.value == "cloud":
+                _m = (model_dd.value or "issm").strip().lower()
+                _img = _default_tested_image(_m)
+                _jd, _ = resolve_job_definition(
+                    _m, batch_job_def.value.strip(), allow_list=_CLOUD_JOB_DEFS,
+                    compute_mode=getattr(
+                        cloud_environment.compute_mode, "value", "fargate"),
+                    ec2=_ec2_config_from_widgets(cloud_environment),
+                )
+                return (
+                    "aws batch submit-job \\\n"
+                    f"  --job-queue {batch_job_queue.value.strip() or '<derived>'} \\\n"
+                    f"  --job-definition {_jd} \\\n"
+                    "  --container-overrides '{\"environment\":["
+                    "{\"name\":\"CRYOSTACK_MODEL\",\"value\":\"" + _m + "\"},"
+                    "{\"name\":\"CRYOSTACK_RUN_TARGET\",\"value\":\""
+                    + (run_file_name or 'run.py') + "\"},"
+                    "{\"name\":\"CRYOSTACK_S3_RUN\",\"value\":\"s3://<bucket>/runs/<user>/<run-id>\"}]}'\n"
+                    f"# image: {getattr(_img, 'reference', '') or '<tested (default)>'}"
+                )
             return get_model_adapter(model_dd.value).build_run_command(
                 backend=backend,
                 target=run_file_name,
@@ -1041,6 +1599,8 @@ def build_icesheets_ui():
                 ntasks=slurm_ntasks.value,
             )
         
+        _ws_span = perf.span("workspace manager")
+        _ws_span.__enter__()
         workspace_manager = WorkspaceManager(
             owner=resolve_workspace_user(require_authenticated=True),
             status=STATUS,
@@ -1063,7 +1623,21 @@ def build_icesheets_ui():
             ssh_run=ssh_run,
             cluster_name=cluster_name_for_keys,
         )
+        _ws_span.__exit__(None, None, None)
         workspace_bridge.attach_manager(workspace_manager)
+
+        # Build the Agent-mode panel now that the (per-user) workspace manager
+        # exists. Any failure downgrades the selector to Basic / Advanced.
+        if _agent_mode and agent_panel is None:
+            try:
+                agent_panel = _build_agent_panel(workspace_manager)
+            except Exception as _ag_err:            # never block the gateway
+                with log_out:
+                    print("[agent] Agent mode unavailable:",
+                          type(_ag_err).__name__, _ag_err)
+                agent_panel = None
+                _agent_mode = False
+                ui_mode_dd.options = [("Basic", "basic"), ("Advanced", "advanced")]
 
         def list_editable_files(example_path: str) -> list[tuple[str, str]]:
             return workspace_manager.list_editable_files(example_path)
@@ -1202,7 +1776,48 @@ def build_icesheets_ui():
         # =========================================================
         # Dynamic logic
         # =========================================================
+        # Basic <-> Advanced must revert/restore the ACTUAL cloud execution
+        # configuration, not just hide widgets: Advanced -> Basic snapshots
+        # the current EC2 selection and forces the ONE piece of state every
+        # cloud code path reads (cloud_environment.compute_mode.value) back
+        # to "fargate"; Basic -> Advanced restores it. Empty until the first
+        # Advanced -> Basic transition.
+        _advanced_cloud_snapshot: dict = {}
+        _prev_ui_mode = {"value": ui_mode_dd.value}
+        _EC2_SNAPSHOT_FIELDS = (
+            "compute_mode", "ec2_capacity", "ec2_accelerator", "ec2_network",
+            "ec2_topology", "ec2_max_vcpus", "ec2_instance_types",
+        )
+
+        def _sync_cloud_compute_mode_with_ui_mode() -> None:
+            prev, cur = _prev_ui_mode["value"], ui_mode_dd.value
+            if prev == cur:
+                return
+            if cur == "basic" and prev != "basic":
+                _advanced_cloud_snapshot.clear()
+                _advanced_cloud_snapshot.update({
+                    name: getattr(cloud_environment, name).value
+                    for name in _EC2_SNAPSHOT_FIELDS
+                })
+                # Full reset, not just compute_mode: a lingering EC2-only
+                # sub-selection (e.g. Spot capacity) on an otherwise-hidden
+                # widget would still be read by _ec2_config_from_widgets()
+                # and trip the Fargate/EC2 compatibility gate
+                # ("Spot capacity is an EC2-only option; not valid with
+                # Fargate") even though the user never touched it in Basic
+                # mode.
+                cloud_environment.compute_mode.value = "fargate"
+                cloud_environment.ec2_capacity.value = "on_demand"
+                cloud_environment.ec2_accelerator.value = "none"
+                cloud_environment.ec2_network.value = "default"
+                cloud_environment.ec2_topology.value = "single_node"
+            elif cur != "basic" and prev == "basic" and _advanced_cloud_snapshot:
+                for name, val in _advanced_cloud_snapshot.items():
+                    getattr(cloud_environment, name).value = val
+            _prev_ui_mode["value"] = cur
+
         def update_visibility(_=None):
+            _sync_cloud_compute_mode_with_ui_mode()
             is_container = backend_dd.value == "container"
             is_oci = is_container and container_source.value in ("docker", "oci")
 
@@ -1220,38 +1835,91 @@ def build_icesheets_ui():
 
             is_remote = mode_dd.value == "remote"
             is_cloud = mode_dd.value == "cloud"
-            is_basic = ui_mode_dd.value == "basic"
+            is_agent = ui_mode_dd.value == "agent"
+            is_basic = ui_mode_dd.value == "basic" or (not is_agent and not
+                                                       ui_mode_dd.value == "advanced")
             is_advanced = ui_mode_dd.value == "advanced"
 
-            container_source_row.layout.display = "" if is_container else "none"
-            image_uri_row.layout.display = "" if (is_container and not is_oci) else "none"
+            # Advanced Cloud Settings (Compute/Max vCPUs/Instance types/
+            # Capacity/Accelerator/Network/Execution + the queue/job-def/
+            # profile overrides) are Advanced-mode-only. Basic mode uses the
+            # validated default (Fargate) path -- _sync_cloud_compute_mode_
+            # with_ui_mode() above already forced the actual execution
+            # config to match; this just keeps the controls themselves out
+            # of Basic mode's view.
+            cloud_environment.advanced.layout.display = "none" if is_basic else ""
 
-            remote_box.layout.display = "" if is_remote else "none"
-            cloud_box.layout.display = "" if is_cloud else "none"
+            # MATLAB license visibility/requirement is a property of the
+            # SELECTED WORKFLOW (cryostack_src.models.workflow_capabilities)
+            # -- independent of Basic/Advanced -- so an ISSM (or an ICESEE
+            # run whose forecast model is ISSM) run always shows this field,
+            # even in Basic mode. Hiding the widget never clears its value.
+            _cloud_capabilities = resolve_workflow_capabilities(model=model_dd.value)
+            cloud_environment.matlab_license_box.layout.display = (
+                "" if _cloud_capabilities.requires_matlab_license else "none")
 
-            remote_actions.layout.display = "" if is_remote else "none"
-            cloud_actions.layout.display = "" if is_cloud else "none"
+            # Agent is a peer interaction mode: when it is selected, the manual
+            # Basic / Advanced configuration is hidden and only the Run
+            # Assistant panel + the shared run details (log / results / history)
+            # remain. The mode toggle itself stays visible so the user can
+            # switch back. No agent controls appear in Basic / Advanced.
+            if agent_panel is not None:
+                agent_panel.container.layout.display = "" if is_agent else "none"
+            _manual = "none" if is_agent else ""
+
+            container_source_row.layout.display = "" if (is_container and not is_agent) else "none"
+            image_uri_row.layout.display = "" if (is_container and not is_oci and not is_agent) else "none"
+
+            remote_box.layout.display = "" if (is_remote and not is_agent) else "none"
+            cloud_box.layout.display = "" if (is_cloud and not is_agent) else "none"
+
+            remote_actions.layout.display = "" if (is_remote and not is_agent) else "none"
+            cloud_actions.layout.display = "" if (is_cloud and not is_agent) else "none"
             # remote_actions = remote_log_controls
             # cloud_actions = cloud_log_controls
-            terminate_btn.layout.display = "" if is_remote else "none"
-            cloud_terminate_btn.layout.display = "" if is_cloud else "none"
+            terminate_btn.layout.display = "" if (is_remote and not is_agent) else "none"
+            # Cloud mode: the CLOUD RUN card (Terminate / View log / View
+            # results, wired to the account-aware CloudRunController) is THE
+            # single authoritative run-control surface once a run exists.
+            # The generic Execution panel's own Submit job / Terminate here
+            # are unconditionally hidden for cloud mode -- never shown, not
+            # even the "shown only in cloud mode" state they had before --
+            # so a user can never reach a second, non-account-bound path to
+            # the same job. Local/Remote are completely unaffected: run_btn
+            # keeps its existing (always-on) visibility for those modes, and
+            # remote_terminate_button's own toggle above is untouched.
+            run_btn.layout.display = "none" if (is_cloud and not is_agent) else ""
+            cloud_terminate_btn.layout.display = "none"
 
-            example_picker_row.layout.display = ""
-            example_info_row.layout.display = ""
+            mode_row.layout.display = _manual
+            model_row.layout.display = _manual
+            example_picker_row.layout.display = _manual
+            example_info_row.layout.display = _manual
 
-            example_row.layout.display = "none" if is_basic else ""
-            exec_row.layout.display = ""
+            example_row.layout.display = "none" if (is_basic or is_agent) else ""
+            exec_row.layout.display = _manual
 
-            advanced_action_row.layout.display = "" if is_advanced else "none"
-            editor_panel.container.layout.display = "" if is_advanced else "none"
-            run_target_row.layout.display = ""
-            dataset_panel.container.layout.display = "" if is_advanced else "none"
+            advanced_action_row.layout.display = "" if (is_advanced and not is_agent) else "none"
+            editor_panel.container.layout.display = "" if (is_advanced and not is_agent) else "none"
+            run_target_row.layout.display = _manual
+            dataset_panel.container.layout.display = "" if (is_advanced and not is_agent) else "none"
             download_buttons_row.layout.display = ""
 
-            md_config_panel.layout.display = "" if model_dd.value == "issm" else "none"
+            md_config_panel.layout.display = "" if (model_dd.value == "issm" and not is_agent) else "none"
+            icepack_config_panel.layout.display = "" if (model_dd.value == "icepack" and not is_agent) else "none"
 
-            if is_remote and access_mode_dd.value == "connector" and SESSION.get("id") is None:
-                create_or_refresh_connector_session()
+            # the manual Run button + Run Plan belong to Basic / Advanced only
+            try:
+                actions_card.layout.display = "none" if is_agent else ""
+                run_plan.container.layout.display = "none" if is_agent else ""
+            except NameError:
+                pass
+
+            # A connector session is created lazily -- on the "Open Connector
+            # Setup" button, and at Check SSH / Run when connector mode is
+            # active -- never during page construction or a mode toggle. That
+            # removes a relay HTTP round trip from the initial-load and
+            # resource-switch paths (perf pass).
 
             if is_remote:
                 log_runtime_controls.children = (
@@ -1264,6 +1932,7 @@ def build_icesheets_ui():
 
             elif is_cloud:
                 log_runtime_controls.children = (
+                    cloud_smoke_btn,
                     cloud_status_btn,
                     cloud_logs_btn,
                     clear_btn,
@@ -1293,6 +1962,104 @@ def build_icesheets_ui():
             selected_line = ""
             if selected:
                 selected_line = f"<div><span class='icesee-summary-k'>Selected example:</span> {selected}</div>"
+
+            def _cloud_source_lines() -> str:
+                """Truthful 'what runs' lines for the cloud Run Plan: the
+                canonical example SOURCE vs. the executable ARTIFACT.
+
+                A converted Icepack notebook shows the notebook as the source
+                and run.py as the run target -- AWS Batch never executes the
+                .ipynb (it is nbconvert'd to run.py before staging). ISSM and
+                ordinary script examples stay truthful to their own
+                source == run-target relationship.
+                """
+                _p = Path(selected or "")
+                _name = _p.stem or _p.name or "example"
+                _rt = (run_target.value or "").strip()
+                rows = [f"<div><span class='icesee-summary-k'>Example:</span> "
+                        f"{html.escape(_name)}</div>"]
+                _suffix = _p.suffix.lower()
+                if _suffix == ".ipynb":
+                    _rt = _rt or "run.py"
+                    rows.append(
+                        "<div><span class='icesee-summary-k'>Source:</span> "
+                        f"<code>{html.escape(_p.name)}</code> "
+                        "<span class='icesee-subtle'>(converted to "
+                        "<code>run.py</code> before staging)</span></div>")
+                elif _suffix:
+                    rows.append(
+                        "<div><span class='icesee-summary-k'>Source:</span> "
+                        f"<code>{html.escape(_p.name)}</code></div>")
+                if _rt:
+                    rows.append(
+                        "<div><span class='icesee-summary-k'>Run target:</span> "
+                        f"<code>{html.escape(_rt)}</code> "
+                        "<span class='icesee-subtle'>(executed on AWS Batch)</span></div>")
+                return "\n".join(rows)
+
+            # Cloud is its own execution mode: the compute substrate is AWS
+            # Batch/Fargate and the scientific stack is ALWAYS the tested
+            # container image (whose environment is Spack-built) -- backend_dd
+            # (spack vs. host-container-bind) does not apply and is not read
+            # here. Remote/Local keep the existing spack/container branches
+            # below, untouched.
+            if mode == "cloud":
+                _img = _default_tested_image(model)
+                _img_ref = getattr(_img, "reference", "") or ""
+                _img_digest = getattr(_img, "digest", "") or ""
+                _short = (_img_digest[:22] + "…") if _img_digest.startswith("sha256:") else _img_digest
+                _img_line = (
+                    f"<div><span class='icesee-summary-k'>Container image:</span> "
+                    f"{html.escape(_img_ref) or '<em>tested (default)</em>'}"
+                    + (f" <span class='icesee-subtle'>@ {html.escape(_short)}</span>" if _short else "")
+                    + "</div>"
+                )
+                # backend must reflect the SAME compute-mode selection
+                # Prepare Cloud and submission use -- never a hardcoded
+                # "Fargate" regardless of what is actually selected.
+                _is_ec2 = getattr(
+                    cloud_environment.compute_mode, "value", "fargate") == "ec2"
+                _backend_lines = (
+                    '<div><span class="icesee-summary-k">Cloud backend:</span> '
+                    'AWS Batch (Fargate)</div>'
+                )
+                _exec_note = (
+                    "Runs the tested combined image on AWS Batch (Fargate); "
+                    "run inputs and outputs sync via S3."
+                )
+                if _is_ec2:
+                    _cap = ("Spot" if getattr(
+                        cloud_environment.ec2_capacity, "value", "on_demand")
+                        == "spot" else "On-Demand")
+                    _itypes = (getattr(
+                        cloud_environment.ec2_instance_types, "value", "") or
+                        "optimal").strip() or "optimal"
+                    _topology = ("Multi-node" if getattr(
+                        cloud_environment.ec2_topology, "value", "single_node")
+                        == "multi_node" else "Single node")
+                    _backend_lines = f"""
+                  <div><span class="icesee-summary-k">Cloud backend:</span> AWS Batch (EC2)</div>
+                  <div><span class="icesee-summary-k">Capacity:</span> {html.escape(_cap)}</div>
+                  <div><span class="icesee-summary-k">Instance types:</span> {html.escape(_itypes)}</div>
+                    """
+                    _exec_note = (
+                        f"{_topology} -- runs the tested combined image on "
+                        "AWS Batch (EC2); run inputs and outputs sync via S3."
+                    )
+                summary_html.value = f"""
+                <div class="icesee-summary">
+                  <div><span class="icesee-summary-k">User mode:</span> {user_mode.title()}</div>
+                  <div><span class="icesee-summary-k">Execution mode:</span> Cloud</div>
+                  {_backend_lines}
+                  <div><span class="icesee-summary-k">Model environment:</span> ICESEE-Container (Spack-built stack)</div>
+                  <div><span class="icesee-summary-k">Model:</span> {model.upper()}</div>
+                  {_img_line}
+                  {_cloud_source_lines()}
+                  <div><span class="icesee-summary-k">Execution:</span> {_exec_note}</div>
+                </div>
+                """
+                command_preview.value = build_model_command()
+                return
 
             if backend == "spack":
                 if model == "issm":
@@ -1374,24 +2141,110 @@ def build_icesheets_ui():
                 return
             _editor_ctx["last_model"] = change["new"]
 
+        # One coalescing point for the Run Plan / summary refresh: a batch of
+        # programmatic .value = ... assignments (resource switch, B2 hydration)
+        # rebuilds the summary once at the end instead of once per assignment.
+        ui_refresh = UIRefreshCoordinator(on_settle=update_summary)
+        _summary = ui_refresh.guard(update_summary)
+
         backend_dd.observe(update_visibility, names="value")
         model_dd.observe(_guard_model_switch, names="value")   # must precede the reloaders
         model_dd.observe(refresh_example_picker, names="value")
-        model_dd.observe(update_summary, names="value")
+        model_dd.observe(_summary, names="value")
         model_dd.observe(lambda _c: software_panel.set_model(model_dd.value), names="value")
         model_dd.observe(lambda _c: image_panel.set_model(model_dd.value), names="value")
+        # the Basic-mode configuration accordion is model-specific
+        # (md_config_panel vs. icepack_config_panel -- each with its own
+        # "<MODEL> configuration (Basic)" title). update_visibility already
+        # toggles which one is shown from model_dd.value; it just was not
+        # re-run on a model switch, so the ISSM panel stayed visible with
+        # Icepack selected. Runs last so it also picks up any state the
+        # software/image panel observers above just changed.
+        model_dd.observe(update_visibility, names="value")
         software_panel.observe_profile(lambda profile: image_panel.set_profile(profile))
         image_panel.on_change(update_summary)
         mode_dd.observe(update_visibility, names="value")
         ui_mode_dd.observe(update_visibility, names="value")
-        container_source.observe(update_summary, names="value")
-        image_uri.observe(update_summary, names="value")
-        example_dir.observe(update_summary, names="value")
-        exec_dir.observe(update_summary, names="value")
-        slurm_ntasks.observe(update_summary, names="value")
+        container_source.observe(_summary, names="value")
+        image_uri.observe(_summary, names="value")
+        example_dir.observe(_summary, names="value")
+        exec_dir.observe(_summary, names="value")
+        slurm_ntasks.observe(_summary, names="value")
+        # The Advanced Cloud Settings compute selection must drive the Run
+        # Plan / Execution summary live -- previously nothing observed these
+        # widgets at all, so switching Compute to EC2 left the summary
+        # (and its "Cloud backend" line) showing whatever was rendered
+        # before, even though the resolution logic itself was correct.
+        cloud_environment.compute_mode.observe(_summary, names="value")
+        cloud_environment.ec2_capacity.observe(_summary, names="value")
+        cloud_environment.ec2_accelerator.observe(_summary, names="value")
+        cloud_environment.ec2_network.observe(_summary, names="value")
+        cloud_environment.ec2_topology.observe(_summary, names="value")
+        cloud_environment.ec2_instance_types.observe(_summary, names="value")
+
+        def _sync_resource_facts(_=None):
+            # RESOURCE facts follow the selected resource. Personal fields
+            # (username, remote dir, account, email) are never touched here.
+            rf = initial_remote_fields(cluster_name_for_keys.value)
+            cluster_host.value = rf["login_host"]
+            cluster_port.value = rf["ssh_port"]
+            cluster_user.placeholder = rf["username_hint"]
+            slurm_part.value = rf["partition"]
+            slurm_time.value = rf["wall_time"]
+            # B4: resource-aware auth options + manual key-registration checklist.
+            try:
+                remote_conn_panel.apply_profile(
+                    get_compute_profile(cluster_name_for_keys.value or "")
+                )
+            except NameError:
+                pass
+
+        # --- B2: authenticated user x resource personal-settings persistence ---
+        def _b2_read_personal() -> dict:
+            return {
+                "hpc_username": cluster_user.value,
+                "remote_directory": remote_base_dir.value,
+                "account": slurm_account.value,
+                "email": slurm_mail.value,
+                "access_mode": access_mode_dd.value,
+                "auth_mode": auth_mode.value,
+            }
+
+        def _b2_apply_personal(s: dict) -> None:
+            cluster_user.value = s.get("hpc_username", "") or ""
+            remote_base_dir.value = s.get("remote_directory", "") or ""
+            slurm_account.value = s.get("account", "") or ""
+            slurm_mail.value = s.get("email", "") or ""
+            if s.get("access_mode") in {"auto", "direct", "connector"}:
+                access_mode_dd.value = s["access_mode"]
+            _saved_auth = s.get("auth_mode")
+            if _saved_auth in {t for _, t in auth_mode.options}:
+                auth_mode.value = _saved_auth
+
+        _b2_load, _b2_save = make_state_io(
+            workspace_bridge, "cryolauncher",
+            resolve_workspace_user(require_authenticated=False).user_id,
+        )
+        resource_state = ResourceStateController(
+            load_state=_b2_load, save_state=_b2_save,
+            read_personal=_b2_read_personal, apply_personal=_b2_apply_personal,
+            resource_name=lambda: cluster_name_for_keys.value,
+            set_resource_name=lambda n: setattr(cluster_name_for_keys, "value", n),
+            service_username=(os.environ.get("USER") or getpass.getuser() or ""),
+        )
+
+        def _on_resource_changed(change):
+            with ui_refresh.batch():
+                resource_state.switch_resource(change.get("old"), change.get("new"))
+                _sync_resource_facts()
+            ui_refresh.request_refresh()
+
+        cluster_name_for_keys.observe(_on_resource_changed, names="value")
         example_picker.observe(apply_selected_example, names="value")
-        access_mode_dd.observe(lambda change: create_or_refresh_connector_session() if change["new"] == "connector" else None, names="value")
-        
+        # (removed: auto connector-session creation on access-mode change --
+        #  the session is created lazily at Check SSH / Run / the explicit
+        #  "Open Connector Setup" button.)
+
 
         # =========================================================
         # Actions
@@ -1402,6 +2255,169 @@ def build_icesheets_ui():
 
         def should_use_connector() -> bool:
             return current_remote_bridge().uses_connector()
+
+        def _prepare_effective_example(*, test_mode: bool, for_cloud: bool = False):
+            """Validate the local example path and stage a user-owned working
+            copy when the run needs one: Basic-mode ISSM md overrides
+            (validated + injected before the first solve), Basic-mode Icepack
+            overrides, and/or referenced datasets to materialise. The
+            canonical example is never modified.
+
+            Shared by every execution path -- Local/Remote via ``on_run``,
+            Cloud via ``_launch_cloud_run`` -- one staging implementation,
+            never duplicated. Returns ``(effective_example_dir,
+            md_run_provenance)`` on success; on failure it has already
+            reported the error (status chip + Run Log) and returns ``None``.
+
+            ``for_cloud`` (accurate for both callers -- ``_launch_cloud_run``
+            passes ``True`` unconditionally; ``on_run`` passes whether
+            ``mode_dd.value == "cloud"``, already resolved before this call)
+            additionally stages Icepack's cloud output collector alongside
+            run.py when THIS call is the one that stages a working copy --
+            Local/Remote staging is completely unaffected.
+            """
+            if not example_dir.value.strip():
+                status_chip.value = status_html("fail")
+                with log_out:
+                    print("[remote][ERROR] Example path is empty.")
+                return None
+
+            local_example = Path(example_dir.value).expanduser()
+            if not local_example.exists():
+                status_chip.value = status_html("fail")
+                with log_out:
+                    print(f"[remote][ERROR] Example path does not exist locally: {local_example}")
+                return None
+
+            effective_example_dir = example_dir.value
+            md_run_provenance: dict = {}
+            if model_dd.value == "issm" and not test_mode:
+                _md_validation = md_panel.validate()
+                if not _md_validation.ok:
+                    status_chip.value = status_html("fail")
+                    with log_out:
+                        print("[md][ERROR] ISSM configuration is not valid:")
+                        for _err in _md_validation.errors:
+                            print("  -", _err)
+                    return None
+                _has_ds_refs = bool(
+                    workspace_manager.example_dataset_references(example_dir.value)
+                )
+                if _md_validation.normalized or _has_ds_refs:
+                    _extra = (
+                        {"cryostack_md_overrides.m":
+                         build_md_override_script(_md_validation.normalized)}
+                        if _md_validation.normalized else None
+                    )
+                    try:
+                        _staged = workspace_manager.stage_example_for_run(
+                            source_example=example_dir.value,
+                            extra_files=_extra,
+                            entrypoint_transform=(
+                                inject_override_step if _md_validation.normalized else None
+                            ),
+                            overrides=_md_validation.normalized or None,
+                        )
+                    except Exception as _stage_err:
+                        status_chip.value = status_html("fail")
+                        with log_out:
+                            print("[stage][ERROR] Could not stage a working copy:",
+                                  type(_stage_err).__name__, _stage_err)
+                        return None
+                    effective_example_dir = str(_staged.path)
+                    md_run_provenance = {
+                        "md_overrides": _md_validation.normalized,
+                        "md_working_copy": str(_staged.path),
+                        "md_example_source": _staged.source,
+                        "md_working_copy_from_canonical": _staged.from_canonical,
+                        "staged_datasets": _staged.provenance.get("staged_datasets", []),
+                    }
+                    with log_out:
+                        print(f"[stage] working copy: {_staged.path}")
+                        if _md_validation.normalized:
+                            print("[stage] md overrides: "
+                                  f"{', '.join(sorted(_md_validation.normalized))}")
+                        for _d in _staged.provenance.get("staged_datasets", []):
+                            print(f"[stage] dataset -> {_d['as']}")
+
+            elif model_dd.value == "icepack" and not test_mode:
+                # Basic-mode Icepack overrides: an exact, single-line, validated
+                # substitution in a user-owned working copy of the notebook/
+                # script. Fail-closed if the example does not expose a param.
+                _ip_validation = icepack_basic_panel.validate()
+                if not _ip_validation.ok:
+                    status_chip.value = status_html("fail")
+                    with log_out:
+                        print("[icepack][ERROR] Basic configuration is not valid:")
+                        for _err in _ip_validation.errors:
+                            print("  -", _err)
+                    return None
+                _ip_ds_refs = bool(
+                    workspace_manager.example_dataset_references(example_dir.value)
+                )
+                if _ip_validation.normalized or _ip_ds_refs:
+                    _ip_entry = (run_target.value or "").strip()
+                    try:
+                        _staged = workspace_manager.stage_example_for_run(
+                            source_example=example_dir.value,
+                            entrypoint=_ip_entry or "runme.m",
+                            entrypoint_transform=(
+                                entrypoint_transform_for(_ip_validation.normalized)
+                                if _ip_validation.normalized else None
+                            ),
+                            overrides=_ip_validation.normalized or None,
+                            # cloud only: stage the output collector as an
+                            # ordinary file alongside run.py -- never
+                            # embedded into the Batch runner script itself.
+                            extra_files=(
+                                _icepack_cloud_postprocess_files()
+                                if for_cloud else None
+                            ),
+                        )
+                    except (IcepackOverrideError, IcepackParameterError) as _ov_err:
+                        status_chip.value = status_html("fail")
+                        with log_out:
+                            print("[icepack][ERROR]", _ov_err)
+                        return None
+                    except Exception as _stage_err:
+                        status_chip.value = status_html("fail")
+                        with log_out:
+                            print("[stage][ERROR] Could not stage a working copy:",
+                                  type(_stage_err).__name__, _stage_err)
+                        return None
+                    effective_example_dir = str(_staged.path)
+                    md_run_provenance = {
+                        "parameter_overrides": _ip_validation.normalized,
+                        "working_copy": str(_staged.path),
+                        "example_source": _staged.source,
+                        "working_copy_from_canonical": _staged.from_canonical,
+                        "staged_datasets": _staged.provenance.get("staged_datasets", []),
+                    }
+                    with log_out:
+                        print(f"[stage] working copy: {_staged.path}")
+                        if _ip_validation.normalized:
+                            print("[stage] icepack overrides: "
+                                  f"{', '.join(sorted(_ip_validation.normalized))}")
+
+            return effective_example_dir, md_run_provenance
+
+        def _launch_cloud_run(review) -> None:
+            """The Launch cloud run entry point (Review & Launch).
+
+            Execution goes EXCLUSIVELY through the cloud/AWS controller --
+            this function never reads ``mode_dd``, never touches
+            ``cluster_host``/``cluster_user``, never calls
+            ``enforce_remote_access`` or the Slurm validator. The Remote/HPC
+            Host/User validation inside ``on_run`` is structurally
+            unreachable from here: this callback does not call ``on_run``.
+            """
+            log_out.clear_output()
+            status_chip.value = status_html("running")
+            _prepared = _prepare_effective_example(test_mode=False, for_cloud=True)
+            if _prepared is None:
+                return
+            effective_example_dir, md_run_provenance = _prepared
+            _submit_cloud_run(effective_example_dir, md_run_provenance, review=review)
 
         def on_run(_=None):
             log_out.clear_output()
@@ -1426,42 +2442,10 @@ def build_icesheets_ui():
                 and action == "test"
             )
 
-            if mode == "cloud":
-                result = current_cloud_bridge().submit(
-                    backend=selected_text(backend_dd),
-                    model=selected_text(model_dd),
-                    display_region=aws_region.value.strip() or "us-east-1",
-                    s3_prefix=cloud_bucket.value.strip(),
-                    job_queue=batch_job_queue.value.strip(),
-                    job_definition=batch_job_def.value.strip(),
-                    job_name=batch_job_name.value.strip() or "icesheets",
-                )
-                with log_out:
-                    for message in result.messages:
-                        print(message)
-                if result.job_id:
-                    STATUS["batch_job_id"] = result.job_id
-                cloud_run = result.metadata.get("s3_run") or result.working_directory
-                if cloud_run:
-                    STATUS["cloud_run"] = cloud_run
-                if result.job_id or cloud_run:
-                    workspace_bridge.start_run(
-                        name=str(result.metadata.get("run_id") or result.job_id or "cloud-run"),
-                        model=model_dd.value,
-                        backend=backend_dd.value,
-                        execution_mode="cloud",
-                        jobid=result.job_id,
-                        remote_directory=Path(str(cloud_run or "cloud")),
-                        log_file=None,
-                        metadata={"cloud_run": cloud_run, "region": aws_region.value.strip(), "profile": aws_profile.value.strip()},
-                    )
-                status_chip.value = status_html("done")
-                return
-            
             if mode == "remote" and access_mode_dd.value == "connector":
                 create_or_refresh_connector_session()
 
-                st = relay_check_status(SESSION["id"])
+                st = relay_check_status(SESSION["id"], force=True)
                 if not st.get("online"):
                     status_chip.value = status_html("fail")
                     with log_out:
@@ -1469,97 +2453,102 @@ def build_icesheets_ui():
                         print("[connector] Start the local connector with the session WebSocket URL, then retry.")
                     return
 
-            host = cluster_host.value.strip()
-            user = cluster_user.value.strip()
-            port = int(cluster_port.value)
+            # Remote/HPC host+identity validation is REMOTE-ONLY. It must
+            # never fire for Cloud (or any future non-remote mode): a
+            # cloud-reviewed run never configures cluster_host/cluster_user,
+            # and reaching this block for a cloud run previously produced
+            # "[remote][ERROR] Host and User are required." even though the
+            # user never touched the Remote HPC connection fields.
+            if mode == "remote":
+                host = cluster_host.value.strip()
+                user = cluster_user.value.strip()
+                port = int(cluster_port.value)
 
-            if not host or not user:
-                status_chip.value = status_html("fail")
-                with log_out:
-                    print("[remote][ERROR] Host and User are required.")
-                return
-            
-            if not example_dir.value.strip():
-
-                status_chip.value = status_html("fail")
-
-                with log_out:
-
-                    print("[remote][ERROR] Example path is empty.")
-
-                return
-            
-            local_example = Path(example_dir.value).expanduser()
-            if not local_example.exists():
-                status_chip.value = status_html("fail")
-                with log_out:
-                    print(f"[remote][ERROR] Example path does not exist locally: {local_example}")
-                return
-
-            # Stage a user-owned working copy when the run needs one: Basic-mode
-            # ISSM md overrides (validated + injected before the first solve),
-            # and/or referenced datasets to materialise. The canonical example
-            # is never modified.
-            effective_example_dir = example_dir.value
-            md_run_provenance: dict = {}
-            if model_dd.value == "issm" and not test_mode:
-                _md_validation = md_panel.validate()
-                if not _md_validation.ok:
+                if not host or not user:
                     status_chip.value = status_html("fail")
                     with log_out:
-                        print("[md][ERROR] ISSM configuration is not valid:")
-                        for _err in _md_validation.errors:
-                            print("  -", _err)
+                        print("[remote][ERROR] Host and User are required.")
                     return
-                _has_ds_refs = bool(
-                    workspace_manager.example_dataset_references(example_dir.value)
+
+            # B3: remote-access identity gate. Verifies the real remote identity
+            # (fresh whoami) against the configured HPC username and blocks Run
+            # on mismatch / unverified access / missing prerequisites.
+            if mode == "remote":
+                _resolved = "connector" if should_use_connector() else "direct"
+                _gate = enforce_remote_access(
+                    current_remote_bridge(mode=_resolved),
+                    profile=get_compute_profile(cluster_name_for_keys.value or "pace"),
+                    access_mode=access_mode_dd.value,
+                    resolved_mode=_resolved,
+                    hpc_username=user,
+                    remote_directory=remote_base_dir.value.strip(),
+                    connector_online=(
+                        relay_check_status(SESSION["id"]).get("online")
+                        if _resolved == "connector" and SESSION.get("id") else None
+                    ),
                 )
-                if _md_validation.normalized or _has_ds_refs:
-                    _extra = (
-                        {"cryostack_md_overrides.m":
-                         build_md_override_script(_md_validation.normalized)}
-                        if _md_validation.normalized else None
-                    )
-                    try:
-                        _staged = workspace_manager.stage_example_for_run(
-                            source_example=example_dir.value,
-                            extra_files=_extra,
-                            entrypoint_transform=(
-                                inject_override_step if _md_validation.normalized else None
-                            ),
-                            overrides=_md_validation.normalized or None,
-                        )
-                    except Exception as _stage_err:
-                        status_chip.value = status_html("fail")
-                        with log_out:
-                            print("[stage][ERROR] Could not stage a working copy:",
-                                  type(_stage_err).__name__, _stage_err)
-                        return
-                    effective_example_dir = str(_staged.path)
-                    md_run_provenance = {
-                        "md_overrides": _md_validation.normalized,
-                        "md_working_copy": str(_staged.path),
-                        "md_example_source": _staged.source,
-                        "md_working_copy_from_canonical": _staged.from_canonical,
-                        "staged_datasets": _staged.provenance.get("staged_datasets", []),
-                    }
+                for _w in _gate.warnings:
                     with log_out:
-                        print(f"[stage] working copy: {_staged.path}")
-                        if _md_validation.normalized:
-                            print("[stage] md overrides: "
-                                  f"{', '.join(sorted(_md_validation.normalized))}")
-                        for _d in _staged.provenance.get("staged_datasets", []):
-                            print(f"[stage] dataset -> {_d['as']}")
+                        print(_w)
+                try:
+                    remote_conn_panel.set_status_from_access(_gate.state)
+                except NameError:
+                    pass
+                if not _gate.ok:
+                    status_chip.value = status_html("fail")
+                    with log_out:
+                        for _m in _gate.messages:
+                            print(_m)
+                    return
+
+                # B4: pre-submit Slurm resource validation (internal consistency
+                # + syntax only; no invented site limits).
+                _slurm_errors = validate_slurm_resources(
+                    nodes=slurm_nodes.value,
+                    tasks=slurm_ntasks.value,
+                    tasks_per_node=slurm_tpn.value,
+                    wall_time=slurm_time.value,
+                    memory=slurm_mem.value,
+                    account=slurm_account.value,
+                    account_required=get_compute_profile(
+                        cluster_name_for_keys.value or "pace"
+                    ).account_required,
+                )
+                if _slurm_errors:
+                    status_chip.value = status_html("fail")
+                    with log_out:
+                        print("[slurm][ERROR] Fix the job resource request:")
+                        for _m in _slurm_errors:
+                            print("  -", _m)
+                    return
+
+            _prepared = _prepare_effective_example(
+                test_mode=test_mode, for_cloud=(mode == "cloud"))
+            if _prepared is None:
+                return
+            effective_example_dir, md_run_provenance = _prepared
+
+            # =========================================================
+            # CLOUD  (AWS Batch)  -- C4/C5
+            # validate config + preflight -> stage a working copy to S3 ->
+            # submit-job -> register a real cloud run in the Workspace.
+            # =========================================================
+            if mode == "cloud":
+                _submit_cloud_run(
+                    effective_example_dir, md_run_provenance,
+                    review=_cloud.pop("pending_review", None),
+                )
+                return
 
             # ICESEE-Spack scientific runs are blocked unless the live
             # environment probe reports Ready. Never install silently at Run.
-            if backend_dd.value == "spack":
+            if mode != "cloud" and backend_dd.value == "spack":
                 try:
                     _env = current_remote_bridge(
                         mode="connector" if should_use_connector() else "direct"
                     ).environment_status(
                         model=model_dd.value,
-                        remote_base=remote_base_dir.value.strip() or "~/r-arobel3-0",
+                        remote_base=remote_base_dir.value.strip(),
                         spack_dirname=spack_dirname.value.strip() or "ICESEE-Spack",
                     )
                 except Exception as _env_err:
@@ -1832,7 +2821,110 @@ def build_icesheets_ui():
             experiment_update_from_job_status=experiment_update_from_job_status,
             on_status_result=workspace_manager.update_run_status_by_job,
         )
-        on_test_remote = remote_runtime.check
+        _remote_check = remote_runtime.check
+
+        def on_test_remote(_=None):
+            # Immediate feedback before any blocking SSH/relay work: disable the
+            # button and show "Checking…" so a repeat click can't re-enter and
+            # the user sees the check is running.
+            connect_btn.disabled = True
+            try:
+                remote_conn_panel.set_status("checking")
+            except NameError:
+                pass
+            try:
+                _on_test_remote_impl(_)
+            finally:
+                connect_btn.disabled = False
+
+        def _on_test_remote_impl(_=None):
+            _check_result = _remote_check(_)
+            if mode_dd.value != "remote":
+                return
+            _profile = get_compute_profile(cluster_name_for_keys.value or "pace")
+
+            # Connectivity failed: classify it. A public-key rejection is an
+            # actionable "your CryoStack key is not registered yet" state (B3
+            # moved to a per-user/resource namespaced key); everything else is
+            # a generic failure. Never run identity verification on a failed
+            # connection.
+            if not _check_result or not _check_result.get("ok"):
+                _kind = classify_ssh_failure(
+                    stderr=(_check_result or {}).get("stderr", ""),
+                    stdout=(_check_result or {}).get("stdout", ""),
+                    returncode=(_check_result or {}).get("returncode"),
+                )
+                try:
+                    if _kind == SSH_KEY_NOT_AUTHORIZED:
+                        remote_conn_panel.set_key_unregistered(_profile)
+                        with log_out:
+                            print("[access] SSH key not registered — the Connector "
+                                  "reached the resource, but this CryoStack key is "
+                                  "not yet authorized for your account. See the "
+                                  "Remote connection panel for how to register it.")
+                    else:
+                        remote_conn_panel.set_status("failed")
+                except NameError:
+                    pass
+                return
+            try:
+                _resolved = "connector" if should_use_connector() else "direct"
+                _vcmd = _profile.verification_command
+                # The connectivity probe above already ran `hostname && whoami
+                # && pwd` in one command. When the resource's identity check is
+                # just `whoami`, reuse that output instead of a second remote
+                # round trip. (The Run gate still re-verifies fresh.)
+                _reuse_line = ""
+                if (
+                    _check_result
+                    and _check_result.get("ok")
+                    and can_reuse_connectivity_identity(_vcmd)
+                ):
+                    _lines = [
+                        ln.strip()
+                        for ln in (_check_result.get("stdout") or "").splitlines()
+                        if ln.strip()
+                    ]
+                    if len(_lines) >= 2:
+                        _reuse_line = _lines[1]   # hostname, whoami, pwd
+                if _reuse_line:
+                    _v = identity_result_from_output(
+                        whoami_line=_reuse_line,
+                        expected_username=cluster_user.value.strip(),
+                    )
+                else:
+                    _v = verify_remote_identity(
+                        current_remote_bridge(mode=_resolved),
+                        verification_command=_vcmd,
+                        expected_username=cluster_user.value.strip(),
+                    )
+                with log_out:
+                    if _v.ok:
+                        print(f"[identity] verified — remote whoami '{_v.remote_identity}' "
+                              "matches the configured HPC username.")
+                    elif _v.mismatch:
+                        print(f"[identity][MISMATCH] remote whoami '{_v.remote_identity}' "
+                              f"!= configured HPC username '{_v.expected}'. Run is blocked "
+                              "until this matches.")
+                    else:
+                        print(f"[identity] could not verify remote identity: {_v.error}")
+                try:
+                    if _v.ok:
+                        remote_conn_panel.set_status("verified")
+                    elif _v.mismatch:
+                        remote_conn_panel.set_status("mismatch")
+                    else:
+                        remote_conn_panel.set_status("failed")
+                except NameError:
+                    pass
+            except Exception as _e:
+                with log_out:
+                    print("[identity] verification skipped:", type(_e).__name__, _e)
+                try:
+                    remote_conn_panel.set_status("failed")
+                except NameError:
+                    pass
+
         on_status = remote_runtime.status
         on_terminate = remote_runtime.terminate
 
@@ -1856,6 +2948,56 @@ def build_icesheets_ui():
         on_tail = workspace_logs.on_tail
         on_auto_tail_change = workspace_logs.on_auto_tail_change
 
+        def _cloud_status_result(job_id, state):
+            workspace_manager.update_run_status_by_job(job_id, state)
+            _set_cloud_state(state if state in _CLOUD_STATES else "checking")
+
+        # smoke test: a local config check (precheck) then the AWS probe (worker).
+        # Both share the resolved config; the worker never touches a widget.
+        _smoke_state: dict = {}
+
+        def _smoke_precheck():
+            from cryostack_src.cloud.drivers.aws.batch_config import (
+                ECR_REPOSITORY_NAMES,
+            )
+            _model = model_dd.value
+            _cfg = resolve_cloud_config(
+                provider="aws", region=aws_region.value.strip(),
+                bucket=cloud_bucket.value.strip(), profile=aws_profile.value.strip(),
+                model=_model, job_queue=batch_job_queue.value.strip(),
+                job_definition=batch_job_def.value.strip(),
+            )
+            problems = validate_cloud_config(_cfg, model=_model)
+            _smoke_state.update(
+                cfg=_cfg, ecr=ECR_REPOSITORY_NAMES.get(_model, ""),
+                user_prefix=workspace_manager.owner.safe_id)
+            return problems
+
+        def _smoke_worker():
+            from cryostack_src.cloud import run_infrastructure_smoke_test
+            _cfg = _smoke_state["cfg"]
+            # a connected BYO account probes ITS own infrastructure with a
+            # fresh assumed-role session; developer mode keeps the profile.
+            _ex = _resolve_cloud_execution()
+            _byo = getattr(_ex, "credentials", None) if getattr(_ex, "is_byo", False) else None
+            return run_infrastructure_smoke_test(
+                region=(_ex.region if _byo else _cfg.region), bucket=_cfg.bucket,
+                user_prefix=_smoke_state["user_prefix"],
+                job_queue=_cfg.job_queue, job_definition=_cfg.job_definition,
+                ecr_repository=_smoke_state["ecr"],
+                profile=None if _byo else _cfg.profile,
+                credentials=_byo,
+            )
+
+        # forward-declared: the review callbacks are built after cloud_runtime,
+        # but _update_environment (Test / Prepare success) must refresh the
+        # compact RUN ESTIMATE line once infrastructure is Ready.
+        _review_holder = {"refresh": lambda: None}
+        # forward-declared: the active-run card is wired after the Workspace
+        # tabs exist (it navigates to Run Log / Results); the CloudRunController
+        # only needs the render hook now.
+        _active_run_holder = {"render": lambda **_v: None}
+
         cloud_runtime = build_cloud_runtime_callbacks(
             runtime_status=STATUS,
             log_output=log_out,
@@ -1866,12 +3008,332 @@ def build_icesheets_ui():
             set_cloud_status=set_cloud_status,
             bucket_value=lambda: cloud_bucket.value.strip(),
             results_output=results_out,
-            on_status_result=workspace_manager.update_run_status_by_job,
+            execution_resolver=_resolve_cloud_execution,
+            on_status_result=_cloud_status_result,
+            smoke_button=cloud_smoke_btn,
+            set_chip=_set_cloud_state,
+            smoke_precheck=_smoke_precheck,
+            smoke_worker=_smoke_worker,
+            on_environment_update=lambda _caps: _review_holder["refresh"](),
         )
         on_cloud_status = cloud_runtime.status
         on_cloud_logs = cloud_runtime.logs
         on_cloud_terminate = cloud_runtime.terminate
         on_cloud_results = cloud_runtime.results
+
+        # -- "Connect AWS Account" onboarding (C7.2) --------------------
+        # Bring-your-own-AWS-account: the connection is owned by the
+        # authenticated CryoStack user; a fresh AWSOnboarding per call keeps
+        # nothing user-controlled in the identity path.
+        def _aws_onboarding_factory():
+            from cryostack_src.cloud.connect import AWSOnboarding
+
+            return AWSOnboarding(
+                user=workspace_manager.owner,
+                region=(cloud_environment.region.value or "us-east-2").strip(),
+            )
+
+        def _on_aws_account_state(summary: dict) -> None:
+            """Once the account is verified, Prepare cloud -- not Test
+            connection -- is the normal-user action. Re-check lives in the AWS
+            ACCOUNT block.
+
+            Also keeps the Cloud state chip honest: a deployment that IS
+            configured but whose user connection needs attention must never
+            read "Not configured" (that label is reserved for genuinely
+            nothing attempted yet)."""
+            status = (summary or {}).get("status")
+            connected = status == "connected"
+            cloud_environment.test_button.layout.display = (
+                "none" if connected else "inline-flex"
+            )
+            if status == "connected":
+                _set_cloud_state("connected")
+            elif status == "error":
+                _set_cloud_state("connection_issue")
+            elif status == "pending":
+                _set_cloud_state("connection_required")
+            elif status == "disconnected":
+                _set_cloud_state("not_configured")
+
+        aws_connect = build_aws_connect_callbacks(
+            widgets=cloud_environment,
+            onboarding_factory=_aws_onboarding_factory,
+            log_output=log_out,
+            on_state=_on_aws_account_state,
+        )
+        cloud_environment.connect_button.on_click(aws_connect.connect)
+        cloud_environment.verify_button.on_click(aws_connect.verify)
+        cloud_environment.recheck_button.on_click(aws_connect.recheck)
+        cloud_environment.disconnect_button.on_click(aws_connect.disconnect)
+        cloud_environment.update_role_button.on_click(aws_connect.update_role)
+
+        # -- MATLAB license: a non-secret Secrets Manager ARN on the
+        # connected AWS account (cryostack_src/cloud/matlab_license.py).
+        # CryoStack only ever stores/threads the ARN -- never the license
+        # value -- through to cloud_run_preflight via _resolve_cloud_execution.
+        # Shared with every other gateway that offers this field (e.g.
+        # ICESEE's) via wire_matlab_license_widgets -- one implementation,
+        # not a duplicated one per gateway.
+        wire_matlab_license_widgets(
+            cloud_environment, owner=workspace_manager.owner, log_output=log_out)
+        # failed-verification recovery: repair the same account, or start a
+        # STAGED switch to a different one (C7 live-acceptance fix -- an
+        # "error" connection used to have no reachable action). Change AWS
+        # account never touches the active connection until the replacement
+        # itself verifies -- see cloud_connect_runtime.build_aws_connect_callbacks.
+        cloud_environment.retry_button.on_click(aws_connect.retry)
+        cloud_environment.change_account_button.on_click(aws_connect.change_account)
+        cloud_environment.change_verify_button.on_click(aws_connect.change_verify)
+        cloud_environment.change_cancel_button.on_click(aws_connect.change_cancel)
+        try:
+            aws_connect.refresh()          # render any existing connection
+        except Exception as _err:          # noqa: BLE001 - never block panel build
+            with log_out:
+                print("[cloud][connect] state unavailable:", _err)
+
+        # -- C6: non-blocking submit + auto-poll + auto-retrieve -----------
+        from cryostack_src.frontend.cryolauncher.cloud_runtime import _emit_log
+
+        def _cloud_log(message: str) -> None:
+            # CloudRunController drives this from a detached asyncio task, where
+            # `with log_out: print(...)` silently drops output (no kernel
+            # parent-header). append_stdout writes straight to the synced
+            # outputs traitlet, so the Run Log actually shows the run.
+            _emit_log(log_out, message)
+
+        def _cloud_results_ready() -> None:
+            # outputs are already in this user's local run cache (cloud_outputs);
+            # re-read the shared ResultPackage for the selected run and render an
+            # initial plot -- the same panel every backend uses, no cloud path.
+            try:
+                workspace_history_panel.refresh_button.click()
+            except Exception:
+                pass
+            try:
+                visualization_panel.controller.preview()
+            except Exception:
+                try:
+                    visualization_panel.controller.refresh()
+                except Exception:
+                    pass
+            with results_out:
+                print("[cloud] Outputs retrieved into your run cache and "
+                      "rendered in Results. Use Download Results / Download "
+                      "Figures to export.")
+
+        def _persist_cloud_resources(job_id, resources):
+            """Non-blocking, no-AWS: fold the controller's grown resource
+            snapshot into the run manifest so the AWS diagnostics menu
+            survives a page refresh and a historical run keeps its OWN
+            resources. Only non-secret identity (the controller already
+            enforces this via merge_aws_resources)."""
+            try:
+                workspace_manager.merge_run_metadata_by_job(
+                    str(job_id), {"aws_resources": dict(resources or {})})
+            except Exception as _pe:  # noqa: BLE001 - never break a poll
+                with log_out:
+                    print("[cloud][diagnostics] (non-fatal)", type(_pe).__name__, _pe)
+
+        _cloud["controller"] = CloudRunController(
+            bridge_factory=current_cloud_bridge,
+            register_run=_register_cloud_run,
+            sync_results=workspace_manager.sync_cloud_results,
+            on_state=_set_cloud_state,
+            on_log=_cloud_log,
+            on_results_ready=_cloud_results_ready,
+            # every AWS op of a connected BYO run uses a fresh sts:AssumeRole
+            # for the reviewed account -- no ambient/profile fallback.
+            execution_provider=_resolve_cloud_execution,
+            on_run_view=lambda **v: _active_run_holder["render"](**v),
+            on_resources=_persist_cloud_resources,
+            poll_interval=float(os.environ.get("CRYOSTACK_CLOUD_POLL_SECONDS", "20")),
+        )
+
+        # The infrastructure smoke test (license-neutral: identity + S3 + Batch
+        # + ECR reachability, no job submitted) shares the same non-blocking
+        # coordinator as Test connection / Prepare cloud.
+        cloud_smoke_btn.on_click(cloud_runtime.smoke_test)
+
+        # -- RUN ESTIMATE + Review & Launch (C7.4) --------------------------
+        from cryostack_src.cloud.estimate import (
+            CloudCostEstimate,
+            estimate_cloud_cost,
+            estimate_runtime,
+            resolve_fargate_prices,
+        )
+        from cryostack_src.cloud.review import (
+            InfrastructureReadiness,
+            build_cloud_run_review,
+            review_digest,
+        )
+        from cryostack_src.frontend.cryolauncher.cloud_review_runtime import (
+            build_cloud_review_callbacks,
+        )
+
+        def _cloud_example_name() -> str:
+            return Path(example_dir.value or "").name or "example"
+
+        def _cloud_run_config():
+            """THE canonical resolved cloud config -- resources included,
+            derived from whichever model is currently selected. The Review
+            card and the submit path both read this; no second copy."""
+            _model = (model_dd.value or "issm").strip().lower()
+            _compute_mode = getattr(
+                cloud_environment.compute_mode, "value", "fargate")
+            _ec2_cfg = _ec2_config_from_widgets(cloud_environment)
+            _job_def, _ = resolve_job_definition(
+                _model, batch_job_def.value.strip(), allow_list=_CLOUD_JOB_DEFS,
+                compute_mode=_compute_mode, ec2=_ec2_cfg,
+            )
+            return resolve_cloud_config(
+                provider="aws",
+                region=aws_region.value.strip(),
+                bucket=cloud_bucket.value.strip(),
+                profile=aws_profile.value.strip(),
+                model=_model,
+                job_queue=batch_job_queue.value.strip(),
+                job_definition=_job_def,
+                aws_batch_compute=_compute_mode,
+                ec2=_ec2_cfg,
+            )
+
+        def _cloud_run_history():
+            """Durations (minutes) of this user's past successful cloud runs of
+            the CURRENTLY SELECTED model + example -- best effort; empty ->
+            the estimator falls back."""
+            _model = (model_dd.value or "issm").strip().lower()
+            out = []
+            try:
+                for run in workspace_manager.list_runs():
+                    if run.execution_mode != "cloud" or (run.model or "").lower() != _model:
+                        continue
+                    if str(run.status).lower() not in ("completed", "succeeded"):
+                        continue
+                    if run.finished is None or run.created is None:
+                        continue
+                    name = (run.name or "") + " " + str(run.metadata.get("example", ""))
+                    if _cloud_example_name().lower() not in name.lower():
+                        continue
+                    mins = (run.finished - run.created).total_seconds() / 60.0
+                    if 0 < mins < 24 * 60:
+                        out.append(mins)
+            except Exception:  # noqa: BLE001
+                pass
+            return out
+
+        def _cloud_review_digest() -> str:
+            _m = (model_dd.value or "issm").strip().lower()
+            _img = _default_tested_image(_m)
+            return review_digest(
+                config=_cloud_run_config(),
+                model=_m,
+                example=_cloud_example_name(),
+                run_target=(Path(run_target.value or "runme.m").name),
+                account_id=_cloud_account_id_for_review(),
+                scientific_overrides=(md_panel.overrides() if model_dd.value == "issm" else {}),
+                image_digest=getattr(_img, "digest", "") or "",
+            )
+
+        def _cloud_account_id_for_review() -> str:
+            try:
+                s = _aws_onboarding_factory().summary()
+                return s.get("account_id", "") if s.get("status") == "connected" else ""
+            except Exception:  # noqa: BLE001
+                return ""
+
+        def _build_cloud_review():
+            _model = (model_dd.value or "issm").strip().lower()
+            cfg = _cloud_run_config()
+            region = cfg.region
+            account_id = _cloud_account_id_for_review()
+
+            # fresh account verification (BYO) -- never uses stored STS creds
+            account_fresh = False
+            creds = None
+            try:
+                _ex = _resolve_cloud_execution()
+                account_fresh = _ex.is_byo
+                creds = _ex.credentials
+                if _ex.is_byo:
+                    region = _ex.region
+                    account_id = _ex.account_id or account_id
+                    cfg = _cloud_run_config()
+                    cfg.region = region
+                    if _ex.defaults:
+                        cfg.bucket = _ex.defaults.bucket
+            except Exception as _acc_err:  # noqa: BLE001 - fail closed, not crash
+                account_fresh = False
+
+            # readiness
+            try:
+                caps = current_cloud_bridge(
+                    credentials=creds, region=region
+                ).check_environment()
+            except Exception:  # noqa: BLE001
+                caps = None
+            infra = InfrastructureReadiness(
+                account=bool(getattr(caps, "authenticated", False)) and account_fresh,
+                storage=bool(getattr(caps, "storage_ready", False)),
+                container=bool(getattr(caps, "registry_ready", False)),
+                compute=bool(getattr(caps, "batch_ready", False)),
+            )
+
+            rt = estimate_runtime(
+                model=_model, example=_cloud_example_name(),
+                time_limit_minutes=cfg.time_limit_minutes,
+                history_provider=_cloud_run_history,
+            )
+            if cfg.is_ec2:
+                # no EC2 pricing model is implemented yet -- never claim
+                # Fargate pricing for a run that will not run on Fargate.
+                cost = CloudCostEstimate(
+                    region=region, vcpu=cfg.vcpu, memory_gib=cfg.memory_gib,
+                    expected_runtime_minutes=rt.minutes, source=rt.source,
+                    available=False, warning="EC2 cost estimate unavailable",
+                )
+            else:
+                prices = resolve_fargate_prices(region)      # ambient; account-neutral
+                cost = estimate_cloud_cost(
+                    region=region, vcpu=cfg.vcpu, memory_gib=cfg.memory_gib,
+                    expected_runtime_minutes=rt.minutes, ephemeral_gib=cfg.ephemeral_gib,
+                    prices=prices, runtime_source=rt.source,
+                )
+            # single authoritative answer to "does this workflow need
+            # MATLAB?" -- cryostack_src.models.workflow_capabilities, never
+            # a duplicated "model == issm" check (which would miss e.g. an
+            # ICESEE run whose forecast model is ISSM).
+            _capabilities = resolve_workflow_capabilities(model=_model)
+            _lic = _cloud_matlab_license_configured()
+            return build_cloud_run_review(
+                config=cfg, model=_model, example=_cloud_example_name(),
+                run_target=(Path(run_target.value or "runme.m").name),
+                account_id=account_id, region=region,
+                infrastructure=infra, runtime=rt, cost=cost,
+                account_freshly_verified=account_fresh,
+                config_problems=validate_cloud_config(cfg, model=_model),
+                preflight_problems=cloud_run_preflight(
+                    model=_model, matlab_license_configured=_lic,
+                    compute_mode=cfg.compute_mode, ec2_config=cfg.ec2),
+                scientific_overrides=(md_panel.overrides() if model_dd.value == "issm" else {}),
+                issm_runtime_ready=(_lic if _capabilities.requires_matlab_license else None),
+            )
+
+        _cloud_review = build_cloud_review_callbacks(
+            widgets=cloud_environment,
+            review_builder=_build_cloud_review,
+            digest_builder=_cloud_review_digest,
+            # Launch cloud run goes DIRECTLY to the cloud/AWS controller --
+            # never through on_run()'s mode/backend dispatch, so Remote/HPC
+            # Host/User validation is structurally unreachable from here,
+            # regardless of what mode_dd.value happens to be.
+            launch_handler=_launch_cloud_run,
+            log_output=log_out,
+        )
+        _review_holder["refresh"] = _cloud_review.refresh_estimate
+        cloud_environment.review_button.on_click(_cloud_review.review)
+        cloud_environment.review_back_button.on_click(_cloud_review.back)
+        cloud_environment.launch_button.on_click(_cloud_review.launch)
 
         def tail_selected_workspace_run():
             selected = workspace_manager.selected_run()
@@ -1883,11 +3345,18 @@ def build_icesheets_ui():
 
         def resolve_workspace_run_status(run):
             if run.execution_mode == "cloud":
-                bridge = CloudBridge(
-                    provider="aws",
-                    region=run.metadata.get("region") or "us-east-2",
-                    profile=run.metadata.get("profile") or None,
-                )
+                # a BYO run (account id recorded) re-checks status through a
+                # FRESH assumed-role context for that account; a developer-mode
+                # run keeps its profile. current_cloud_bridge picks the path.
+                if run.metadata.get("account_id"):
+                    bridge = current_cloud_bridge(
+                        region=run.metadata.get("region") or None)
+                else:
+                    bridge = CloudBridge(
+                        provider="aws",
+                        region=run.metadata.get("region") or "us-east-2",
+                        profile=run.metadata.get("profile") or None,
+                    )
             else:
                 bridge = RemoteBridge(
                     mode=run.metadata.get("access_mode") or "direct",
@@ -1905,12 +3374,27 @@ def build_icesheets_ui():
             selected = workspace_manager.selected_run()
             return selected.execution_mode if selected else mode_dd.value
 
+        def _selected_cloud_run_s3():
+            """The S3 run location for the selected cloud run -- from its
+            persisted metadata, falling back to this session's last submit."""
+            selected = workspace_manager.selected_run()
+            if selected and selected.execution_mode == "cloud":
+                loc = selected.metadata.get("cloud_run")
+                if loc:
+                    return str(loc)
+            return STATUS.get("cloud_run")
+
         def sync_selected_run_results():
             """Synchronise the selected run's outputs into its local run cache,
             using whichever backend produced it. Returns the local outputs dir
             (or None). Performs no rendering."""
             if active_execution_mode() == "cloud":
-                return on_cloud_results()
+                s3 = _selected_cloud_run_s3()
+                if not s3:
+                    with results_out:
+                        print("[cloud] No cloud run location for the selected run.")
+                    return None
+                return current_cloud_bridge().results(s3_uri=s3)
             return workspace_manager.refresh_results()
 
         def on_results_preview(_=None):
@@ -1918,79 +3402,93 @@ def build_icesheets_ui():
             # structured visualization panel: re-read the local package, rebuild
             # Solution/Field/Timestep, and render an initial recommended plot.
             if active_execution_mode() == "cloud":
-                on_cloud_results()
+                try:
+                    _p = sync_selected_run_results()
+                    with results_out:
+                        if _p:
+                            print("[cloud] Results synchronised:", _p)
+                except Exception as _e:
+                    with results_out:
+                        print("[cloud][ERROR]", type(_e).__name__, _e)
             else:
                 workspace_manager.preview_results()
             visualization_panel.controller.preview()
 
+        def _download_cloud_results(*, figures_only=False):
+            """Cloud Download: synchronise the selected run's S3 outputs into
+            its own cache (the SAME cache/cloud_outputs the Results panel and
+            Preview read), then package that exact set. Never a re-derived path,
+            never a silent empty archive."""
+            results_out.clear_output()
+            with results_out:
+                print("[cloud] Synchronising results from S3…")
+            try:
+                outputs_dir = sync_selected_run_results()
+            except Exception as _e:  # noqa: BLE001 - surfaced, never a raw traceback
+                with results_out:
+                    print("[cloud][ERROR]", type(_e).__name__, _e)
+                return
+            if outputs_dir is None:
+                return
+            cache_dir = Path(outputs_dir).parent
+            if figures_only:
+                figs = sorted(Path(outputs_dir).rglob("*.png")) \
+                    + sorted(Path(outputs_dir).rglob("*.jpg"))
+                if not figs:
+                    with results_out:
+                        print("[cloud] This run produced no figure files.")
+                    return
+                figures_dir = cache_dir / "_cloud_figures_only"
+                if figures_dir.exists():
+                    workspace_manager.delete(figures_dir)
+                figures_dir.mkdir(parents=True, exist_ok=True)
+                for p in figs:
+                    shutil.copy2(p, figures_dir / p.name)
+                workspace_manager.package_and_download(
+                    figures_dir, filename="figures_bundle.zip", cache_dir=cache_dir)
+                return
+            workspace_manager.package_and_download(
+                outputs_dir, filename="results_bundle.zip", cache_dir=cache_dir)
+
         def on_results_download(_=None):
             if active_execution_mode() == "cloud":
-                on_cloud_results()
+                _download_cloud_results()
             else:
                 workspace_manager.download_results()
 
         def on_figures_download(_=None):
             if active_execution_mode() == "cloud":
-                on_cloud_results()
+                _download_cloud_results(figures_only=True)
             else:
                 workspace_manager.download_figures()
 
         def current_workspace_state() -> dict:
-            return {
+            # v2 shape: RESOURCE facts are NOT persisted (they live in
+            # ComputeProfile); personal settings are folded per-resource by the
+            # controller; run settings go under "run"; nothing secret.
+            state = resource_state.capture()
+            state["run"] = {
                 "model": model_dd.value,
                 "backend": backend_dd.value,
                 "execution_mode": mode_dd.value,
                 "user_mode": ui_mode_dd.value,
-
-                "example": (
-                    example_picker.value or ""
-                ),
-
-                "example_directory": (
-                    example_dir.value.strip()
-                ),
-
-                "run_target": (
-                    run_target.value or ""
-                ),
-
-                "access_mode": (
-                    access_mode_dd.value
-                ),
-
-                "cluster": {
-                    "name": (
-                        cluster_name_for_keys.value
-                        or ""
-                    ),
-                    "host": (
-                        cluster_host.value.strip()
-                    ),
-                    "port": int(
-                        cluster_port.value
-                    ),
-                },
-
-                "slurm": {
-                    "job_name": slurm_job_name.value,
-                    "time": slurm_time.value,
-                    "nodes": slurm_nodes.value,
-                    "tasks": slurm_ntasks.value,
-                    "tasks_per_node": slurm_tpn.value,
-                    "partition": slurm_part.value,
-                    "memory": slurm_mem.value,
-                },
-
-                "job": {
-                    "job_id": STATUS.get("jobid"),
-                    "remote_directory": (
-                        STATUS.get("remote_dir")
-                    ),
-                    "log_file": (
-                        STATUS.get("log_file")
-                    ),
-                },
+                "example": example_picker.value or "",
+                "example_directory": example_dir.value.strip(),
+                "run_target": run_target.value or "",
+                "job_name": slurm_job_name.value,
+                "nodes": slurm_nodes.value,
+                "tasks": slurm_ntasks.value,
+                "tasks_per_node": slurm_tpn.value,
+                "memory": slurm_mem.value,
+                "wall_time_override": slurm_time.value,
+                "partition_override": slurm_part.value,
             }
+            state["job"] = {
+                "job_id": STATUS.get("jobid"),
+                "remote_directory": STATUS.get("remote_dir"),
+                "log_file": STATUS.get("log_file"),
+            }
+            return strip_secrets(state)
 
 
         run_btn.on_click(on_run)
@@ -2002,7 +3500,32 @@ def build_icesheets_ui():
         terminate_btn.on_click(on_terminate)
         cloud_status_btn.on_click(on_cloud_status)
         cloud_logs_btn.on_click(on_cloud_logs)
-        cloud_terminate_btn.on_click(on_cloud_terminate)
+
+        # Terminate is destructive -> two-step confirm. The controller's
+        # terminate() also stops the auto-poll loop.
+        _cloud_term_armed = {"v": False}
+
+        def _reset_cloud_terminate():
+            _cloud_term_armed["v"] = False
+            cloud_terminate_btn.description = "Terminate"
+            cloud_terminate_btn.button_style = "danger"
+
+        def on_cloud_terminate_confirm(_=None):
+            if not _cloud_term_armed["v"]:
+                _cloud_term_armed["v"] = True
+                cloud_terminate_btn.description = "Confirm terminate"
+                cloud_terminate_btn.button_style = "warning"
+                with log_out:
+                    print("[cloud] Click again to confirm termination of the running job.")
+                return
+            _reset_cloud_terminate()
+            job_id = STATUS.get("batch_job_id")
+            if _cloud["controller"] is not None and job_id:
+                _cloud["controller"].terminate(str(job_id))
+            else:
+                on_cloud_terminate()
+
+        cloud_terminate_btn.on_click(on_cloud_terminate_confirm)
         cloud_environment.test_button.on_click(cloud_runtime.check_environment)
         cloud_environment.prepare_button.on_click(cloud_runtime.prepare_environment)
         results_download_btn.on_click(on_results_download)
@@ -2054,29 +3577,23 @@ def build_icesheets_ui():
         md_config_panel = W.Accordion(children=[md_panel.container])
         md_config_panel.set_title(0, "⚙️ ISSM configuration (Basic)")
         # md_config_panel.selected_index = 0  # open by default
+        icepack_config_panel = W.Accordion(children=[icepack_basic_panel.container])
+        icepack_config_panel.set_title(0, "⚙️ Icepack configuration (Basic)")
+        icepack_config_panel.selected_index = None
         container_source_row = form_row("Source:", container_source)
         image_uri_row = form_row("Image:", image_uri)
 
-        cluster_host_row = form_pair("Host:", cluster_host, "90px")
-        cluster_user_row = form_pair("User:", cluster_user, "90px")
-        cluster_port_row = form_pair("Port:", cluster_port, "90px")
-        remote_base_dir_row = form_pair("Remote dir:", remote_base_dir, "90px")
+        # B4: the Remote connection and Slurm resources widgets are now arranged
+        # by the shared panels (build_remote_connection_panel /
+        # build_slurm_resources_panel). Only the "Tag" row is still laid out
+        # here -- it goes into the panel's Diagnostics section.
         remote_tag_row = form_pair("Tag:", remote_tag, "90px")
-
-        slurm_job_name_row = form_pair("Job:", slurm_job_name, "90px")
-        slurm_time_row = form_pair("Time:", slurm_time, "90px")
-        slurm_nodes_row = form_pair("Nodes:", slurm_nodes, "90px")
-        slurm_ntasks_row = form_pair("Tasks:", slurm_ntasks, "90px")
-        slurm_tpn_row = form_pair("TPN:", slurm_tpn, "90px")
-        slurm_part_row = form_pair("Part:", slurm_part, "90px")
-        slurm_mem_row = form_pair("Mem:", slurm_mem, "90px")
-        slurm_account_row = form_pair("Acct:", slurm_account, "90px")
-        slurm_mail_row = form_pair("Mail:", slurm_mail, "90px")
 
         ssh_key_manager = build_ssh_key_manager(
             cluster_name_widget=cluster_name_for_keys,
             host_widget=cluster_host,
             user_widget=cluster_user,
+            defer_probe=True,   # ssh-add subprocesses off the construction path
         )
         server_key_note = W.HTML("""
         <div class='icesee-subtle' style='line-height:1.5; margin-bottom:8px;'>
@@ -2097,6 +3614,15 @@ def build_icesheets_ui():
         ssh_key_manager_box.set_title(0, "🔐 Server-side SSH Key Manager")
         ssh_key_manager_box.selected_index = None
 
+        # run the (subprocess-spawning) ssh-agent inspection only when the user
+        # actually opens the key-manager panel
+        def _probe_ssh_key_manager(change):
+            if change.get("new") is not None:
+                probe = getattr(ssh_key_manager, "_cryostack_probe", None)
+                if probe is not None:
+                    probe()
+        ssh_key_manager_box.observe(_probe_ssh_key_manager, names="selected_index")
+
         # ssh_key_manager_box = W.Accordion(children=[ssh_key_manager])
         # # ssh_key_manager_box.set_title(0, "🔐 SSH Key Manager")
         # ssh_key_manager_box.set_title(0, "🔐 Server-side SSH Key Manager")
@@ -2116,40 +3642,49 @@ def build_icesheets_ui():
             margin="10px 0 0 0",
         )
 
-        cluster_name_row = form_pair("Cluster:", cluster_name_for_keys, "90px")
-        remote_conn_inner = W.VBox([
-            cluster_name_row,
-            form_pair("Access:", access_mode_dd, "90px"),
-            cluster_host_row,
-            W.HBox([cluster_user_row, cluster_port_row], layout=W.Layout(gap="12px", width="100%")),
-            W.HBox([remote_base_dir_row, remote_tag_row], layout=W.Layout(gap="12px", width="100%")),
-        ])
-        remote_conn_box = W.Accordion(children=[remote_conn_inner])
-        remote_conn_box.set_title(0, "🔌 Remote connection")
-        # remote_conn_box.selected_index = 0  # open by default
+        # B4: user-workflow-oriented Remote Connection panel. Reorganises the
+        # existing widgets (Compute resource / Your HPC identity / Access /
+        # Status) and hides the connector/session internals behind Diagnostics.
+        # Transport behaviour, the B3 AccessState machine, identity verification
+        # and the Run gate are unchanged.
+        connect_btn.description = "Check SSH Access"
+        start_connector_session_btn.description = "Open Connector Setup"
+        start_connector_session_btn.icon = "external-link"
 
-        slurm_inner = W.VBox([
-            W.HBox([slurm_job_name_row, slurm_time_row], layout=W.Layout(gap="12px", width="100%")),
-            W.HBox([slurm_nodes_row, slurm_ntasks_row, slurm_tpn_row], layout=W.Layout(gap="12px", width="100%")),
-            W.HBox([slurm_part_row, slurm_mem_row], layout=W.Layout(gap="12px", width="100%")),
-            W.HBox([slurm_account_row, slurm_mail_row], layout=W.Layout(gap="12px", width="100%")),
-        ])
+        remote_conn_panel = build_remote_connection_panel(
+            resource=cluster_name_for_keys,
+            host=cluster_host,
+            port=cluster_port,
+            hpc_username=cluster_user,
+            remote_directory=remote_base_dir,
+            connection_method=access_mode_dd,
+            auth_method=auth_mode,
+            check_ssh_button=connect_btn,
+            open_connector_button=start_connector_session_btn,
+            connector_card=relay_status,
+            connector_setup_link=connector_setup_link,
+            profile=get_compute_profile(cluster_name_for_keys.value or "pace"),
+            auth_extra_children=[cluster_password, bootstrap_btn],
+            advanced_children=[remote_tag_row],
+        )
+        remote_conn_box = W.Accordion(children=[remote_conn_panel.container])
+        remote_conn_box.set_title(0, "🔌 Remote connection")
+
+        slurm_inner = build_slurm_resources_panel(
+            job_name=slurm_job_name,
+            wall_time=slurm_time,
+            nodes=slurm_nodes,
+            tasks=slurm_ntasks,
+            tasks_per_node=slurm_tpn,
+            partition=slurm_part,
+            memory=slurm_mem,
+            account=slurm_account,
+            email=slurm_mail,
+        ).container
 
         slurm_box = W.Accordion(children=[slurm_inner])
         slurm_box.set_title(0, "📊 Slurm resources")
         slurm_box.selected_index = None
-
-        auth_inner = W.VBox([
-            W.HBox(
-                [W.HTML("<div class='icesee-lbl'>Method:</div>"), auth_mode],
-                layout=W.Layout(gap="10px")
-            ),
-            cluster_password,
-            bootstrap_btn,
-        ])
-
-        auth_box = W.Accordion(children=[auth_inner])
-        auth_box.set_title(0, "🔒 Authentication")
 
         exec_backend_choice = W.Dropdown(
             options=[("ICESEE-Spack", "spack"), ("ICESEE-Container", "container")],
@@ -2311,7 +3846,7 @@ def build_icesheets_ui():
             setup_job_label=spack_env_setup_label,
             view_log_button=spack_setup_log_btn,
             model_value=lambda: model_dd.value,
-            remote_base_value=lambda: remote_base_dir.value.strip() or "~/r-arobel3-0",
+            remote_base_value=lambda: remote_base_dir.value.strip(),
             spack_dirname_value=lambda: spack_dirname.value.strip() or "ICESEE-Spack",
             spack_repo_value=lambda: (
                 spack_repo_url.value.strip()
@@ -2331,14 +3866,10 @@ def build_icesheets_ui():
         remote_box = W.VBox([
             remote_conn_box,
             exec_backend_box,
-            auth_box,
-            # server_key_note,
+            # Authentication, the connector card and the "Open Connector Setup"
+            # action now live inside the Remote connection panel (B4).
             ssh_key_manager_box,
             slurm_box,
-            relay_status,
-            start_connector_session_btn,
-            connector_setup_link,
-            # connector_panel,
         ], layout=W.Layout(gap="10px"))
 
         run_plan = build_run_plan_panel(
@@ -2358,6 +3889,7 @@ def build_icesheets_ui():
 
         cloud_log_controls = build_workspace_toolbar(
             [
+                cloud_smoke_btn,
                 cloud_status_btn,
                 cloud_logs_btn,
                 clear_btn,
@@ -2369,6 +3901,7 @@ def build_icesheets_ui():
         run_settings_panel = build_run_settings_panel(
             configuration_rows=[
                 ui_mode_row,
+                *([agent_panel.container] if agent_panel is not None else []),
                 mode_row,
                 model_row,
                 example_picker_row,
@@ -2379,6 +3912,7 @@ def build_icesheets_ui():
                 editor_panel.container,
                 run_target_row,
                 md_config_panel,
+                icepack_config_panel,
                 dataset_panel.container,
             ],
             remote_panel=remote_box,
@@ -2410,10 +3944,84 @@ def build_icesheets_ui():
         remote_actions = remote_log_controls
         cloud_actions = cloud_log_controls
 
-        workspace_history_panel = build_workspace_history_panel(
-            manager=workspace_manager,
-            on_run_selected=lambda _run_id: visualization_panel.controller.refresh(),
-        )
+        def _on_workspace_run_selected(_run_id):
+            visualization_panel.controller.refresh()
+            # C6: if a still-running cloud run is selected (e.g. after a kernel
+            # restart) and nothing is polling it, resume the auto-poll.
+            run = workspace_manager.selected_run()
+            ctl = _cloud["controller"]
+            if (run is not None and run.execution_mode == "cloud"
+                    and ctl is not None and ctl.job_id != str(run.jobid or "")):
+                meta = run.metadata or {}
+                _rc = run.container or {}
+                ctl.attach(
+                    job_id=str(run.jobid or ""),
+                    s3_run=str(meta.get("cloud_run") or run.remote_directory or ""),
+                    model=run.model, region=meta.get("region") or "",
+                    profile=meta.get("profile"),
+                    account_id=meta.get("account_id") or "",
+                    example=meta.get("example") or "",
+                    run_target=meta.get("run_target") or "",
+                    source=meta.get("source") or "",
+                    vcpu=meta.get("vcpu") or 0,
+                    memory_gib=meta.get("memory_gib") or 0,
+                    expected_runtime_minutes=meta.get("expected_runtime_minutes") or 0,
+                    cost_public=meta.get("cost_estimate") or {},
+                    image_key=meta.get("image_key") or "",
+                    image_label=meta.get("image_label") or "",
+                    image_reference=(meta.get("image_reference")
+                                     or (_rc.get("reference") or "").replace("docker://", "")),
+                    image_digest=meta.get("image_digest") or _rc.get("digest") or "",
+                    aws_resources=meta.get("aws_resources") or {},
+                    state={"submitted": "queued"}.get(run.status, run.status),
+                )
+
+        # Runs is the selection/control surface; Files / Run Log / Results are
+        # views of the SAME selected run. The Selected-Run actions route through
+        # the existing Workspace machinery: switch the existing Tab, then invoke
+        # the existing tail / preview path for the selected run. No second
+        # panel, no second viewer, no second result-loading path.
+        _workspace_tabs = {"w": None}       # late-bound: set after build_run_details
+        _WS_TAB = {"runs": 0, "files": 1, "log": 2, "results": 3}
+
+        def _switch_workspace_tab(name):
+            tab = _workspace_tabs["w"]
+            idx = _WS_TAB.get(name)
+            if tab is not None and idx is not None and idx < len(tab.children):
+                tab.selected_index = idx
+
+        def _runs_tail_log():
+            rid = workspace_history_panel.runs.value
+            if not rid:
+                return
+            workspace_manager.select_run(rid)          # shared selected run
+            _switch_workspace_tab("log")
+            workspace_manager.tail(rid)                # existing tail machinery
+
+        def _runs_show_figures():
+            rid = workspace_history_panel.runs.value
+            if not rid:
+                return
+            workspace_manager.select_run(rid)
+            _switch_workspace_tab("results")
+            on_results_preview()                      # existing ResultPackage / Visualizer
+
+        def _runs_download():
+            rid = workspace_history_panel.runs.value
+            if not rid:
+                return
+            workspace_manager.select_run(rid)
+            on_results_download()                     # download only -- no tab switch
+
+        with perf.span("history panel"):
+            workspace_history_panel = build_workspace_history_panel(
+                manager=workspace_manager,
+                on_run_selected=_on_workspace_run_selected,
+                defer_initial_load=True,   # list runs now; inspect on selection
+                on_tail_log=_runs_tail_log,
+                on_show_figures=_runs_show_figures,
+                on_download=_runs_download,
+            )
 
         output_workspace = build_run_details(
             log_output=log_out,
@@ -2424,6 +4032,76 @@ def build_icesheets_ui():
             files_panel=workspace_history_panel.files_panel,
             visualization_panel=visualization_panel.container,
         )
+        _workspace_tabs["w"] = output_workspace.tabs
+
+        # -- CLOUD RUN active-run surface (C7.5) --------------------------
+        # The card's [View log] / [View results] route into the SAME Workspace
+        # tabs + tail/preview machinery the Runs panel uses -- no second log
+        # viewer, no second results path.
+        from cryostack_src.frontend.cryolauncher.cloud_active_run_runtime import (
+            build_active_run_callbacks,
+        )
+
+        def _run_id_for_job(job_id):
+            job_id = str(job_id or "")
+            if not job_id:
+                return None
+            for run in workspace_manager.list_runs():
+                if str(getattr(run, "jobid", "")) == job_id:
+                    return run.id
+            return None
+
+        def _open_active_run(tab):
+            """CLOUD RUN card -> Workspace. Guarantees three things for the run
+            the card is showing: (1) it becomes the selected run, (2) the
+            Workspace opens on the requested tab, (3) that tab shows THAT run.
+
+            The run is resolved from the controller's own job id first (the
+            card's subject), then the last-submitted job id -- never "the most
+            recent run in history"."""
+            ctl = _cloud["controller"]
+            job_id = (getattr(ctl, "job_id", "") if ctl is not None else "") \
+                or STATUS.get("batch_job_id")
+            rid = _run_id_for_job(job_id)
+            if rid is None:
+                # the run list may not have this run yet -- rebuild it once
+                try:
+                    workspace_history_panel.refresh_button.click()
+                except Exception:  # noqa: BLE001
+                    pass
+                rid = _run_id_for_job(job_id)
+
+            if rid:
+                # route through the Runs panel's Select widget so the whole
+                # Workspace (selected-run state, run cards, viz panel) agrees on
+                # ONE run -- not just workspace_manager._selected_run_id.
+                try:
+                    if rid in [v for _, v in workspace_history_panel.runs.options]:
+                        workspace_history_panel.runs.value = rid
+                    else:
+                        workspace_manager.select_run(rid)
+                except Exception:  # noqa: BLE001
+                    workspace_manager.select_run(rid)
+
+            _switch_workspace_tab(tab)
+            if tab == "log":
+                if rid:
+                    workspace_manager.tail(rid)
+                else:
+                    on_cloud_logs()
+            else:
+                on_results_preview()
+            # re-assert the destination tab: the data step above may have driven
+            # widgets that could steal focus; the requested tab must stay active.
+            _switch_workspace_tab(tab)
+
+        _active_run = build_active_run_callbacks(
+            widgets=cloud_environment,
+            on_view_log=lambda: _open_active_run("log"),
+            on_view_results=lambda: _open_active_run("results"),
+            on_terminate=on_cloud_terminate_confirm,
+        )
+        _active_run_holder["render"] = _active_run.render
 
         workspace_ui = build_workspace_explorer(
             run_settings=run_settings_panel,
@@ -2444,8 +4122,28 @@ def build_icesheets_ui():
         auth_mode.observe(_toggle_auth_widgets, names="value")
 
         _toggle_auth_widgets()
-        refresh_example_picker()
-        apply_selected_example()
+        with perf.span("example discovery"):
+            refresh_example_picker()
+            apply_selected_example()
+
+        # B2: restore this user's saved per-resource settings. Runs last, after
+        # every widget + observer exists; the controller guards persistence so a
+        # blank build state can never overwrite stored settings during restore.
+        try:
+            with perf.span("workspace hydrate"), ui_refresh.batch():
+                _b2_warnings = resource_state.hydrate()
+                _sync_resource_facts()
+            for _w in _b2_warnings:
+                with log_out:
+                    print("[settings]", _w)
+        except Exception as _b2_err:  # never block the gateway on restore
+            with log_out:
+                print("[settings] restore skipped:", type(_b2_err).__name__, _b2_err)
+
+        # Run Assistant (Beta) is now the third interaction mode ("Agent"),
+        # opt-in via CRYOSTACK_AGENT_PANEL and built inline with the Run
+        # Settings (see _build_agent_panel / update_visibility). Nothing
+        # agent-related renders unless the user selects Agent mode.
 
         page = W.VBox(
             [
@@ -2453,6 +4151,7 @@ def build_icesheets_ui():
                 # W.HTML(css),
                 auto_scroll_script,
                 W.HTML(CRYOSTACK_FRONTEND_CSS),
+                W.HTML("<script>document.title = 'CryoLauncher';</script>"),
 
                 experiment_bridge.widget(),
                 workspace_bridge.widget(),
@@ -2466,12 +4165,14 @@ def build_icesheets_ui():
             ],
             layout=W.Layout(width="100%"),
         )
+        page.add_class("cryostack-application-page")
 
         image_panel.set_model(model_dd.value)
         image_panel.set_profile(software_panel.profile())
         update_visibility()
         update_summary()
 
+        perf.mark("gateway total (icesheets)", _time.perf_counter() - _perf_t0)
         return page
 
     except Exception as e:

@@ -43,9 +43,105 @@ class TestedImage:
     def short_digest(self) -> str:
         return f"{self.digest[:15]}…" if self.digest.startswith("sha256:") else self.digest
 
+    @property
+    def public_url(self) -> str | None:
+        """A navigable page for this image on its public registry (Docker Hub
+        today), or ``None`` when the reference is not a recognisable Docker
+        Hub ``[docker.io/]<namespace>/<repo>[:<tag>]`` reference. Used to give
+        the Review / CLOUD RUN cards a link straight to the exact image."""
+        ref = self.reference.split("://", 1)[-1].split("@", 1)[0]
+        repo, _, tag = ref.partition(":")
+        parts = repo.split("/")
+        if parts and parts[0] in ("docker.io", "index.docker.io",
+                                  "registry-1.docker.io"):
+            parts = parts[1:]
+        if len(parts) != 2 or not all(parts):
+            return None
+        namespace, name = parts
+        base = f"https://hub.docker.com/r/{namespace}/{name}"
+        return f"{base}/tags?name={tag}" if tag else f"{base}/tags"
+
 
 # ── the registry ────────────────────────────────────────────────────────────
+# Insertion order matters: default_tested_image_for_model() returns the FIRST
+# entry that supports a model, so the current default goes first. Superseded
+# entries are kept, never deleted or overwritten -- an already-mirrored ECR
+# image (or a run's recorded provenance) must always resolve back to a real,
+# unmodified registry fact, even after a newer tested image is added.
 TESTED_IMAGES: dict[str, TestedImage] = {
+    "icesee-combined-v1.0.2": TestedImage(
+        key="icesee-combined-v1.0.2",
+        label="ICESEE Combined v1.0.2",
+        reference="bkyanjo/icesee-combined:v1.0.2",
+        digest="sha256:d68d88dcb7047f29d6e277a45710f50f1bf3023566e0472f07a7dd75ffbcd170",
+        # v1.0.2 (2026-09-10, current default): completes the scientific /
+        # notebook Python stack in /opt/venv-icepack -- the interpreter
+        # `with-icepack python` uses -- so the upstream Icepack tutorials
+        # run unmodified. It adds `ipywidgets`, `jupyter`, `seaborn` and
+        # `jax`/`jaxlib` (0.4.x, held to the base image's numpy 1.26) on
+        # top of v1.0.1; nothing in the Spack / PETSc / Firedrake / ISSM /
+        # ICESEE scientific stack was rebuilt or changed. The trigger: a
+        # v1.0.1 Fargate run of `04-synthetic-ice-stream-xy` exited 1 after
+        # ~46 s at `from tqdm.notebook import trange` ("IProgress not
+        # found" -- ipywidgets absent). Verified in the built+pushed image:
+        # all of numpy/scipy/h5py/zarr/dask/psutil/tqdm/pyyaml/numcodecs/
+        # gstools/jax/jaxlib/mpi4py/matplotlib/pandas/jupyter/ipywidgets
+        # import; `from tqdm.notebook import trange` iterates; `pip check`
+        # clean in venv-icepack and venv-firedrake; numpy stays 1.26.4 and
+        # firedrake still solves; `04-synthetic-ice-stream-xy` runs run.py
+        # end to end (runner_exit=0, 12 figures captured).
+        #
+        # The v1.0.1 "icesee" claim carries forward unchanged: v1.0.2 is a
+        # strict superset of v1.0.1's stack (only pip packages added under
+        # a numpy constraint), so `with-icesee` + single-rank (NP=1)
+        # `run_da_lorenz96.py` remains verified; NP>1 is still unverified /
+        # unsafe for the same reasons documented on the v1.0.1 entry.
+        models=("issm", "icepack", "icesee"),
+        components={
+            # unchanged from v1.0.1 / v1.0.0 -- this release ONLY adds pip
+            # packages to venv-icepack / venv-firedrake; no scientific-stack
+            # layer was rebuilt.
+            "issm": {
+                "version": "2026.1 (self-reported)",
+                "commit": "e70338d8685f8582b61958211e8f5fce2ea686ff",
+            },
+            "firedrake": {"version": "2025.10.2"},
+        },
+    ),
+    "icesee-combined-v1.0.1": TestedImage(
+        key="icesee-combined-v1.0.1",
+        label="ICESEE Combined v1.0.1",
+        reference="bkyanjo/icesee-combined:v1.0.1",
+        digest="sha256:e393b1eed21f3481fffcfb3bb7ce5ce315fbff0cc8dc0fe4f2bcc2e2f1d538ed",
+        # "icesee" added 2026-09-08 after live verification: this exact
+        # digest was pulled and run locally with `with-icesee`; `import
+        # ICESEE`/mpi4py/h5py all succeed and the Lorenz-96 example
+        # (applications/lorenz_model/examples/lorenz96) completed end-to-end
+        # with real output (results/true-wrong-lorenz.h5 +
+        # _modelrun_datasets/*.h5) under
+        # `mpirun --allow-run-as-root -np 1 python run_da_lorenz96.py
+        # -F params.yaml --Nens=N --model_nprocs=M --verbose`. Only
+        # single-rank (NP=1) execution is verified -- NP>1 races on shared
+        # HDF5 output files in this runtime/example (see
+        # icesee_jupyter_book/core/cloud_runner.py's ICESEE batch runner,
+        # which refuses ICESEE_NP != 1 rather than silently corrupting a
+        # run) and full/partial parallel modes fail outright (h5py in this
+        # image has no MPI I/O support; the partial-parallel path has an
+        # unrelated example-config bug). This claim covers only that real,
+        # verified capability, not multi-rank ICESEE execution.
+        models=("issm", "icepack", "icesee"),
+        components={
+            # unchanged from v1.0.0 -- this release ONLY adds the AWS CLI
+            # (cloud S3 input/output sync); no scientific-stack layer was
+            # rebuilt (confirmed: the pip/ICESEE dependency layer built
+            # byte-identical / cache-hit against v1.0.0's own build).
+            "issm": {
+                "version": "2026.1 (self-reported)",
+                "commit": "e70338d8685f8582b61958211e8f5fce2ea686ff",
+            },
+            "firedrake": {"version": "2025.10.2"},
+        },
+    ),
     "icesee-combined-v1.0.0": TestedImage(
         key="icesee-combined-v1.0.0",
         label="ICESEE Combined v1.0.0",

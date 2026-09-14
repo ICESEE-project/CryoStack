@@ -22,3 +22,7 @@ tools/icesee1_environment.yml
 /var/*.db
 /var/*.db-shm
 /var/*.db-wal
+
+# CryoStack Connector build artifacts (see build_connector.sh)
+/build/
+/dist/

@@ -1,3 +1,14 @@
 fastapi
 uvicorn[standard]
 pydantic
+websockets
+requests
+
+# Password bootstrap (one-time): the Connector authenticates to the resource
+# with the user's password ONCE and appends only the PUBLIC key to the remote
+# authorized_keys. Without paramiko the packaged app cannot do this and the
+# bootstrap button appears to do nothing.
+paramiko>=3.0
+cryptography
+bcrypt
+pynacl

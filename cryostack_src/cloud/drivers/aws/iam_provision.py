@@ -32,20 +32,46 @@ appropriate.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .auth import run_aws
 from .iam import (
     AWSIAMResources,
     discover_iam_resources,
+    find_instance_profile,
+    find_role,
+    list_instance_profiles,
+    list_roles,
 )
 from .iam_policies import (
+    MATLAB_LICENSE_SECRET_POLICY_NAME,
     batch_service_trust_policy,
+    ec2_instance_trust_policy,
     ecs_execution_trust_policy,
     job_s3_policy,
     job_trust_policy,
+    matlab_license_secret_policy,
 )
 from .models import AWSConfig
+
+# CryoStack-provisioned IAM role names. Kept as ``cryostack-*`` (kebab) so they
+# match the least-privilege ``role/cryostack-*`` scope of the cross-account
+# CryoStackExecutionRole users create in C7.2 -- and so they never collide with
+# that PascalCase cross-account role name (which must stay outside this scope
+# and must never be mistaken for the ECS task-execution role: see iam.py).
+BATCH_SERVICE_ROLE_NAME = "cryostack-batch-service-role"
+ECS_EXECUTION_ROLE_NAME = "cryostack-ecs-execution-role"
+JOB_ROLE_NAME = "cryostack-job-role"
+
+#: Advanced EC2 Batch only: the ECS instance role + its instance profile that
+#: the EC2 hosts assume. Created solely when EC2 mode is prepared.
+EC2_INSTANCE_ROLE_NAME = "cryostack-ec2-instance-role"
+EC2_INSTANCE_PROFILE_NAME = "cryostack-ec2-instance-profile"
+#: AWS-managed policy for an ECS container instance (ECR pull, ECS register,
+#: CloudWatch). The standard, supported choice -- no custom policy needed.
+_EC2_INSTANCE_MANAGED_POLICY = (
+    "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
+)
 
 
 @dataclass
@@ -58,6 +84,12 @@ class AWSIAMProvisionResult:
 
     created: list[str]
     reused: list[str]
+    #: policies reconciled on an already-existing role this run (e.g. the
+    #: ISSM MATLAB-license secret grant re-scoped to a changed ARN).
+    updated: list[str] = field(default_factory=list)
+    #: Advanced EC2 Batch only: the ECS instance-profile ARN (Batch
+    #: ``instanceRole``). ``""`` unless EC2 mode was prepared this run.
+    ec2_instance_profile: str = ""
 
 
 def _require_success(
@@ -178,13 +210,158 @@ def put_inline_policy(
         stderr,
     )
 
+
+def delete_inline_policy(
+    config: AWSConfig,
+    *,
+    role_name: str,
+    policy_name: str,
+) -> bool:
+    """Delete one inline role policy by name. Returns ``True`` if a policy
+    was removed, ``False`` if there was nothing to remove (already absent).
+    Any other failure raises -- an unexpected error must not be swallowed.
+    """
+
+    code, stdout, stderr = run_aws(
+        config,
+        [
+            "iam",
+            "delete-role-policy",
+            "--role-name",
+            role_name,
+            "--policy-name",
+            policy_name,
+        ],
+    )
+
+    if code == 0:
+        return True
+
+    blob = (stderr or stdout or "").lower()
+    if "nosuchentity" in blob or "cannot be found" in blob:
+        return False
+
+    raise RuntimeError(
+        (stderr or stdout).strip()
+        or "Failed to delete inline role policy."
+    )
+
+
+def ensure_ec2_instance_profile(config: AWSConfig) -> tuple[str, str]:
+    """Idempotently create the ECS instance role + instance profile the
+    Advanced EC2 Batch compute environment needs, and return
+    ``(instance_profile_arn, outcome)`` where outcome is ``created`` /
+    ``reused``.
+
+    Only ever called when the user selected EC2 mode. Attaches ONE AWS-managed
+    policy (``AmazonEC2ContainerServiceforEC2Role``) -- no custom / wildcard
+    policy. The role trusts ``ec2.amazonaws.com`` only.
+    """
+
+    existing = find_instance_profile(
+        list_instance_profiles(config), [EC2_INSTANCE_PROFILE_NAME])
+    if existing and existing.get("Arn"):
+        return existing["Arn"], "reused"
+
+    # role
+    role_missing = find_role(list_roles(config), [EC2_INSTANCE_ROLE_NAME]) is None
+    if role_missing:
+        create_role(
+            config, name=EC2_INSTANCE_ROLE_NAME,
+            trust_policy=ec2_instance_trust_policy(),
+        )
+        attach_managed_policy(
+            config, role_name=EC2_INSTANCE_ROLE_NAME,
+            policy_arn=_EC2_INSTANCE_MANAGED_POLICY,
+        )
+
+    # instance profile + role membership (tolerate "already exists")
+    code, stdout, stderr = run_aws(
+        config,
+        ["iam", "create-instance-profile",
+         "--instance-profile-name", EC2_INSTANCE_PROFILE_NAME],
+    )
+    text = (stderr or stdout or "")
+    if code != 0 and "EntityAlreadyExists" not in text:
+        raise RuntimeError(text.strip() or "Unable to create EC2 instance profile.")
+
+    code, stdout, stderr = run_aws(
+        config,
+        ["iam", "add-role-to-instance-profile",
+         "--instance-profile-name", EC2_INSTANCE_PROFILE_NAME,
+         "--role-name", EC2_INSTANCE_ROLE_NAME],
+    )
+    text = (stderr or stdout or "")
+    if code != 0 and "LimitExceeded" not in text and "already" not in text.lower():
+        raise RuntimeError(text.strip() or "Unable to add role to EC2 instance profile.")
+
+    prof = find_instance_profile(
+        list_instance_profiles(config), [EC2_INSTANCE_PROFILE_NAME])
+    arn = (prof or {}).get("Arn") or ""
+    if not arn:
+        raise RuntimeError("EC2 instance profile was created but its ARN is unknown.")
+    return arn, "created"
+
+
+def _reconcile_matlab_license_secret(
+    config: AWSConfig,
+    *,
+    matlab_secret_arn: str,
+    updated: list[str],
+) -> None:
+    """Reconcile the ISSM MATLAB-license secret grant on the ECS
+    task-execution role. Runs on EVERY Prepare Cloud, independent of whether
+    the role was just created:
+
+    * a configured ARN -> put/overwrite an inline policy scoped to EXACTLY
+      that secret ARN. An ARN change (secret A -> secret B) is handled by the
+      overwrite: the role stops being able to read A and is scoped to B.
+    * no ARN -> remove CryoStack's own ``CryoStackMatlabLicenseSecret``
+      inline policy if present, so the role never keeps a stale grant. Only
+      that one named policy is ever touched; every other policy on the role
+      (the AWS-managed ``AmazonECSTaskExecutionRolePolicy``, anything the
+      user added) is left exactly as it was.
+
+    KMS: a secret encrypted with the Secrets Manager default AWS-managed key
+    needs no extra ``kms:Decrypt`` grant. A customer-managed key would; the
+    UI does not collect a CMK ARN today, so that is a documented future case
+    (see :func:`matlab_license_secret_policy`).
+    """
+
+    arn = (matlab_secret_arn or "").strip()
+
+    if arn:
+        put_inline_policy(
+            config,
+            role_name=ECS_EXECUTION_ROLE_NAME,
+            policy_name=MATLAB_LICENSE_SECRET_POLICY_NAME,
+            policy=matlab_license_secret_policy(secret_arn=arn),
+        )
+        updated.append("ecs_execution_role:matlab_license_secret")
+        return
+
+    if delete_inline_policy(
+        config,
+        role_name=ECS_EXECUTION_ROLE_NAME,
+        policy_name=MATLAB_LICENSE_SECRET_POLICY_NAME,
+    ):
+        updated.append("ecs_execution_role:matlab_license_secret (removed)")
+
+
 def ensure_iam_resources(
     config: AWSConfig,
     *,
     bucket: str,
+    matlab_secret_arn: str = "",
+    include_ec2: bool = False,
 ) -> AWSIAMProvisionResult:
     """
     Ensure the IAM roles required by CryoStack AWS Batch exist.
+
+    ``include_ec2`` additionally provisions the ECS instance role + instance
+    profile the Advanced EC2 Batch compute environment needs. Left ``False``
+    for the default Fargate path -- an EC2-only IAM resource is never created
+    for a user who has not chosen EC2.
     """
 
     current = discover_iam_resources(
@@ -193,6 +370,7 @@ def ensure_iam_resources(
 
     created: list[str] = []
     reused: list[str] = []
+    updated: list[str] = []
 
     #
     # ---------------------------------------------------------
@@ -209,7 +387,7 @@ def ensure_iam_resources(
 
         create_role(
             config,
-            name="CryoStackBatchServiceRole",
+            name=BATCH_SERVICE_ROLE_NAME,
             trust_policy=(
                 batch_service_trust_policy()
             ),
@@ -217,9 +395,7 @@ def ensure_iam_resources(
 
         attach_managed_policy(
             config,
-            role_name=(
-                "CryoStackBatchServiceRole"
-            ),
+            role_name=BATCH_SERVICE_ROLE_NAME,
             policy_arn=(
                 "arn:aws:iam::aws:policy/"
                 "service-role/"
@@ -246,7 +422,7 @@ def ensure_iam_resources(
 
         create_role(
             config,
-            name="CryoStackExecutionRole",
+            name=ECS_EXECUTION_ROLE_NAME,
             trust_policy=(
                 ecs_execution_trust_policy()
             ),
@@ -254,9 +430,7 @@ def ensure_iam_resources(
 
         attach_managed_policy(
             config,
-            role_name=(
-                "CryoStackExecutionRole"
-            ),
+            role_name=ECS_EXECUTION_ROLE_NAME,
             policy_arn=(
                 "arn:aws:iam::aws:policy/"
                 "service-role/"
@@ -267,6 +441,18 @@ def ensure_iam_resources(
         created.append(
             "ecs_execution_role"
         )
+
+    #
+    # Reconcile the ISSM MATLAB-license secret grant on the ECS execution
+    # role EVERY run -- whether the role was just created or already existed
+    # -- so a changed secret ARN (A -> B) re-scopes the grant and a cleared
+    # ARN removes it. No-op (and no permission added) when unconfigured.
+    #
+    _reconcile_matlab_license_secret(
+        config,
+        matlab_secret_arn=matlab_secret_arn,
+        updated=updated,
+    )
 
     #
     # ---------------------------------------------------------
@@ -283,7 +469,7 @@ def ensure_iam_resources(
 
         create_role(
             config,
-            name="CryoStackJobRole",
+            name=JOB_ROLE_NAME,
             trust_policy=(
                 job_trust_policy()
             ),
@@ -291,7 +477,7 @@ def ensure_iam_resources(
 
         put_inline_policy(
             config,
-            role_name="CryoStackJobRole",
+            role_name=JOB_ROLE_NAME,
             policy_name=(
                 "CryoStackRunStorage"
             ),
@@ -305,6 +491,16 @@ def ensure_iam_resources(
         )
 
     #
+    # ---------------------------------------------------------
+    # Advanced: EC2 Batch ECS instance profile (only when selected)
+    # ---------------------------------------------------------
+    #
+    ec2_instance_profile = ""
+    if include_ec2:
+        ec2_instance_profile, outcome = ensure_ec2_instance_profile(config)
+        (created if outcome == "created" else reused).append("ec2_instance_profile")
+
+    #
     # Rediscover so returned values contain
     # the final role ARNs.
     #
@@ -316,4 +512,8 @@ def ensure_iam_resources(
         resources=resources,
         created=created,
         reused=reused,
+        updated=updated,
+        # populated only when EC2 mode was prepared THIS run -- never inferred
+        # from whatever profiles the account happens to already have
+        ec2_instance_profile=ec2_instance_profile,
     )

@@ -2,28 +2,20 @@
 set -e
 
 RELAY="${ICESEE_RELAY:-https://cryostack.eas.gatech.edu}"
+PAIRING_CODE="${CRYOSTACK_PAIRING_CODE:-}"
 SESSION=""
+SESSION_SECRET=""
 WS_URL=""
 NO_POLL=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --relay)
-      RELAY="$2"
-      shift 2
-      ;;
-    --session)
-      SESSION="$2"
-      shift 2
-      ;;
-    --ws-url)
-      WS_URL="$2"
-      shift 2
-      ;;
-    --no-poll)
-      NO_POLL="--no-poll"
-      shift
-      ;;
+    --relay)          RELAY="$2"; shift 2 ;;
+    --pairing-code)   PAIRING_CODE="$2"; shift 2 ;;
+    --session)        SESSION="$2"; shift 2 ;;
+    --session-secret) SESSION_SECRET="$2"; shift 2 ;;
+    --ws-url)         WS_URL="$2"; shift 2 ;;
+    --no-poll)        NO_POLL="--no-poll"; shift ;;
     *)
       echo "Unknown argument: $1"
       exit 1
@@ -36,17 +28,10 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 export PYTHONPATH="$REPO_ROOT:${PYTHONPATH:-}"
 
 ARGS=(--relay "$RELAY")
-
-if [[ -n "$SESSION" ]]; then
-  ARGS+=(--session "$SESSION")
-fi
-
-if [[ -n "$WS_URL" ]]; then
-  ARGS+=(--ws-url "$WS_URL")
-fi
-
-if [[ -n "$NO_POLL" ]]; then
-  ARGS+=("$NO_POLL")
-fi
+[[ -n "$PAIRING_CODE" ]]   && ARGS+=(--pairing-code "$PAIRING_CODE")
+[[ -n "$SESSION" ]]        && ARGS+=(--session "$SESSION")
+[[ -n "$SESSION_SECRET" ]] && ARGS+=(--session-secret "$SESSION_SECRET")
+[[ -n "$WS_URL" ]]         && ARGS+=(--ws-url "$WS_URL")
+[[ -n "$NO_POLL" ]]        && ARGS+=("$NO_POLL")
 
 python "$SCRIPT_DIR/connector_ws_client.py" "${ARGS[@]}"

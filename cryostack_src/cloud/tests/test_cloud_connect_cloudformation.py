@@ -1,0 +1,400 @@
+"""C7.2 -- CryoStackExecutionRole template + Quick Create URL."""
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
+
+_REPO = Path(__file__).resolve().parents[3]
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
+
+import pytest
+
+from cryostack_src.cloud.connect.cloudformation import (
+    EXECUTION_ROLE_NAME,
+    execution_role_template,
+    existing_stack_console_url,
+    quick_create_url,
+    render_template,
+)
+
+PRINCIPAL = "arn:aws:iam::713938953301:role/cryostack-service"
+EXTERNAL_ID = "cryostack:alice-abc:sekret+random/value"
+TEMPLATE_URL = "https://cryostack-public.s3.amazonaws.com/cf/execution-role.json"
+
+
+@pytest.fixture
+def template():
+    return execution_role_template()
+
+
+def _all_statements(template):
+    policy = template["Resources"]["CryoStackExecutionRole"]["Properties"]["Policies"][0]
+    return policy["PolicyDocument"]["Statement"]
+
+
+def test_trust_policy_requires_sts_external_id_and_the_cryostack_principal(template):
+    trust = template["Resources"]["CryoStackExecutionRole"]["Properties"][
+        "AssumeRolePolicyDocument"
+    ]
+    stmt = trust["Statement"][0]
+    assert stmt["Action"] == "sts:AssumeRole"
+    assert stmt["Principal"]["AWS"] == {"Ref": "CryoStackPrincipalArn"}
+    assert stmt["Condition"]["StringEquals"]["sts:ExternalId"] == {"Ref": "ExternalId"}
+
+
+def test_external_id_is_a_noecho_parameter(template):
+    param = template["Parameters"]["ExternalId"]
+    assert param["NoEcho"] is True
+    assert param["Type"] == "String"
+
+
+def test_role_has_no_fixed_physical_name(template):
+    """WS onboarding role-name collision fix: the Role resource must NOT set
+    an explicit RoleName -- CloudFormation generates a unique, stack-scoped
+    physical name so a second connection's stack (a different CryoStack
+    identity, or a genuinely new connection replacing this one) can never
+    collide with 'Resource of type AWS::IAM::Role ... already exists'.
+    EXECUTION_ROLE_NAME remains only the template's Role LOGICAL id."""
+    props = template["Resources"]["CryoStackExecutionRole"]["Properties"]
+    assert "RoleName" not in props
+    assert "CryoStackExecutionRole" in template["Resources"]     # logical id unchanged
+    assert EXECUTION_ROLE_NAME == "CryoStackExecutionRole"
+
+
+def test_role_arn_output_is_the_real_cloudformation_created_role(template):
+    """The pasted-back RoleArn must always be Fn::GetAtt on the actual
+    resource CloudFormation created -- never a string built from a fixed
+    name -- so it is correct regardless of what physical name CFN picked."""
+    output = template["Outputs"]["RoleArn"]
+    assert output["Value"] == {"Fn::GetAtt": ["CryoStackExecutionRole", "Arn"]}
+
+
+def test_no_administrator_access_and_no_star_star(template):
+    blob = json.dumps(template)
+    assert "AdministratorAccess" not in blob
+    assert "PowerUserAccess" not in blob
+    for stmt in _all_statements(template):
+        actions = stmt["Action"]
+        actions = [actions] if isinstance(actions, str) else actions
+        resources = stmt["Resource"]
+        resources = [resources] if isinstance(resources, str) else resources
+        # a bare Action:"*" is never allowed; Resource:"*" only for known
+        # un-scopable describe/auth/identity statements
+        assert "*" not in actions
+        if "*" in resources:
+            assert stmt["Sid"] in {
+                "CryoStackEcrAuth",
+                "CryoStackEcrListRepositories",
+                "CryoStackBatchRead",
+                "CryoStackNetworkDiscovery",
+                "CryoStackIdentityAndPricing",
+                "CryoStackIamListRoles",
+                "CryoStackIamListInstanceProfiles",
+            }, stmt["Sid"]
+
+
+def test_s3_is_scoped_to_cryostack_runs(template):
+    sids = {s["Sid"]: s for s in _all_statements(template)}
+    assert sids["CryoStackRunsBuckets"]["Resource"] == {
+        "Fn::Sub": "arn:${AWS::Partition}:s3:::cryostack-runs-*"
+    }
+    assert sids["CryoStackRunsObjects"]["Resource"] == {
+        "Fn::Sub": "arn:${AWS::Partition}:s3:::cryostack-runs-*/*"
+    }
+
+
+def test_ecr_repo_actions_are_scoped_to_cryostack_repositories(template):
+    sids = {s["Sid"]: s for s in _all_statements(template)}
+    repos = sids["CryoStackEcrRepos"]
+    assert "repository/cryostack-*" in repos["Resource"]["Fn::Sub"]
+    # every repository-specific ECR action stays scoped; only the account-wide
+    # LISTING call (ecr:DescribeRepositories with no filter) is on Resource "*"
+    scoped = repos["Action"] if isinstance(repos["Action"], list) else [repos["Action"]]
+    assert "ecr:DescribeRepositories" not in scoped
+    for must_stay_scoped in ("ecr:CreateRepository", "ecr:PutImage",
+                             "ecr:DescribeImages", "ecr:BatchGetImage",
+                             "ecr:UploadLayerPart", "ecr:PutLifecyclePolicy"):
+        assert must_stay_scoped in scoped
+
+    lst = sids["CryoStackEcrListRepositories"]
+    assert lst["Action"] == "ecr:DescribeRepositories"
+    assert lst["Resource"] == "*"
+
+
+def test_ecr_describe_repositories_is_the_only_ecr_action_moved_to_star(template):
+    """Regression for the Account-B Prepare failure:
+    `AccessDeniedException ... ecr:DescribeRepositories on arn:...:repository/*`.
+    The unfiltered discovery call needs Resource "*"; nothing else changed."""
+    star_ecr = set()
+    for s in _all_statements(template):
+        acts = s["Action"] if isinstance(s["Action"], list) else [s["Action"]]
+        res = s["Resource"] if isinstance(s["Resource"], list) else [s["Resource"]]
+        if "*" in res:
+            star_ecr.update(a for a in acts if a.startswith("ecr:"))
+    assert star_ecr == {"ecr:GetAuthorizationToken", "ecr:DescribeRepositories"}
+
+
+def test_batch_submit_describe_terminate_are_all_present(template):
+    actions = set()
+    for stmt in _all_statements(template):
+        a = stmt["Action"]
+        actions.update([a] if isinstance(a, str) else a)
+    assert {"batch:SubmitJob", "batch:DescribeJobs", "batch:TerminateJob"} <= actions
+
+
+def test_provisioning_permission_audit_actions_are_all_granted(template):
+    """C7.3 IAM audit: every AWS action the connected role's Prepare cloud
+    performs (bootstrap + prepare_batch) must be in the template policy."""
+    granted = set()
+    for stmt in _all_statements(template):
+        a = stmt["Action"]
+        granted.update([a] if isinstance(a, str) else a)
+
+    required = {
+        # S3 (storage.py)
+        "s3:CreateBucket", "s3:ListBucket", "s3:PutEncryptionConfiguration",
+        "s3:PutBucketPublicAccessBlock",
+        # EC2 discovery (network.py)
+        "ec2:DescribeVpcs", "ec2:DescribeSubnets", "ec2:DescribeSecurityGroups",
+        # IAM (iam.py / iam_provision.py)
+        "iam:ListRoles", "iam:CreateRole", "iam:PutRolePolicy",
+        "iam:AttachRolePolicy", "iam:PassRole",
+        # IAM: Advanced EC2 Batch instance profile (iam.py / iam_provision.py)
+        "iam:ListInstanceProfiles", "iam:CreateInstanceProfile",
+        "iam:AddRoleToInstanceProfile",
+        # ECR (registry*.py / registry_delivery.py)
+        "ecr:GetAuthorizationToken", "ecr:CreateRepository",
+        "ecr:DescribeRepositories", "ecr:DescribeImages", "ecr:BatchGetImage",
+        "ecr:PutImage", "ecr:InitiateLayerUpload", "ecr:UploadLayerPart",
+        "ecr:CompleteLayerUpload", "ecr:GetLifecyclePolicy",
+        "ecr:PutLifecyclePolicy",
+        # Batch (batch.py / batch_provision.py)
+        "batch:DescribeComputeEnvironments", "batch:DescribeJobQueues",
+        "batch:DescribeJobDefinitions", "batch:CreateComputeEnvironment",
+        "batch:UpdateComputeEnvironment", "batch:CreateJobQueue",
+        "batch:UpdateJobQueue", "batch:RegisterJobDefinition",
+        # Batch service-linked role (managed CE, no explicit --service-role)
+        "iam:CreateServiceLinkedRole",
+        # CloudWatch Logs (batch_provision.py)
+        "logs:CreateLogGroup", "logs:PutRetentionPolicy",
+        # STS
+        "sts:GetCallerIdentity",
+    }
+    missing = required - granted
+    assert not missing, f"template is missing provisioning permissions: {sorted(missing)}"
+
+
+def test_provisioned_role_names_are_inside_the_iam_scope():
+    """The cryostack-* roles iam_provision.py creates must match the template's
+    role/cryostack-* scope; the PascalCase cross-account role must not."""
+    from cryostack_src.cloud.connect.cloudformation import EXECUTION_ROLE_NAME
+    from cryostack_src.cloud.drivers.aws.iam_provision import (
+        BATCH_SERVICE_ROLE_NAME,
+        ECS_EXECUTION_ROLE_NAME,
+        JOB_ROLE_NAME,
+    )
+
+    for name in (BATCH_SERVICE_ROLE_NAME, ECS_EXECUTION_ROLE_NAME, JOB_ROLE_NAME):
+        assert name.startswith("cryostack-"), name
+    # the cross-account role is deliberately OUTSIDE role/cryostack-*
+    assert not EXECUTION_ROLE_NAME.startswith("cryostack-")
+
+
+def test_cloudwatch_log_reads_are_scoped_to_the_cryostack_and_batch_default_groups(template):
+    """`logs:GetLogEvents` -- the only CloudWatch Logs read op the codebase
+    calls (legacy/aws_batch.py's `batch_logs`) -- must be scoped to BOTH the
+    CryoStack-managed group (`/cryostack/*`, what newly-registered job
+    definitions configure) and the AWS Batch default group
+    (`/aws/batch/job:*`, what `batch_logs` actually reads by default and
+    where a live AccessDeniedException was observed). Never `log-group:*`,
+    never `logs:*`."""
+    sids = {s["Sid"]: s for s in _all_statements(template)}
+    read = sids["CryoStackLogsRead"]
+    assert read["Action"] == "logs:GetLogEvents"
+    resources = [r["Fn::Sub"] for r in read["Resource"]]
+    assert any(r.endswith("log-group:/cryostack/*") for r in resources)
+    assert any(r.endswith("log-group:/aws/batch/job:*") for r in resources)
+
+
+def test_cloudwatch_log_reads_do_not_grant_unused_describe_or_filter_actions(template):
+    """FilterLogEvents / DescribeLogStreams / DescribeLogGroups are not
+    called anywhere in the codebase -- granting them would be an unused,
+    regressable permission. Log-stream/group names come from Batch's own
+    DescribeJobs, never a Logs Describe/Filter call."""
+    sids = {s["Sid"]: s for s in _all_statements(template)}
+    granted: set[str] = set()
+    for s in sids.values():
+        action = s["Action"]
+        granted |= {action} if isinstance(action, str) else set(action)
+    unused = {"logs:FilterLogEvents", "logs:DescribeLogStreams", "logs:DescribeLogGroups"}
+    assert not (granted & unused), f"unused Logs permissions granted: {granted & unused}"
+
+
+def test_passrole_is_tightly_scoped_to_cryostack_roles_and_services(template):
+    sids = {s["Sid"]: s for s in _all_statements(template)}
+    pr = sids["CryoStackPassRole"]
+    assert pr["Action"] == "iam:PassRole"
+    assert pr["Resource"]["Fn::Sub"].endswith("role/cryostack-*")
+    services = pr["Condition"]["StringEquals"]["iam:PassedToService"]
+    assert set(services) == {
+        "batch.amazonaws.com", "ecs-tasks.amazonaws.com", "ec2.amazonaws.com",
+    }
+
+
+def test_ec2_instance_profile_actions_are_scoped_to_cryostack_instance_profiles(template):
+    """The gap that caused the first real EC2 AccessDenied
+    (iam:CreateInstanceProfile on .../cryostack-ec2-instance-profile): both
+    instance-profile actions must be present and scoped to the
+    instance-profile/cryostack-* ARN family -- a namespace distinct from
+    role/cryostack-*."""
+    sids = {s["Sid"]: s for s in _all_statements(template)}
+    ec2p = sids["CryoStackEc2InstanceProfile"]
+    actions = ec2p["Action"] if isinstance(ec2p["Action"], list) else [ec2p["Action"]]
+    assert set(actions) == {"iam:CreateInstanceProfile", "iam:AddRoleToInstanceProfile"}
+    assert ec2p["Resource"]["Fn::Sub"] == (
+        "arn:${AWS::Partition}:iam::${AWS::AccountId}:instance-profile/cryostack-*"
+    )
+    # a separate ARN namespace from the role statements -- never role/*
+    assert "role/" not in ec2p["Resource"]["Fn::Sub"]
+
+
+def test_no_wildcard_iam_action_is_introduced(template):
+    """No `iam:*` anywhere, and only the one documented, un-scopable list
+    action (iam:ListInstanceProfiles, alongside the pre-existing
+    iam:ListRoles) is granted on Resource "*"."""
+    star_iam_actions = set()
+    for stmt in _all_statements(template):
+        actions = stmt["Action"] if isinstance(stmt["Action"], list) else [stmt["Action"]]
+        for a in actions:
+            assert a != "iam:*"
+        resources = stmt["Resource"] if isinstance(stmt["Resource"], list) else [stmt["Resource"]]
+        if "*" in resources:
+            star_iam_actions.update(a for a in actions if a.startswith("iam:"))
+    assert star_iam_actions == {"iam:ListRoles", "iam:ListInstanceProfiles"}
+
+
+def test_matlab_license_secret_grant_is_not_part_of_this_template(template):
+    """The ISSM MATLAB-license secretsmanager:GetSecretValue grant is applied
+    per-connection at Prepare Cloud time (iam_provision.py, on the ECS
+    execution role) -- it must never appear in the cross-account onboarding
+    template, so this EC2 IAM fix cannot have widened it."""
+    blob = json.dumps(template)
+    assert "secretsmanager" not in blob
+    assert "MatlabLicense" not in blob
+
+
+def test_fargate_onboarding_statements_are_unchanged_by_the_ec2_iam_fix(template):
+    """The EC2 instance-profile fix only ADDS statements/condition values --
+    it must not alter anything the default Fargate path (or any other
+    already-provisioned resource) relies on."""
+    sids = {s["Sid"]: s for s in _all_statements(template)}
+
+    assert sids["CryoStackServiceRoles"]["Action"] == [
+        "iam:CreateRole", "iam:GetRole", "iam:TagRole",
+        "iam:ListRolePolicies", "iam:ListAttachedRolePolicies",
+        "iam:GetRolePolicy", "iam:PutRolePolicy", "iam:DeleteRolePolicy",
+        "iam:AttachRolePolicy", "iam:DetachRolePolicy",
+    ]
+    assert sids["CryoStackServiceRoles"]["Resource"]["Fn::Sub"].endswith(
+        "role/cryostack-*"
+    )
+    assert sids["CryoStackIamListRoles"] == {
+        "Sid": "CryoStackIamListRoles",
+        "Effect": "Allow",
+        "Action": "iam:ListRoles",
+        "Resource": "*",
+    }
+    assert sids["CryoStackBatchProvision"]["Action"] == [
+        "batch:CreateComputeEnvironment", "batch:UpdateComputeEnvironment",
+        "batch:DeleteComputeEnvironment", "batch:CreateJobQueue",
+        "batch:UpdateJobQueue", "batch:DeleteJobQueue",
+        "batch:RegisterJobDefinition", "batch:DeregisterJobDefinition",
+        "batch:TagResource",
+    ]
+    # the PassRole resource and the two pre-existing services are untouched;
+    # only a third permitted service was appended
+    pr = sids["CryoStackPassRole"]
+    services = pr["Condition"]["StringEquals"]["iam:PassedToService"]
+    assert services[:2] == ["batch.amazonaws.com", "ecs-tasks.amazonaws.com"]
+
+
+def test_render_template_is_valid_json_round_trip(template):
+    assert json.loads(render_template()) == template
+
+
+def test_checked_in_deployment_artifact_matches_render_template():
+    artifact = (
+        _REPO / "deployment" / "cloudformation" / "cryostack-execution-role.json"
+    )
+    assert artifact.is_file(), "regenerate deployment/cloudformation/ (see its README)"
+    assert json.loads(artifact.read_text(encoding="utf-8")) == json.loads(
+        render_template()
+    )
+
+
+# -- Quick Create URL --------------------------------------------------
+def test_quick_create_url_is_well_formed_and_encoded():
+    url = quick_create_url(
+        template_url=TEMPLATE_URL,
+        external_id=EXTERNAL_ID,
+        region="us-east-2",
+        principal_arn=PRINCIPAL,
+        stack_name="cryostack-access",
+    )
+    parsed = urlparse(url)
+    assert parsed.netloc == "us-east-2.console.aws.amazon.com"
+    assert parsed.path == "/cloudformation/home"
+    assert parsed.fragment.startswith("/stacks/quickcreate")
+
+    query = parse_qs(parsed.fragment.split("?", 1)[1])
+    assert query["templateURL"] == [TEMPLATE_URL]
+    assert query["stackName"] == ["cryostack-access"]
+    # the ExternalId survives a full encode/decode round trip byte-for-byte
+    assert query["param_ExternalId"] == [EXTERNAL_ID]
+    assert query["param_CryoStackPrincipalArn"] == [PRINCIPAL]
+    # reserved characters were percent-encoded in the raw string
+    raw = parsed.fragment.split("?", 1)[1]
+    assert "sekret%2Brandom%2Fvalue" in raw
+
+
+def test_existing_stack_console_url_is_plain_navigation_not_a_deep_link():
+    """Regression for the live AssumeRole denial: the update path must never
+    reuse the undocumented `#/stacks/update/template` scheme, or embed
+    ExternalId/PrincipalArn anywhere -- it is a plain Stacks-list link,
+    filtered by name, nothing else."""
+    url = existing_stack_console_url(
+        region="us-east-2", stack_name="cryostack-access-conn-abc123",
+    )
+    parsed = urlparse(url)
+    assert parsed.fragment.startswith("/stacks?")
+    assert "quickcreate" not in url
+    assert "update/template" not in url
+    assert "stackId" not in url
+    assert "param_ExternalId" not in url
+    assert "param_CryoStackPrincipalArn" not in url
+
+    query = parse_qs(parsed.fragment.split("?", 1)[1])
+    assert query["filteringText"] == ["cryostack-access-conn-abc123"]
+
+
+def test_existing_stack_console_url_requires_region_and_stack_name():
+    with pytest.raises(ValueError):
+        existing_stack_console_url(region="", stack_name="cryostack-access-conn-abc123")
+    with pytest.raises(ValueError):
+        existing_stack_console_url(region="us-east-2", stack_name="")
+
+
+def test_quick_create_url_requires_every_input():
+    for missing in ("template_url", "external_id", "region", "principal_arn"):
+        kwargs = dict(
+            template_url=TEMPLATE_URL,
+            external_id=EXTERNAL_ID,
+            region="us-east-2",
+            principal_arn=PRINCIPAL,
+        )
+        kwargs[missing] = ""
+        with pytest.raises(ValueError):
+            quick_create_url(**kwargs)

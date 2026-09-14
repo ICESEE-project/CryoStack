@@ -26,15 +26,40 @@ def _safe_name(text: str) -> str:
     return text.strip("_") or "cluster"
 
 
-def cluster_key_paths(cluster_id: str) -> tuple[Path, Path]:
-    safe = _safe_name(cluster_id)
-    priv = Path.home() / ".ssh" / f"id_ed25519_icesee_{safe}"
-    pub = Path(str(priv) + ".pub")
-    return priv, pub
+def _current_cryostack_user_id() -> str:
+    """The trusted CryoStack identity, if any (lazy import: this module must
+    stay importable without cryostack_src loaded, e.g. from a bare script)."""
+    try:
+        from cryostack_src.workspace import resolve_workspace_user
+        return resolve_workspace_user(require_authenticated=False).user_id
+    except Exception:
+        return ""
+
+
+def cluster_key_paths(cluster_id: str, hpc_username: str = "") -> tuple[Path, Path]:
+    """B3: the credential is namespaced by (CryoStack user, resource, HPC
+    username) -- NOT by cluster name alone. On a shared Voila service account,
+    a cluster-only namespace would let two CryoStack users collide on one key.
+    """
+    from cryostack_src.remote.ssh_identity import credential_namespace, cryostack_key_paths
+
+    ns = credential_namespace(
+        cryostack_user_id=_current_cryostack_user_id(),
+        resource_id=cluster_id,
+        hpc_username=hpc_username,
+    )
+    return cryostack_key_paths(ns)
+
+
+def legacy_cluster_key_paths(cluster_id: str) -> tuple[Path, Path]:
+    """Where the OLD cluster-only key would be. Display/migration only --
+    never read or adopted automatically."""
+    from cryostack_src.remote.ssh_identity import legacy_cluster_key_paths as _legacy
+    return _legacy(cluster_id)
 
 
 def make_ssh_key_info(cluster_id: str, host: str, user: str, alias: str | None = None) -> SSHKeyInfo:
-    priv, pub = cluster_key_paths(cluster_id)
+    priv, pub = cluster_key_paths(cluster_id, hpc_username=user)
     return SSHKeyInfo(
         cluster_id=cluster_id,
         alias=alias or _safe_name(cluster_id),
@@ -173,6 +198,7 @@ def test_ssh_login(alias: str | None, host: str, user: str, timeout: int = 10) -
 def cluster_setup_summary(cluster_id: str, host: str, user: str, alias: str | None = None) -> dict:
     info = make_ssh_key_info(cluster_id=cluster_id, host=host, user=user, alias=alias)
     agent = list_agent_keys()
+    legacy_priv, _legacy_pub = legacy_cluster_key_paths(cluster_id)
     return {
         "cluster_id": info.cluster_id,
         "alias": info.alias,
@@ -185,4 +211,7 @@ def cluster_setup_summary(cluster_id: str, host: str, user: str, alias: str | No
         "agent_running": ssh_agent_running(),
         "agent_has_any_keys": agent.returncode == 0 and bool((agent.stdout or "").strip()),
         "cluster_key_loaded": key_loaded_in_agent(info.private_key),
+        # B3 migration signal only -- never read/adopted automatically.
+        "legacy_shared_key_exists": legacy_priv.exists(),
+        "legacy_shared_key_path": str(legacy_priv),
     }

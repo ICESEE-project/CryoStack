@@ -21,15 +21,46 @@ from .files import EDITABLE_SUFFIXES, list_editable_files
 from .identity import WorkspaceUser, resolve_workspace_user
 from .manifest import MANIFEST_NAME, read_manifest, write_manifest
 from .models import RunInfo
+from .roots import WORKSPACE_ROOT_ENV  # noqa: F401 -- re-exported for callers
 
 _SAFE_RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 _SAFE_EXAMPLE_NAME = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
-#: optional deploy-time pin for the workspace root, independent of process cwd
-WORKSPACE_ROOT_ENV = "CRYOSTACK_WORKSPACE_ROOT"
+
+
+def _file_source_materializer(suffix: str):
+    """Resolve the materializer for a single-FILE example source, dispatched
+    by file TYPE (never by filename) -- ``None`` for an unsupported type.
+
+    Lazily imported so this generic, model-neutral module carries no
+    top-level dependency on any one model adapter (same pattern already used
+    for the result-reader/visualizer dispatch below).
+    """
+    if suffix.lower() == ".ipynb":
+        from cryostack_src.models.icepack.notebook import materialize_notebook_workspace
+
+        return materialize_notebook_workspace
+    return None
 
 
 class WorkspacePermissionError(RuntimeError):
     """A file operation was attempted outside the caller's managed workspace."""
+
+
+class _FixedChoice:
+    """Adapts a fixed model *string* to the ``value`` / ``options`` / ``observe``
+    shape :class:`WorkspaceManager` expects from a model-selector widget.
+
+    IceSheets passes a real dropdown (the user picks ISSM / Icepack). An app
+    with a single model (ICESEE) passes the model name as a plain string and
+    this stands in -- no dropdown, nothing to observe.
+    """
+
+    def __init__(self, value: str) -> None:
+        self.value = value
+        self.options = ((value, value),)
+
+    def observe(self, *_a, **_k) -> None:  # pragma: no cover - inert
+        pass
 
 
 # ── model-adapter dispatch for result reading / visualization ──────────────
@@ -38,25 +69,14 @@ class WorkspacePermissionError(RuntimeError):
 # these yet (Icepack, for now) simply return nothing and the Results tab
 # degrades gracefully.
 def _result_reader_for(model: str):
-    from cryostack_src.models import get_model_adapter
-
-    try:
-        adapter = get_model_adapter(model or "issm")
-    except ValueError:
-        adapter = get_model_adapter("issm")
-    reader = getattr(adapter, "discover_results", None)
-    if reader is not None:
-        return reader
-    from cryostack_src.models.issm.results import discover_results
-    return discover_results  # neutral: reports legacy/missing for other models
+    # P2: the model-neutral result contract owns this dispatch now.
+    from cryostack_src.models.results_common import resolve_result_reader
+    return resolve_result_reader(model)
 
 
 def _visualizer_for(model: str):
-    name = (model or "issm").strip().lower()
-    if name == "issm":
-        from cryostack_src.visualization import issm as _viz
-        return _viz
-    return None  # no deterministic visualizer for this model yet
+    from cryostack_src.models.results_common import resolve_visualizer
+    return resolve_visualizer(model)
 
 
 class StagedExample:
@@ -108,7 +128,9 @@ class WorkspaceManager:
         self.status = status
         self.session = session
         self.example_dir = example_dir
-        self.model = model
+        #: ``model`` may be a selector widget (IceSheets) or a fixed model name
+        #: string (single-model apps like ICESEE).
+        self.model = _FixedChoice(model) if isinstance(model, str) else model
         self.backend = backend
         self.file_picker = file_picker
         self.file_editor = file_editor
@@ -157,6 +179,14 @@ class WorkspaceManager:
         self._selected_run_id: str | None = None
         self._tail_handler = None
         self._status_resolver = None
+        #: per-run ResultPackage cache -- run_id -> (signature, package). This
+        #: manager instance belongs to exactly one authenticated user, so the
+        #: cache is inherently user-isolated. Keyed by the resolved outputs
+        #: path + its metadata.json mtime so a re-fetched run is re-read.
+        self._result_pkg_cache: dict[str, tuple] = {}
+        #: run keys with an in-flight results transfer -- prevents duplicate
+        #: concurrent rsync / connector pulls for the same run.
+        self._fetch_in_flight: set[str] = set()
 
     def _owns(self, path: Path | None) -> bool:
         """True when ``path`` resolves inside this user's managed run root."""
@@ -200,6 +230,33 @@ class WorkspaceManager:
     def update_run_status_by_job(self, job_id: str, state: str | None) -> RunInfo | None:
         run = next((item for item in self._runs.values() if str(item.jobid) == str(job_id)), None)
         return self.update_run_status(run.id, state) if run else None
+
+    def merge_run_metadata_by_job(self, job_id: str, patch: dict) -> RunInfo | None:
+        """Shallow-merge ``patch`` into a run's ``metadata`` and persist the
+        manifest. One level deep: a dict value is itself merged (used for the
+        incrementally-grown ``aws_resources`` snapshot), a scalar replaces.
+        Never touches run status. The caller is responsible for ``patch``
+        carrying only non-secret data."""
+        run = next((r for r in self._runs.values() if str(r.jobid) == str(job_id)), None)
+        if not run or not isinstance(patch, dict) or not patch:
+            return run
+        changed = False
+        md = dict(run.metadata or {})
+        for key, value in patch.items():
+            if isinstance(value, dict) and isinstance(md.get(key), dict):
+                merged = {**md[key], **value}
+                if merged != md[key]:
+                    md[key] = merged
+                    changed = True
+            elif md.get(key) != value:
+                md[key] = value
+                changed = True
+        if changed:
+            run.metadata = md
+            if run.workspace_directory:
+                write_manifest(run, run.workspace_directory)
+            self.invalidate_result_package_cache(run.id)
+        return run
 
     def tail(self, run_id: str):
         run = self.select_run(run_id)
@@ -519,11 +576,24 @@ class WorkspaceManager:
     ) -> StagedExample:
         """Materialise a user-owned working copy of ``source_example`` for a run.
 
-        Generic, model-neutral filesystem staging:
+        Generic, model-neutral filesystem staging. ``source_example`` is
+        either:
 
-        * canonical example  -> a fresh copy under
+        * a **directory** (every model's usual shape) --
+          canonical example  -> a fresh copy under
           ``<owner_root>/.cryostack/working/<name>`` (rebuilt each run);
-        * user-owned example -> operated on in place.
+          user-owned example -> operated on in place; or
+        * a **single file** whose type has a registered materializer (today:
+          ``.ipynb`` -- an Icepack canonical notebook, which ships as one
+          loose file rather than a directory). The materializer builds a
+          fresh directory-shaped working copy under
+          ``<owner_root>/.cryostack/working/<stem>`` and returns the
+          entrypoint filename it produced (e.g. ``run.py``), which OVERRIDES
+          the caller's ``entrypoint`` argument -- there is no generic
+          default entrypoint for a bare single-file source. An unsupported
+          file type raises the same "Example directory not found" a caller
+          already gets for a bad path -- this is a file-TYPE dispatch, never
+          a per-filename special case.
 
         ``extra_files`` are written into the copy and any datasets the example
         references are copied into ``data/<as>``. ``entrypoint_transform`` (an
@@ -531,10 +601,20 @@ class WorkspaceManager:
         rewrite the entrypoint. The canonical example is never modified.
         """
         src = Path(source_example).expanduser().resolve()
-        if not src.exists() or not src.is_dir():
-            raise ValueError(f"Example directory not found: {src}")
 
-        if self._is_user_owned_path(src):
+        if src.is_file():
+            materializer = _file_source_materializer(src.suffix)
+            if materializer is None:
+                raise ValueError(f"Example directory not found: {src}")
+            target = (self._working_root / self._safe_example_name(src.stem)).resolve()
+            if target.exists():
+                shutil.rmtree(target)
+            target.mkdir(parents=True, exist_ok=True)
+            entrypoint = materializer(src, dest_dir=target)
+            from_canonical = True
+        elif not src.exists() or not src.is_dir():
+            raise ValueError(f"Example directory not found: {src}")
+        elif self._is_user_owned_path(src):
             target, from_canonical = src, False
         else:
             target = (self._working_root / self._safe_example_name(src.name)).resolve()
@@ -816,6 +896,7 @@ class WorkspaceManager:
             return False
         shutil.rmtree(workspace)
         self._runs.pop(run_id, None)
+        self.invalidate_result_package_cache(run_id)
         if self._selected_run_id == run_id:
             self._selected_run_id = None
         return True
@@ -854,12 +935,38 @@ class WorkspaceManager:
             base / "outputs",
             base,
         ]
+        chosen = next((c for c in candidates if c.exists()), base)
+
+        # cheap freshness signature: which dir + its metadata.json mtime. A
+        # re-fetch rewrites metadata.json, so a stale package is never served.
+        meta = chosen / "outputs" / "metadata.json"
+        if not meta.is_file():
+            meta = chosen / "metadata.json"
+        try:
+            sig = (str(chosen), meta.stat().st_mtime_ns if meta.is_file() else 0)
+        except OSError:
+            sig = (str(chosen), -1)
+
+        cached = self._result_pkg_cache.get(run_id)
+        if cached is not None and cached[0] == sig:
+            return cached[1]
+
         for candidate in candidates:
             if candidate.exists():
                 package = discover_results(candidate)
                 if package.outputs is not None:
+                    self._result_pkg_cache[run_id] = (sig, package)
                     return package
-        return discover_results(base)
+        package = discover_results(base)
+        self._result_pkg_cache[run_id] = (sig, package)
+        return package
+
+    def invalidate_result_package_cache(self, run_id: str | None = None) -> None:
+        """Drop the cached ResultPackage for one run (or all runs)."""
+        if run_id is None:
+            self._result_pkg_cache.clear()
+        else:
+            self._result_pkg_cache.pop(run_id, None)
 
     def recommended_plots_for_run(self, run_id: str) -> list[dict]:
         """Metadata-driven plot descriptions for a run (renders nothing)."""
@@ -926,10 +1033,24 @@ class WorkspaceManager:
                 print("[advanced][ERROR]", type(error).__name__, error)
             return None
 
-    def local_run_cache_dir(self) -> Path:
-        selected = self.selected_run()
-        if selected and selected.workspace_directory:
-            cache = selected.workspace_directory / "cache"
+    def _run_by_job_id(self, job_id: str) -> "RunInfo | None":
+        """The owned run whose ``jobid`` matches ``job_id`` (cloud runs are
+        keyed by their AWS Batch job id, which is stable across a page refresh
+        and independent of which run the Workspace currently has selected)."""
+        job_id = str(job_id or "").strip()
+        if not job_id:
+            return None
+        for run in self._runs.values():
+            if str(getattr(run, "jobid", "") or "") == job_id:
+                return run
+        return None
+
+    def local_run_cache_dir(self, run: "RunInfo | None" = None) -> Path:
+        """Cache dir for ``run`` (default: the selected run). Falls back to a
+        model/backend-scoped scratch dir only when no run context exists."""
+        target = run or self.selected_run()
+        if target and target.workspace_directory:
+            cache = target.workspace_directory / "cache"
             cache.mkdir(parents=True, exist_ok=True)
             return cache
         root = self.example_root()
@@ -941,25 +1062,64 @@ class WorkspaceManager:
         s3_uri: str,
         region: str | None = None,
         profile: str | None = None,
+        credentials: dict | None = None,
+        aws=None,
+        run_job_id: str | None = None,
     ) -> Path:
-        outputs_dir = self.local_run_cache_dir() / "cloud_outputs"
+        """Pull a cloud run's ``outputs/`` into this user's local run cache in
+        the same ``outputs/{metadata.json,mesh,fields,model,figures}`` shape the
+        Remote path produces, so the Results UI needs no cloud-specific reader.
+
+        ``aws`` is an injectable ``callable(args) -> CompletedProcess`` (tests
+        mock the transfer). The write target is per-``WorkspaceManager`` (=per
+        authenticated user); a cloud result never lands in another user's cache.
+        """
+        run_uri = str(s3_uri or "").strip().rstrip("/")
+        if not run_uri.lower().startswith("s3://") or "/" not in run_uri[5:]:
+            raise RuntimeError(
+                f"cloud result location must be a full s3://bucket/... URI, "
+                f"got {s3_uri!r}")
+        # Resolve the destination from the run the outputs belong to -- not the
+        # ambient selection. The controller passes the completed run's job id;
+        # the manual Preview / Fetch path passes nothing and keeps targeting the
+        # selected run.
+        target_run = self._run_by_job_id(run_job_id) if run_job_id else None
+        self.invalidate_result_package_cache(
+            target_run.id if target_run else self._selected_run_id)
+        outputs_dir = self.local_run_cache_dir(target_run) / "cloud_outputs"
         if outputs_dir.exists():
             self.delete(outputs_dir)
         outputs_dir.mkdir(parents=True, exist_ok=True)
-        command = ["aws"]
-        if profile:
-            command.extend(["--profile", profile])
+        args = []
+        # assumed-role temporary credentials (BYO-AWS) win over a profile and
+        # the ambient environment -- exactly as cloud.drivers.aws.auth.run_aws.
+        if profile and not credentials:
+            args.extend(["--profile", profile])
         if region:
-            command.extend(["--region", region])
-        command.extend([
-            "s3",
-            "sync",
-            f"{s3_uri.rstrip('/')}/outputs/",
+            args.extend(["--region", region])
+        args.extend([
+            "s3", "sync",
+            f"{run_uri}/outputs/",
             f"{outputs_dir}/",
         ])
-        result = subprocess.run(command, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError((result.stderr or result.stdout).strip())
+        if aws is not None:
+            result = aws(args)
+            code = result[0] if isinstance(result, tuple) else getattr(result, "returncode", 0)
+            err = (result[2] if isinstance(result, tuple) else getattr(result, "stderr", "")) or ""
+            out = (result[1] if isinstance(result, tuple) else getattr(result, "stdout", "")) or ""
+        else:
+            env = None
+            if credentials:
+                _drop = ("AWS_PROFILE", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY",
+                         "AWS_SESSION_TOKEN", "AWS_SECURITY_TOKEN")
+                env = {k: v for k, v in os.environ.items() if k not in _drop}
+                for k in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"):
+                    if credentials.get(k):
+                        env[k] = credentials[k]
+            proc = subprocess.run(["aws", *args], capture_output=True, text=True, env=env)
+            code, err, out = proc.returncode, proc.stderr, proc.stdout
+        if code != 0:
+            raise RuntimeError((err or out).strip() or "cloud results sync failed")
         return outputs_dir
 
     def remote_outputs_dir(self) -> str:
@@ -967,6 +1127,23 @@ class WorkspaceManager:
         return f"{remote_dir}/outputs"
 
     def refresh_results(self) -> Path | None:
+        # One transfer at a time per run: a user clicking Preview / Download
+        # repeatedly must not launch several concurrent rsync / connector
+        # pulls for the same outputs.
+        run_key = self._selected_run_id or "_current"
+        if run_key in self._fetch_in_flight:
+            with self.results_output:
+                print("[results] A fetch for this run is already in progress…")
+            return None
+        self._fetch_in_flight.add(run_key)
+        try:
+            return self._refresh_results_locked()
+        finally:
+            self._fetch_in_flight.discard(run_key)
+
+    def _refresh_results_locked(self) -> Path | None:
+        # a fetch is about to overwrite this run's local outputs
+        self.invalidate_result_package_cache(self._selected_run_id)
         remote_dir = self.normalize_remote_path(self.status.get("remote_dir") or "")
         if not remote_dir:
             with self.results_output:
@@ -1054,10 +1231,50 @@ class WorkspaceManager:
         document.body.appendChild(a); setTimeout(() => {{ a.click();
         document.body.removeChild(a); }}, 100); }})();</script>'''))
 
+    def package_and_download(self, outputs_dir, *, filename: str = "results_bundle.zip",
+                             cache_dir=None) -> bool:
+        """Zip ``outputs_dir`` and hand it to the browser. Returns ``False``
+        with a clear message (and generates no download) when there is nothing
+        to package -- never a misleading empty archive.
+
+        Shared by every result-download surface (Remote, Cloud) so they all
+        export the SAME discovered file set."""
+        if outputs_dir is None:
+            with self.results_output:
+                print("[download] No outputs to package for this run.")
+            return False
+        outputs_dir = Path(outputs_dir)
+        files = [p for p in outputs_dir.rglob("*") if p.is_file()] \
+            if outputs_dir.is_dir() else []
+        if not files:
+            with self.results_output:
+                print("[download] This run produced no output files. "
+                      "Nothing to download.")
+            return False
+        zip_path = Path(cache_dir or self.local_run_cache_dir()) / filename
+        try:
+            if zip_path.exists():
+                self.delete(zip_path)
+            self._make_zip(outputs_dir, zip_path)
+            if not zipfile.is_zipfile(zip_path):
+                raise RuntimeError(f"Created file is not a valid zip: {zip_path}")
+            with self.results_output:
+                print(f"Preparing download: {zip_path.name} ({len(files)} file(s))")
+                print("If the browser blocks repeated downloads, allow multiple "
+                      "downloads for this page.")
+                self._auto_download(zip_path, filename)
+            return True
+        except Exception as error:
+            with self.results_output:
+                print("[download][ERROR]", type(error).__name__, error)
+            return False
+
     def download_results(self, _=None) -> None:
         if isinstance(_, str) and not self.select_run(_):
             return
         self.results_output.clear_output()
+        with self.results_output:
+            print("Fetching results…")
         outputs_dir = self.refresh_results()
         if outputs_dir is None:
             return
@@ -1080,6 +1297,8 @@ class WorkspaceManager:
         if isinstance(_, str) and not self.select_run(_):
             return
         self.results_output.clear_output()
+        with self.results_output:
+            print("Fetching figures…")
         outputs_dir = self.refresh_results()
         if outputs_dir is None:
             return

@@ -34,13 +34,22 @@ class AWSConfig:
     """
     AWS connection configuration.
 
-    Named CLI profiles are supported during development. Future
-    CryoStack account connections may use temporary credentials
-    or assumed IAM roles without changing the higher-level cloud API.
+    Two credential sources are supported, and exactly one is used per call:
+
+    * **developer / operator mode** -- ambient AWS CLI credentials, optionally
+      selected by a named ``profile``;
+    * **end-user assumed-role mode** -- ``credentials`` carries the temporary
+      ``AWS_ACCESS_KEY_ID`` / ``AWS_SECRET_ACCESS_KEY`` / ``AWS_SESSION_TOKEN``
+      from an ``sts:AssumeRole`` call (see :mod:`cryostack_src.cloud.connect`).
+      When present it wins and ``profile`` is ignored.
+
+    ``credentials`` is ``repr``-suppressed and must never be persisted or
+    logged -- it holds short-lived secret material for one operation only.
     """
 
     region: str = "us-east-2"
     profile: str | None = None
+    credentials: dict[str, str] | None = field(default=None, repr=False)
 
 @dataclass
 class AWSCapabilities:

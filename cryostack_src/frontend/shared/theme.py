@@ -291,6 +291,16 @@ CRYOSTACK_FRONTEND_CSS = r"""
 
 }
 
+/*
+ * Two-column application shell.
+ *
+ * The columns align at the TOP and each grows to its own natural content
+ * height. The left (Run settings) card must never determine or cap the
+ * height of the right (Workspace) card -- in Agent mode the left card is
+ * short, and the Workspace must still show all of its content. There is no
+ * equal-height / stretch behaviour and no inner Workspace scrollbar: a tall
+ * Workspace scrolls with the page.
+ */
 .icesee-grid {
     display: grid !important;
     grid-template-columns:
@@ -298,147 +308,234 @@ CRYOSTACK_FRONTEND_CSS = r"""
         minmax(0, 54fr);
 
     gap: 16px;
-    align-items: stretch;
+    align-items: start;
 }
 
-/*
- * Left side determines the height of the grid row.
- */
 .icesee-left {
     min-width: 0;
-    min-height: 0;
+    align-self: start;
 }
 
-/*
- * Right side occupies exactly the grid-row height,
- * but its contents do not contribute to that height.
- */
 .icesee-right {
-    position: relative;
     min-width: 0;
+    align-self: start;
+
+    /* natural height -- never clipped by the left column */
+    height: auto;
     min-height: 0;
-    overflow: hidden;
+    overflow: visible;
 }
 
-/*
- * Fill the right-hand grid cell without increasing
- * the height of the parent grid.
- */
 .icesee-right > .widget-vbox {
-    position: absolute;
-    inset: 0;
+    position: static;
 
     width: 100%;
-    height: 100%;
+    height: auto;
 
     min-width: 0;
     min-height: 0;
 
-    overflow: hidden;
+    overflow: visible;
 }
 
-@media (max-width: 1000px) {
+/*
+ * Desktop enhancement: keep the Workspace in view while a very tall Run
+ * settings column scrolls. Sticky (not fixed) -- if the Workspace itself is
+ * taller than the viewport it scrolls away with the page rather than being
+ * trapped. Disabled on tablet / mobile (below).
+ */
+@media (min-width: 1051px) {
+    .cryostack-right-workspace {
+        position: sticky;
+        top: 12px;
+    }
+}
+
+@media (max-width: 1050px) {
     .icesee-grid {
         grid-template-columns: 1fr;
     }
 
-    /*
-     * Return to normal document flow on small screens.
-     */
+    .cryostack-right-workspace,
     .icesee-right {
         position: static;
-        min-height: 600px;
     }
 
-    .icesee-right > .widget-vbox {
-        position: static;
+    /* prefer natural page flow; relax the aggressive nested scrolling and
+       keep touch devices out of nested-scroll pain. No horizontal overflow. */
+    .cryostack-log-viewer,
+    .cryostack-results-viewer {
+        max-height: none !important;
+        min-height: 220px;
+    }
 
-        width: 100%;
-        height: auto;
+    .cryostack-live-log {
+        max-height: none;
+    }
 
-        min-height: 600px;
+    .cryostack-output-workspace,
+    .cryostack-workspace-tabs > .widget-tab-contents {
+        overflow-x: hidden;
     }
 }
 
 .cryostack-output-workspace {
-    display: flex !important;
+    display: flex;
     flex-direction: column;
 
     width: 100%;
-    height: 100%;
+    height: auto;
 
     min-height: 0;
 
-    overflow: hidden;
+    overflow: visible;
 }
 
 .cryostack-output-tabs {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
 
     width: 100%;
     min-height: 0;
 
-    overflow: hidden;
+    overflow: visible;
 }
 
-/*
- * Each selected tab fills the available workspace.
- */
 .cryostack-output-tab {
-    display: flex !important;
+    display: flex;
     flex-direction: column;
 
     width: 100%;
-    height: 100%;
+    height: auto;
 
     min-height: 0;
 
-    overflow: hidden;
-}
-
-/*
- * Log/output widget is the scrollable terminal area.
- */
-.cryostack-output-tab .jupyter-widgets-output-area {
-    flex: 1 1 auto;
-
-    min-height: 0;
-
-    overflow-y: auto !important;
-    overflow-x: auto !important;
+    overflow: visible;
 }
 
 .cryostack-right-workspace {
-    overflow: hidden !important;
-    min-height: 0 !important;
+    min-height: 0;
 }
 
-.cryostack-output-workspace {
-    height: 100% !important;
-    min-height: 0 !important;
-    overflow: hidden !important;
-
-    display: flex !important;
-    flex-direction: column !important;
+/*
+ * ipywidgets Tab: <div.widget-tab (flex column)> > <div.widget-tab-contents
+ * (flex-grow:1; overflow:auto)>. The default makes the tab body a fixed-size
+ * inner scroll region. For a natural-height Workspace the body flows in normal
+ * document order and the page scrolls. Only a small floor so an empty tab is
+ * not zero-height -- Runs / Files stay compact and are NOT forced to the taller
+ * Run Log / Results viewer height.
+ */
+.cryostack-workspace-tabs.widget-tab,
+.cryostack-workspace-tabs {
+    height: auto !important;
 }
 
-.cryostack-output-tabs {
-    flex: 1 1 0 !important;
-    min-height: 0 !important;
-    overflow: hidden !important;
+.cryostack-workspace-tabs > .widget-tab-contents {
+    flex-grow: 0;
+    height: auto !important;
+    min-height: 120px;
+    overflow: visible !important;
 }
 
-.cryostack-output-tab {
-    height: 100% !important;
-    min-height: 0 !important;
-    overflow: hidden !important;
+/*
+ * Run Log / Results viewers -- geometry-aware dynamic height.
+ *
+ * The viewer-sizing module (workspace/viewer_geometry.js) measures the actual
+ * rendered geometry -- visible viewport height, viewer top, left Run Settings
+ * column bottom -- and sets ONE scoped custom property:
+ *     --cryostack-workspace-viewer-max-height: <px>
+ * Priority: natural content height, then useful viewport space, then a
+ * secondary desktop balance against the left column (never below a usable
+ * minimum). Short content ends naturally (max-height is a cap, not a height,
+ * and there is no cap until the script computes one); long content uses the
+ * available space, then scrolls internally. `position: relative` anchors the
+ * "Jump to latest" control.
+ */
+.cryostack-log-viewer {
+    position: relative;
+    min-height: 280px;
+    max-height: var(--cryostack-workspace-viewer-max-height, none);
+    overflow-y: auto;
+    overflow-x: auto;
 }
 
+.cryostack-results-viewer {
+    position: relative;
+    width: 100%;
+    min-height: 300px;
+    max-height: var(--cryostack-workspace-viewer-max-height, none);
+    overflow-y: auto;
+    overflow-x: auto;
+}
+
+/* Results gallery: each captured figure is a discrete card (title + image +
+   filename/labels), not one continuous vertical stream of plots. Figures are
+   inline data-URI <img> elements (see workspace/visualization.py) -- a bare
+   ipywidgets image display()'d into an Output does not render in Voilà. */
+.cryostack-figure-gallery {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    width: 100%;
+}
+.cryostack-figure-card {
+    border: 1px solid rgba(15, 23, 42, 0.14);
+    border-radius: 10px;
+    padding: 12px 12px 8px;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+.cryostack-figure-card .cryostack-figure-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #172033;
+    margin-bottom: 8px;
+    line-height: 1.35;
+}
+.cryostack-figure-card .cryostack-figure-sub {
+    font-size: 11px;
+    color: #8a94a6;
+    margin-top: 6px;
+    line-height: 1.4;
+    word-break: break-word;
+}
+.cryostack-figure-card img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+}
+
+/* "Jump to latest" -- shown only while the user has scrolled up from the tail;
+   sticks to the bottom-right of the Run Log viewer. */
+.cryostack-tail-jump {
+    position: sticky;
+    bottom: 8px;
+    left: 100%;
+    transform: translateX(-100%);
+    margin-right: 8px;
+    padding: 4px 12px;
+    border: 1px solid rgba(15, 23, 42, 0.18);
+    border-radius: 999px;
+    background: #2563eb;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.18);
+}
+
+.cryostack-tail-jump[hidden] {
+    display: none;
+}
+
+/* the secondary text output (run summary / sync messages): keep a modest cap */
 .cryostack-live-log {
-    min-height: 0 !important;
-    overflow-y: auto !important;
-    overflow-x: auto !important;
+    min-height: 0;
+    max-height: 70vh;
+    overflow-y: auto;
+    overflow-x: auto;
 }
+
 
 .cryostack-workspace-heading {
     box-sizing: border-box;
@@ -583,11 +680,12 @@ CRYOSTACK_FRONTEND_CSS = r"""
     white-space: pre;
 }
 
+/* the widget root scrolls (max-height set by the viewer-sizing script); the
+   inner output area flows naturally so there is never a double scrollbar. */
 .cryostack-live-log .jupyter-widgets-output-area {
-    height: 100%;
+    height: auto;
     min-height: 0;
-    overflow-y: auto !important;
-    overflow-x: auto !important;
+    overflow: visible;
 }
 
 </style>

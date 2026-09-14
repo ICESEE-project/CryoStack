@@ -173,6 +173,44 @@ def _panel(m, fetch_results=None):
         fetch_results=fetch_results)
 
 
+class _CaptureDisplay:
+    """Records everything the panel display()'s into its Output area and exposes
+    the concatenated HTML/text -- so a test can inspect the *actual browser
+    payload* (data-URI <img>, table markup, ...) instead of a stdout repr."""
+
+    def __enter__(self):
+        from cryostack_src.frontend.cryolauncher.workspace import visualization as _viz
+        self._viz = _viz
+        self._orig = _viz.display
+        self.items = []
+
+        def _rec(*objs, **_):
+            self.items.extend(objs)
+
+        _viz.display = _rec
+        return self
+
+    def __exit__(self, *exc):
+        self._viz.display = self._orig
+        return False
+
+    @property
+    def html(self) -> str:
+        out = []
+        for o in self.items:
+            for attr in ("data", "value"):          # IPython HTML / ipywidgets HTML
+                v = getattr(o, attr, None)
+                if isinstance(v, str):
+                    out.append(v)
+                    break
+            else:
+                # IPython.display.Image -> base64 payload in ._data (bytes)
+                d = getattr(o, "_data", None) or getattr(o, "data", None)
+                if isinstance(d, (bytes, bytearray)):
+                    out.append("<image-bytes len=%d>" % len(d))
+        return "\n".join(out)
+
+
 # ── selector population ─────────────────────────────────────────────────
 def test_no_run_selected_disables_panel(tmp_path):
     m = _mgr(USER_A, tmp_path / "ws")
@@ -400,6 +438,243 @@ def test_legacy_run_disables_selector_and_hides_fetch(tmp_path):
     assert c.render_btn.disabled is True
     assert "legacy run" in c.status.value
     assert c.fetch_btn.layout.display == "none"
+
+
+# ── model with no structured reader yet (Icepack) ──────────────────────
+def test_icepack_run_shows_collected_figures_not_a_dead_end(tmp_path):
+    m = _mgr(USER_A, tmp_path / "ws")
+    run = _register(m, run_id="ip-1", model="icepack")
+    out = run.workspace_directory / "cache" / "outputs"
+    (out / "figures").mkdir(parents=True)
+    (out / "figures" / "velocity.png").write_bytes(b"\x89PNG")
+    (out / "metadata.json").write_text(json.dumps({
+        "schema": "cryostack.icepack.results", "status": "artifacts",
+        "model": "icepack", "solutions": [], "fields": [],
+        "figures": ["velocity.png"], "model_files": [],
+    }))
+    c = _panel(m, fetch_results=lambda: None).controller
+    c.refresh()
+    assert c.render_btn.disabled is True
+    assert c.solution_dd.options == ()
+    assert "not yet available for this model" in c.status.value
+    assert "have not been fetched" not in c.status.value
+
+
+def _png_bytes(width=2, height=2):
+    """A real, tiny, valid PNG (so base64 embedding is a meaningful assertion)."""
+    import struct
+    import zlib
+
+    def _chunk(tag, data):
+        return (struct.pack(">I", len(data)) + tag + data
+                + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF))
+
+    raw = b"".join(b"\x00" + b"\xff\x00\x00" * width for _ in range(height))
+    return (b"\x89PNG\r\n\x1a\n"
+            + _chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+            + _chunk(b"IDAT", zlib.compress(raw))
+            + _chunk(b"IEND", b""))
+
+
+def test_icepack_figure_gallery_embeds_each_png_as_a_data_uri(tmp_path):
+    """00-meshes-functions class: figures but no tier-1 structured fields.
+
+    The regression this guards: each discovered PNG must reach the browser as a
+    base64 data-URI <img> -- NOT a server filesystem path, NOT a bare
+    ipywidgets image display()'d into an Output (which renders blank in Voilà,
+    the live "large blank area" symptom)."""
+    import base64 as _b64
+
+    m = _mgr(USER_A, tmp_path / "ws")
+    run = _register(m, run_id="ip-fig", model="icepack")
+    out = run.workspace_directory / "cache" / "outputs"
+    (out / "figures").mkdir(parents=True)
+    payloads = {}
+    for n in (1, 2):
+        b = _png_bytes(2 + n, 2 + n)
+        payloads[f"figure-0{n}.png"] = b
+        (out / "figures" / f"figure-0{n}.png").write_bytes(b)
+    (out / "metadata.json").write_text(json.dumps({
+        "schema": "cryostack.icepack.results", "status": "artifacts",
+        "model": "icepack", "solutions": [], "fields": [],
+        "figures": ["figure-01.png", "figure-02.png"], "model_files": [],
+        "figures_meta": {
+            "figure-01.png": {"title": "Mesh of the unit square",
+                              "axes_titles": ["Mesh of the unit square"]},
+            # figure-02 deliberately has no title -> "Figure 2"
+        },
+    }))
+    c = _panel(m, fetch_results=lambda: None).controller
+    with _CaptureDisplay() as cap:
+        c.refresh()
+    shown = cap.html
+
+    # field controls HIDDEN (not just disabled) -- nothing implies fields exist
+    assert c.field_controls.layout.display == "none"
+    assert c.solution_dd.options == () and c.field_dd.options == ()
+    assert c.render_btn.disabled is True
+
+    # each PNG is embedded as its own base64 data URI -- the browser gets bytes,
+    # never a path
+    assert shown.count("<img src='data:image/png;base64,") == 2
+    for name, raw in payloads.items():
+        assert _b64.b64encode(raw).decode() in shown, f"{name} not embedded"
+    # not a filesystem path / file:// / /tmp reference
+    assert "file://" not in shown
+    assert str(out) not in shown and "/figures/figure-01.png'" not in shown
+
+    # titled cards, title straight from the figure metadata else "Figure N"
+    assert shown.count("cryostack-figure-card") == 2
+    assert shown.count("cryostack-figure-title") == 2
+    assert "Mesh of the unit square" in shown and "Figure 2" in shown
+
+    # count wording is explicit about WHAT was found
+    assert "2 figures found" in c.status.value
+    assert "not yet available for this model" in c.status.value
+
+
+def test_gallery_heading_uses_captured_title_and_label_over_figure_n(tmp_path):
+    """The card heading is the figure's own name (folded 'title', or an
+    explicit 'label', or a suptitle/axes-title), and only 'Figure N' when the
+    metadata carries nothing."""
+    m = _mgr(USER_A, tmp_path / "ws")
+    run = _register(m, run_id="ip-lbl", model="icepack")
+    out = run.workspace_directory / "cache" / "outputs"
+    (out / "figures").mkdir(parents=True)
+    for n in (1, 2, 3):
+        (out / "figures" / f"figure-0{n}.png").write_bytes(_png_bytes(2 + n))
+    (out / "metadata.json").write_text(json.dumps({
+        "schema": "cryostack.icepack.results", "status": "artifacts",
+        "model": "icepack",
+        "figures": ["figure-01.png", "figure-02.png", "figure-03.png"],
+        "figures_meta": {
+            "figure-01.png": {"title": "Ice thickness", "label": "Ice thickness"},
+            "figure-02.png": {"axes_titles": ["Basal shear stress"]},   # no folded title
+            # figure-03: nothing -> "Figure 3"
+        },
+    }))
+    c = _panel(m, fetch_results=lambda: None).controller
+    with _CaptureDisplay() as cap:
+        c.refresh()
+    shown = cap.html
+    assert "Ice thickness" in shown
+    assert "Basal shear stress" in shown            # axes-title fallback in the heading
+    assert "Figure 3" in shown
+    # the meaningful names replace the generic ones for 1 and 2
+    assert "<div class='cryostack-figure-title'>Figure 1</div>" not in shown
+    assert "<div class='cryostack-figure-title'>Figure 2</div>" not in shown
+
+
+def test_icepack_missing_figure_file_is_skipped_not_fatal(tmp_path):
+    """metadata lists a figure whose file did not sync -- the others still
+    render, no exception."""
+    m = _mgr(USER_A, tmp_path / "ws")
+    run = _register(m, run_id="ip-miss", model="icepack")
+    out = run.workspace_directory / "cache" / "outputs"
+    (out / "figures").mkdir(parents=True)
+    good = _png_bytes()
+    (out / "figures" / "figure-01.png").write_bytes(good)
+    # figure-02.png referenced in metadata but never written
+    (out / "metadata.json").write_text(json.dumps({
+        "schema": "cryostack.icepack.results", "status": "artifacts",
+        "model": "icepack", "figures": ["figure-01.png", "figure-02.png"],
+    }))
+    c = _panel(m, fetch_results=lambda: None).controller
+    with _CaptureDisplay() as cap:
+        c.refresh()
+    shown = cap.html
+    import base64 as _b64
+    assert shown.count("<img src='data:image/png;base64,") == 1
+    assert _b64.b64encode(good).decode() in shown
+
+
+def test_oversized_figure_is_not_embedded_but_still_pointed_at(tmp_path, monkeypatch):
+    from cryostack_src.frontend.cryolauncher.workspace import visualization as _viz
+    monkeypatch.setattr(_viz, "_MAX_INLINE_FIGURE_BYTES", 8)   # tiny cap
+    m = _mgr(USER_A, tmp_path / "ws")
+    run = _register(m, run_id="ip-big", model="icepack")
+    out = run.workspace_directory / "cache" / "outputs"
+    (out / "figures").mkdir(parents=True)
+    (out / "figures" / "figure-01.png").write_bytes(_png_bytes(8, 8))   # > 8 bytes
+    (out / "metadata.json").write_text(json.dumps({
+        "schema": "cryostack.icepack.results", "status": "artifacts",
+        "model": "icepack", "figures": ["figure-01.png"],
+    }))
+    c = _panel(m, fetch_results=lambda: None).controller
+    with _CaptureDisplay() as cap:
+        c.refresh()
+    shown = cap.html
+    assert "data:image/png;base64," not in shown
+    assert "too large to preview inline" in shown
+    assert "cryostack-figure-card" in shown          # the card is still there
+
+
+def test_icepack_artifacts_with_only_native_files_points_to_download(tmp_path):
+    """An 'artifacts' run that produced native output files but no figures
+    must not show an empty figure area with no guidance -- it points at
+    Download results and lists the files (name / path / type / size), and
+    never shows field dropdowns."""
+    m = _mgr(USER_A, tmp_path / "ws")
+    run = _register(m, run_id="ip-nat", model="icepack")
+    out = run.workspace_directory / "cache" / "outputs"
+    (out / "model").mkdir(parents=True)
+    (out / "model" / "state.h5").write_bytes(b"\x89HDF")
+    (out / "metadata.json").write_text(json.dumps({
+        "schema": "cryostack.icepack.results", "status": "artifacts",
+        "model": "icepack", "solutions": [], "fields": [],
+        "figures": [], "model_files": ["state.h5"],
+    }))
+    c = _panel(m, fetch_results=lambda: None).controller
+    with _CaptureDisplay() as cap:
+        c.refresh()
+    shown = cap.html
+    assert c.render_btn.disabled is True
+    assert c.solution_dd.options == () and c.field_dd.options == ()
+    assert "Download results" in c.status.value
+    assert "1 other output file found" in c.status.value
+    # the file is listed in the native-output table (not crammed into the note)
+    assert "cryostack-native-files" in shown
+    assert "state.h5" in shown
+    assert "model/state.h5" in shown          # relative path
+    assert "data:image/" not in shown         # nothing fabricated as an image
+
+
+def test_native_outputs_render_through_ipython_html_not_widgets(tmp_path):
+    """Guards the transport: the gallery/table go out as IPython.display.HTML
+    (reliable inside an Output in Voilà), never as a nested ipywidgets view."""
+    import ipywidgets as _W
+    from IPython.display import HTML as _HTML
+
+    m = _mgr(USER_A, tmp_path / "ws")
+    run = _register(m, run_id="ip-tr", model="icepack")
+    out = run.workspace_directory / "cache" / "outputs"
+    (out / "figures").mkdir(parents=True)
+    (out / "figures" / "figure-01.png").write_bytes(_png_bytes())
+    (out / "metadata.json").write_text(json.dumps({
+        "schema": "cryostack.icepack.results", "status": "artifacts",
+        "model": "icepack", "figures": ["figure-01.png"],
+    }))
+    c = _panel(m, fetch_results=lambda: None).controller
+    with _CaptureDisplay() as cap:
+        c.refresh()
+    assert cap.items, "nothing was displayed into the results area"
+    assert all(isinstance(o, _HTML) for o in cap.items), \
+        [type(o).__name__ for o in cap.items]
+    assert not any(isinstance(o, _W.Widget) for o in cap.items)
+
+
+def test_icepack_empty_run_is_reported_as_such(tmp_path):
+    m = _mgr(USER_A, tmp_path / "ws")
+    run = _register(m, run_id="ip-2", model="icepack")
+    out = run.workspace_directory / "cache" / "outputs"
+    (out / "model").mkdir(parents=True)
+    (out / "metadata.json").write_text(json.dumps({
+        "schema": "cryostack.icepack.results", "status": "empty",
+        "figures": [], "model_files": [],
+    }))
+    c = _panel(m, fetch_results=lambda: None).controller
+    c.refresh()
+    assert "produced no figures or output files" in c.status.value
 
 
 # ── isolation ──────────────────────────────────────────────────────────

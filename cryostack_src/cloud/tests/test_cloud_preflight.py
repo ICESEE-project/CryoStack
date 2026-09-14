@@ -19,7 +19,8 @@ from cryostack_src.cloud.runtime import CloudRuntimeError
 
 def test_issm_without_a_cloud_matlab_license_is_blocked():
     reasons = cloud_run_preflight(model="issm", matlab_license_configured=False)
-    assert reasons and "MATLAB licensing is not configured" in reasons[0]
+    assert reasons and "MATLAB license reachable from AWS" in reasons[0]
+    assert "Secrets Manager" in reasons[0]
     with pytest.raises(CloudRuntimeError):
         assert_cloud_run_allowed(model="issm", matlab_license_configured=False)
 
@@ -29,14 +30,31 @@ def test_issm_with_a_configured_license_passes():
     assert_cloud_run_allowed(model="issm", matlab_license_configured=True)  # no raise
 
 
-def test_icepack_is_blocked_regardless_of_license():
-    reasons = cloud_run_preflight(model="icepack", matlab_license_configured=True)
-    assert reasons and "no supported cloud runtime" in reasons[0]
+def test_icepack_needs_no_matlab_license():
+    """Icepack Cloud Execution checkpoint: the MATLAB-license gate is
+    ISSM-only. Icepack passes preflight regardless of the compute profile's
+    license state -- true whether or not one happens to be configured."""
+    assert cloud_run_preflight(model="icepack", matlab_license_configured=False) == []
+    assert cloud_run_preflight(model="icepack", matlab_license_configured=True) == []
+    assert_cloud_run_allowed(model="icepack", matlab_license_configured=False)  # no raise
 
 
 def test_unknown_model_is_blocked():
     assert cloud_run_preflight(model="", matlab_license_configured=True)
     assert cloud_run_preflight(model="firedrake", matlab_license_configured=True)
+
+
+def test_preflight_uses_the_single_workflow_capability_resolver():
+    """The MATLAB-license gate must be one authoritative answer
+    (cryostack_src.models.workflow_capabilities), not a duplicated
+    ``model == "issm"`` string check re-derived here."""
+    import inspect
+
+    from cryostack_src.cloud import preflight as preflight_module
+
+    src = inspect.getsource(preflight_module.cloud_run_preflight)
+    assert "resolve_workflow_capabilities" in src
+    assert '== "issm"' not in src
 
 
 def test_the_default_aws_compute_profile_has_no_license():

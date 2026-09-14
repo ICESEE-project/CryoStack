@@ -31,9 +31,14 @@ from cryostack_src.cloud.drivers.aws.registry_delivery import (
 CONFIG = AWSConfig(region="us-east-2")
 REPO = "cryostack-issm"
 URI = "111111111111.dkr.ecr.us-east-2.amazonaws.com/cryostack-issm"
-SOURCE_REF = "bkyanjo/icesee-combined:v1.0.0"
-SOURCE_DIGEST = "sha256:a727f60a738c748d1812b157e1fe94ddb1177ecc32354afa7b747db2f6b7bae5"
-SRC_TAG = "src-a727f60a738c748d"
+# v1.0.2 is the current default tested image (completes the venv-icepack
+# scientific/notebook stack so the Icepack tutorials run unmodified -- see
+# tools/cloud/Dockerfile); v1.0.1 and v1.0.0 stay registered
+# (test_tested_images.py) but are no longer what tested_image_for_model()
+# resolves to.
+SOURCE_REF = "bkyanjo/icesee-combined:v1.0.2"
+SOURCE_DIGEST = "sha256:d68d88dcb7047f29d6e277a45710f50f1bf3023566e0472f07a7dd75ffbcd170"
+SRC_TAG = "src-d68d88dcb7047f29"
 
 
 class FakeECR:

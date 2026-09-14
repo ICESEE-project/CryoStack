@@ -139,6 +139,20 @@ _SHARED_APPLICATION_CSS = """
 .icesee-running {
     background: rgba(37, 99, 235, 0.12);
     color: #1d4ed8;
+
+    /* a subtle pulse so an in-flight operation reads as "working",
+       without a fake progress bar or percentage. */
+    animation: cryostack-status-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes cryostack-status-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cryostack-status-running,
+    .icesee-running { animation: none; }
 }
 
 .cryostack-status-done,
@@ -177,11 +191,27 @@ _SHARED_APPLICATION_CSS = """
     line-height: 1.75;
 }
 
+/* Each row is "<div><span class="...-key">Label:</span> Value</div>" --
+   shared by CryoLauncher's own Run Plan summary and ICESEE's (Run Plan
+   and the Workspace Selected-Run card). A flex row with a fixed-width
+   label column keeps every label/value pair aligned and gives the value
+   clear breathing room instead of the label and value running together. */
+.cryostack-summary > div,
+.icesee-summary > div {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    overflow-wrap: anywhere;
+}
+
 .cryostack-summary-key,
 .icesee-summary-k {
     color: rgba(15, 23, 42, 0.90);
 
     font-weight: 700;
+
+    flex: 0 0 auto;
+    min-width: 150px;
 }
 
 
@@ -193,7 +223,9 @@ _SHARED_APPLICATION_CSS = """
 .icesee-grid {
     display: flex;
     width: 100%;
-    align-items: stretch;
+    /* columns align at the top; each keeps its own natural height so the
+       short left card never caps the Workspace column (see theme.py). */
+    align-items: flex-start;
     gap: 24px;
 }
 
@@ -390,6 +422,417 @@ pre.cryostack-code-block {
     background: #0f172a;
     color: #e2e8f0;
 }
+
+
+/* =========================================================
+   CryoStack application — small-screen foundation
+   ---------------------------------------------------------
+   Shared responsive rules for the Voila application shell
+   (Run settings, accordions, Workspace tabs, Results panel,
+   file editor, logs). Keyed on the layout classes and the
+   ipywidgets DOM so every panel inherits the behaviour.
+   ========================================================= */
+
+/* Never let a widget or a long path widen the page. */
+.cryostack-application-page,
+.icesee-page,
+.icesee-grid,
+.cryostack-application-grid {
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
+.cryostack-application-page .jupyter-widgets,
+.icesee-page .jupyter-widgets {
+    min-width: 0;
+    max-width: 100%;
+}
+
+/* Two-column layout: stack on tablet / mobile. The Workspace column keeps
+   its natural height and page scrolling at every width; sticky positioning
+   (desktop only, see theme.py) is disabled here. */
+@media (max-width: 1050px) {
+    .cryostack-right-workspace,
+    .icesee-right {
+        height: auto !important;
+        max-height: none !important;
+        min-height: 0 !important;
+        overflow: visible !important;
+        position: static !important;
+    }
+}
+
+@media (max-width: 900px) {
+    .cryostack-application-grid,
+    .icesee-grid {
+        gap: 16px;
+    }
+}
+
+/* Label / control rows: stack the label above the control on narrow screens.
+   Covers form_pair() rows and the Results Solution/Field/Timestep rows. */
+@media (max-width: 600px) {
+    .cryostack-field-row.widget-hbox,
+    .cryostack-field-row {
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: 4px !important;
+    }
+
+    .cryostack-field-row > .widget-html,
+    .cryostack-field-row > .jupyter-widgets:first-child {
+        width: auto !important;
+        min-width: 0 !important;
+    }
+
+    /* ipywidgets inline hbox pairs (label + input) */
+    .cryostack-application-page .widget-inline-hbox,
+    .icesee-page .widget-inline-hbox {
+        flex-wrap: wrap;
+    }
+
+    .cryostack-application-page .widget-inline-hbox .widget-label,
+    .icesee-page .widget-inline-hbox .widget-label {
+        min-width: 0 !important;
+        width: 100% !important;
+        text-align: left !important;
+        white-space: normal;
+    }
+}
+
+/* Inputs use the full available width on small screens. */
+@media (max-width: 700px) {
+    .cryostack-application-page .widget-text,
+    .cryostack-application-page .widget-textarea,
+    .cryostack-application-page .widget-dropdown,
+    .cryostack-application-page .widget-inttext,
+    .cryostack-application-page .widget-floattext,
+    .icesee-page .widget-text,
+    .icesee-page .widget-textarea,
+    .icesee-page .widget-dropdown,
+    .icesee-page .widget-inttext,
+    .icesee-page .widget-floattext {
+        width: 100% !important;
+    }
+
+    /* Button groups wrap instead of overflowing. */
+    .cryostack-application-page .widget-hbox,
+    .icesee-page .widget-hbox {
+        flex-wrap: wrap;
+    }
+}
+
+/* Tabs (Workspace / Results / Run log): keep the tab bar usable without
+   widening the page -- scroll the bar, never the page. */
+.cryostack-application-page .lm-TabBar-content,
+.cryostack-application-page .p-TabBar-content,
+.icesee-page .lm-TabBar-content,
+.icesee-page .p-TabBar-content {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+}
+
+.cryostack-application-page .lm-TabBar-tab,
+.cryostack-application-page .p-TabBar-tab,
+.icesee-page .lm-TabBar-tab,
+.icesee-page .p-TabBar-tab {
+    flex: 0 0 auto;
+}
+
+/* Logs and text output: scroll inside the panel, wrap long lines. */
+.cryostack-live-log,
+.cryostack-output-tab .jp-OutputArea,
+.cryostack-output-tab .widget-output {
+    max-width: 100%;
+    overflow: auto;
+}
+
+.cryostack-application-page .jp-OutputArea-output pre,
+.cryostack-application-page .widget-output pre,
+.icesee-page .jp-OutputArea-output pre,
+.icesee-log pre,
+.icesee-out pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+@media (max-width: 700px) {
+    .cryostack-live-log,
+    .cryostack-output-workspace {
+        max-height: 60vh;
+    }
+
+    /* File / code editor: full viewport width. */
+    .cryostack-application-page .widget-textarea textarea,
+    .icesee-page .widget-textarea textarea {
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+}
+
+/* Accordions: full width, no inner horizontal scroll. */
+.cryostack-application-page .widget-accordion,
+.icesee-page .widget-accordion,
+.cryostack-application-page .widget-accordion .widget-accordion-child,
+.icesee-page .widget-accordion .widget-accordion-child {
+    max-width: 100%;
+    min-width: 0;
+}
+
+@media (max-width: 430px) {
+    .cryostack-application-card,
+    .icesee-card {
+        padding: 12px;
+        border-radius: 12px;
+    }
+
+    .cryostack-application-title,
+    .icesee-title {
+        font-size: 16px;
+    }
+
+    .cryostack-section-heading,
+    .icesee-h {
+        font-size: 15px;
+    }
+
+    .cryostack-application-page pre,
+    .icesee-page pre,
+    pre.cryostack-code-block {
+        font-size: 12px;
+        padding: 10px;
+    }
+}
+
+
+/* =========================================================
+   B4 -- grouped form panels (Remote Connection, Slurm resources)
+   ========================================================= */
+
+.cryostack-group-title {
+    margin: 2px 0 6px;
+
+    color: rgba(15, 23, 42, 0.82);
+
+    font-size: 13px;
+    font-weight: 750;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.cryostack-field-label {
+    margin-bottom: 2px;
+    color: rgba(15, 23, 42, 0.80);
+    font-size: 13px;
+    font-weight: 650;
+}
+
+.cryostack-help {
+    margin-top: 2px;
+    color: rgba(15, 23, 42, 0.52);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.cryostack-field {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.cryostack-field-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 14px;
+    width: 100%;
+}
+
+/* Slurm 3-up numeric grid: 3 -> 2 -> 1 as width drops. */
+.cryostack-slurm-numeric-grid {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    width: 100%;
+}
+
+@media (max-width: 768px) {
+    .cryostack-slurm-numeric-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 430px) {
+    .cryostack-slurm-numeric-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+
+/* =========================================================
+   B4 -- Remote Connection status chip
+   ========================================================= */
+
+.cryostack-conn-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+
+    padding: 6px 12px;
+
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 999px;
+
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.cryostack-conn-status__dot { font-size: 11px; line-height: 1; }
+
+.cryostack-conn-status.is-unchecked { background: rgba(15, 23, 42, 0.04); color: #475569; }
+.cryostack-conn-status.is-unchecked .cryostack-conn-status__dot { color: #94a3b8; }
+
+.cryostack-conn-status.is-checking { background: rgba(37, 99, 235, 0.10); color: #1d4ed8; }
+.cryostack-conn-status.is-checking .cryostack-conn-status__dot { color: #2563eb; }
+
+.cryostack-conn-status.is-verified { background: rgba(22, 163, 74, 0.14); color: #15803d; }
+.cryostack-conn-status.is-verified .cryostack-conn-status__dot { color: #16a34a; }
+
+.cryostack-conn-status.is-mismatch { background: rgba(217, 119, 6, 0.16); color: #b45309; }
+.cryostack-conn-status.is-mismatch .cryostack-conn-status__dot { color: #d97706; }
+
+.cryostack-conn-status.is-failed { background: rgba(220, 38, 38, 0.14); color: #b91c1c; }
+.cryostack-conn-status.is-failed .cryostack-conn-status__dot { color: #dc2626; }
+
+.cryostack-conn-status.is-key-unregistered { background: rgba(217, 119, 6, 0.16); color: #b45309; }
+.cryostack-conn-status.is-key-unregistered .cryostack-conn-status__dot { color: #d97706; }
+
+
+/* The Authentication-method toggle must never clip "Password bootstrap
+   (one-time)": let the control size to its content instead of a fixed width. */
+.cryostack-remote-connection-panel .widget-togglebuttons {
+    width: auto !important;
+    max-width: 100%;
+}
+
+.cryostack-remote-connection-panel .widget-togglebuttons .widget-toggle-buttons,
+.cryostack-remote-connection-panel .widget-togglebuttons .jupyter-widgets {
+    flex-wrap: wrap;
+}
+
+.cryostack-remote-connection-panel .widget-togglebuttons button {
+    white-space: nowrap;
+    width: auto;
+    min-width: max-content;
+}
+
+
+/* =========================================================
+   B4 -- connector card, diagnostics, manual key registration
+   ========================================================= */
+
+.cryostack-connector-card {
+    padding: 12px 14px;
+    border: 1px solid rgba(37, 99, 235, 0.16);
+    border-radius: 12px;
+    background: rgba(37, 99, 235, 0.04);
+}
+
+.cryostack-diag {
+    font-size: 12px;
+    line-height: 1.7;
+    color: rgba(15, 23, 42, 0.62);
+    word-break: break-all;
+}
+
+.cryostack-diag__k { font-weight: 700; color: rgba(15, 23, 42, 0.78); }
+
+.cryostack-reg-steps {
+    margin: 6px 0 8px;
+    padding-left: 20px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: rgba(15, 23, 42, 0.78);
+}
+
+.cryostack-portal-link,
+a.cryostack-portal-link {
+    display: inline-block;
+    margin-top: 4px;
+    padding: 7px 12px;
+    border-radius: 8px;
+    background: #2563eb;
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 13px;
+    text-decoration: none;
+}
+
+
+/* =========================================================
+   B4 -- narrow-width behaviour for the grouped panels
+   ========================================================= */
+
+@media (max-width: 768px) {
+    .cryostack-field-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+
+    .cryostack-remote-connection-panel .cryostack-field,
+    .cryostack-slurm-resources-panel .cryostack-field {
+        width: 100%;
+        flex: 1 1 auto;
+    }
+
+    .cryostack-conn-actions {
+        flex-wrap: wrap;
+    }
+
+    .cryostack-conn-actions .widget-button {
+        width: 100%;
+    }
+
+    .cryostack-remote-connection-panel .widget-text,
+    .cryostack-remote-connection-panel .widget-dropdown,
+    .cryostack-remote-connection-panel .widget-inttext,
+    .cryostack-remote-connection-panel .widget-togglebuttons {
+        width: 100% !important;
+    }
+
+    .cryostack-advanced-accordion,
+    .cryostack-advanced-accordion .widget-accordion-child {
+        width: 100%;
+        max-width: 100%;
+    }
+}
+
+@media (max-width: 430px) {
+    .cryostack-group-title { font-size: 12px; }
+}
+
+@media (max-width: 360px) {
+    .cryostack-conn-status { width: 100%; justify-content: center; }
+}
+
+
+/* =========================================================
+   B4 -- dark theme for the new components
+   ========================================================= */
+
+html[data-theme="dark"] .cryostack-group-title,
+html[data-theme="dark"] .cryostack-field-label { color: #e2e8f0; }
+html[data-theme="dark"] .cryostack-help,
+html[data-theme="dark"] .cryostack-diag { color: #94a3b8; }
+html[data-theme="dark"] .cryostack-diag__k { color: #cbd5e1; }
+html[data-theme="dark"] .cryostack-connector-card {
+    border-color: rgba(37, 99, 235, 0.30);
+    background: rgba(37, 99, 235, 0.12);
+}
+html[data-theme="dark"] .cryostack-reg-steps { color: #cbd5e1; }
 
 </style>
 """

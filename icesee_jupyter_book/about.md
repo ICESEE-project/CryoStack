@@ -41,7 +41,7 @@
 
   </section>
 
-  <section class="cryostack-section">
+  <section id="mission" class="cryostack-section">
 
     <div class="cryostack-section-label">
       Our Mission
@@ -79,8 +79,9 @@
       <div>
         <h3>Reproducible</h3>
         <p>
-          Support documented workflows, containers, managed software
-          environments, and reusable scientific configurations.
+          Run against tested containers and managed software environments,
+          record the environment and configuration each run used, and export
+          results in a structured, self-describing form.
         </p>
       </div>
 
@@ -96,7 +97,7 @@
 
   </section>
 
-  <section class="cryostack-section">
+  <section id="platform-scope" class="cryostack-section">
 
     <div class="cryostack-section-label">
       Platform Scope
@@ -185,7 +186,7 @@
 
   </section>
 
-  <section class="cryostack-section">
+  <section id="design-principles" class="cryostack-section">
 
     <div class="cryostack-section-label">
       Design Principles
@@ -235,7 +236,7 @@
 
   </section>
 
-  <section class="cryostack-section">
+  <section id="technology" class="cryostack-section">
 
     <div class="cryostack-section-label">
       Technology
@@ -285,7 +286,7 @@
 
   </section>
 
-  <section class="cryostack-section">
+  <section id="development" class="cryostack-section">
 
     <div class="cryostack-section-label">
       Development
@@ -344,7 +345,7 @@
 
   </section>
 
-  <section class="cryostack-section">
+  <section id="open-science" class="cryostack-section">
 
     <div class="cryostack-section-label">
       Open Science
@@ -377,6 +378,15 @@
       </div>
 
       <div>
+        <h3>User-isolated workspaces</h3>
+        <p>
+          Each user's examples, edits, and datasets are private and
+          persistent, so scientific work can be revisited and shared
+          deliberately rather than by accident.
+        </p>
+      </div>
+
+      <div>
         <h3>Published data</h3>
         <p>
           Scientific data applications connect users to documented,
@@ -396,7 +406,7 @@
 
   </section>
 
-  <section class="cryostack-section">
+  <section id="citation" class="cryostack-section">
 
     <div class="cryostack-section-label">
       Citation
@@ -439,7 +449,7 @@
 
   </section>
 
-  <section class="cryostack-section">
+  <section id="license" class="cryostack-section">
 
     <div class="cryostack-section-label">
       License
@@ -456,7 +466,7 @@
 
   </section>
 
-  <section class="cryostack-section cryostack-about-contact">
+  <section id="contact" class="cryostack-section cryostack-about-contact">
 
     <div class="cryostack-section-label">
       Contact and Support

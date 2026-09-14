@@ -55,6 +55,9 @@ from cryostack_src.cloud.runtime import (
     is_supported_cloud_model,
 )
 
+from cryostack_src.cloud.s3_uri import S3LocationError
+from cryostack_src.cloud.s3_uri import bucket_name as _s3_bucket_name
+
 from .auth import run_aws
 from .models import AWSConfig
 
@@ -94,6 +97,9 @@ def _local_dir(source) -> Path:
     return path
 
 
+_RUN_PREFIX_RE = re.compile(r"\A(?:[A-Za-z0-9][A-Za-z0-9._-]{0,63}/)*\Z")
+
+
 def stage_run_inputs(
     config: AWSConfig,
     *,
@@ -102,6 +108,7 @@ def stage_run_inputs(
     run_target: str,
     bucket: str,
     run_id: str | None = None,
+    run_prefix: str = "",
     working_directory: str = ".",
     s3=None,
 ) -> CloudRunStaging:
@@ -112,8 +119,12 @@ def stage_run_inputs(
     ``aws s3 ...`` (defaults to the driver's ``run_aws``); it lets tests mock all
     transfer without touching AWS.
     """
-    if not bucket:
+    if not (bucket or "").strip():
         raise CloudStagingError("a cloud run needs an S3 bucket")
+    try:                                             # accept a name or an s3:// URI
+        bucket = _s3_bucket_name(bucket)
+    except S3LocationError as err:
+        raise CloudStagingError(str(err)) from None
     if not is_supported_cloud_model(model):
         raise CloudStagingError(
             f"model {model!r} has no supported cloud runtime yet -- not staging.")
@@ -128,7 +139,12 @@ def stage_run_inputs(
     if not _RUN_ID_RE.match(run_id):
         raise CloudStagingError(f"unsafe run id: {run_id!r}")
 
-    s3_run = f"s3://{bucket}/runs/{run_id}"
+    prefix = (run_prefix or "").strip().strip("/")
+    prefix = f"{prefix}/" if prefix else ""
+    if not _RUN_PREFIX_RE.match(prefix):
+        raise CloudStagingError(f"unsafe run prefix: {run_prefix!r}")
+
+    s3_run = f"s3://{bucket}/runs/{prefix}{run_id}"
     s3_input = f"{s3_run}/input"
     s3_outputs = f"{s3_run}/outputs"
     invoke = s3 or (lambda args: run_aws(config, args))

@@ -20,47 +20,75 @@ import cryostack_src.remote.spack_env as spack_env
 from cryostack_src.models.issm.postprocess import (
     build_postprocess as build_issm_postprocess_script,
 )
+from cryostack_src.models.icepack.postprocess import (
+    build_collection_shell_block as build_icepack_collection_block,
+)
+from cryostack_src.models.icepack.export import (
+    build_export_shell_block as build_icepack_export_block,
+)
 from cryostack_src.models.stack import (
     checkout_bind_suffix,
     checkout_setup_block,
     component_checkout_plan,
 )
-from cryostack_src.remote.runtime import expand_remote_home
+from cryostack_src.remote.runtime import expand_remote_home, require_remote_base_dir
 
 
-def _issm_container_launcher_shim(*, run_dir: str) -> str:
-    """Shell block that drops an in-container ``srun`` shim into the run dir.
+def _issm_container_mpi_env() -> str:
+    """``apptainer exec --env`` flags that keep ISSM's in-container ``mpiexec``
+    a local, single-node launch.
 
-    ISSM's cluster class inside the ICESEE-Container image writes its solver
-    launch line as ``srun --cpu-bind=none --mpi=pmi2 -n <np> <cmd>`` (its
-    bundled ``generic`` class has no ``mpiexec`` branch on Linux), but the SIF
-    ships no Slurm client, so that line fails with ``srun: not found``. This
-    shim, placed first on ``PATH`` for the in-container MATLAB process, re-runs
-    the same command as ``mpiexec -np <np> <cmd>`` -- preserving the task count
-    ISSM itself passed (``-n N``, ``--ntasks N`` or ``--ntasks=N``) -- without
-    binding any host Slurm/PMIx libraries.
+    ISSM's ``generic`` cluster inside the ICESEE-Container writes its solver
+    launch line as ``mpiexec -np <md.cluster.np> <ISSM_DIR>/bin/issm.exe ...``
+    -- verified against both ``/opt/ISSM/bin/generic.m`` and the ICESEE
+    ``issm_utils/slurm_cluster/generic.m`` in the image: neither has an
+    ``srun`` branch on Linux. That ``mpiexec`` is Spack OpenMPI 5 / PRRTE 4.
+
+    Under a multi-node ``sbatch`` the ``apptainer exec`` inherits ``SLURM_*``,
+    so PRRTE's ``slurm`` PLM tries to ``srun prted`` on the other node -- but
+    the SIF ships no Slurm/SSH client, so the launch dies with *"No available
+    launching agents were found"* (and, once a stray ``srun`` shim was on
+    ``PATH``, *"No executable was specified on the prterun command line"*).
+
+    The SIF has no cross-node launcher, so ISSM's self-launched MPI is
+    single-node by construction. Pin PRRTE to the batch node:
+
+    * ``PRTE_MCA_ras=^slurm`` -- ignore the multi-node allocation; use only
+      the node ``mpiexec`` runs on;
+    * ``PRTE_MCA_plm=ssh`` -- a same-node launch is a plain fork, so no
+      ``srun`` / ``ssh`` binary is ever exec'd;
+    * ``PRTE_MCA_rmaps_default_mapping_policy=:oversubscribe`` -- ``md.cluster.np``
+      (2 for every stock ISSM example) may exceed a small node's core count.
+
+    True multi-node ISSM needs the ICESEE-Spack backend (real ``srun`` on the
+    host) -- see the note emitted by the submit path.
     """
-    shim = f"{run_dir}/.cryostack_launcher/srun"
     return (
-        f'mkdir -p "{run_dir}/.cryostack_launcher"\n'
-        f"cat > \"{shim}\" <<'CRYOSTACK_SRUN'\n"
-        "#!/bin/sh\n"
-        'np="${SLURM_NTASKS:-1}"\n'
-        "while [ $# -gt 0 ]; do\n"
-        '  case "$1" in\n'
-        '    -n|--ntasks) np="$2"; shift 2 ;;\n'
-        '    --ntasks=*) np="${1#--ntasks=}"; shift ;;\n'
-        '    -n*) np="${1#-n}"; shift ;;\n'
-        "    -N|--nodes|--ntasks-per-node|--cpus-per-task) shift 2 ;;\n"
-        "    --) shift; break ;;\n"
-        "    -*) shift ;;\n"
-        "    *) break ;;\n"
-        "  esac\n"
-        "done\n"
-        'exec mpiexec -np "$np" "$@"\n'
-        "CRYOSTACK_SRUN\n"
-        f'chmod +x "{shim}"'
+        "--env PRTE_MCA_ras=^slurm "
+        "--env PRTE_MCA_plm=ssh "
+        "--env PRTE_MCA_rmaps_default_mapping_policy=:oversubscribe "
     )
+
+
+def _issm_container_single_node_note(*, backend: str, model: str, nodes) -> list[str]:
+    """One advisory line when a container ISSM run asks for more than one node.
+
+    ISSM's ``md.cluster.np`` (the example owns it) is the sole MPI rank count;
+    the ``#SBATCH -N`` request does not feed it and the in-container solver
+    cannot span nodes. Surfaced, not enforced -- the run still proceeds on the
+    batch node.
+    """
+    try:
+        n = int(nodes)
+    except (TypeError, ValueError):
+        n = 1
+    if backend == "container" and model == "issm" and n > 1:
+        return [
+            "[remote] NOTE: container ISSM self-launches MPI on the batch node "
+            f"only (md.cluster.np ranks); the requested -N {n} is not used by "
+            "the solver. Use the ICESEE-Spack backend for multi-node ISSM."
+        ]
+    return []
 
 
 _ENV_NAME_RE = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
@@ -318,7 +346,7 @@ def submit_remote_icesheets_via_connector(
     )
 
     # Resolve remote base through connector.
-    remote_base_input = (remote_base_dir or "").strip() or "~/r-arobel3-0"
+    remote_base_input = require_remote_base_dir(remote_base_dir)
 
     resolve_cmd = f'python3 -c "import os; print(os.path.abspath(os.path.expanduser({remote_base_input!r})))"'
     rbase = connector_ssh(session_id, host, user, port, resolve_cmd, timeout=300, cluster_name=cluster_name)
@@ -429,6 +457,9 @@ echo "{spack_path}"
 
     elif backend == "container":
         messages.append("[connector] ICESEE-Container backend selected")
+        messages += _issm_container_single_node_note(
+            backend=backend, model=model, nodes=slurm_nodes
+        )
     else:
         raise RuntimeError(f"Unsupported backend: {backend}")
 
@@ -486,16 +517,12 @@ cd "{remote_example_dir}"
 matlab -nodesktop -nosplash -r "{issm_matlab_setup} ICESEE_RUN_DIR='{remote_run_dir}'; setenv('ICESEE_RUN_DIR','{remote_run_dir}'); run('{target_m}'); run('../postprocess_icesee.m'); exit"
 '''
             elif model == "icepack":
-                if run_file_name.endswith(".py"):
+                if run_file_name.endswith((".py", ".ipynb")):
+                    # Icepack science + headless figure capture + structured
+                    # export are ONE step -- build_icepack_export_block(
+                    # primary=True) appended below. Same contract as Cloud.
                     run_block = f'''
 cd "{remote_example_dir}"
-python "{run_file_name}"
-'''
-                elif run_file_name.endswith(".ipynb"):
-                    run_block = f'''
-cd "{remote_example_dir}"
-jupyter nbconvert --to script "{run_file_name}"
-python "{run_file_py}"
 '''
                 else:
                     run_block = f'''
@@ -528,34 +555,42 @@ source "{spack_path}/scripts/activate.sh"
             run_block = f'''
 mkdir -p "{remote_exec_dir}"
 {_stack_setup}
-{_issm_container_launcher_shim(run_dir=remote_run_dir)}
 {matlab_log_line}
-apptainer exec {matlab_env_flag}\
+apptainer exec {matlab_env_flag}{_issm_container_mpi_env()}\
 -B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution,"{remote_run_dir}":"{remote_run_dir}"{_stack_binds} \
-"{sif_path}" with-issm matlab -nodesktop -nosplash -r "setenv('PATH', ['{remote_run_dir}/.cryostack_launcher:' getenv('PATH')]); cd('/opt/ISSM/examples'); ICESEE_RUN_DIR='{remote_run_dir}'; setenv('ICESEE_RUN_DIR','{remote_run_dir}'); run('{target_m}'); run('{remote_run_dir}/postprocess_icesee.m'); exit"
+"{sif_path}" with-issm matlab -nodesktop -nosplash -r "cd('/opt/ISSM/examples'); ICESEE_RUN_DIR='{remote_run_dir}'; setenv('ICESEE_RUN_DIR','{remote_run_dir}'); run('{target_m}'); run('{remote_run_dir}/postprocess_icesee.m'); exit"
 '''
         else:
-            if run_file_name.endswith(".py"):
+            if run_file_name.endswith((".py", ".ipynb")):
+                # Icepack science + capture + export = ONE step, shared with
+                # Cloud -- build_icepack_export_block(primary=True) below.
                 run_block = f'''
 mkdir -p "{remote_exec_dir}"
 {_stack_setup}
-apptainer exec \
--B "{remote_example_dir}":/workspace/example,"{remote_exec_dir}":/workspace/run{_stack_binds} \
-"{sif_path}" with-icepack bash -lc 'cd /workspace/example && python "{run_file_name}"'
-'''
-            elif run_file_name.endswith(".ipynb"):
-                run_block = f'''
-mkdir -p "{remote_exec_dir}"
-{_stack_setup}
-apptainer exec \
--B "{remote_example_dir}":/workspace/example,"{remote_exec_dir}":/workspace/run{_stack_binds} \
-"{sif_path}" with-icepack bash -lc 'cd /workspace/example && jupyter nbconvert --to script "{run_file_name}" && python "{run_file_py}"'
 '''
             else:
                 run_block = f'''
 apptainer exec "{sif_path}" with-icepack python -c "import icepack; print('Icepack import successful')"
 '''
         body = container_setup + "\n" + run_block
+
+    # Icepack has no MATLAB neutral-export. Two appended, non-fatal steps:
+    #  1. a container-side Firedrake exporter -> structured outputs/ package
+    #     (cryostack.icepack.results: mesh + CG1 nodal fields);
+    #  2. a stdlib collector that folds in any figures / native files and never
+    #     clobbers the exporter's richer metadata.
+    if model == "icepack" and not test_mode:
+        body = body + "\n" + build_icepack_export_block(
+            run_dir=remote_run_dir, example_dir=remote_example_dir, backend=backend,
+            sif_path=locals().get("sif_path", ""),
+            spack_path=locals().get("spack_path", ""),
+            stack_binds=locals().get("_stack_binds", ""),
+            run_file_name=run_file_name, run_file_py=run_file_py,
+            primary=True,
+        )
+        body = body + "\n" + build_icepack_collection_block(
+            run_dir=remote_run_dir, example_dir=remote_example_dir,
+        )
 
     outfile = f"{remote_run_dir}/icesheets-%j.out"
 
@@ -579,6 +614,7 @@ set -euo pipefail
 
 cd "{remote_run_dir}"
 mkdir -p outputs/model outputs/figures
+export CRYOSTACK_RUN_STARTED="$(date +%s)"
 
 echo "[icesheets] Host: $(hostname)"
 echo "[icesheets] Date: $(date)"
@@ -699,7 +735,7 @@ def submit_remote_icesheets(
     # ---------------------------------------------------------
     # Remote base/run paths
     # ---------------------------------------------------------
-    remote_base_input = (remote_base_dir or "").strip() or "~/r-arobel3-0"
+    remote_base_input = require_remote_base_dir(remote_base_dir)
     remote_base_shell = expand_remote_home(remote_base_input)
     remote_base_abs = resolve_remote_abs_path(host, user, port, remote_base_shell)
 
@@ -772,6 +808,9 @@ def submit_remote_icesheets(
     elif backend == "container":
         messages.append("[remote] ICESEE-Container backend selected")
         messages.append("[remote] Container setup will be handled inside the submitted Slurm job.")
+        messages += _issm_container_single_node_note(
+            backend=backend, model=model, nodes=slurm_nodes
+        )
     else:
         raise RuntimeError(f"Unsupported backend: {backend}")
     
@@ -873,16 +912,12 @@ cd "{remote_example_dir}"
 matlab -nodesktop -nosplash -r "{issm_matlab_setup} ICESEE_RUN_DIR='{remote_run_dir}'; setenv('ICESEE_RUN_DIR','{remote_run_dir}'); run('{target_m}'); run('../postprocess_icesee.m'); exit"
 '''
             elif model == "icepack":
-                if run_file_name.endswith(".py"):
+                if run_file_name.endswith((".py", ".ipynb")):
+                    # Icepack science + headless figure capture + structured
+                    # export are ONE step -- build_icepack_export_block(
+                    # primary=True) appended below. Same contract as Cloud.
                     run_block = f'''
 cd "{remote_example_dir}"
-python "{run_file_name}"
-'''
-                elif run_file_name.endswith(".ipynb"):
-                    run_block = f'''
-cd "{remote_example_dir}"
-jupyter nbconvert --to script "{run_file_name}"
-python "{run_file_py}"
 '''
                 else:
                     run_block = f'''
@@ -934,28 +969,18 @@ apptainer exec \
                 run_block = f'''
 mkdir -p "{remote_exec_dir}"
 {_stack_setup}
-{_issm_container_launcher_shim(run_dir=remote_run_dir)}
 {matlab_log_line}
-apptainer exec {matlab_env_flag}\
+apptainer exec {matlab_env_flag}{_issm_container_mpi_env()}\
 -B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution,"{remote_run_dir}":"{remote_run_dir}"{_stack_binds} \
-"{sif_path}" with-issm matlab -nodesktop -nosplash -r "setenv('PATH', ['{remote_run_dir}/.cryostack_launcher:' getenv('PATH')]); cd('/opt/ISSM/examples'); ICESEE_RUN_DIR='{remote_run_dir}'; setenv('ICESEE_RUN_DIR','{remote_run_dir}'); run('{target_m}'); run('{remote_run_dir}/postprocess_icesee.m'); exit"
+"{sif_path}" with-issm matlab -nodesktop -nosplash -r "cd('/opt/ISSM/examples'); ICESEE_RUN_DIR='{remote_run_dir}'; setenv('ICESEE_RUN_DIR','{remote_run_dir}'); run('{target_m}'); run('{remote_run_dir}/postprocess_icesee.m'); exit"
 '''
             elif model == "icepack":
-                if run_file_name.endswith(".py"):
+                if run_file_name.endswith((".py", ".ipynb")):
+                    # Icepack science + capture + export = ONE step, shared
+                    # with Cloud -- build_icepack_export_block(primary=True).
                     run_block = f'''
 mkdir -p "{remote_exec_dir}"
 {_stack_setup}
-apptainer exec \
--B "{remote_example_dir}":/workspace/example,"{remote_exec_dir}":/workspace/run{_stack_binds} \
-"{sif_path}" with-icepack bash -lc 'cd /workspace/example && python "{run_file_name}"'
-'''
-                elif run_file_name.endswith(".ipynb"):
-                    run_block = f'''
-mkdir -p "{remote_exec_dir}"
-{_stack_setup}
-apptainer exec \
--B "{remote_example_dir}":/workspace/example,"{remote_exec_dir}":/workspace/run{_stack_binds} \
-"{sif_path}" with-icepack bash -lc 'cd /workspace/example && jupyter nbconvert --to script "{run_file_name}" && python "{run_file_py}"'
 '''
                 else:
                     run_block = f'''
@@ -966,6 +991,24 @@ apptainer exec "{sif_path}" with-icepack python -c "import icepack; print('Icepa
                 raise RuntimeError(f"Unsupported model: {model}")
 
         body = container_setup + "\n" + run_block
+
+    # Icepack has no MATLAB neutral-export. Two appended, non-fatal steps:
+    #  1. a container-side Firedrake exporter -> structured outputs/ package
+    #     (cryostack.icepack.results: mesh + CG1 nodal fields);
+    #  2. a stdlib collector that folds in any figures / native files and never
+    #     clobbers the exporter's richer metadata.
+    if model == "icepack" and not test_mode:
+        body = body + "\n" + build_icepack_export_block(
+            run_dir=remote_run_dir, example_dir=remote_example_dir, backend=backend,
+            sif_path=locals().get("sif_path", ""),
+            spack_path=locals().get("spack_path", ""),
+            stack_binds=locals().get("_stack_binds", ""),
+            run_file_name=run_file_name, run_file_py=run_file_py,
+            primary=True,
+        )
+        body = body + "\n" + build_icepack_collection_block(
+            run_dir=remote_run_dir, example_dir=remote_example_dir,
+        )
 
     # ---------------------------------------------------------
     # Render sbatch
@@ -991,7 +1034,8 @@ apptainer exec "{sif_path}" with-icepack python -c "import icepack; print('Icepa
 set -euo pipefail
 
 cd "{remote_run_dir}"
-mkdir -p outputs/model outputs/figures # create expected output dirs
+mkdir -p outputs/model outputs/figures  # create expected output dirs
+export CRYOSTACK_RUN_STARTED="$(date +%s)"
 
 echo "[icesheets] Host: $(hostname)"
 echo "[icesheets] Date: $(date)"

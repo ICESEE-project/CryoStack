@@ -1,0 +1,3 @@
+CryoStack Connector distributables are published here at deploy time by
+build_deploy_connector.sh. They are NOT committed to the repository.
+Public route:  https://cryostack.eas.gatech.edu/downloads/connectors/

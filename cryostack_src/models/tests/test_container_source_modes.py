@@ -9,8 +9,8 @@ is provisioned inside the submitted Slurm job:
 * ``docker`` -- ``apptainer pull docker://<image_uri>`` into a per-image cache
 
 Every mode caches exactly one SIF per source/image identity, reuses it on later
-runs, needs no host Slurm/PMIx, keeps the launcher shim, and preserves the
-ICESEE_RUN_DIR + postprocess result contract.
+runs, needs no host Slurm/PMIx, pins ISSM's in-container ``mpiexec`` to the
+batch node, and preserves the ICESEE_RUN_DIR + postprocess result contract.
 """
 from __future__ import annotations
 
@@ -103,9 +103,11 @@ def _assert_common_container_contract(txt: str, sif_path: str):
     assert "#SBATCH --ntasks=8" in txt
     # the run uses the provisioned SIF
     assert f'"{sif_path}" with-issm matlab' in txt
-    # launcher shim + result/postprocess contract preserved
-    assert f'{_RUN_DIR}/.cryostack_launcher' in txt
-    assert 'exec mpiexec -np "$np" "$@"' in txt
+    # solver pinned to the batch node (no cross-node launcher in the SIF);
+    # the old .cryostack_launcher/srun shim is gone
+    assert "--env PRTE_MCA_ras=^slurm" in txt
+    assert f'{_RUN_DIR}/.cryostack_launcher' not in txt
+    assert 'exec mpiexec -np "$np" "$@"' not in txt
     assert f'"{_RUN_DIR}":"{_RUN_DIR}"' in txt
     assert f"ICESEE_RUN_DIR='{_RUN_DIR}'" in txt
     assert f"run('{_RUN_DIR}/postprocess_icesee.m'); exit" in txt

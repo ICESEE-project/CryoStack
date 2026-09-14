@@ -1,0 +1,432 @@
+# =============================================================================
+#
+# CryoStack
+# Unified Platform for Scientific Computing
+#
+# Module      : Frontend
+# Component   : CryoLauncher "Connect AWS Account" callbacks
+# File        : cloud_connect_runtime.py
+#
+# Description :
+#     UI callbacks for the AWS ACCOUNT onboarding block: Connect / Open AWS
+#     Setup / Verify / Re-check / Disconnect, plus the failed-verification
+#     recovery actions Retry connection / Change AWS account. Change AWS
+#     account is STAGED: it opens a separate pending-replacement card and
+#     never touches the active connection until that replacement itself
+#     passes verification. Non-blocking; touches widgets only on the event
+#     loop; owns no AWS semantics (AWSOnboarding does).
+#
+# Author(s)   :
+#     Brian Kyanjo
+#
+# Copyright (c) 2026 ICESEE Project
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# =============================================================================
+
+from __future__ import annotations
+
+import asyncio
+from collections.abc import Callable
+from dataclasses import dataclass
+
+from cryostack_src.cloud.connect import OnboardingConfigError, PrincipalNotConfiguredError
+from cryostack_src.cloud.connect.assume_role import AssumeRoleError
+from cryostack_src.frontend.cryolauncher.cloud_environment import (
+    escape_attr,
+    escape_text,
+    set_aws_account_view,
+    set_change_account_panel,
+)
+from cryostack_src.frontend.cryolauncher.cloud_runtime import _spawn
+
+
+@dataclass
+class AWSConnectCallbacks:
+    connect: Callable          # reveal the 3-step card + build the setup URL
+    verify: Callable           # assume role, confirm identity, persist
+    recheck: Callable          # re-verify an already-connected account
+    disconnect: Callable       # drop the (non-secret) connection metadata
+    refresh: Callable          # render current state (call on panel load)
+    #: -- failed-verification recovery (this connection is "error") --------
+    retry: Callable            # reopen the form for THIS account, same
+                                # ExternalId, Role ARN prepopulated from disk
+    #: -- Change AWS account: STAGED, non-destructive ----------------------
+    change_account: Callable   # start/resume a PENDING replacement attempt
+                                # (fresh ExternalId, separate slot) -- the
+                                # active connection is untouched
+    change_verify: Callable    # verify the pending replacement; only on
+                                # success does it become the active connection
+    change_cancel: Callable    # discard the pending replacement; back to
+                                # whatever the active connection already was
+    #: -- connected only: pick up a template change on the SAME stack ------
+    update_role: Callable      # open a CloudFormation Update stack link for
+                                # the active connection's existing stack --
+                                # never mints anything, never touches the
+                                # stored connection
+
+
+def build_aws_connect_callbacks(
+    *,
+    widgets,                          # CloudEnvironmentWidgets
+    onboarding_factory: Callable,     # () -> AWSOnboarding  (per-user, fresh)
+    log_output=None,
+    on_connected: Callable | None = None,   # (summary) -> None  [connected only]
+    on_state: Callable | None = None,       # (summary) -> None  [every state]
+    to_thread: Callable = asyncio.to_thread,
+    spawn: Callable = _spawn,
+) -> AWSConnectCallbacks:
+    """Wire the AWS ACCOUNT block to :class:`AWSOnboarding`.
+
+    ``onboarding_factory`` returns a fresh, per-user ``AWSOnboarding`` (the
+    connection is owned by the authenticated CryoStack user; nothing here
+    trusts a widget for identity).
+    """
+
+    _busy = {"on": False}
+
+    def _log(*parts: object) -> None:
+        if log_output is None:
+            return
+        with log_output:
+            print("[cloud][connect]", *parts)
+
+    def _render(summary: dict, *, setup_url: str | None = None,
+                form_open: bool | None = None) -> None:
+        set_aws_account_view(widgets, summary, setup_url=setup_url, form_open=form_open)
+        if on_state is not None:
+            on_state(summary)
+        if summary.get("status") == "connected" and on_connected is not None:
+            on_connected(summary)
+
+    def _config_error(err: Exception) -> None:
+        widgets.aws_account_detail.value = (
+            "<div style='font-size:11px;color:#b23c3c;line-height:1.45;'>"
+            f"{err}</div>"
+        )
+        _log("ERROR", err)
+
+    def _change_config_error(err: Exception) -> None:
+        """Same as ``_config_error`` but scoped to the pending-replacement
+        card -- never overwrites the ACTIVE connection's own detail text."""
+        widgets.change_account_status.value = (
+            "<div style='font-size:11px;color:#b23c3c;line-height:1.45;'>"
+            f"{err}</div>"
+        )
+        _log("ERROR", err)
+
+    def _set_buttons(disabled: bool) -> None:
+        for b in (
+            widgets.connect_button, widgets.verify_button,
+            widgets.recheck_button, widgets.disconnect_button,
+            widgets.retry_button, widgets.change_account_button,
+            widgets.change_verify_button, widgets.change_cancel_button,
+        ):
+            b.disabled = disabled
+
+    def _render_change(pending_summary: dict | None, *, setup_url: str | None = None,
+                        prefill_role_arn: bool = False) -> None:
+        set_change_account_panel(
+            widgets, pending_summary,
+            setup_url=setup_url, prefill_role_arn=prefill_role_arn,
+        )
+
+    def refresh(_=None) -> None:
+        try:
+            onboarding = onboarding_factory()
+            summary = onboarding.summary()
+            # A stored "pending" or "error" connection has a setup URL worth
+            # showing again after a page reload (a fresh AWSOnboarding built
+            # this render, so nothing survived in memory). begin() only
+            # reuses the on-disk record -- no AssumeRole, no ExternalId
+            # rotation -- so this is safe to do on every render.
+            setup_url = None
+            if summary.get("status") in ("pending", "error"):
+                try:
+                    setup_url = onboarding.begin().setup_url
+                except Exception:                       # noqa: BLE001
+                    setup_url = None                     # e.g. template URL unset
+            _render(summary, setup_url=setup_url)
+
+            # A pending replacement (Change AWS account started but not yet
+            # verified) is a SEPARATE, deliberately-persisted record -- see
+            # begin_change_account(). A page refresh must find it again so
+            # the switch can be resumed or cancelled; it is never silently
+            # discarded, and never silently promoted either.
+            pending_summary = onboarding.pending_replacement_summary()
+            change_setup_url = None
+            if pending_summary is not None:
+                try:
+                    change_setup_url = onboarding.begin_change_account().setup_url
+                except Exception:                       # noqa: BLE001
+                    change_setup_url = None
+            _render_change(pending_summary, setup_url=change_setup_url,
+                            prefill_role_arn=True)
+        except Exception as err:                        # noqa: BLE001
+            _config_error(err)
+
+    # -- Connect: mint/reuse the record, reveal the card, fill the link --
+    def connect(_=None) -> None:
+        if _busy["on"]:
+            return
+        try:
+            step = onboarding_factory().begin()
+        except (PrincipalNotConfiguredError, OnboardingConfigError) as err:
+            _config_error(err)
+            return
+        except Exception as err:                        # noqa: BLE001
+            _config_error(err)
+            return
+        _render(
+            onboarding_factory().summary(),
+            setup_url=step.setup_url,
+            form_open=True,
+        )
+        _log("ready — open AWS setup, create the role, then paste the Role ARN")
+
+    # -- Verify: the one blocking call, off the event loop --------------
+    def _verify_with(worker: Callable, *, prefix: str) -> None:
+        if _busy["on"]:
+            return
+        _busy["on"] = True
+        _set_buttons(True)
+        widgets.aws_account_status.value = (
+            "<span class='cryostack-status cryostack-status-running'>Verifying…</span>"
+        )
+
+        async def _drive() -> None:
+            try:
+                result = await to_thread(worker)
+                summary = onboarding_factory().summary()
+                _render(summary)
+                if result.ok:
+                    _log("connected:", result.connection.account_id)
+                else:
+                    _log("not verified —", result.connection.status_reason)
+            except (AssumeRoleError, OnboardingConfigError) as err:
+                _config_error(err)
+                _render(onboarding_factory().summary())
+            except Exception as err:                    # noqa: BLE001
+                _config_error(err)
+            finally:
+                _busy["on"] = False
+                _set_buttons(False)
+
+        spawn(_drive())
+
+    def verify(_=None) -> None:
+        role_arn = (widgets.role_arn_input.value or "").strip()
+        if not role_arn:
+            widgets.aws_account_detail.value = (
+                "<div style='font-size:11px;color:#b23c3c;'>"
+                "Paste the CryoStack access role ARN first.</div>"
+            )
+            return
+        _verify_with(
+            lambda: onboarding_factory().verify(role_arn=role_arn),
+            prefix="verify",
+        )
+
+    def recheck(_=None) -> None:
+        _verify_with(lambda: onboarding_factory().recheck(), prefix="recheck")
+
+    def disconnect(_=None) -> None:
+        if _busy["on"]:
+            return
+        try:
+            onboarding_factory().disconnect()
+        except Exception as err:                        # noqa: BLE001
+            _config_error(err)
+            return
+        widgets.role_arn_input.value = ""
+        _render({"status": "disconnected"})
+        _log("disconnected — connection metadata removed (no STS credentials "
+             "were stored)")
+
+    # -- Retry connection: repair the SAME account -----------------------
+    def retry(_=None) -> None:
+        """Reopen the connect card for a stranded (error/pending) connection
+        without losing anything: ``begin()`` reuses the on-disk record, so
+        the ExternalId is untouched, and the saved Role ARN (if any) is
+        prepopulated so a forgotten value is never a dead end."""
+        if _busy["on"]:
+            return
+        try:
+            step = onboarding_factory().begin()
+        except (PrincipalNotConfiguredError, OnboardingConfigError) as err:
+            _config_error(err)
+            return
+        except Exception as err:                        # noqa: BLE001
+            _config_error(err)
+            return
+        if step.connection.role_arn:
+            widgets.role_arn_input.value = step.connection.role_arn
+        _render(
+            onboarding_factory().summary(),
+            setup_url=step.setup_url,
+            form_open=True,
+        )
+        _log("retry — reopened this connection (same ExternalId); "
+             "saved Role ARN restored, edit if needed and Verify")
+
+    # -- Change AWS account: STAGED -- start/resume a pending replacement --
+    def change_account(_=None) -> None:
+        """Start (or resume) a replacement AWS-account attempt in the
+        SEPARATE pending slot. The active connection above is NOT read or
+        modified -- it stays exactly as it is until the replacement itself
+        passes Verify. Safe to click again (e.g. after a page reload):
+        reuses the same pending record and ExternalId rather than minting a
+        second one, so a role already created against it keeps working."""
+        if _busy["on"]:
+            return
+        try:
+            step = onboarding_factory().begin_change_account()
+        except (PrincipalNotConfiguredError, OnboardingConfigError) as err:
+            _change_config_error(err)
+            return
+        except Exception as err:                        # noqa: BLE001
+            _change_config_error(err)
+            return
+        _render_change(
+            onboarding_factory().pending_replacement_summary(),
+            setup_url=step.setup_url,
+            prefill_role_arn=True,
+        )
+        _log("connecting a new AWS account — your current connection above "
+             "is kept until this one verifies; Cancel returns to it with "
+             "nothing changed")
+
+    def change_verify(_=None) -> None:
+        role_arn = (widgets.change_role_arn_input.value or "").strip()
+        if not role_arn:
+            widgets.change_account_status.value = (
+                "<div style='font-size:11px;color:#b23c3c;'>"
+                "Paste the CryoStack access role ARN for the new account first.</div>"
+            )
+            return
+        if _busy["on"]:
+            return
+        _busy["on"] = True
+        _set_buttons(True)
+        widgets.change_account_status.value = (
+            "<span class='cryostack-status cryostack-status-running'>Verifying…</span>"
+        )
+        # Captured BEFORE verifying: the only way to tell "this just repaired
+        # the SAME account" (harmless -- a fresh ExternalId for an account
+        # already connected) from "this connected a genuinely different
+        # account" is to compare against what was active a moment ago.
+        previous_account_id = onboarding_factory().summary().get("account_id", "")
+
+        async def _drive() -> None:
+            try:
+                result = await to_thread(
+                    lambda: onboarding_factory().verify_pending_replacement(role_arn=role_arn)
+                )
+                if result.ok:
+                    new_account_id = result.connection.account_id
+                    _render(onboarding_factory().summary())    # now "connected"
+                    _render_change(onboarding_factory().pending_replacement_summary())  # -> None, hides the card
+                    if previous_account_id and previous_account_id == new_account_id:
+                        _log(
+                            "verified — this is the SAME AWS account "
+                            f"({new_account_id}) you were already connected to; "
+                            "the connection was refreshed with a new ExternalId. "
+                            "Retry connection avoids minting a second "
+                            "CloudFormation stack next time."
+                        )
+                    else:
+                        _log("connected a new AWS account:", new_account_id)
+                else:
+                    _render_change(
+                        onboarding_factory().pending_replacement_summary(),
+                    )
+                    _log("new account not verified —", result.connection.status_reason)
+            except (AssumeRoleError, OnboardingConfigError) as err:
+                _change_config_error(err)
+                _render_change(onboarding_factory().pending_replacement_summary())
+            except Exception as err:                    # noqa: BLE001
+                _change_config_error(err)
+            finally:
+                _busy["on"] = False
+                _set_buttons(False)
+
+        spawn(_drive())
+
+    def change_cancel(_=None) -> None:
+        """Abandon the staged replacement. The active connection -- its Role
+        ARN and ExternalId -- is completely untouched; nothing was ever sent
+        to AWS for the abandoned attempt beyond whatever AssumeRole calls the
+        user already made (and possibly failed) themselves."""
+        if _busy["on"]:
+            return
+        try:
+            onboarding_factory().cancel_change_account()
+        except Exception as err:                        # noqa: BLE001
+            _change_config_error(err)
+            return
+        widgets.change_role_arn_input.value = ""
+        _render_change(None)
+        _log("cancelled — back to your current AWS account connection, unchanged")
+
+    # -- Update role permissions: connected only, non-destructive ----------
+    def update_role(_=None) -> None:
+        """Point at the ACTIVE connection's EXISTING stack for a MANUAL
+        CloudFormation update -- same stack name, same ExternalId, same
+        Role ARN, all unchanged. This is navigation only: neither the
+        ExternalId nor the CryoStack principal ARN is ever placed in a
+        URL (see :meth:`AWSOnboarding.begin_update`'s docstring for why an
+        earlier auto-fill deep link was removed after a live regression).
+        Never creates a second connection, never disconnects or
+        re-verifies the current one, never rotates any credential."""
+        if _busy["on"]:
+            return
+        try:
+            step = onboarding_factory().begin_update()
+        except (PrincipalNotConfiguredError, OnboardingConfigError) as err:
+            widgets.update_role_link.value = (
+                "<div style='font-size:11px;color:#b23c3c;line-height:1.45;'>"
+                f"{err}</div>"
+            )
+            _log("ERROR", err)
+            return
+        except Exception as err:                        # noqa: BLE001
+            widgets.update_role_link.value = (
+                "<div style='font-size:11px;color:#b23c3c;line-height:1.45;'>"
+                f"{err}</div>"
+            )
+            _log("ERROR", err)
+            return
+        widgets.update_role_link.value = (
+            "<div style='font-size:11px;color:#66758d;line-height:1.55;"
+            "background:#f6f8fb;border:1px solid #e4e9f0;border-radius:6px;"
+            "padding:8px;margin-top:4px;'>"
+            "<b>Manual CloudFormation update</b> -- CryoStack cannot apply "
+            "this for you. "
+            f"<a href='{escape_attr(step.console_url)}' target='_blank' "
+            "rel='noopener' style='font-weight:600;'>▶ Open your stack in "
+            "the AWS Console</a><br>"
+            f"Select stack <code>{escape_text(step.stack_name)}</code>, "
+            "choose <b>Update</b> &rarr; <b>Replace current template</b>, "
+            "paste this template URL:<br>"
+            f"<code style='word-break:break-all;'>{escape_text(step.template_url)}</code><br>"
+            "and leave every existing parameter as <b>Use existing value</b> "
+            "-- do not change the ExternalId or CryoStack principal "
+            "parameters."
+            "</div>"
+        )
+        _log("update — opening the existing stack's console page "
+             f"({step.stack_name}) for a manual template update; "
+             "same role, same ExternalId, nothing auto-applied")
+
+    return AWSConnectCallbacks(
+        connect=connect,
+        verify=verify,
+        recheck=recheck,
+        disconnect=disconnect,
+        refresh=refresh,
+        retry=retry,
+        change_account=change_account,
+        change_verify=change_verify,
+        change_cancel=change_cancel,
+        update_role=update_role,
+    )

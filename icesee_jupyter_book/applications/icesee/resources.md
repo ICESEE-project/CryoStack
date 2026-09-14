@@ -420,7 +420,7 @@ Available application documentation includes:
 
 Return to the main platform documentation:
 
-[CryoStack Documentation](/documentation.html)
+<a href="../../documentation.html">CryoStack Documentation</a>
 
 ## Developer Resources
 
@@ -551,7 +551,7 @@ For reproducible issues, provide the smallest configuration that demonstrates th
 - Read [Getting Started with ICESEE](getting_started) to run a first experiment.
 - Use the [ICESEE User Manual](user_manual) for detailed configuration and troubleshooting.
 - Open [ICESEE](https://cryostack.eas.gatech.edu/icesee-gui/) through CryoStack.
-- Return to the main [CryoStack Documentation](/documentation.html).
+- Return to the main <a href="../../documentation.html">CryoStack Documentation</a>.
 
 :::{raw} html
   </div>

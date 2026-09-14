@@ -48,6 +48,41 @@ RELAY_PORT=8899
 cd "${REPO_ROOT}"
 
 
+# ------------------------------------------------------------
+# Shared connector-relay deployment token.
+#
+# Gates relay session creation so a session's owner_user_id is trustworthy and
+# anonymous session-creation spam is rejected. The GUI/Voila kernels and the
+# relay must see the same value, so it is exported here before either starts.
+# Persisted once to ~/.cryostack/relay_control_token (mode 0600).
+# ------------------------------------------------------------
+if [ -z "${CRYOSTACK_RELAY_CONTROL_TOKEN:-}" ]; then
+    CRYOSTACK_RELAY_CONTROL_TOKEN="$(
+        python3 -m icesee_jupyter_book.core.connector_relay_auth ensure
+    )"
+    export CRYOSTACK_RELAY_CONTROL_TOKEN
+fi
+
+
+# ------------------------------------------------------------
+# CryoStack Agent interaction mode (Basic | Advanced | Agent).
+#
+# The already-implemented "Agent" mode in the IceSheets gateway is opt-in via
+# CRYOSTACK_AGENT_PANEL and is off unless this is set. This deployment exposes
+# it, so default the flag on here (the same place the GUI/Voila kernels pick up
+# their shared environment). Still overridable -- run with
+# CRYOSTACK_AGENT_PANEL=0 to hide the mode again. This changes no code path:
+# Agent mode stays capped at PLAN with no submit backend wired.
+# ------------------------------------------------------------
+export CRYOSTACK_AGENT_PANEL="${CRYOSTACK_AGENT_PANEL:-1}"
+
+export AWS_PROFILE="${AWS_PROFILE:-cryostack-service}"
+
+export CRYOSTACK_AWS_PRINCIPAL_ARN="${CRYOSTACK_AWS_PRINCIPAL_ARN:-arn:aws:iam::713938953301:user/cryostack-service}"
+
+export CRYOSTACK_CF_TEMPLATE_URL="${CRYOSTACK_CF_TEMPLATE_URL:-https://cryostack-cloudformation-713938953301.s3.us-east-2.amazonaws.com/cryostack-execution-role.json}"
+
+
 # ============================================================
 # Helpers
 # ============================================================

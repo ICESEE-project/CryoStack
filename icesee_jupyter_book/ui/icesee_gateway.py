@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 import os
+import time as _time
+import uuid
+import html as html_lib
 import yaml
 import subprocess
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlencode
 import ipywidgets as W
@@ -25,6 +29,17 @@ from icesee_jupyter_book.core.connector_relay_client import (
 
 from icesee_jupyter_book.core import ssh_key_manager
 from icesee_jupyter_book.core.example_registry import EXAMPLES, enabled_names
+from cryostack_src.workspace import resolve_workspace_user, user_run_root, read_manifest
+from cryostack_src.resources.profiles import get_compute_profile, initial_remote_fields
+from cryostack_src.remote import RemoteBridge
+from cryostack_src.remote.access_state import (
+    enforce_remote_access,
+    verify_remote_identity,
+    identity_result_from_output,
+    can_reuse_connectivity_identity,
+    classify_ssh_failure,
+    SSH_KEY_NOT_AUTHORIZED,
+)
 from icesee_jupyter_book.core.config_io import load_yaml, dump_yaml
 from icesee_jupyter_book.core.example_discovery import (
     find_run_script,
@@ -56,10 +71,41 @@ from icesee_jupyter_book.core.remote_runner import (
     connector_get_public_key,
     RemoteSubmitResult,
 )
-from icesee_jupyter_book.core.cloud_runner import (
-    AWSBatchConfig,
-    aws_batch_status,
-    submit_cloud_example,
+from icesee_jupyter_book.core import run_records
+from icesee_jupyter_book.core.runs_manager import IceseeRunsManager
+from icesee_jupyter_book.core.results_package import discover_result_package
+from icesee_jupyter_book.core.cloud_bridge_adapter import (
+    IceseeCloudBridgeConfig,
+    build_icesee_cloud_bridge,
+    icesee_cloud_status,
+    icesee_cloud_terminate,
+    submit_icesee_cloud_run,
+    sync_icesee_cloud_results,
+)
+from cryostack_src.cloud.diagnostics import merge_aws_resources, resources_from_poll
+from icesee_jupyter_book.core.run_records import da_identity_from_params
+from cryostack_src.frontend.cryolauncher.panels.run_plan import build_run_plan_panel
+from cryostack_src.frontend.cryolauncher.panels.run_settings import build_run_settings_panel
+from cryostack_src.frontend.cryolauncher.panels.runtime_panel import build_runtime_panel
+from cryostack_src.frontend.cryolauncher.workspace.run_history import (
+    build_workspace_history_panel,
+)
+from cryostack_src.frontend.cryolauncher.workspace.run_details import build_run_details
+from cryostack_src.frontend.cryolauncher.workspace.explorer import build_workspace_explorer
+from cryostack_src.frontend.cryolauncher.workspace.toolbar import build_workspace_toolbar
+from cryostack_src.frontend.cryolauncher.cloud_environment import (
+    build_cloud_environment_card,
+    set_cloud_status,
+    set_run_estimate_view,
+    wire_matlab_license_widgets,
+)
+from cryostack_src.models.workflow_capabilities import resolve_workflow_capabilities
+from cryostack_src.frontend.cryolauncher.cloud_connect_runtime import build_aws_connect_callbacks
+from cryostack_src.frontend.cryolauncher.cloud_runtime import build_cloud_environment_ops
+from cryostack_src.cloud.review import InfrastructureReadiness
+from icesee_jupyter_book.core.cloud_review import (
+    build_icesee_cloud_review,
+    render_icesee_review_panel,
 )
 
 from icesee_jupyter_book.ui.shared_ssh_widgets import build_ssh_key_manager
@@ -72,6 +118,16 @@ from icesee_jupyter_book.ui.application_menus import (
 from icesee_jupyter_book.ui.shared_app_styles import (
     shared_application_styles,
 )
+from icesee_jupyter_book.ui.shared_remote_connection_panel import (
+    build_remote_connection_panel,
+    classify_bootstrap_result,
+)
+from icesee_jupyter_book.ui.shared_slurm_resources_panel import (
+    build_slurm_resources_panel,
+)
+from icesee_jupyter_book.ui.shared_validation import validate_slurm_resources
+from icesee_jupyter_book.ui.shared_observer_guard import UIRefreshCoordinator
+from cryostack_src import perf
 
 from icesee_jupyter_book.ui.application_menus import (
     build_icesee_app_menu,
@@ -87,9 +143,16 @@ from icesee_jupyter_book.ui.experiment_bridge import (
     load_experiment_bridge,
 )
 
+import getpass
+
 from icesee_jupyter_book.ui.workspace_bridge import (
     WorkspaceBridge,
     load_workspace_bridge,
+)
+from icesee_jupyter_book.ui.workspace_persistence import make_state_io
+from cryostack_src.workspace.resource_state import (
+    ResourceStateController,
+    strip_secrets,
 )
 
 from icesee_jupyter_book.core.experiment_status import (
@@ -168,94 +231,6 @@ def make_zip_from_dir(src_dir: Path, zip_path: Path):
             if p.is_file():
                 zf.write(p, arcname=p.relative_to(src_dir))
 
-def build_sidebar():
-    sidebar_html = """
-    <style>
-    .icesee-shell {
-      width: 100%;
-      display: flex;
-      min-height: 100vh;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-    }
-
-    .icesee-sidebar {
-      width: 260px;
-      min-width: 260px;
-      background: #f8f9fb;
-      border-right: 1px solid rgba(0,0,0,.08);
-      padding: 18px 14px;
-      box-sizing: border-box;
-    }
-
-    .icesee-sidebar h2 {
-      font-size: 18px;
-      margin: 0 0 16px 0;
-      font-weight: 800;
-    }
-
-    .icesee-nav-group {
-      margin: 18px 0 8px 0;
-      font-size: 13px;
-      font-weight: 800;
-      color: rgba(0,0,0,.75);
-      text-transform: uppercase;
-    }
-
-    .icesee-nav a {
-      display: block;
-      padding: 8px 10px;
-      margin: 2px 0;
-      border-radius: 8px;
-      color: #1f3b64;
-      text-decoration: none;
-      font-weight: 500;
-    }
-
-    .icesee-nav a:hover {
-      background: rgba(13,110,253,.08);
-    }
-
-    .icesee-nav a.active {
-      background: rgba(13,110,253,.12);
-      color: #0d6efd;
-      font-weight: 700;
-    }
-
-    .icesee-main {
-      flex: 1 1 auto;
-      min-width: 0;
-      padding: 18px;
-      box-sizing: border-box;
-    }
-    </style>
-
-    <div class="icesee-sidebar">
-      <h2>ICESEE</h2>
-
-      <div class="icesee-nav">
-        <a href="/index.html">Home</a>
-
-        <div class="icesee-nav-group">Getting Started</div>
-        <a href="/intro.html">ICESEE on GHUB</a>
-        <a href="/quickstart.html">Quickstart</a>
-        <a href="/icesee_workflow.html">ICESEE Workflow Overview</a>
-
-        <div class="icesee-nav-group">ICESEE-OnLINE</div>
-        <a class="active" href="/voila/render/icesee_jupyter_notebooks/icesee_app.ipynb">ICESEE GUI</a>
-        <a href="/icesee_jupyter_notebooks/icesheet_models.html">ICE-Sheet Modeling</a>
-
-        <div class="icesee-nav-group">Tutorials</div>
-        <a href="/icesee_jupyter_notebooks/run_lorenz96_da.html">Tutorial: Lorenz-96</a>
-
-        <div class="icesee-nav-group">Deployment Notes</div>
-        <a href="/running_with_containers.html">Running with Containers</a>
-        <a href="/icesee_hpc_coupling.html">ICESEE-HPC Coupling</a>
-        <a href="/user_manual.html">User Manual</a>
-      </div>
-    </div>
-    """
-    return W.HTML(sidebar_html)
-
 back_link = W.HTML("""
 <style>
 .icesee-back {
@@ -293,6 +268,7 @@ shared_styles = shared_application_styles()
 # UI builder (single entry point)
 # ============================================================
 def build_icesee_ui():
+    _perf_t0 = _time.perf_counter()
     try:
         load_cryostack_account_assets()
         load_experiment_bridge()
@@ -533,17 +509,28 @@ def build_icesee_ui():
 
         # =========================================================
         # Remote panel widgets
+        #
+        # Ownership: RESOURCE facts (host, port, partition, wall time) come from
+        # the ComputeProfile; USER x RESOURCE / USER fields (HPC username, remote
+        # directory, Slurm account, notification email) are BLANK until B2 and
+        # are never taken from the Voila service account's environment.
         # =========================================================
-        cluster_host = W.Text(value="login-phoenix-rh9.pace.gatech.edu", layout=W.Layout(width="320px"))
-        cluster_user = W.Text(value=os.environ.get("USER", ""), placeholder="username", layout=W.Layout(width="320px"))
-        cluster_port = W.IntText(value=22, layout=W.Layout(width="120px"))
-        # cluster_name_for_keys = W.Text(value="pace" , layout=W.Layout(width="320px"))
-        cluster_name_for_keys = W.Text(value="pace", placeholder="e.g. pace, ub-ccr, frontera", layout=W.Layout(width="320px"))
-        
+        _INITIAL_CLUSTER = "pace"
+        _rf = initial_remote_fields(_INITIAL_CLUSTER)
+
+        cluster_name_for_keys = W.Text(
+            value=_INITIAL_CLUSTER, placeholder="e.g. pace, ub-ccr, frontera",
+            continuous_update=False,   # resource switch on commit, not per keystroke
+            layout=W.Layout(width="320px"),
+        )
+        cluster_host = W.Text(value=_rf["login_host"], placeholder="resource login host", layout=W.Layout(width="320px"))
+        cluster_user = W.Text(value=_rf["hpc_username"], placeholder=_rf["username_hint"], layout=W.Layout(width="320px"))
+        cluster_port = W.IntText(value=_rf["ssh_port"], layout=W.Layout(width="120px"))
+
         auth_mode = W.ToggleButtons(
         options=[("Key-only", "key"), ("Bootstrap with password (one-time)", "bootstrap")],
         value="key",
-        layout=W.Layout(width="420px")
+        layout=W.Layout(width="auto", max_width="100%")
         )
 
         cluster_password = W.Password(
@@ -558,7 +545,7 @@ def build_icesee_ui():
             button_style="warning"
         )
 
-        remote_base_dir = W.Text(value="~/r-arobel3-0", layout=W.Layout(width="320px"))
+        remote_base_dir = W.Text(value=_rf["remote_directory"], placeholder="your remote working directory (required)", layout=W.Layout(width="320px"))
         remote_tag = W.Text(value="icesee", layout=W.Layout(width="220px"))
 
         exec_backend_choice = W.Dropdown(
@@ -575,9 +562,9 @@ def build_icesee_ui():
 
         access_mode_dd = W.Dropdown(
             options=[
+                ("CryoStack Connector (recommended)", "connector"),
+                ("Direct SSH from server (shared-trust / developer)", "direct"),
                 ("Auto", "auto"),
-                ("Direct SSH from server", "direct"),
-                ("Local Connector / VPN bridge", "connector"),
             ],
             value="connector",
             layout=W.Layout(width="320px"),
@@ -615,23 +602,93 @@ def build_icesee_ui():
             button_style="success",
         )
 
-        slurm_job_name = W.Text(value="ICESEE", layout=W.Layout(width="100%"))
-        slurm_time = W.Text(value="50:00:00", layout=W.Layout(width="100%"))
+        slurm_job_name = W.Text(value="ICESEE", layout=W.Layout(width="100%"))              # RUN
+        slurm_time = W.Text(value=_rf["wall_time"], layout=W.Layout(width="100%"))           # RESOURCE default
 
-        slurm_nodes = W.IntText(value=2, layout=W.Layout(width="100%"))
-        slurm_ntasks = W.IntText(value=24, layout=W.Layout(width="100%"))
-        slurm_tpn = W.IntText(value=24, layout=W.Layout(width="100%"))
+        slurm_nodes = W.IntText(value=2, layout=W.Layout(width="100%"))                      # RUN
+        slurm_ntasks = W.IntText(value=24, layout=W.Layout(width="100%"))                    # RUN
+        slurm_tpn = W.IntText(value=24, layout=W.Layout(width="100%"))                       # RUN
 
-        slurm_part = W.Text(value="cpu-large", layout=W.Layout(width="100%"))
-        slurm_mem = W.Text(value="256G", layout=W.Layout(width="100%"))
-        slurm_account = W.Text(value="gts-arobel3-atlas", layout=W.Layout(width="100%"))
-        slurm_mail = W.Text(value="bankyanjo@gmail.com", layout=W.Layout(width="100%"))
+        slurm_part = W.Text(value=_rf["partition"], layout=W.Layout(width="100%"))           # RESOURCE default
+        slurm_mem = W.Text(value="256G", layout=W.Layout(width="100%"))                             # RUN
+        slurm_account = W.Text(                                                                     # USER x RESOURCE -- blank
+            value=_rf["slurm_account"],
+            placeholder=("Slurm allocation (required for this resource)"
+                         if _rf["account_required"] else "Slurm allocation"),
+            layout=W.Layout(width="100%"),
+        )
+        slurm_mail = W.Text(                                                                        # USER -- blank
+            value=_rf["notification_email"],
+            placeholder="notification email (optional)",
+            layout=W.Layout(width="100%"),
+        )
 
         cluster_mpi_np = W.IntText(value=40, layout=W.Layout(width="100%"))
         cluster_model_nprocs = W.IntText(value=4, layout=W.Layout(width="100%"))
 
+        def _icesee_run_dir_base() -> Path:
+            """Per-user, per-app run root -- two authenticated CryoStack users
+            never share a run directory (the process-global BOOK/icesee_runs/
+            did). Falls back to the default location for an unauthenticated
+            session."""
+            try:
+                return user_run_root(app="icesee")
+            except Exception:
+                return None   # local_runner.run_dir() then uses its default
+
+        def _new_icesee_run_id() -> str:
+            return datetime.now().strftime("%Y%m%d_%H%M%S") + "-" + uuid.uuid4().hex[:6]
+
+        def _record_icesee_run(
+            *, run_dir, run_id, params, example, execution_mode, backend,
+            source="", run_target="", model_environment="", status="running",
+            jobid=None, remote_directory=None, extra_metadata=None,
+        ):
+            """Write a local .cryostack-run.json manifest for this ICESEE run
+            (run_records.record_run) without ever letting a manifest failure
+            interrupt the real run -- a warning in the log is the worst case."""
+            try:
+                return run_records.record_run(
+                    run_dir=run_dir, run_id=run_id,
+                    name=f"ICESEE {example} ({execution_mode})",
+                    params=params, example=example, execution_mode=execution_mode,
+                    backend=backend, source=source, run_target=run_target,
+                    model_environment=model_environment, status=status,
+                    jobid=jobid, remote_directory=remote_directory,
+                    extra_metadata=extra_metadata,
+                )
+            except Exception as _e:
+                with log_out:
+                    print("[history][WARN] could not record run:", type(_e).__name__, _e)
+                return None
+
+        def _update_icesee_run(run_dir, **kwargs):
+            """Update a previously recorded ICESEE run manifest. Same
+            never-break-the-run contract as _record_icesee_run."""
+            try:
+                return run_records.update_run(run_dir, **kwargs)
+            except Exception as _e:
+                with log_out:
+                    print("[history][WARN] could not update run history:", type(_e).__name__, _e)
+                return None
+
+        def _merge_icesee_aws_resources(run_dir_path, updates: dict) -> None:
+            """Merge ``updates`` into this run's persisted metadata['aws_resources']
+            (cryostack_src.cloud.diagnostics.merge_aws_resources: non-secret keys
+            only, never overwrites a known value with an empty one) so the
+            reused Workspace history panel's AWS-diagnostics console links work
+            for ICESEE cloud runs too -- the same pure snapshot mechanism
+            CryoLauncher's cloud runs already use."""
+            try:
+                manifest = Path(run_dir_path) / run_records.MANIFEST_NAME
+                existing = read_manifest(manifest).metadata.get("aws_resources") if manifest.is_file() else None
+            except Exception:
+                existing = None
+            merged = merge_aws_resources(existing, updates)
+            _update_icesee_run(run_dir_path, extra_metadata={"aws_resources": merged})
+
         def local_remote_cache_dir() -> Path:
-            rd = run_dir()
+            rd = run_dir(_icesee_run_dir_base(), _new_icesee_run_id())
             return rd / "_remote_fetch"
 
 
@@ -867,13 +924,20 @@ def build_icesee_ui():
             log_out.clear_output()
 
             try:
+                if SESSION.get("id"):
+                    prior = relay_check_status(SESSION["id"], force=True)
+                    if prior.get("state") in {"unknown", "expired", "superseded"}:
+                        SESSION.clear()
+
                 if SESSION.get("id") is None:
-                    sess = create_session()
+                    owner = resolve_workspace_user(require_authenticated=True)
+                    sess = create_session(owner_user_id=owner.user_id)
                     SESSION["id"] = sess["session_id"]
                     SESSION["ws_url"] = sess["ws_url"]
+                    SESSION["pairing_code"] = sess["pairing_code"]
 
                     connector_setup_link.value = f"""
-                    <a href="https://cryostack.eas.gatech.edu/connect/?session={SESSION['id']}"
+                    <a href="https://cryostack.eas.gatech.edu/connect/?session={SESSION['id']}&app=icesee"
                     target="_blank"
                     style="
                         display:inline-block;
@@ -884,30 +948,41 @@ def build_icesee_ui():
                         text-decoration:none;
                         font-weight:700;
                         margin:6px 0;">
-                    Open ICESEE Connector Setup
+                    Open CryoStack Connector Setup
                     </a>
                     """
 
                 st = relay_check_status(SESSION["id"])
+                online = bool(st.get("online"))
 
                 relay_status.value = f"""
                 <div style="
-                    border:1px solid rgba(13,110,253,.18);
-                    background:rgba(13,110,253,.06);
-                    border-radius:12px;
-                    padding:12px;
-                    line-height:1.5;
-                    margin:8px 0;
+                    border:1px solid {'rgba(25,135,84,.25)' if online else 'rgba(13,110,253,.18)'};
+                    background:{'rgba(25,135,84,.08)' if online else 'rgba(13,110,253,.06)'};
+                    border-radius:12px; padding:12px; line-height:1.6; margin:8px 0;
                 ">
-                <b>Connector session:</b> {SESSION["id"]}<br>
-                <b>Status:</b> {"online ✅" if st.get("online") else "waiting for connector"}<br>
-                <b>WebSocket path:</b> {SESSION["ws_url"]}
+                  <b>Connector:</b> {'connected ✅' if online else 'waiting for connector'}<br>
+                  <b>Pairing code:</b>
+                  <code style="font-size:15px;background:#eef1f4;padding:2px 8px;border-radius:6px;">
+                  {SESSION.get('pairing_code', '—')}</code><br>
+                  <span style="color:#5f6b7a;font-size:13px;">
+                  Enter this code in the CryoStack Connector on your workstation
+                  (“Pair with CryoStack…”). One-time; expires with this session.
+                  </span>
+                  <details style="margin-top:8px;">
+                    <summary style="cursor:pointer;color:#5f6b7a;font-size:13px;">Diagnostics</summary>
+                    <div style="font-size:12px;color:#5f6b7a;margin-top:4px;">
+                      session id: {SESSION['id']}<br>
+                      ws path: {SESSION['ws_url']}<br>
+                      relay state: {st.get('state', 'unknown')}
+                    </div>
+                  </details>
                 </div>
                 """
 
                 with log_out:
-                    print("[connector] Session ID:", SESSION["id"])
-                    print("[connector] Status:", st)
+                    print("[connector] pairing code:", SESSION.get("pairing_code"))
+                    print("[connector] relay state:", st.get("state"))
 
             except Exception as e:
                 relay_status.value = ""
@@ -920,6 +995,69 @@ def build_icesee_ui():
             ondemand_box.layout.display = "none" if is_ssh else "block"
 
         remote_backend.observe(_toggle_remote_backend, names="value")
+
+        def _sync_resource_facts(_=None):
+            # RESOURCE facts follow the selected resource; personal fields
+            # (username, remote dir, account, email) are never touched here.
+            rf = initial_remote_fields(cluster_name_for_keys.value)
+            cluster_host.value = rf["login_host"]
+            cluster_port.value = rf["ssh_port"]
+            cluster_user.placeholder = rf["username_hint"]
+            slurm_part.value = rf["partition"]
+            slurm_time.value = rf["wall_time"]
+            # B4: resource-aware auth options + manual key-registration checklist.
+            try:
+                remote_conn_panel.apply_profile(
+                    get_compute_profile(cluster_name_for_keys.value or "")
+                )
+            except NameError:
+                pass
+
+        # --- B2: authenticated user x resource personal-settings persistence ---
+        def _b2_read_personal() -> dict:
+            return {
+                "hpc_username": cluster_user.value,
+                "remote_directory": remote_base_dir.value,
+                "account": slurm_account.value,
+                "email": slurm_mail.value,
+                "access_mode": access_mode_dd.value,
+                "auth_mode": auth_mode.value,
+            }
+
+        def _b2_apply_personal(s: dict) -> None:
+            cluster_user.value = s.get("hpc_username", "") or ""
+            remote_base_dir.value = s.get("remote_directory", "") or ""
+            slurm_account.value = s.get("account", "") or ""
+            slurm_mail.value = s.get("email", "") or ""
+            if s.get("access_mode") in {"auto", "direct", "connector"}:
+                access_mode_dd.value = s["access_mode"]
+            _saved_auth = s.get("auth_mode")
+            if _saved_auth in {t for _, t in auth_mode.options}:
+                auth_mode.value = _saved_auth
+
+        _b2_load, _b2_save = make_state_io(
+            workspace_bridge, "icesee",
+            resolve_workspace_user(require_authenticated=False).user_id,
+        )
+        resource_state = ResourceStateController(
+            load_state=_b2_load, save_state=_b2_save,
+            read_personal=_b2_read_personal, apply_personal=_b2_apply_personal,
+            resource_name=lambda: cluster_name_for_keys.value,
+            set_resource_name=lambda n: setattr(cluster_name_for_keys, "value", n),
+            service_username=(os.environ.get("USER") or getpass.getuser() or ""),
+        )
+
+        # shared observer-suppression primitive: a resource switch / B2
+        # hydration is one batch of programmatic .value = ... assignments, not
+        # a dozen independent observer fan-outs.
+        ui_refresh = UIRefreshCoordinator()
+
+        def _on_resource_changed(change):
+            with ui_refresh.batch():
+                resource_state.switch_resource(change.get("old"), change.get("new"))
+                _sync_resource_facts()
+
+        cluster_name_for_keys.observe(_on_resource_changed, names="value")
         _toggle_remote_backend()
         W.HBox([W.HTML("<div class='icesee-lbl'>Backend:</div>"), remote_backend], layout=W.Layout(gap="12px")),
         ssh_box,
@@ -953,7 +1091,7 @@ def build_icesee_ui():
             sync_quick_into_widgets()
             cfg_yaml = build_config_from_widgets()
 
-            rd = run_dir()
+            rd = run_dir(_icesee_run_dir_base(), _new_icesee_run_id())
             dump_yaml(cfg_yaml, rd / "params.yaml")
 
             # write slurm script locally so user can upload via OnDemand Files
@@ -1044,6 +1182,8 @@ def build_icesee_ui():
             result = connector_get_public_key(
                 SESSION["id"],
                 cluster_name=cluster_name_for_keys.value or "pace",
+                hpc_username=cluster_user.value.strip(),
+                host=cluster_host.value.strip(),
             )
 
             with log_out:
@@ -1060,6 +1200,12 @@ def build_icesee_ui():
 
             return result
 
+        def _bootstrap_panel(state, detail=""):
+            try:
+                remote_conn_panel.set_bootstrap_state(state, detail)
+            except (NameError, AttributeError):
+                pass
+
         def on_bootstrap_keys(_=None):
             log_out.clear_output()
             set_status("running")
@@ -1069,14 +1215,29 @@ def build_icesee_ui():
             port = int(cluster_port.value)
             password = cluster_password.value
 
+            if not host or not user:
+                set_status("fail")
+                _bootstrap_panel("connector_failed", "Provide Host + HPC username first.")
+                return
+            if not password:
+                set_status("fail")
+                _bootstrap_panel("password_failed", "Enter your HPC password (used once, never stored).")
+                return
+
+            bootstrap_btn.disabled = True
+            _bootstrap_panel("registering")
+
             try:
-                if access_mode_dd.value == "connector":
+                use_connector = should_use_connector()
+                if use_connector:
                     if not SESSION.get("id"):
                         create_or_refresh_connector_session()
-
-                    st = relay_check_status(SESSION["id"])
+                    st = relay_check_status(SESSION["id"], force=True)
                     if not st.get("online"):
                         set_status("fail")
+                        _bootstrap_panel("connector_failed",
+                                         "The CryoStack Connector is not connected. "
+                                         "Pair it, then try again.")
                         with log_out:
                             print("[connector][ERROR] Connector session is not online.")
                         return
@@ -1086,62 +1247,81 @@ def build_icesee_ui():
                     user=user,
                     port=port,
                     password=password,
-                    access_mode="connector" if access_mode_dd.value == "connector" else "direct",
+                    access_mode="connector" if use_connector else "direct",
                     session_id=SESSION.get("id"),
                     cluster_name=cluster_name_for_keys.value or "pace",
                 )
+                cluster_password.value = ""
 
                 with log_out:
                     for msg in result.get("messages", []):
                         print(msg)
+                    if (result.get("stdout") or "").strip():
+                        print("--- stdout ---"); print(result["stdout"].strip())
+                    if (result.get("stderr") or "").strip():
+                        print("--- stderr ---"); print(result["stderr"].strip())
 
-                    if result.get("stdout"):
-                        print("--- stdout ---")
-                        print(result["stdout"].strip())
-
-                    if result.get("stderr"):
-                        print("--- stderr ---")
-                        print(result["stderr"].strip())
-
-                if result.get("ok"):
+                verdict = classify_bootstrap_result(result)
+                if verdict == "installed":
                     set_status("done")
                     auth_mode.value = "key"
-                    cluster_password.value = ""
+                    _bootstrap_panel("verifying")
                     with log_out:
-                        print("[auth] ✅ Passwordless SSH is working.")
+                        print("[auth] Public key installed on the resource — verifying access…")
+                    try:
+                        run_example_remote_test()
+                    except Exception as _e:
+                        _bootstrap_panel("connector_failed")
+                        with log_out:
+                            print("[auth] re-check skipped:", type(_e).__name__, _e)
                 else:
                     set_status("fail")
-                    # with log_out:
-                    #     print("[auth][ERROR] Bootstrap failed.")
-
-                    # status_chip.value = status_html("fail")
-                    if should_use_connector():
-                        show_connector_public_key_help()
-                    else:
-                        with log_out:
-                            print()
-                            print("[ssh] Direct/server-side bootstrap failed.")
-                            print("[ssh] Use the SSH Key Manager below only for direct SSH from this server.")
+                    _bootstrap_panel(verdict)
+                    with log_out:
+                        print(f"[auth] bootstrap did not complete (reason: "
+                              f"{result.get('reason') or verdict}).")
 
             except Exception as e:
+                cluster_password.value = ""
                 set_status("fail")
+                _bootstrap_panel("timed_out" if "timeout" in type(e).__name__.lower()
+                                 else "connector_failed")
                 with log_out:
                     print("[auth][ERROR]", type(e).__name__, e)
+            finally:
+                bootstrap_btn.disabled = False
+                cluster_password.value = ""     # never persisted/logged
 
         # =========================================================
-        # Cloud panel widgets (AWS Batch)
+        # Cloud panel -- the SAME shared Cloud Environment component
+        # CryoLauncher uses (Provider/Region, AWS ACCOUNT, INFRASTRUCTURE,
+        # Prepare Cloud, RUN ESTIMATE, Review & Launch, Advanced cloud
+        # settings), not an ICESEE imitation of it. Region/profile/bucket/
+        # queue/job-definition/job-name are ITS widgets (aliased below for
+        # the existing submit/status/terminate handlers, unchanged) -- the
+        # raw fields now live only under its own Advanced cloud settings
+        # disclosure, never as the primary Cloud UI.
         # =========================================================
-        aws_region = W.Text(value="us-east-1", layout=W.Layout(width="220px"))
-        aws_profile = W.Text(value="", placeholder="(optional) AWS profile", layout=W.Layout(width="220px"))
-        cloud_bucket = W.Text(value="", placeholder="s3://bucket/prefix", layout=W.Layout(width="320px"))
+        icesee_cloud_environment = build_cloud_environment_card(
+            region="us-east-1", profile="", s3_prefix="",
+            job_queue="", job_definition="", job_name="icesee",
+        )
+        aws_region = icesee_cloud_environment.region
+        aws_profile = icesee_cloud_environment.profile
+        cloud_bucket = icesee_cloud_environment.s3_prefix
+        batch_job_queue = icesee_cloud_environment.job_queue
+        batch_job_def = icesee_cloud_environment.job_definition
+        batch_job_name = icesee_cloud_environment.job_name
 
-        batch_job_queue = W.Text(value="", placeholder="AWS Batch job queue", layout=W.Layout(width="320px"))
-        batch_job_def = W.Text(value="", placeholder="job definition (name[:rev])", layout=W.Layout(width="320px"))
-        batch_job_name = W.Text(value="icesee", layout=W.Layout(width="220px"))
-
-        cloud_submit_btn = W.Button(description="Submit", icon="cloud-upload", button_style="warning")
+        # Status/Logs/Terminate for an in-flight job remain standalone --
+        # they live in the Workspace Run Log toolbar and the Execution
+        # panel (unchanged from the prior checkpoint), never inside the
+        # Cloud Environment card itself. There is no standalone cloud
+        # submit button any more: submission only happens through the
+        # shared card's own Review & Launch.
         cloud_status_btn = W.Button(description="Check status", icon="search", button_style="")
         cloud_logs_btn = W.Button(description="Logs hint", icon="file-text", button_style="")
+        cloud_terminate_btn = W.Button(description="Terminate cloud job", icon="stop", button_style="danger")
 
         # =========================================================
         # Actions: Local / Remote / Cloud
@@ -1155,13 +1335,27 @@ def build_icesee_ui():
             set_status("running")
             log_out.clear_output()
 
+            _run_id = _new_icesee_run_id()
+
             try:
                 result = run_local_example(
                     example_cfg=example_cfg,
                     config=cfg,
                     output_label=output_label_dd.value,
                     generate_report=gen_report.value,
+                    run_dir_base=_icesee_run_dir_base(),
+                    run_dir_name=_run_id,
                 )
+
+                _record_icesee_run(
+                    run_dir=result.run_dir, run_id=_run_id, params=cfg,
+                    example=example_dd.value, execution_mode="local",
+                    backend="local", status="done" if result.success else "failed",
+                )
+                try:
+                    (result.run_dir / "run.log").write_text(result.log_text, encoding="utf-8")
+                except Exception:
+                    pass   # the Run Log tab falls back to "no local log captured"
 
                 with log_out:
                     print("[local] Example :", example_dd.value)
@@ -1226,18 +1420,75 @@ def build_icesee_ui():
                     if not SESSION.get("id"):
                         create_or_refresh_connector_session()
 
-                    st = relay_check_status(SESSION["id"])
+                    st = relay_check_status(SESSION["id"], force=True)
                     if not st.get("online"):
                         set_status("fail")
                         with log_out:
                             print("[connector][ERROR] Connector session is not online.")
                         return
-    
+
+                # B3: remote-access identity gate -- verify the real remote
+                # identity vs the configured HPC username; block Run on mismatch.
+                _resolved = "connector" if use_connector else "direct"
+                _gate = enforce_remote_access(
+                    RemoteBridge(
+                        mode=_resolved, host=host, user=user, port=port,
+                        session_id=SESSION.get("id"),
+                        cluster_name=cluster_name_for_keys.value or "pace",
+                    ),
+                    profile=get_compute_profile(cluster_name_for_keys.value or "pace"),
+                    access_mode=access_mode_dd.value,
+                    resolved_mode=_resolved,
+                    hpc_username=user,
+                    remote_directory=remote_base_dir.value.strip(),
+                    connector_online=(
+                        relay_check_status(SESSION["id"]).get("online")
+                        if _resolved == "connector" and SESSION.get("id") else None
+                    ),
+                )
+                for _w in _gate.warnings:
+                    with log_out:
+                        print(_w)
+                try:
+                    remote_conn_panel.set_status_from_access(_gate.state)
+                except NameError:
+                    pass
+                if not _gate.ok:
+                    set_status("fail")
+                    with log_out:
+                        for _m in _gate.messages:
+                            print(_m)
+                    return
+
+                # B4: pre-submit Slurm resource validation (internal consistency
+                # + syntax only; no invented site limits).
+                _slurm_errors = validate_slurm_resources(
+                    nodes=slurm_nodes.value,
+                    tasks=slurm_ntasks.value,
+                    tasks_per_node=slurm_tpn.value,
+                    wall_time=slurm_time.value,
+                    memory=slurm_mem.value,
+                    account=slurm_account.value,
+                    account_required=get_compute_profile(
+                        cluster_name_for_keys.value or "pace"
+                    ).account_required,
+                )
+                if _slurm_errors:
+                    set_status("fail")
+                    with log_out:
+                        print("[slurm][ERROR] Fix the job resource request:")
+                        for _m in _slurm_errors:
+                            print("  -", _m)
+                    return
+
                 example_cfg = EXAMPLES[example_dd.value]
 
                 sync_quick_into_widgets()
                 cfg_yaml = build_config_from_widgets()
                 params_text = yaml.safe_dump(cfg_yaml, sort_keys=False)
+
+                _run_id = _new_icesee_run_id()
+                _rd = run_dir(_icesee_run_dir_base(), _run_id)
 
                 if exec_backend_choice.value == "spack":
                     if use_connector:
@@ -1368,6 +1619,17 @@ def build_icesee_ui():
 
                 STATUS["remote_dir"] = result.remote_dir
                 STATUS["jobid"] = result.jobid
+                STATUS["local_run_dir"] = str(_rd)
+
+                _record_icesee_run(
+                    run_dir=_rd, run_id=_run_id, params=cfg_yaml,
+                    example=example_dd.value, execution_mode="remote",
+                    backend=exec_backend_choice.value,
+                    source=example_dd.value,
+                    run_target=cluster_name_for_keys.value or host,
+                    status="running", jobid=result.jobid,
+                    remote_directory=result.remote_dir,
+                )
 
                 experiment_bridge.create(
                     application="icesee",
@@ -1453,6 +1715,10 @@ def build_icesee_ui():
         def run_example_remote_test():
             log_out.clear_output()
             set_status("running")
+            try:
+                remote_conn_panel.set_status("checking")
+            except NameError:
+                pass
 
             host = cluster_host.value.strip()
             user = cluster_user.value.strip()
@@ -1471,6 +1737,73 @@ def build_icesee_ui():
                 with log_out:
                     print("[remote][ERROR] Provide Host + User first.")
                 return
+
+            def _report_identity(resolved_mode: str, precheck_stdout: str = "") -> None:
+                try:
+                    _vcmd = get_compute_profile(
+                        cluster_name_for_keys.value or "pace").verification_command
+                    # The Test SSH probe just ran `hostname && whoami && pwd &&
+                    # date`. When identity is just `whoami`, reuse that instead
+                    # of a second remote round trip. (The Run gate re-verifies
+                    # fresh regardless.)
+                    _lines = [ln.strip() for ln in (precheck_stdout or "").splitlines() if ln.strip()]
+                    if len(_lines) >= 2 and can_reuse_connectivity_identity(_vcmd):
+                        _v = identity_result_from_output(
+                            whoami_line=_lines[1], expected_username=user
+                        )
+                    else:
+                        _v = verify_remote_identity(
+                            RemoteBridge(mode=resolved_mode, host=host, user=user, port=port,
+                                         session_id=SESSION.get("id"),
+                                         cluster_name=cluster_name_for_keys.value or "pace"),
+                            verification_command=_vcmd,
+                            expected_username=user,
+                        )
+                    with log_out:
+                        if _v.ok:
+                            print(f"[identity] verified — remote '{_v.remote_identity}' "
+                                  "matches the configured HPC username.")
+                        elif _v.mismatch:
+                            print(f"[identity][MISMATCH] remote '{_v.remote_identity}' != "
+                                  f"configured '{_v.expected}'. Run is blocked until this matches.")
+                        else:
+                            print(f"[identity] could not verify remote identity: {_v.error}")
+                    try:
+                        remote_conn_panel.set_status(
+                            "verified" if _v.ok else "mismatch" if _v.mismatch else "failed"
+                        )
+                    except NameError:
+                        pass
+                except Exception as _e:
+                    with log_out:
+                        print("[identity] verification skipped:", type(_e).__name__, _e)
+                    try:
+                        remote_conn_panel.set_status("failed")
+                    except NameError:
+                        pass
+
+            def _classify_and_report_failure(res) -> None:
+                """A failed connectivity probe: a public-key rejection is an
+                actionable "register your CryoStack key" state (B3 namespaced
+                key), everything else stays a generic failure."""
+                _kind = classify_ssh_failure(
+                    stderr=(res or {}).get("stderr", ""),
+                    stdout=(res or {}).get("stdout", ""),
+                    returncode=(res or {}).get("returncode"),
+                )
+                try:
+                    _profile = get_compute_profile(cluster_name_for_keys.value or "pace")
+                    if _kind == SSH_KEY_NOT_AUTHORIZED:
+                        remote_conn_panel.set_key_unregistered(_profile)
+                        with log_out:
+                            print("[access] SSH key not registered — the Connector "
+                                  "reached the resource, but this CryoStack key is "
+                                  "not yet authorized for your account. See the "
+                                  "Remote connection panel for how to register it.")
+                    else:
+                        remote_conn_panel.set_status("failed")
+                except NameError:
+                    pass
 
             try:
 
@@ -1508,7 +1841,12 @@ def build_icesee_ui():
                             print("--- stderr ---")
                             print(payload["stderr"].strip())
 
-                    set_status("done" if payload.get("ok") else "fail")
+                    if payload.get("ok"):
+                        _report_identity("connector", payload.get("stdout") or "")
+                        set_status("done")
+                    else:
+                        set_status("fail")
+                        _classify_and_report_failure(payload)
                     return
                 result = remote_test_connection(host, user, port)
 
@@ -1548,7 +1886,12 @@ def build_icesee_ui():
                             print("⚠ Hostname not reachable.")
                             print("Check the cluster hostname.")
 
-                set_status("done" if result["ok"] else "fail")
+                if result["ok"]:
+                    _report_identity("direct", result.get("stdout") or "")
+                    set_status("done")
+                else:
+                    set_status("fail")
+                    _classify_and_report_failure(result)
 
             except subprocess.TimeoutExpired:
                 set_status("fail")
@@ -1602,6 +1945,11 @@ def build_icesee_ui():
                         job_id=str(jobid),
                         **experiment_update,
                     )
+                    if STATUS.get("local_run_dir"):
+                        _update_icesee_run(
+                            Path(STATUS["local_run_dir"]),
+                            status=experiment_update.get("status"),
+                        )
 
                 with log_out:
                     if result["source"] == "squeue":
@@ -1744,6 +2092,36 @@ def build_icesee_ui():
                 with log_out:
                     print("[remote][ERROR]", type(e).__name__, e)
 
+        def _resolve_icesee_cloud_execution(*, region_override: str | None = None):
+            """Fresh per-operation credential resolution -- the SAME shared
+            resolver CryoLauncher uses (resolve_cloud_execution), not an
+            ICESEE-only credential path. A user who already connected a BYO
+            AWS account (through CryoLauncher's existing Connect AWS Account
+            UI -- the connection is scoped to the authenticated CryoStack
+            user, not the app) gets that same account here automatically, no
+            new ICESEE UI required. No connection -> unchanged developer/
+            ambient-profile behavior from the live Cloud widgets.
+
+            ``region_override`` lets status/terminate resolve against a
+            historical run's OWN persisted region (metadata['aws_resources'])
+            rather than whatever the Cloud panel's region field currently
+            says -- a later visit must not silently query the wrong region
+            just because the live widget has since changed."""
+            from cryostack_src.cloud.connect import resolve_cloud_execution
+
+            return resolve_cloud_execution(
+                region_hint=(region_override or aws_region.value.strip()),
+                profile_hint=(aws_profile.value.strip() or None),
+                model="icesee",
+            )
+
+        def _icesee_cloud_bridge_config(execution) -> IceseeCloudBridgeConfig:
+            return IceseeCloudBridgeConfig(
+                region=execution.region,
+                profile=execution.profile,
+                credentials=execution.credentials,
+            )
+
         def run_example_cloud_submit():
             example_cfg = EXAMPLES[example_dd.value]
 
@@ -1759,21 +2137,74 @@ def build_icesee_ui():
                 print("profile:", aws_profile.value.strip() or "(default)")
                 print("s3     :", cloud_bucket.value.strip())
 
+            _run_id = _new_icesee_run_id()
+            _rd = run_dir(_icesee_run_dir_base(), _run_id)
+
             try:
-                result = submit_cloud_example(
+                execution = _resolve_icesee_cloud_execution()
+                bridge = build_icesee_cloud_bridge(_icesee_cloud_bridge_config(execution))
+
+                # BYO-AWS: blank fields resolve to the connected account's
+                # prepared defaults (same "blank = prepared default" contract
+                # CryoLauncher's Cloud Environment uses) -- s3_prefix always
+                # carries a 'runs' path segment since aws_batch_submit
+                # requires one. Developer mode (no connection) is completely
+                # unchanged: every field must still be typed by hand.
+                s3_prefix = cloud_bucket.value.strip()
+                job_queue = batch_job_queue.value.strip()
+                job_definition = batch_job_def.value.strip()
+                if execution.is_byo and execution.defaults is not None:
+                    s3_prefix = s3_prefix or f"s3://{execution.defaults.bucket}/runs"
+                    job_queue = job_queue or execution.defaults.job_queue
+                    job_definition = job_definition or execution.defaults.job_definition
+
+                result = submit_icesee_cloud_run(
+                    bridge,
                     example_name=example_dd.value,
                     example_cfg=example_cfg,
                     config=cfg_yaml,
-                    region=aws_region.value.strip() or "us-east-1",
-                    profile=(aws_profile.value.strip() or None),
-                    s3_prefix=cloud_bucket.value.strip(),
-                    job_queue=batch_job_queue.value.strip(),
-                    job_definition=batch_job_def.value.strip(),
+                    s3_prefix=s3_prefix,
+                    job_queue=job_queue,
+                    job_definition=job_definition,
                     job_name=(batch_job_name.value.strip() or "icesee"),
+                    # the same NP/Nens/model_nprocs contract Remote's own
+                    # SLURM template unconditionally threads into mpirun --
+                    # a real ICESEE Batch entrypoint reads these to launch
+                    # the identical command (see MAX_SINGLE_TASK_MPI_RANKS).
+                    np=int(cluster_mpi_np.value),
+                    nens=int(ens_sl.value),
+                    model_nprocs=int(cluster_model_nprocs.value),
+                    run_dir_base=_icesee_run_dir_base(),
+                    run_dir_name=_run_id,
                 )
 
-                STATUS["batch_job_id"] = result.batch_job_id
-                STATUS["s3_run"] = result.s3_run
+                STATUS["batch_job_id"] = result.job_id
+                STATUS["s3_run"] = result.working_directory
+                STATUS["local_run_dir"] = str(_rd)
+
+                _record_icesee_run(
+                    run_dir=_rd, run_id=_run_id,
+                    params=cfg_yaml, example=example_dd.value,
+                    execution_mode="cloud", backend="aws",
+                    source=example_dd.value,
+                    run_target=job_definition,
+                    status="running", jobid=result.job_id,
+                    remote_directory=result.working_directory,
+                    extra_metadata={
+                        "cloud_account_mode": execution.mode,
+                        "cluster_mpi_np": cluster_mpi_np.value,
+                        "cluster_model_nprocs": cluster_model_nprocs.value,
+                        "ensemble_size": int(ens_sl.value),
+                    },
+                )
+                _merge_icesee_aws_resources(_rd, {
+                    "region": execution.region,
+                    "account_id": execution.account_id,
+                    "batch_job_id": result.job_id,
+                    "job_queue": job_queue,
+                    "job_definition": job_definition,
+                    "s3_run": result.working_directory,
+                })
 
                 set_status("done")
                 with log_out:
@@ -1785,21 +2216,57 @@ def build_icesee_ui():
                 with log_out:
                     print("[cloud][ERROR]", type(e).__name__, e)
 
+        def _persisted_icesee_cloud_region() -> str | None:
+            if not STATUS.get("local_run_dir"):
+                return None
+            try:
+                manifest = Path(STATUS["local_run_dir"]) / run_records.MANIFEST_NAME
+                if not manifest.is_file():
+                    return None
+                return (read_manifest(manifest).metadata.get("aws_resources") or {}).get("region") or None
+            except Exception:
+                return None
+
         def run_example_cloud_status():
             if not STATUS.get("batch_job_id"):
                 with log_out:
                     print("[cloud] No Batch job id yet. Submit first.")
                 return
-            cfg = AWSBatchConfig(
-                region=aws_region.value.strip() or "us-east-1",
-                profile=(aws_profile.value.strip() or None),
-            )
             try:
-                st = aws_batch_status(cfg, STATUS["batch_job_id"])
+                execution = _resolve_icesee_cloud_execution(
+                    region_override=_persisted_icesee_cloud_region(),
+                )
+                bridge = build_icesee_cloud_bridge(_icesee_cloud_bridge_config(execution))
+                st = icesee_cloud_status(bridge, job_id=STATUS["batch_job_id"])
                 with log_out:
-                    print("[cloud] status:", st["status"])
-                    if st["reason"]:
-                        print("[cloud] reason:", st["reason"])
+                    print("[cloud] status:", st.raw_state)
+                    if st.reason:
+                        print("[cloud] reason:", st.reason)
+                if STATUS.get("local_run_dir"):
+                    _update_icesee_run(Path(STATUS["local_run_dir"]), status=st.state)
+                    _merge_icesee_aws_resources(
+                        Path(STATUS["local_run_dir"]), resources_from_poll(st.metadata),
+                    )
+            except Exception as e:
+                with log_out:
+                    print("[cloud][ERROR]", type(e).__name__, e)
+
+        def run_example_cloud_terminate():
+            if not STATUS.get("batch_job_id"):
+                with log_out:
+                    print("[cloud] No Batch job id yet.")
+                return
+            try:
+                execution = _resolve_icesee_cloud_execution(
+                    region_override=_persisted_icesee_cloud_region(),
+                )
+                bridge = build_icesee_cloud_bridge(_icesee_cloud_bridge_config(execution))
+                result = icesee_cloud_terminate(bridge, job_id=STATUS["batch_job_id"])
+                with log_out:
+                    print("[cloud]", result.get("message")
+                          or f"job {result.get('action', 'terminated')}")
+                if STATUS.get("local_run_dir"):
+                    _update_icesee_run(Path(STATUS["local_run_dir"]), status="cancelled")
             except Exception as e:
                 with log_out:
                     print("[cloud][ERROR]", type(e).__name__, e)
@@ -2104,7 +2571,11 @@ def build_icesee_ui():
                     ),
                 }
 
-            return state
+            # B2: fold in the authenticated user x resource personal settings
+            # (v2 shape). RESOURCE facts are NOT persisted; nothing secret.
+            merged = resource_state.capture()
+            merged["run"] = state
+            return strip_secrets(merged)
 
         # master run
         def run_example():
@@ -2122,21 +2593,33 @@ def build_icesee_ui():
         action_btn.on_click(on_action_click)
         clear_btn.on_click(lambda b: (log_out.clear_output(), results_out.clear_output(), set_status("idle")))
 
-        connect_btn.on_click(lambda b: run_example_remote_test())
+        def _on_check_ssh(_b=None):
+            # immediate feedback + no re-entry while the check runs
+            connect_btn.disabled = True
+            try:
+                remote_conn_panel.set_status("checking")
+            except NameError:
+                pass
+            try:
+                run_example_remote_test()
+            finally:
+                connect_btn.disabled = False
+
+        connect_btn.on_click(_on_check_ssh)
         submit_btn.on_click(lambda b: run_example_remote_submit())
         status_btn.on_click(lambda b: run_example_remote_status())
         tail_btn.on_click(lambda b: run_example_remote_tail())
         terminate_btn.on_click(lambda b: run_example_remote_cancel())
 
-        cloud_submit_btn.on_click(lambda b: run_example_cloud_submit())
         cloud_status_btn.on_click(lambda b: run_example_cloud_status())
         cloud_logs_btn.on_click(lambda b: run_example_cloud_logs_hint())
+        cloud_terminate_btn.on_click(lambda b: run_example_cloud_terminate())
         
         start_connector_session_btn.on_click(create_or_refresh_connector_session)
-        access_mode_dd.observe(
-            lambda change: create_or_refresh_connector_session() if change["new"] == "connector" else None,
-            names="value",
-        )
+        # (removed: auto connector-session creation on access-mode change --
+        #  the session is created lazily at Check SSH / Run / the explicit
+        #  "Open Connector Setup" button, keeping the relay off the
+        #  initial-load and resource-switch paths.)
         preview_results_btn.on_click(preview_remote_results)
         results_download_btn.on_click(download_results_bundle)
 
@@ -2213,6 +2696,7 @@ def build_icesee_ui():
             cluster_name_widget=cluster_name_for_keys,
             host_widget=cluster_host,
             user_widget=cluster_user,
+            defer_probe=True,   # ssh-add subprocesses off the construction path
             )
         exec_backend_row = W.HBox(
             [W.HTML("<div class='icesee-lbl'>Exec backend:</div>"), exec_backend_choice],
@@ -2262,24 +2746,9 @@ def build_icesee_ui():
         spack_pmix_dir_row = W.HBox([W.HTML("<div class='icesee-lbl'>PMIX_DIR:</div>"), spack_pmix_dir], layout=W.Layout(gap="12px"))
         spack_existing_sbatch_row = W.Box([spack_use_existing_sbatch], layout=W.Layout(margin="0 0 0 120px"))
 
-        remote_controls_row = W.HBox([connect_btn, status_btn, tail_btn, terminate_btn], layout=W.Layout(gap="10px"))
-        slurm_section_title = W.HTML("<div class='icesee-subtle' style='margin-top:8px'>Slurm resources</div>")
-        job_time_row = W.HBox(
-            [form_pair("Job:", slurm_job_name), form_pair("Time:", slurm_time)],
-            layout=W.Layout(gap="8px", width="100%"),
-        )
-        nodes_tasks_tpn_row = W.HBox(
-            [form_pair("Nodes:", slurm_nodes), form_pair("Tasks:", slurm_ntasks), form_pair("TPN:", slurm_tpn)],
-            layout=W.Layout(gap="8px", width="100%"),
-        )
-        part_mem_row = W.HBox(
-            [form_pair("Part:", slurm_part), form_pair("Mem:", slurm_mem)],
-            layout=W.Layout(gap="8px", width="100%"),
-        )
-        acct_mail_row = W.HBox(
-            [form_pair("Acct:", slurm_account), form_pair("Mail:", slurm_mail)],
-            layout=W.Layout(gap="8px", width="100%"),
-        )
+        # B4: Job settings / Compute resources / Allocation are arranged by
+        # build_slurm_resources_panel; only ICESEE's MPI + module/export rows
+        # are laid out here and handed to the panel as extra_children.
         mpi_model_row = W.HBox(
             [form_pair("MPI np:", cluster_mpi_np), form_pair("Model nprocs:", cluster_model_nprocs, label_width="120px")],
             layout=W.Layout(gap="8px", width="100%"),
@@ -2287,11 +2756,7 @@ def build_icesee_ui():
 
         modules_title = W.HTML("<div class='icesee-subtle' style='margin-top:10px'>Modules</div>")
         exports_title = W.HTML("<div class='icesee-subtle' style='margin-top:10px'>Exports</div>")
-        auth_title = W.HTML("<div class='icesee-subtle' style='margin-top:10px'>Auth</div>")
-        auth_row = W.HBox([W.HTML("<div class='icesee-lbl'>Method:</div>"), auth_mode], layout=W.Layout(gap="12px"))
         ssh_key_title = W.HTML("<div class='icesee-subtle' style='margin-top:12px;'>SSH key manager</div>")
-        cluster_password_row = W.Box([cluster_password], layout=W.Layout(margin="0 0 0 120px"))
-        bootstrap_btn_row = W.Box([bootstrap_btn], layout=W.Layout(margin="0 0 0 120px"))
 
         download_buttons_row = W.HBox(
             [preview_results_btn, results_download_btn],
@@ -2305,24 +2770,32 @@ def build_icesee_ui():
         )
 
 
-        cluster_name_row = form_pair("Cluster:", cluster_name_for_keys, "90px")
+        # B4: user-workflow-oriented Remote Connection panel (Compute resource /
+        # Your HPC identity / Access / Status), connector + session internals
+        # behind Diagnostics. Transport, B3 AccessState, identity verification
+        # and the Run gate are unchanged.
+        connect_btn.description = "Check SSH Access"
+        start_connector_session_btn.description = "Open Connector Setup"
+        start_connector_session_btn.icon = "external-link"
 
-        remote_conn_inner = W.VBox([
-            cluster_name_row,
-            W.HBox([W.HTML("<div class='icesee-lbl'>Host:</div>"), cluster_host], layout=W.Layout(gap="12px")),
-            W.HBox([
-                form_pair("User:", cluster_user),
-                form_pair("Port:", cluster_port, label_width="56px"),
-            ], layout=W.Layout(gap="16px", width="100%")),
-            W.HBox([W.HTML("<div class='icesee-lbl'>Access:</div>"), access_mode_dd], layout=W.Layout(gap="12px")),
-            W.HBox([
-                form_pair("Remote dir:", remote_base_dir, label_width="90px"),
-                form_pair("Tag:", remote_tag, label_width="56px"),
-            ], layout=W.Layout(gap="16px", width="100%")),
-            relay_status,
-            W.HBox([start_connector_session_btn], layout=W.Layout(gap="10px")),
-            connector_setup_link,
-        ], layout=W.Layout(gap="8px"))
+        remote_tag_row = form_pair("Tag:", remote_tag, label_width="56px")
+        remote_conn_panel = build_remote_connection_panel(
+            resource=cluster_name_for_keys,
+            host=cluster_host,
+            port=cluster_port,
+            hpc_username=cluster_user,
+            remote_directory=remote_base_dir,
+            connection_method=access_mode_dd,
+            auth_method=auth_mode,
+            check_ssh_button=connect_btn,
+            open_connector_button=start_connector_session_btn,
+            connector_card=relay_status,
+            connector_setup_link=connector_setup_link,
+            profile=get_compute_profile(cluster_name_for_keys.value or "pace"),
+            auth_extra_children=[cluster_password, bootstrap_btn],
+            advanced_children=[remote_tag_row],
+        )
+        remote_conn_inner = remote_conn_panel.container
 
 
         exec_backend_inner = W.VBox([
@@ -2340,24 +2813,24 @@ def build_icesee_ui():
         ], layout=W.Layout(gap="8px"))
 
 
-        slurm_inner = W.VBox([
-            job_time_row,
-            nodes_tasks_tpn_row,
-            part_mem_row,
-            acct_mail_row,
-            mpi_model_row,
-            modules_title,
-            remote_module_lines,
-            exports_title,
-            remote_export_lines,
-        ], layout=W.Layout(gap="8px"))
-
-
-        auth_inner = W.VBox([
-            auth_row,
-            cluster_password_row,
-            bootstrap_btn_row,
-        ], layout=W.Layout(gap="8px"))
+        slurm_inner = build_slurm_resources_panel(
+            job_name=slurm_job_name,
+            wall_time=slurm_time,
+            nodes=slurm_nodes,
+            tasks=slurm_ntasks,
+            tasks_per_node=slurm_tpn,
+            partition=slurm_part,
+            memory=slurm_mem,
+            account=slurm_account,
+            email=slurm_mail,
+            extra_children=[
+                mpi_model_row,
+                modules_title,
+                remote_module_lines,
+                exports_title,
+                remote_export_lines,
+            ],
+        ).container
 
         remote_conn_box = W.Accordion(children=[remote_conn_inner])
         remote_conn_box.set_title(0, "🔌 Remote connection")
@@ -2371,13 +2844,9 @@ def build_icesee_ui():
         slurm_box.set_title(0, "📊 Slurm resources")
         slurm_box.selected_index = None
 
-        auth_box = W.Accordion(children=[auth_inner])
-        auth_box.set_title(0, "🔒 Authentication")
-        auth_box.selected_index = None
-
         server_key_note = W.HTML("""
         <div class='icesee-subtle' style='line-height:1.5; margin-bottom:8px;'>
-        This manages SSH keys on the web server/GHUB side for direct SSH.
+        This manages SSH keys on the web server side for direct SSH.
         For Local Connector / VPN bridge mode, the connector creates the key on your workstation.
         </div>
         """)
@@ -2394,59 +2863,427 @@ def build_icesee_ui():
         ssh_key_manager_box.set_title(0, "🔐 Server-side SSH Key Manager")
         ssh_key_manager_box.selected_index = None
 
+        def _probe_ssh_key_manager(change):
+            if change.get("new") is not None:
+                probe = getattr(ssh_key_manager, "_cryostack_probe", None)
+                if probe is not None:
+                    probe()
+        ssh_key_manager_box.observe(_probe_ssh_key_manager, names="selected_index")
+
+        # =========================================================
+        # Workspace (Runs / Files) -- the same structural language as
+        # CryoLauncher's Workspace shell, reusing its shared history panel
+        # verbatim over an ICESEE-native manager (run_records.py-backed).
+        # Results reuse the existing local figures/H5 preview; the DA-aware
+        # ResultPackage (ensemble/analysis/RMSE) is a separate, larger port.
+        # =========================================================
+        icesee_runs_manager = IceseeRunsManager(root=_icesee_run_dir_base())
+
+        def _sync_icesee_cloud_run_results(run) -> None:
+            """Best-effort S3 -> local sync before showing Results for a
+            selected CLOUD run -- resolved from the run's OWN persisted
+            identity (metadata['aws_resources']), never the live Cloud panel
+            widgets, so a later visit stays correct regardless of what has
+            since changed there. Never breaks the Results view: a sync
+            failure (unreachable AWS, no S3 identity yet, ...) just leaves
+            whatever is already local in place."""
+            if run.execution_mode != "cloud" or not run.jobid:
+                return
+            resources = (run.metadata or {}).get("aws_resources") or {}
+            s3_run = resources.get("s3_run") or (
+                str(run.remote_directory) if run.remote_directory else ""
+            )
+            if not s3_run:
+                return
+            try:
+                execution = _resolve_icesee_cloud_execution(
+                    region_override=resources.get("region"),
+                )
+                sync_icesee_cloud_results(
+                    IceseeCloudBridgeConfig(
+                        region=execution.region, profile=execution.profile,
+                        credentials=execution.credentials,
+                    ),
+                    s3_run=s3_run, local_dir=run.workspace_directory,
+                )
+            except Exception as _e:
+                with results_out:
+                    print(f"[cloud] result sync skipped: {type(_e).__name__}: {_e}")
+
+        def _on_icesee_run_selected(run_id):
+            run = icesee_runs_manager.selected_run()
+            if not (run and run.workspace_directory):
+                return
+            _sync_icesee_cloud_run_results(run)
+            refresh_results_preview(run.workspace_directory, results_out)
+            try:
+                pkg = discover_result_package(run.workspace_directory)
+                lines = pkg.summary_lines()
+            except Exception:
+                lines = []
+            if lines:
+                with results_out:
+                    print("\nDA outputs (from results/*.h5):")
+                    for line in lines:
+                        print(" -", line)
+
+        def _on_icesee_tail_selected_run():
+            run = icesee_runs_manager.selected_run()
+            log_out.clear_output()
+            with log_out:
+                print(icesee_runs_manager.tail(run.id) if run else "No run selected.")
+
+        def _on_icesee_download_selected_results():
+            run = icesee_runs_manager.selected_run()
+            if not run:
+                return
+            zip_path = icesee_runs_manager.download_results(run.id)
+            with log_out:
+                if zip_path is not None:
+                    display(FileLink(str(zip_path)))
+                else:
+                    print("[workspace] No local results captured for this run yet.")
+
+        def _on_icesee_download_selected_figures():
+            run = icesee_runs_manager.selected_run()
+            if not run:
+                return
+            zip_path = icesee_runs_manager.download_figures(run.id)
+            with log_out:
+                if zip_path is not None:
+                    display(FileLink(str(zip_path)))
+                else:
+                    print("[workspace] No local figures captured for this run yet.")
+
+        icesee_history_panel = build_workspace_history_panel(
+            manager=icesee_runs_manager,
+            on_run_selected=_on_icesee_run_selected,
+            on_tail_log=_on_icesee_tail_selected_run,
+            on_download=_on_icesee_download_selected_results,
+            on_show_figures=_on_icesee_download_selected_figures,
+            defer_initial_load=True,
+        )
+        # The single Workspace (Runs/Files/Run Log/Results) is assembled at
+        # the end of this function via the SAME shared build_run_details/
+        # build_workspace_explorer CryoLauncher uses -- not a second,
+        # ICESEE-only Accordion presentation.
+
+        # =========================================================
+        # Run Plan -- the CryoLauncher semantic separation (execution mode
+        # / compute backend / model environment / model / provenance),
+        # reusing the SAME shared composition panel (build_run_plan_panel),
+        # with ICESEE's DA identity (DAIdentity.summary_rows(), already
+        # built in run_records.py) as first-class rows, not flattened away.
+        # =========================================================
+        run_plan_summary_html = W.HTML()
+        run_plan_command_html = W.HTML(
+            "<div class='icesee-subtle'>The exact command is shown in Run "
+            "log after Run -- it depends on live choices (connector vs "
+            "direct SSH, spack vs container, existing sbatch, etc.) this "
+            "preview does not simulate.</div>"
+        )
+
+        def _update_icesee_run_plan_summary(_=None):
+            mode = get_mode()
+            mode_label = {
+                MODE_LOCAL: "Local", MODE_REMOTE: "Remote", MODE_CLOUD: "Cloud",
+            }.get(mode, mode)
+            backend_label = {
+                MODE_LOCAL: "Local",
+                MODE_REMOTE: {"spack": "ICESEE-Spack", "container": "ICESEE-Container"}
+                    .get(exec_backend_choice.value, exec_backend_choice.value),
+                MODE_CLOUD: "AWS Batch",
+            }.get(mode, mode)
+            model_environment = {
+                MODE_LOCAL: "ICESEE (native Python)",
+                MODE_REMOTE: backend_label,
+                MODE_CLOUD: "AWS Batch container",
+            }.get(mode, "")
+            rows = [
+                ("Execution mode", mode_label),
+                ("Compute backend", backend_label),
+                ("Model environment", model_environment),
+            ]
+            _icesee_forecast_model = example_dd.value
+            try:
+                identity = da_identity_from_params(build_config_from_widgets())
+                rows += identity.summary_rows()
+                _icesee_forecast_model = (
+                    identity.forecast_model or identity.example_name
+                    or example_dd.value)
+            except Exception:
+                pass    # a mid-edit params.yaml must never break the summary
+
+            # MATLAB license visibility is driven EXCLUSIVELY by the single
+            # workflow-capability resolver -- never a duplicated
+            # "model == issm" check -- so an ICESEE run whose forecast model
+            # is ISSM (alone or coupled with Icepack) shows the same field a
+            # direct ISSM run does. Independent of Basic/Advanced mode;
+            # hiding it never clears the value (see wire_matlab_license_
+            # widgets). Reuses the SAME identity this Run Plan row already
+            # computed above -- no second parse of the params.
+            _icesee_capabilities = resolve_workflow_capabilities(
+                model="icesee", forecast_model=_icesee_forecast_model)
+            icesee_cloud_environment.matlab_license_box.layout.display = (
+                "" if _icesee_capabilities.requires_matlab_license else "none")
+
+            # Same row markup CryoLauncher's own Run Plan summary already
+            # uses (icesee-summary / icesee-summary-k) -- not a second,
+            # ICESEE-only convention -- so both apps share one labeled-row
+            # layout (and its spacing/alignment CSS) in shared_app_styles.py.
+            run_plan_summary_html.value = (
+                "<div class='icesee-summary'>"
+                + "".join(
+                    f"<div><span class='icesee-summary-k'>"
+                    f"{html_lib.escape(label)}:</span> {html_lib.escape(str(value))}</div>"
+                    for label, value in rows if value
+                )
+                + "</div>"
+            )
+
+        icesee_run_plan = build_run_plan_panel(
+            summary_widget=run_plan_summary_html,
+            command_widget=run_plan_command_html,
+        )
+        mode_tabs.observe(_update_icesee_run_plan_summary, names="selected_index")
+        exec_backend_choice.observe(_update_icesee_run_plan_summary, names="value")
+        example_dd.observe(_update_icesee_run_plan_summary, names="value")
+        filter_alg_dd.observe(_update_icesee_run_plan_summary, names="value")
+        ens_sl.observe(_update_icesee_run_plan_summary, names="value")
+
         # ssh_key_manager_box = W.Accordion(children=[ssh_key_manager])
         # # ssh_key_manager_box.set_title(0, "🔐 SSH Key Manager")
         # ssh_key_manager_box.set_title(0, "🔐 Server-side SSH Key Manager")
         # ssh_key_manager_box.selected_index = None
 
-        # Remote panel
+        # Remote panel. Authentication + the connector card + "Open Connector
+        # Setup" now live inside the Remote connection panel (B4). "Check SSH
+        # Access" is the panel's primary action. Status / Tail / Terminate are
+        # NOT duplicated here -- Status/Tail live in the Workspace Run Log
+        # toolbar and Terminate lives in the Execution panel, matching
+        # CryoLauncher's own placement exactly (only "Check SSH"-style connect
+        # actions are ever duplicated, into the Workspace toolbar).
         remote_box = W.VBox(
             [
                 W.HTML("<div class='icesee-h'>Remote</div>"),
                 remote_conn_box,
                 exec_backend_box,
                 slurm_box,
-                auth_box,
-                # server_key_note,
                 ssh_key_manager_box,
-                W.HBox(
-                    [connect_btn, status_btn, tail_btn, terminate_btn],
-                    layout=W.Layout(gap="10px", flex_wrap="wrap"),
-                ),
-                # W.HBox(
-                #     [preview_results_btn, results_download_btn],
-                #     layout=W.Layout(gap="10px", flex_wrap="wrap"),
-                # ),
             ],
             layout=W.Layout(gap="8px"),
         )
 
-        # Cloud panel
-        cloud_panel = W.VBox(
-            [
-                W.HTML("<div class='icesee-h'>Cloud</div>"),
-                W.HTML("<div class='icesee-subtle'>AWS Batch backend via AWS CLI.</div>"),
-                W.HBox([W.HTML("<div class='icesee-lbl'>Region:</div>"), aws_region, W.HTML("<div class='icesee-lbl'>Profile:</div>"), aws_profile],
-                    layout=W.Layout(gap="12px")),
-                W.HBox([W.HTML("<div class='icesee-lbl'>S3 prefix:</div>"), cloud_bucket], layout=W.Layout(gap="12px")),
-                W.HTML("<div class='icesee-subtle' style='margin-top:10px'>AWS Batch</div>"),
-                W.HBox([W.HTML("<div class='icesee-lbl'>Queue:</div>"), batch_job_queue], layout=W.Layout(gap="12px")),
-                W.HBox([W.HTML("<div class='icesee-lbl'>Job def:</div>"), batch_job_def], layout=W.Layout(gap="12px")),
-                W.HBox([W.HTML("<div class='icesee-lbl'>Job name:</div>"), batch_job_name], layout=W.Layout(gap="12px")),
-                W.HBox([cloud_submit_btn, cloud_status_btn, cloud_logs_btn], layout=W.Layout(gap="10px")),
-            ],
-            layout=W.Layout(gap="8px"),
+        # Cloud panel -- the shared Cloud Environment card itself. Status/
+        # Logs live in the Workspace Run Log toolbar; Terminate lives in the
+        # Execution panel; Submit only happens through its own Review &
+        # Launch (wired below) -- neither is duplicated here.
+        cloud_panel = icesee_cloud_environment.container
+
+        # =========================================================
+        # AWS ACCOUNT -- the SAME generic onboarding callbacks CryoLauncher
+        # uses (connect / verify / re-check / disconnect / retry / change
+        # account), scoped to whichever CryoStack user is authenticated,
+        # not an ICESEE-only credential path.
+        # =========================================================
+        def _icesee_aws_onboarding_factory():
+            from cryostack_src.cloud.connect import AWSOnboarding
+            return AWSOnboarding(
+                user=resolve_workspace_user(require_authenticated=False),
+                region=(icesee_cloud_environment.region.value or "us-east-1").strip(),
+            )
+
+        icesee_aws_connect = build_aws_connect_callbacks(
+            widgets=icesee_cloud_environment,
+            onboarding_factory=_icesee_aws_onboarding_factory,
+            log_output=log_out,
         )
-        cloud_panel.add_class("icesee-card")
+        icesee_cloud_environment.connect_button.on_click(icesee_aws_connect.connect)
+        icesee_cloud_environment.verify_button.on_click(icesee_aws_connect.verify)
+        icesee_cloud_environment.recheck_button.on_click(icesee_aws_connect.recheck)
+        icesee_cloud_environment.disconnect_button.on_click(icesee_aws_connect.disconnect)
+        icesee_cloud_environment.update_role_button.on_click(icesee_aws_connect.update_role)
+        icesee_cloud_environment.retry_button.on_click(icesee_aws_connect.retry)
+        icesee_cloud_environment.change_account_button.on_click(icesee_aws_connect.change_account)
+        icesee_cloud_environment.change_verify_button.on_click(icesee_aws_connect.change_verify)
+        icesee_cloud_environment.change_cancel_button.on_click(icesee_aws_connect.change_cancel)
+        icesee_aws_connect.refresh()
+
+        # -- MATLAB license: the SAME shared field/save behavior
+        # CryoLauncher's own Cloud panel uses (cloud_environment.
+        # wire_matlab_license_widgets) -- one implementation, so a direct
+        # ISSM run and an ICESEE run using ISSM configure/save the license
+        # identically. Visibility is wired below in
+        # _update_icesee_run_plan_summary, driven exclusively by
+        # resolve_workflow_capabilities(...).requires_matlab_license.
+        wire_matlab_license_widgets(
+            icesee_cloud_environment,
+            owner=resolve_workspace_user(require_authenticated=False),
+            log_output=log_out,
+        )
+
+        # =========================================================
+        # INFRASTRUCTURE readiness + Prepare Cloud -- the SAME generic,
+        # non-blocking coordinator CryoLauncher uses
+        # (build_cloud_environment_ops); Test/Prepare never depend on a
+        # model, only on the connected account's own AWS capabilities.
+        # =========================================================
+        def _icesee_update_infrastructure_rows(capabilities):
+            rows = {
+                "account": icesee_cloud_environment.account_status,
+                "storage": icesee_cloud_environment.storage_status,
+                "registry": icesee_cloud_environment.registry_status,
+                "compute": icesee_cloud_environment.compute_status,
+            }
+            for key, ready, ready_label, missing_label in (
+                ("account", getattr(capabilities, "authenticated", False), "Connected", "Not connected"),
+                ("storage", getattr(capabilities, "storage_ready", False), "Ready", "Not prepared"),
+                ("registry", getattr(capabilities, "registry_ready", False), "Ready", "Not prepared"),
+                ("compute", getattr(capabilities, "batch_ready", False), "Ready", "Not prepared"),
+            ):
+                set_cloud_status(rows[key], state="done" if ready else "fail",
+                                 label=ready_label if ready else missing_label)
+
+        def _icesee_cloud_check_worker():
+            execution = _resolve_icesee_cloud_execution()
+            bridge = build_icesee_cloud_bridge(_icesee_cloud_bridge_config(execution))
+            return bridge.check_environment()
+
+        def _icesee_cloud_check_success(capabilities):
+            _icesee_update_infrastructure_rows(capabilities)
+            with log_out:
+                print("[cloud] Environment check")
+                for m in (getattr(capabilities, "messages", None) or []):
+                    print(" ", m)
+
+        def _icesee_cloud_prepare_worker():
+            execution = _resolve_icesee_cloud_execution()
+            bridge = build_icesee_cloud_bridge(_icesee_cloud_bridge_config(execution))
+            bucket = execution.defaults.bucket if (execution.is_byo and execution.defaults) else None
+            return bridge.prepare_environment(bucket=bucket)
+
+        def _icesee_cloud_prepare_success(result):
+            with log_out:
+                print("[cloud] Prepare cloud")
+                for m in ((result or {}).get("messages") if isinstance(result, dict) else None) or []:
+                    print(" ", m)
+            # re-check to reflect the REAL post-prepare state -- never
+            # hardcode Ready just because Prepare ran without raising.
+            try:
+                _icesee_update_infrastructure_rows(_icesee_cloud_check_worker())
+            except Exception:
+                pass
+
+        icesee_cloud_ops = build_cloud_environment_ops(
+            buttons={"test": icesee_cloud_environment.test_button,
+                     "prepare": icesee_cloud_environment.prepare_button},
+            rows={"account": icesee_cloud_environment.account_status,
+                  "storage": icesee_cloud_environment.storage_status,
+                  "registry": icesee_cloud_environment.registry_status,
+                  "compute": icesee_cloud_environment.compute_status},
+            set_row=set_cloud_status,
+            set_chip=lambda _k: None,
+            log_output=log_out,
+        )
+        icesee_cloud_environment.test_button.on_click(
+            lambda _=None: icesee_cloud_ops.test_connection(
+                _icesee_cloud_check_worker, _icesee_cloud_check_success))
+        icesee_cloud_environment.prepare_button.on_click(
+            lambda _=None: icesee_cloud_ops.prepare_cloud(
+                _icesee_cloud_prepare_worker, _icesee_cloud_prepare_success))
+
+        # =========================================================
+        # RUN ESTIMATE / Review & Launch -- ICESEE's OWN DA-aware review
+        # (icesee_jupyter_book/core/cloud_review.py), rendered into the SAME
+        # shared review_body/launch_button widgets, never CryoLauncher's
+        # model/example/run_target review schema. The estimate line is
+        # shown unconditionally (cost unavailable -- ICESEE has no Fargate
+        # cost model) purely so Review & Launch itself is reachable; Launch
+        # is gated inside the review, not by this line.
+        # =========================================================
+        set_run_estimate_view(icesee_cloud_environment, visible=True, unavailable=True)
+        icesee_cloud_environment.run_estimate_line.value = (
+            "<div style='font-size:11px;color:#96a1b4;'>Review the run before launching.</div>"
+        )
+
+        _icesee_review_state = {"review": None}
+
+        def _icesee_build_review():
+            sync_quick_into_widgets()
+            cfg_yaml = build_config_from_widgets()
+            identity = da_identity_from_params(cfg_yaml)
+
+            execution = _resolve_icesee_cloud_execution()
+            bridge = build_icesee_cloud_bridge(_icesee_cloud_bridge_config(execution))
+            try:
+                caps = bridge.check_environment()
+            except Exception:
+                caps = None
+            infra = InfrastructureReadiness(
+                account=bool(getattr(caps, "authenticated", False)) and execution.is_byo,
+                storage=bool(getattr(caps, "storage_ready", False)),
+                container=bool(getattr(caps, "registry_ready", False)),
+                compute=bool(getattr(caps, "batch_ready", False)),
+            )
+            return build_icesee_cloud_review(
+                forecast_model=(identity.forecast_model or identity.example_name
+                                or example_dd.value),
+                filter_alg=identity.assimilation_filter or filter_alg_dd.value,
+                ensemble_size=int(identity.ensemble_size or ens_sl.value),
+                parallel_processes=int(cluster_mpi_np.value),
+                account_id=execution.account_id, region=execution.region,
+                infrastructure=infra, account_freshly_verified=execution.is_byo,
+                # the run's OWN canonical example key (params.yaml's
+                # modeling-parameters.example_name, e.g. "lorenz96") -- NOT
+                # the human-readable example_dd.value label -- checked
+                # against the verified runtime contract
+                # (ICESEE_VERIFIED_EXAMPLES / ICESEE_VERIFIED_MAX_NP).
+                example_name=identity.example_name or example_dd.value,
+                matlab_license_configured=bool(
+                    getattr(execution.matlab_license, "configured", False)),
+                compute_mode=getattr(
+                    icesee_cloud_environment.compute_mode, "value", "fargate"),
+            )
+
+        def _on_icesee_review_click(_=None):
+            try:
+                review = _icesee_build_review()
+            except Exception as e:
+                with log_out:
+                    print("[cloud][ERROR] could not build the review:", type(e).__name__, e)
+                return
+            _icesee_review_state["review"] = review
+            render_icesee_review_panel(icesee_cloud_environment, review)
+            icesee_cloud_environment.review_panel.layout.display = "flex"
+
+        def _on_icesee_review_back(_=None):
+            icesee_cloud_environment.review_panel.layout.display = "none"
+
+        def _on_icesee_launch_click(_=None):
+            review = _icesee_review_state.get("review")
+            if review is None or not review.can_launch:
+                return
+            icesee_cloud_environment.review_panel.layout.display = "none"
+            run_example_cloud_submit()
+
+        icesee_cloud_environment.review_button.on_click(_on_icesee_review_click)
+        icesee_cloud_environment.review_back_button.on_click(_on_icesee_review_back)
+        icesee_cloud_environment.launch_button.on_click(_on_icesee_launch_click)
 
         mode_tabs.children = [local_tab_card, remote_box, cloud_panel]
-        mode_tabs.set_title(0, "Local (GHUB)")
+        mode_tabs.set_title(0, "Local")
         mode_tabs.set_title(1, "Remote")
         mode_tabs.set_title(2, "Cloud")
 
         local_tab_card.layout = W.Layout(width="100%")
         remote_box.layout   = W.Layout(width="100%")
         cloud_panel.layout     = W.Layout(width="100%")
+
+        # Workspace Run Log toolbar: swapped by execution mode, exactly the
+        # CryoLauncher pattern (log_runtime_controls in icesheets_gateway.py)
+        # -- status/tail/connect-type diagnostics live here, never in the
+        # scientific config panel, and never a second time in Execution.
+        log_runtime_controls = build_workspace_toolbar([])
 
         def _toggle_panels_from_tabs(_=None):
             mode = get_mode()
@@ -2457,11 +3294,27 @@ def build_icesee_ui():
             status_btn.disabled = not is_remote
             tail_btn.disabled = not is_remote
             terminate_btn.disabled = not is_remote
+            terminate_btn.layout.display = "" if is_remote else "none"
 
             is_cloud = (mode == MODE_CLOUD)
-            cloud_submit_btn.disabled = not is_cloud
             cloud_status_btn.disabled = not is_cloud
             cloud_logs_btn.disabled = not is_cloud
+            cloud_terminate_btn.disabled = not is_cloud
+            cloud_terminate_btn.layout.display = "" if is_cloud else "none"
+
+            # Cloud submission only happens through Review & Launch (inside
+            # the Cloud Environment card) -- the generic Execution Run
+            # button is hidden for Cloud, the same rule CryoLauncher's
+            # run_btn follows for its own cloud path (a lesson from a real
+            # live-acceptance bug: two submit surfaces for the same job).
+            action_btn.layout.display = "none" if is_cloud else ""
+
+            if is_remote:
+                log_runtime_controls.children = (connect_btn, status_btn, tail_btn, clear_btn)
+            elif is_cloud:
+                log_runtime_controls.children = (cloud_status_btn, cloud_logs_btn, clear_btn)
+            else:
+                log_runtime_controls.children = (clear_btn,)
 
             update_action_button()
 
@@ -2471,9 +3324,25 @@ def build_icesee_ui():
         exec_backend_choice.observe(_toggle_exec_backend_ui, names="value")
         _toggle_exec_backend_ui()
 
-        left = W.VBox(
-            [
-                W.HTML("<div class='icesee-h'>Run settings</div>"),
+        log_out.add_class("icesee-out")
+        results_out.add_class("icesee-out")
+
+        # =========================================================
+        # Application shell -- GENUINELY the same shell CryoLauncher uses,
+        # not an ICESEE imitation of it: build_run_settings_panel (Run
+        # settings, with Run Plan nested as its last child, exactly
+        # CryoLauncher's own composition), build_runtime_panel (Execution:
+        # state + submit/terminate), build_run_details (the one Workspace:
+        # Runs/Files/Run Log/Results), build_workspace_explorer (the
+        # top-level two-column shell). ICESEE's Remote/Cloud content already
+        # lives inside mode_tabs (a structural difference CryoLauncher does
+        # not have -- its Remote/Cloud panels are simultaneously-present,
+        # visibility-toggled VBoxes); build_run_settings_panel's own
+        # remote_panel/cloud_panel slots are therefore inert placeholders
+        # here, not a second copy of that content.
+        # =========================================================
+        icesee_run_settings = build_run_settings_panel(
+            configuration_rows=[
                 W.HBox([W.HTML("<div class='icesee-lbl'>Mode:</div>"), mode_tabs], layout=W.Layout(gap="8px", width="100%")),
                 W.HBox([W.HTML("<div class='icesee-lbl'>Example:</div>"), example_dd], layout=W.Layout(gap="8px", width="100%")),
                 W.HBox([W.HTML("<div class='icesee-lbl'>Preset:</div>"), preset_dd], layout=W.Layout(gap="8px", width="100%")),
@@ -2486,74 +3355,70 @@ def build_icesee_ui():
                 W.HTML("<div class='icesee-subtle' style='margin:8px 0 8px'>Full configuration (from <code>params.yaml</code>)</div>"),
                 params_holder,
             ],
-            layout=W.Layout(gap="8px"),
+            remote_panel=W.HTML(""),   # Remote content already lives in mode_tabs above
+            cloud_panel=W.HTML(""),    # Cloud content already lives in mode_tabs above
+            run_plan=icesee_run_plan.container,
         )
-        left_card = W.VBox([left])
-        left_card.add_class("icesee-card")
-        left_card.layout = W.Layout(width="100%", flex="0 0 42%", min_width="0")
 
-        right = W.VBox(
-            [
-                W.HTML("<div class='icesee-h'>Run log</div>"),
-                log_out,
-                W.HTML("<div class='icesee-h' style='margin-top:14px'>Results preview</div>"),
-                results_out,
-                download_buttons_row,
-            ]
+        icesee_runtime = build_runtime_panel(
+            status_widget=status_chip,
+            run_button=action_btn,
+            remote_terminate_button=terminate_btn,
+            cloud_terminate_button=cloud_terminate_btn,
         )
-        right_card = W.VBox([right])
-        right_card.add_class("icesee-card")
-        right_card.layout = W.Layout(width="100%", flex="0 0 58%", min_width="0")
 
-        log_out.add_class("icesee-out")
-        results_out.add_class("icesee-out")
+        icesee_workspace = build_run_details(
+            log_output=log_out,
+            results_output=results_out,
+            download_controls=download_buttons_row,
+            log_controls=log_runtime_controls,
+            runs_panel=icesee_history_panel.runs_panel,
+            files_panel=icesee_history_panel.files_panel,
+        )
 
-        # actions = W.HBox([run_btn, clear_btn, status_chip], layout=W.Layout(gap="12px"))
-        actions = W.HBox([action_btn, clear_btn, status_chip], layout=W.Layout(gap="12px"))
-        actions_card = W.VBox([W.HTML("<div class='icesee-h'>Status</div>"), actions])
-        actions_card.add_class("icesee-card")
-
-        left_card.add_class("icesee-col")
-        right_card.add_class("icesee-col")
-
-        row = W.HBox([left_card, right_card], layout=W.Layout(width="100%", display="flex", gap="26px"))
-        row.add_class("icesee-row")
+        icesee_shell = build_workspace_explorer(
+            run_settings=icesee_run_settings,
+            runtime=icesee_runtime.container,
+            run_details=icesee_workspace.container,
+        )
 
         page = W.VBox(
             [
                 shared_styles,
                 W.HTML(css),
+                W.HTML("<script>document.title = 'ICESEE';</script>"),
 
                 experiment_bridge.widget(),
                 workspace_bridge.widget(),
 
                 app_menu,
                 header,
-                row,
-                actions_card,
+                icesee_shell.container,
+                icesee_shell.height_sync,
                 back_link,
             ],
             layout=W.Layout(width="100%"),
         )
         page.add_class("icesee-page")
 
-        # cloud_submit_btn.layout.display = "none"
-
         set_status("idle")
         rebuild_for_example()
-        # print("STEP 2: widgets created")
+        _update_icesee_run_plan_summary()
+
+        # B2: restore this user's saved per-resource settings, last of all.
+        try:
+            with perf.span("workspace hydrate"), ui_refresh.batch():
+                _b2_warnings = resource_state.hydrate()
+                _sync_resource_facts()
+            for _w in _b2_warnings:
+                with log_out:
+                    print("[settings]", _w)
+        except Exception as _b2_err:
+            with log_out:
+                print("[settings] restore skipped:", type(_b2_err).__name__, _b2_err)
+
+        perf.mark("gateway total (icesee)", _time.perf_counter() - _perf_t0)
         return page
-        # sidebar = build_sidebar()
-        # main_area = W.VBox([page], layout=W.Layout(width="100%"))
-        # main_area.add_class("icesee-main")
-
-        # shell = W.HBox(
-        #     [sidebar, main_area],
-        #     layout=W.Layout(width="100%", align_items="stretch")
-        # )
-        # shell.add_class("icesee-shell")
-
-        # return shell
     except Exception as e:
         import traceback
         print("ERROR:", e)

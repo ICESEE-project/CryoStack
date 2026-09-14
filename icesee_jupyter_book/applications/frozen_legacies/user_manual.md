@@ -441,9 +441,9 @@ Some manifest fields are optional and may not yet be defined for the active data
 
 ## Next Steps
 
-For a shorter workflow introduction, return to [Getting Started](getting_started.html).
+For a shorter workflow introduction, return to [Getting Started](getting_started).
 
-Developers extending the application with new datasets, adapters, scientific products, or storage backends should continue to the [Developer Guide](developer.html).
+Developers extending the application with new datasets, adapters, scientific products, or storage backends should continue to the [Developer Guide](developer).
 
 :::{raw} html
   </div>

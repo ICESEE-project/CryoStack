@@ -293,24 +293,19 @@ Selecting an individual flight automatically focuses the map on the correspondin
 
 ## Authentication
 
-Frozen Legacies uses the shared CryoStack account system.
-
-When signed in, the account menu provides access to common CryoStack services such as:
-
-- My Account,
-- Saved Configurations,
-- My Experiments,
-- and Sign Out.
-
-The available account functionality depends on the CryoStack deployment.
+Frozen Legacies is openly accessible — it does not require a CryoStack
+account to browse flights, observations, or radar products. It does not yet
+provide any account-specific features (saved views, experiments, or
+personal settings); those exist for CryoStack's execution-oriented
+applications (CryoLauncher, ICESEE), not for this archive viewer.
 
 ## Next Steps
 
 After becoming familiar with the application:
 
-- Read the [Frozen Legacies User Manual](user_manual.html) for a more complete description of the interface and available scientific information.
-- Read the [Developer Guide](developer.html) if you need to add datasets, adapters, products, or storage backends.
-- Return to [Frozen Legacies](/frozen-legacies/) to continue exploring the available radar observations.
+- Read the [Frozen Legacies User Manual](user_manual) for a more complete description of the interface and available scientific information.
+- Read the [Developer Guide](developer) if you need to add datasets, adapters, products, or storage backends.
+- Return to <a href="/frozen-legacies/">Frozen Legacies</a> to continue exploring the available radar observations.
 
 :::{raw} html
   </div>

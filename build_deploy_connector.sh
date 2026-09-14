@@ -1,68 +1,40 @@
 #!/usr/bin/env bash
+# =============================================================================
+# CryoStack Connector -- single-host convenience wrapper.
+#
+# For the common case where one machine both builds and serves (the GT VM):
+#
+#   build_connector.sh            native build            -> dist/packages/
+#   publish_connector_artifact.sh register (local store)  -> <store>/<platform>/
+#   release_connector.sh          generate + promote      -> <web-root>/downloads/connectors/
+#
+# This script just runs those three in order. For multi-host builds (a Mac or
+# Windows box feeding a separate release host) use the three scripts directly --
+# see publish_connector_artifact.sh for the CRYOSTACK_RELEASE_* environment.
+#
+#   bash build_deploy_connector.sh                 # build this host + release
+#   CRYOSTACK_SKIP_BUILD=1 bash build_deploy_connector.sh   # register+release existing dist/packages
+#
+# The served directory is a deployment target only; the canonical store
+# (<store>/) is the source of truth for what is publicly available.
+# =============================================================================
 set -euo pipefail
 
-APP_BASENAME="Cryolauncher_Connector"
+REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$REPO_ROOT"
 
-REMOTE_USER="ubuntu"
-REMOTE_HOST="3.23.36.158"
-REMOTE_WEB_DIR="/var/www/html"
-REMOTE_DOWNLOADS_DIR="${REMOTE_WEB_DIR}/downloads"
+SKIP_BUILD="${CRYOSTACK_SKIP_BUILD:-0}"
+STORE="${CRYOSTACK_CONNECTOR_STORE:-$HOME/.cryostack/connector-artifacts}"
 
-OS="$(uname -s)"
-ARCH="$(uname -m)"
-
-case "$OS" in
-  Darwin) OS_TAG="macOS" ;;
-  Linux)  OS_TAG="Linux" ;;
-  MINGW*|MSYS*|CYGWIN*) OS_TAG="Windows" ;;
-  *) OS_TAG="$OS" ;;
-esac
-
-case "$ARCH" in
-  x86_64|amd64) ARCH_TAG="x86_64" ;;
-  arm64|aarch64) ARCH_TAG="arm64" ;;
-  *) ARCH_TAG="$ARCH" ;;
-esac
-
-DIST_NAME="${APP_BASENAME}_${OS_TAG}_${ARCH_TAG}"
-
-echo "Building ${DIST_NAME}..."
-bash build_connector.sh
-
-if [[ "$OS_TAG" == "Linux" ]]; then
-  PACKAGE="dist/packages/${DIST_NAME}.tar.gz"
-elif [[ "$OS_TAG" == "macOS" ]]; then
-  PACKAGE="dist/packages/${DIST_NAME}.dmg"
-elif [[ "$OS_TAG" == "Windows" ]]; then
-  PACKAGE="dist/packages/${DIST_NAME}.exe"
+if [[ "$SKIP_BUILD" != "1" ]]; then
+  echo "[deploy] 1/3 native build for this host ..."
+  bash "$REPO_ROOT/build_connector.sh"
 else
-  echo "Unsupported OS: $OS_TAG"
-  exit 1
+  echo "[deploy] 1/3 CRYOSTACK_SKIP_BUILD=1 -> registering existing dist/packages/ artifact"
 fi
 
-if [[ ! -f "$PACKAGE" ]]; then
-  echo "Package not found: $PACKAGE"
-  echo "Available packages:"
-  ls -lh dist/packages || true
-  exit 1
-fi
+echo "[deploy] 2/3 register into the canonical store ($STORE) ..."
+bash "$REPO_ROOT/publish_connector_artifact.sh"
 
-echo "Package ready: $PACKAGE"
-
-echo "Creating remote downloads directory..."
-ssh "${REMOTE_USER}@${REMOTE_HOST}" \
-  "sudo mkdir -p ${REMOTE_DOWNLOADS_DIR} && sudo chown -R ${REMOTE_USER}:${REMOTE_USER} ${REMOTE_DOWNLOADS_DIR}"
-
-echo "Uploading package..."
-rsync -avz "$PACKAGE" "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DOWNLOADS_DIR}/"
-
-if [[ -f "index.html" ]]; then
-  echo "Uploading index.html..."
-  rsync -avz "index.html" "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_WEB_DIR}/index.html"
-fi
-
-echo "Reloading nginx..."
-ssh "${REMOTE_USER}@${REMOTE_HOST}" "sudo nginx -t && sudo systemctl reload nginx"
-
-echo "Done."
-echo "Uploaded: $(basename "$PACKAGE")"
+echo "[deploy] 3/3 generate + promote the public release ..."
+bash "$REPO_ROOT/release_connector.sh"

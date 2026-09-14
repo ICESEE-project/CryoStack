@@ -18,6 +18,7 @@ Basic mode is a *guided* configuration surface, never a raw MATLAB editor:
 """
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -157,7 +158,10 @@ class MdConfigValidation:
 def _as_number(raw) -> float:
     if isinstance(raw, bool):
         raise ValueError("expected a number")
-    return float(raw)
+    v = float(raw)
+    if not math.isfinite(v):
+        raise ValueError("must be a finite number (not NaN / Inf)")
+    return v
 
 
 def validate_md_config(overrides: dict, *, solvers: Iterable[str]) -> MdConfigValidation:

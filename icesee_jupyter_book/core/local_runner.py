@@ -18,8 +18,20 @@ from .example_discovery import find_run_script, find_report_notebook
 # ============================================================
 # Local run helpers
 # ============================================================
-def run_dir() -> Path:
-    rd = BOOK / "icesee_runs" / datetime.now().strftime("%Y%m%d_%H%M%S")
+def run_dir(base: "Path | str | None" = None,
+            name: str | None = None) -> Path:
+    """Create (and return) a run directory with ``results/`` + ``figures/``.
+
+    ``base``  -- parent directory for the run. Default (``None``) keeps the
+                 historical process-global location ``BOOK/icesee_runs/``; a
+                 caller with per-user workspace isolation passes that user's
+                 run root here so two authenticated users never collide.
+    ``name``  -- the run's own directory name. Default is a second-granularity
+                 timestamp (kept for backwards compatibility); pass a unique
+                 run id to remove the same-second collision entirely.
+    """
+    root = Path(base) if base is not None else (BOOK / "icesee_runs")
+    rd = root / (name or datetime.now().strftime("%Y%m%d_%H%M%S"))
     rd.mkdir(parents=True, exist_ok=True)
     (rd / "results").mkdir(exist_ok=True)
     (rd / "figures").mkdir(exist_ok=True)
@@ -120,10 +132,13 @@ def run_local_example(
     config: dict,
     output_label: str = "true-wrong",
     generate_report: bool = False,
+    *,
+    run_dir_base: "Path | str | None" = None,
+    run_dir_name: str | None = None,
 ) -> LocalRunResult:
     run_script = find_run_script(example_cfg)
     report_nb = find_report_notebook(example_cfg)
-    rd = run_dir()
+    rd = run_dir(run_dir_base, run_dir_name)
 
     dump_yaml(config, rd / "params.yaml")
 

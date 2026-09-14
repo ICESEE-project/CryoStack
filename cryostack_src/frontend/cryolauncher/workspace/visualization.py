@@ -18,11 +18,22 @@ local package. Legacy runs (``status == "legacy"``) keep their existing PNGs and
 """
 from __future__ import annotations
 
+import base64
 import html
+import re
 from dataclasses import dataclass
+from pathlib import Path
 
 import ipywidgets as W
-from IPython.display import Image, clear_output, display
+from IPython.display import HTML, Image, clear_output, display
+
+#: figures larger than this are NOT base64-embedded for inline preview -- the
+#: card shows a "too large to preview" note instead and the file stays fully
+#: available through Download results. 12 MiB raw -> ~16 MiB base64.
+_MAX_INLINE_FIGURE_BYTES = 12 * 1024 * 1024
+
+_IMG_MIME = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+             "gif": "image/gif", "svg": "image/svg+xml"}
 
 from cryostack_src.workspace.manager import WorkspaceManager
 
@@ -32,6 +43,13 @@ _LEGACY_NOTE = (
 )
 _NO_RUN_NOTE = "Select a run to visualize its results."
 _NOT_FETCHED_NOTE = "Results have not been fetched yet."
+_ARTIFACTS_NOTE = (
+    "Structured field visualization is not yet available for this model. "
+    "The figures and native output files this run produced are shown below."
+)
+_EMPTY_NOTE = (
+    "This run completed but produced no figures or output files to collect."
+)
 
 
 @dataclass
@@ -45,7 +63,8 @@ class VisualizationController:
                  solution_dd: W.Dropdown, field_dd: W.Dropdown,
                  timestep_dd: W.Dropdown, render_btn: W.Button,
                  fetch_btn: W.Button, status: W.HTML, meta: W.HTML,
-                 plot_out: W.Output, fetch_results=None) -> None:
+                 plot_out: W.Output, fetch_results=None,
+                 field_controls: W.Widget | None = None) -> None:
         self.manager = manager
         self._selected_run_id = selected_run_id
         self.log_output = log_output
@@ -57,6 +76,10 @@ class VisualizationController:
         self.status = status
         self.meta = meta
         self.plot_out = plot_out
+        #: the Solution / Field / Timestep / Render block -- hidden entirely
+        #: (not just disabled) for a run with no structured fields, so an
+        #: artifacts-only run never implies fields exist.
+        self.field_controls = field_controls
         self._fetch_results = fetch_results
         self._pkg = None
         self._suppress = False
@@ -82,6 +105,10 @@ class VisualizationController:
         self.field_dd.disabled = not enabled
         self.timestep_dd.disabled = not enabled
         self.render_btn.disabled = not enabled
+
+    def _show_field_controls(self, show: bool):
+        if self.field_controls is not None:
+            self.field_controls.layout.display = "" if show else "none"
 
     def _show_fetch(self, show: bool):
         can_fetch = show and self._fetch_results is not None and bool(self._run_id())
@@ -141,6 +168,7 @@ class VisualizationController:
         if not run_id:
             self._pkg = None
             self._set_enabled(False)
+            self._show_field_controls(False)
             self._show_fetch(False)
             self.solution_dd.options = ()
             self.field_dd.options = ()
@@ -153,23 +181,60 @@ class VisualizationController:
         self._pkg = self.manager.result_package_for_run(run_id)
         status = self._pkg.status
 
-        if status == "legacy":
+        # "legacy"   -- a run that predates the neutral package
+        # "artifacts"-- a run whose model has no structured field reader yet
+        #               (Icepack today): figures + native output files only
+        if status in ("legacy", "artifacts", "empty"):
             self._set_enabled(False)
-            self._show_fetch(False)
+            self._show_field_controls(False)
+            self._show_fetch(status != "legacy")   # a re-fetch can still help
+            # artifact-aware: never show empty Solution/Field dropdowns for a
+            # run that produced no structured fields.
             self.solution_dd.options = ()
             self.field_dd.options = ()
             arts = self._pkg.legacy_artifacts()
-            extra = ""
-            if arts.get("model_mat"):
-                extra = " &nbsp;·&nbsp; model: <code>md_final.mat</code>"
-            self.status.value = (
-                f"<span class='icesee-subtle'>{_LEGACY_NOTE}{extra}</span>")
+            figs = arts.get("figures") or []
+            _seen: set = set()
+            natives = []
+            for p in ([arts["model_mat"]] if arts.get("model_mat") else []) \
+                    + (arts.get("native") or []) + (arts.get("mats") or []) \
+                    + (arts.get("other") or []):
+                if p and p not in _seen:
+                    _seen.add(p)
+                    natives.append(p)
+
+            # "No structured visualizer" and "No results" are different
+            # conditions -- say which one this is. The count is explicit about
+            # WHAT was found (figures vs other output files), never a vague
+            # "N files".
+            if figs or natives:
+                note = _LEGACY_NOTE if status == "legacy" else _ARTIFACTS_NOTE
+                parts = []
+                if figs:
+                    parts.append(f"{len(figs)} figure{'s' if len(figs) != 1 else ''}")
+                if natives:
+                    parts.append(
+                        f"{len(natives)} other output file"
+                        f"{'s' if len(natives) != 1 else ''}")
+                note += (
+                    " &nbsp;·&nbsp; " + " and ".join(parts)
+                    + " found — use <b>Download results</b> to export "
+                    + ("them." if (len(figs) + len(natives)) != 1 else "it.")
+                )
+            else:
+                note = (
+                    _EMPTY_NOTE if status == "empty"
+                    else "This run's outputs are not available locally. "
+                         "Use <b>Fetch results</b> to retrieve them."
+                )
+            self.status.value = f"<span class='icesee-subtle'>{note}</span>"
             self.meta.value = ""
-            self._show_legacy_figures(arts)
+            self._show_native_outputs(figs, natives)
             return
 
         if status == "missing" or not self._pkg.is_readable():
             self._set_enabled(False)
+            self._show_field_controls(False)
             self.solution_dd.options = ()
             self.field_dd.options = ()
             if status == "missing":
@@ -186,6 +251,7 @@ class VisualizationController:
 
         solutions = self._pkg.available_solutions()
         self._set_enabled(bool(solutions))
+        self._show_field_controls(bool(solutions))
         self._show_fetch(True)                  # keep a re-fetch affordance
         self.fetch_btn.description = "Re-fetch results"
         self._suppress = True
@@ -280,15 +346,168 @@ class VisualizationController:
                 f"{html.escape(result.reason or 'unsupported')}</span>")
             self._log(f"[viz] {sol}.{fld}: {result.reason}")
 
-    def _show_legacy_figures(self, arts: dict):
-        figures = arts.get("figures") or []
+    @staticmethod
+    def _figure_heading(name: str, meta: dict) -> str:
+        """Human-readable heading for one gallery figure. The name comes
+        straight from the figure ITSELF -- never inferred from the image, the
+        filename, or the example's identity. Priority (the collector already
+        folds 1-3 into ``title``; the extra fallbacks here cover metadata
+        written by another path):
+
+          1. explicit figure label   2. suptitle   3. primary axes title
+          4. -> neutral "Figure N"
+
+        A figure the script gave no name at all gets "Figure N"; anything
+        else is labelled by its own filename stem."""
+        for key in ("title", "label", "suptitle"):
+            v = (meta.get(key) or "").strip()
+            if v:
+                return v
+        for t in (meta.get("axes_titles") or []):
+            if t and t.strip():
+                return t.strip()
+        m = re.match(r"figure-0*(\d+)\.[a-z0-9]+$", name, re.IGNORECASE)
+        if m:
+            return f"Figure {int(m.group(1))}"
+        return Path(name).stem
+
+    @staticmethod
+    def _fmt_size(n: int) -> str:
+        step = 1024.0
+        val = float(max(0, n))
+        for unit in ("B", "KB", "MB", "GB"):
+            if val < step:
+                return f"{val:.0f} {unit}" if unit == "B" else f"{val:.1f} {unit}"
+            val /= step
+        return f"{val:.1f} TB"
+
+    def _native_file_rows(self, natives: list) -> str:
+        base = getattr(self._pkg, "outputs", None)
+        rows = []
+        for p in natives:
+            path = Path(p)
+            try:
+                rel = str(path.relative_to(base)) if base else path.name
+            except ValueError:
+                rel = path.name
+            try:
+                size = self._fmt_size(path.stat().st_size)
+            except OSError:
+                size = "—"
+            ext = path.suffix.lstrip(".").lower() or "—"
+            rows.append(
+                "<tr>"
+                f"<td><code>{html.escape(path.name)}</code></td>"
+                f"<td>{html.escape(rel)}</td>"
+                f"<td>{html.escape(ext)}</td>"
+                f"<td style='text-align:right'>{html.escape(size)}</td>"
+                "</tr>"
+            )
+        if not rows:
+            return ""
+        return (
+            "<div class='cryostack-section-label'>Native output files</div>"
+            "<table class='cryostack-native-files'>"
+            "<thead><tr><th>File</th><th>Path</th><th>Type</th>"
+            "<th style='text-align:right'>Size</th></tr></thead>"
+            "<tbody>" + "".join(rows) + "</tbody></table>"
+        )
+
+    def _show_native_outputs(self, figs: list, natives: list):
+        """The native-output fallback: render any recognisable figure files as
+        an inline gallery, and list every other native output file (name /
+        relative path / type / size). Never fabricates a plot.
+
+        Figures are emitted as ``<img src="data:image/…;base64,…">`` inside an
+        ``IPython.display.HTML`` payload -- the SAME transport ``render()`` and
+        the download helper already use. A bare ``ipywidgets`` image/box
+        display()'d into an ``Output`` does not render reliably in Voilà (the
+        live "large blank area" symptom); a data-URI ``<img>`` is browser-native
+        and works identically for Local, HPC and Cloud figures, which all land
+        in the same local ``outputs/figures/``.
+        """
+        gallery_html, oversized = self._figure_gallery_html(figs)
+        native_html = self._native_file_rows(natives)
         with self.plot_out:
             clear_output(wait=True)
-            for path in figures:
-                if str(path).lower().endswith(".png"):
-                    display(Image(filename=str(path)))
-        if figures:
-            self._log(f"[viz] legacy run: showing {len(figures)} existing figure(s)")
+            if gallery_html or native_html:
+                display(HTML(gallery_html + native_html))
+            else:
+                display(HTML(
+                    "<div class='icesee-subtle'>No output files were found "
+                    "for this run.</div>"))
+        rendered = gallery_html.count("data:image/")
+        if gallery_html or native_html:
+            self._log(
+                f"[viz] native outputs: {rendered} figure(s) previewed"
+                + (f", {oversized} too large for inline preview" if oversized else "")
+                + f", {len(natives)} other file(s)")
+
+    def _figure_gallery_html(self, figures: list) -> tuple[str, int]:
+        """``(gallery_html, oversized_count)``. Each recognisable image file
+        becomes a card: heading + base64 data-URI ``<img>`` + filename/labels.
+        A figure over :data:`_MAX_INLINE_FIGURE_BYTES` is not embedded (card
+        says so, file still downloadable)."""
+        captions: dict = {}
+        try:
+            if hasattr(self._pkg, "figure_captions"):
+                captions = self._pkg.figure_captions() or {}
+        except Exception:  # noqa: BLE001 - caption gaps never break the gallery
+            captions = {}
+
+        cards: list[str] = []
+        oversized = 0
+        for path in figures:
+            p = Path(path)
+            ext = p.suffix.lower().lstrip(".")
+            if ext not in _IMG_MIME:
+                continue
+            name = p.name
+            meta = captions.get(name) or {}
+            heading = html.escape(self._figure_heading(name, meta))
+
+            sub_bits = [f"<code>{html.escape(name)}</code>"]
+            if meta.get("xlabel"):
+                sub_bits.append("x: " + html.escape(str(meta["xlabel"])))
+            if meta.get("ylabel"):
+                sub_bits.append("y: " + html.escape(str(meta["ylabel"])))
+            extra_titles = [t for t in (meta.get("axes_titles") or [])
+                            if t and t != meta.get("title")]
+            sub_html = " &nbsp;·&nbsp; ".join(sub_bits)
+            if extra_titles:
+                sub_html += ("<br>" + " · ".join(html.escape(str(t)) for t in extra_titles))
+
+            try:
+                size = p.stat().st_size
+            except OSError:
+                continue
+            if size > _MAX_INLINE_FIGURE_BYTES:
+                oversized += 1
+                body = ("<div class='icesee-subtle'>Figure is "
+                        f"{self._fmt_size(size)} — too large to preview inline. "
+                        "Use <b>Download results</b>.</div>")
+            else:
+                try:
+                    data = p.read_bytes()
+                except OSError:
+                    continue
+                b64 = base64.b64encode(data).decode("ascii")
+                body = (f"<img src='data:{_IMG_MIME[ext]};base64,{b64}' "
+                        f"alt='{heading}'>")
+
+            cards.append(
+                "<div class='cryostack-figure-card'>"
+                f"<div class='cryostack-figure-title'>{heading}</div>"
+                f"{body}"
+                f"<div class='cryostack-figure-sub'>{sub_html}</div>"
+                "</div>"
+            )
+        if not cards:
+            return "", oversized
+        return (
+            "<div class='cryostack-figure-gallery'>" + "".join(cards) + "</div>",
+            oversized,
+        )
 
 
 def build_visualization_panel(*, manager: WorkspaceManager, selected_run_id,
@@ -304,30 +523,50 @@ def build_visualization_panel(*, manager: WorkspaceManager, selected_run_id,
                          layout=W.Layout(width="auto", display="none"))
     status = W.HTML()
     meta = W.HTML()
-    plot_out = W.Output()
+    # The figure viewer: controls / metadata sit above it. It has a useful
+    # minimum height, grows with the figure, and only scrolls internally once
+    # it reaches the usable viewport bottom (max-height set by the scoped
+    # viewer-sizing script; relaxed on narrow screens -- see theme CSS).
+    plot_out = W.Output(layout=W.Layout(width="100%", min_height="300px",
+                                        overflow="auto"))
+    plot_out.add_class("cryostack-results-viewer")
+
+    def _lbl(text):
+        return W.HTML(f"<div class='icesee-lbl'>{text}</div>",
+                      layout=W.Layout(min_width="64px"))
+
+    def _field_row(label, control):
+        row = W.HBox([_lbl(label), control],
+                     layout=W.Layout(align_items="center", gap="6px", flex_wrap="wrap"))
+        row.add_class("cryostack-field-row")
+        return row
+
+    # Solution / Field / Timestep / Render -- one block, hidden entirely (not
+    # just disabled) when the selected run has no structured fields, so an
+    # artifacts-only run (e.g. 00-meshes-functions) never implies fields exist.
+    field_controls = W.VBox(
+        [
+            _field_row("Solution:", solution_dd),
+            _field_row("Field:", field_dd),
+            _field_row("Timestep:", timestep_dd),
+            W.HBox([render_btn], layout=W.Layout(gap="6px")),
+        ],
+        layout=W.Layout(width="100%", gap="6px"),
+    )
 
     controller = VisualizationController(
         manager=manager, selected_run_id=selected_run_id, log_output=log_output,
         solution_dd=solution_dd, field_dd=field_dd, timestep_dd=timestep_dd,
         render_btn=render_btn, fetch_btn=fetch_btn, status=status, meta=meta,
-        plot_out=plot_out, fetch_results=fetch_results)
-
-    def _lbl(text):
-        return W.HTML(f"<div class='icesee-lbl'>{text}</div>",
-                      layout=W.Layout(min_width="64px"))
+        plot_out=plot_out, fetch_results=fetch_results,
+        field_controls=field_controls)
 
     container = W.VBox(
         [
             W.HTML("<div class='cryostack-section-label'>Field visualization</div>"),
             W.HBox([status, fetch_btn],
                    layout=W.Layout(align_items="center", gap="10px", flex_wrap="wrap")),
-            W.HBox([_lbl("Solution:"), solution_dd],
-                   layout=W.Layout(align_items="center", gap="6px", flex_wrap="wrap")),
-            W.HBox([_lbl("Field:"), field_dd],
-                   layout=W.Layout(align_items="center", gap="6px", flex_wrap="wrap")),
-            W.HBox([_lbl("Timestep:"), timestep_dd],
-                   layout=W.Layout(align_items="center", gap="6px", flex_wrap="wrap")),
-            W.HBox([render_btn], layout=W.Layout(gap="6px")),
+            field_controls,
             meta,
             plot_out,
         ],

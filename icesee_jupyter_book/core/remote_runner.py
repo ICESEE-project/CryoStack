@@ -31,6 +31,15 @@ class RemoteSubmitResult:
     existing_sbatch_name: str | None
     messages: list[str]
 
+
+def require_remote_base_dir(value):
+    """Fail closed on a missing remote working directory (no developer default).
+
+    Imported lazily to avoid a circular import via cryostack_src.remote.__init__.
+    """
+    from cryostack_src.remote.runtime import require_remote_base_dir as _impl
+    return _impl(value)
+
 def resolve_remote_abs_path(host: str, user: str, port: int, remote_path: str) -> str:
     rc, out, err = rsh(
         host,
@@ -85,14 +94,14 @@ def submit_remote_example(
         raise ValueError("Provide Host + User first.")
 
     rdir = make_remote_run_dir(
-        remote_base_dir.strip() or "~/r-arobel3-0",
+        require_remote_base_dir(remote_base_dir),
         remote_tag.strip() or "icesee",
     )
     messages.append(f"[remote] Remote run dir: {rdir}")
 
     spack_path = None
     if spack_enable:
-        spack_parent = remote_base_dir.strip() or "~/r-arobel3-0"
+        spack_parent = require_remote_base_dir(remote_base_dir)
         spack_name = spack_dirname.strip() or "ICESEE-Spack"
         repo = spack_repo_url.strip()
 
@@ -285,13 +294,13 @@ def submit_remote_example_container(
         raise ValueError("Provide Host + User first.")
 
     rdir = make_remote_run_dir(
-        remote_base_dir.strip() or "~/r-arobel3-0",
+        require_remote_base_dir(remote_base_dir),
         remote_tag.strip() or "icesee",
     )
     messages.append(f"[remote] Remote run dir: {rdir}")
 
     # keep using ICESEE-Spack to locate the example directory and scripts
-    spack_parent = remote_base_dir.strip() or "~/r-arobel3-0"
+    spack_parent = require_remote_base_dir(remote_base_dir)
     spack_name = spack_dirname.strip() or "ICESEE-Spack"
     repo = spack_repo_url.strip()
 
@@ -332,7 +341,7 @@ def submit_remote_example_container(
 
     account_line, mail_lines = slurm_optional_lines(slurm_account.strip(), slurm_mail.strip())
 
-    resolved_base = resolve_remote_abs_path(host, user, port, remote_base_dir.strip() or "~/r-arobel3-0")
+    resolved_base = resolve_remote_abs_path(host, user, port, require_remote_base_dir(remote_base_dir))
     remote_root = f"{resolved_base.rstrip('/')}/{remote_tag.strip() or 'icesee'}"
     container_root = f"{remote_root}/ICESEE-Containers"
     container_dir = f"{container_root}/spack-managed/combined-container"
@@ -498,7 +507,7 @@ def http_json(method: str, url: str, payload: dict | None = None, headers: dict 
         txt = e.read().decode("utf-8", errors="replace") if hasattr(e, "read") else str(e)
         return e.code, None, txt
 
-def make_remote_run_dir(base_dir="~/r-arobel3-0", tag="icesee") -> str:
+def make_remote_run_dir(base_dir: str, tag: str = "icesee") -> str:
     ts = time.strftime("%Y%m%d-%H%M%S")
     return f"{base_dir.rstrip('/')}/{tag}-{ts}"
 
@@ -1056,11 +1065,13 @@ def bootstrap_passwordless_ssh(
             {
                 "host": host,
                 "user": user,
+                "hpc_user": user,
                 "port": int(port),
                 "password": password,
                 "cluster_name": cluster_name,
-                "timeout": 300,
+                "timeout": 180,
             },
+            timeout=200,
         )
 
         return res.get("result", res)
@@ -1253,7 +1264,7 @@ def submit_remote_example_via_connector(
     if not spack_enable:
         raise RuntimeError("Remote currently requires ICESEE-Spack enabled.")
 
-    remote_base_input = remote_base_dir.strip() or "~/r-arobel3-0"
+    remote_base_input = require_remote_base_dir(remote_base_dir)
 
     rbase_cmd = (
         "python3 -c "
@@ -1528,7 +1539,7 @@ def submit_remote_example_container_via_connector(
     if not host or not user:
         raise ValueError("Provide Host + User first.")
 
-    remote_base_input = remote_base_dir.strip() or "~/r-arobel3-0"
+    remote_base_input = require_remote_base_dir(remote_base_dir)
 
     rbase_cmd = (
         "python3 -c "
@@ -1780,7 +1791,12 @@ def connector_stage_archive(
 def connector_get_public_key(
     session_id: str,
     cluster_name: str = "pace",
+    *,
+    hpc_username: str = "",
+    host: str = "",
 ):
+    # B3: the connector namespaces the key by resource + HPC identity, so the
+    # public key shown here must be requested with that same identity.
     from icesee_jupyter_book.core.connector_relay_client import send_command
 
     res = send_command(
@@ -1788,6 +1804,8 @@ def connector_get_public_key(
         "get-public-key",
         {
             "cluster_name": cluster_name,
+            "user": hpc_username,
+            "host": host,
             "timeout": 300,
         },
     )

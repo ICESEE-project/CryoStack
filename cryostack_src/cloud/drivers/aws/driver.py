@@ -35,7 +35,53 @@ completed.
 
 from __future__ import annotations
 
+import re
+
 from ..base import CloudDriver
+
+# Defence-in-depth: strip anything that looks like AWS credential material or a
+# CryoStack ExternalId from a raw error before it is carried in a result the UI
+# will print. `run_aws` keeps credentials in the child env (never argv), so this
+# only matters if a CLI error echoes something unexpected.
+_SECRET_TEXT_RE = re.compile(
+    r"(ASIA[0-9A-Z]{6,}|AKIA[0-9A-Z]{6,}"
+    r"|(?:aws[_-])?(?:session|security)[_ -]?token[\"'=:\s]+\S+"
+    r"|x-amz-security-token[\"'=:\s]+\S+"
+    r"|\b(?:FwoG|IQoJ|FQoG|Fwo)[A-Za-z0-9+/=_-]{16,}"
+    r"|cryostack:[\w.\-]+:[\w\-]{8,}"
+    # FlexNet / MATLAB network-license endpoint: "<port>@<host>" (an all-digit
+    # "user" of 1-5 chars is the port -- this does NOT match user@host or a
+    # normal "host:port"). Covers the MLM_LICENSE_FILE value and MATLAB's own
+    # "License path: <port>@<host>:..." diagnostic line.
+    r"|\b\d{1,5}@[A-Za-z0-9](?:[A-Za-z0-9.\-]*[A-Za-z0-9])?)",
+    re.IGNORECASE,
+)
+
+#: keep the key, redact the value -- "MLM_LICENSE_FILE=<anything>" /
+#: "MLM_LICENSE_FILE: <anything>" (also catches a license-file PATH form the
+#: bare-endpoint pattern above would miss).
+_LICENSE_ENV_RE = re.compile(
+    r"(MLM_LICENSE_FILE\s*[=:]\s*)(\S+)", re.IGNORECASE
+)
+
+
+def _redact(text: str) -> str:
+    out = _SECRET_TEXT_RE.sub("<redacted>", text or "")
+    return _LICENSE_ENV_RE.sub(r"\1<redacted>", out)
+
+
+def _issm_matlab_secrets(secret_arn: str) -> list[dict] | None:
+    """``containerProperties.secrets`` for the ISSM job definition from a
+    (non-secret) Secrets Manager ARN. ``None`` when unconfigured -- the
+    license value never passes through CryoStack."""
+    from cryostack_src.cloud.matlab_license import CloudMatlabLicense
+
+    arn = (secret_arn or "").strip()
+    if not arn:
+        return None
+    lic = CloudMatlabLicense(configured=True, mechanism="secrets-manager",
+                             secret_arn=arn)
+    return lic.batch_secrets_block() or None
 
 from .auth import (
     AWSCredentialsError,
@@ -48,10 +94,14 @@ from .batch import (
 
 from .batch_config import (
     DEFAULT_MAX_VCPUS,
+    COMPUTE_MODE_EC2,
+    EC2ComputeConfig,
+    normalize_compute_mode,
 )
 
 from .batch_provision import (
     AWSBatchProvisionResult,
+    EC2Provisioning,
     ensure_batch_resources,
 )
 
@@ -113,12 +163,16 @@ class AWSDriver(
         *,
         region: str = "us-east-2",
         profile: str | None = None,
+        credentials: dict[str, str] | None = None,
         submitter=None,
     ) -> None:
 
+        #: ``credentials`` (assumed-role temporary env) is end-user mode and
+        #: wins over ``profile``; both absent is developer/ambient mode.
         self.config = AWSConfig(
             region=region,
             profile=profile,
+            credentials=credentials,
         )
 
         #
@@ -196,17 +250,33 @@ class AWSDriver(
         registry=None,          # accepted for call-site compatibility; unused
         max_vcpus: int = DEFAULT_MAX_VCPUS,
         include_icepack: bool = False,
+        include_icesee: bool = False,
         image_copier=None,
+        matlab_secret_arn: str = "",
+        compute_mode: str = "fargate",
+        ec2_instance_role_arn: str = "",
+        ec2_config: "EC2ComputeConfig | None" = None,
     ) -> AWSBatchProvisionResult:
         """
         Idempotently provision AWS Batch on Fargate: a scale-to-zero compute
         environment, a job queue, and the ISSM job definition (+ log group).
+        When ``include_icepack``/``include_icesee`` is set, that model's job
+        definition (+ its own log group) is provisioned the same way, in the
+        SAME compute environment / queue -- one Batch environment, N job
+        definitions, no second cloud execution path. ICESEE's job definition
+        runs :func:`icesee_jupyter_book.core.cloud_runner.icesee_batch_command`
+        (its own ``ICESEE_*`` env contract, verified 2026-09-08 for
+        single-rank/lorenz96 only -- see that module), never the generic
+        ``cryostack-run`` command ISSM/Icepack share.
 
-        The ISSM job definition is pinned to the tested image **by digest**:
-        the tested image is mirrored into ECR (once) and the resulting
-        ``<repo>@sha256:...`` reference feeds the job definition. A failed or
-        unconfigured mirror leaves the job definition untouched -- CryoStack
-        never points Batch at an unverified image.
+        Each model's job definition is pinned to the tested image **by
+        digest**: the (single, combined) tested image is mirrored into that
+        model's own ECR repository (once per repository -- ``cryostack-issm``
+        / ``cryostack-icepack``) and the resulting ``<repo>@sha256:...``
+        reference feeds its job definition. A failed or unconfigured mirror
+        for one model leaves only THAT model's job definition untouched --
+        CryoStack never points Batch at an unverified image, and one model's
+        delivery failure never blocks the other's.
 
         Discovery results for network / IAM may be passed in to avoid
         re-describing. ``image_copier`` overrides the transfer mechanism; by
@@ -214,7 +284,8 @@ class AWSDriver(
         registry-to-registry copy (``docker buildx imagetools create``): no
         image rebuild, no Apptainer conversion, and Batch never depends on a
         mutable tag. The copy runs only when the exact tested image is not
-        already in ECR.
+        already in the target ECR repository. The SAME copier instance is
+        reused for both models' mirror calls.
         """
 
         network = network or self.network()
@@ -223,23 +294,52 @@ class AWSDriver(
         copier = (image_copier if image_copier is not None
                   else buildx_imagetools_copier(self.config))
 
-        delivery = None
-        issm_image = None
-        delivery_messages: list[str] = []
-        try:
-            delivery = mirror_tested_image(
-                self.config, model="issm", copier=copier,
-            )
-            if delivery.verified and delivery.immutable_reference:
-                issm_image = delivery.immutable_reference
-                delivery_messages.extend(delivery.messages)
-        except RegistryDeliveryError as err:
-            delivery_messages.append(
-                f"Tested-image delivery not ready: {err} "
-                "-- ISSM job definition left unchanged."
-            )
+        def _mirror(model: str) -> tuple[object | None, str | None, list[str]]:
+            """Mirror one model's tested image; never lets that model's
+            failure raise -- it degrades to "job definition left unchanged"
+            exactly like the pre-Icepack ISSM-only behaviour did."""
+            try:
+                d = mirror_tested_image(self.config, model=model, copier=copier)
+            except RegistryDeliveryError as err:
+                return None, None, [
+                    f"Tested-image delivery not ready: {err} "
+                    f"-- {model.upper()} job definition left unchanged."
+                ]
+            if d.verified and d.immutable_reference:
+                return d, d.immutable_reference, list(d.messages)
+            return d, None, list(d.messages)
+
+        delivery, issm_image, delivery_messages = _mirror("issm")
+
+        icepack_delivery = None
+        icepack_image = None
+        if include_icepack:
+            icepack_delivery, icepack_image, icepack_messages = _mirror("icepack")
+            delivery_messages.extend(icepack_messages)
+
+        icesee_delivery = None
+        icesee_image = None
+        if include_icesee:
+            icesee_delivery, icesee_image, icesee_messages = _mirror("icesee")
+            delivery_messages.extend(icesee_messages)
 
         from cryostack_src.cloud.runtime import cloud_run_command
+        from icesee_jupyter_book.core.cloud_runner import icesee_batch_command
+
+        # Advanced: when EC2 mode is requested AND an ECS instance profile is
+        # available, ALSO stand up the EC2 compute environment / queue /
+        # job definitions for the selected sub-mode (capacity/network/
+        # accelerator/topology all live on `ec2_config`). Fargate is always
+        # provisioned regardless.
+        ec2_provisioning = None
+        if normalize_compute_mode(compute_mode) == COMPUTE_MODE_EC2:
+            instance_role = (ec2_instance_role_arn
+                             or getattr(iam, "ec2_instance_profile", "") or "")
+            if instance_role:
+                ec2_provisioning = EC2Provisioning(
+                    instance_role_arn=instance_role,
+                    ec2_config=ec2_config or EC2ComputeConfig(),
+                )
 
         result = ensure_batch_resources(
             self.config,
@@ -250,9 +350,17 @@ class AWSDriver(
             issm_image=issm_image,
             max_vcpus=max_vcpus,
             job_command=cloud_run_command(),
+            issm_secrets=_issm_matlab_secrets(matlab_secret_arn),
             include_icepack=include_icepack,
+            icepack_image=icepack_image,
+            include_icesee=include_icesee,
+            icesee_image=icesee_image,
+            icesee_command=icesee_batch_command() if include_icesee else None,
+            ec2=ec2_provisioning,
         )
         result.image_delivery = delivery
+        result.icepack_image_delivery = icepack_delivery
+        result.icesee_image_delivery = icesee_delivery
         result.messages.extend(delivery_messages)
         return result
 
@@ -260,6 +368,9 @@ class AWSDriver(
         self,
         *,
         bucket: str | None = None,
+        matlab_secret_arn: str = "",
+        compute_mode: str = "fargate",
+        ec2_config: "EC2ComputeConfig | None" = None,
     ) -> dict:
         """
         Prepare the AWS environment currently supported by CryoStack.
@@ -279,6 +390,33 @@ class AWSDriver(
 
         messages: list[str] = []
 
+        # Per-row readiness for the UI: "connected"/"not_connected" for account,
+        # "ready"/"failed"/"not_attempted" for the rest. Preparation aborts on
+        # the first failing stage; stages that were never reached stay
+        # "not_attempted" so the UI never shows them as an independent failure.
+        row_status: dict[str, str] = {
+            "account": "not_connected",
+            "storage": "not_attempted",
+            "registry": "not_attempted",
+            "compute": "not_attempted",
+        }
+
+        def _partial(*, capabilities=None) -> dict:
+            return {
+                "success": False,
+                "provider": self.name,
+                "region": self.config.region,
+                "account": account,
+                "storage": None,
+                "network": None,
+                "iam": None,
+                "registry": None,
+                "batch": None,
+                "capabilities": capabilities,
+                "row_status": dict(row_status),
+                "messages": list(messages),
+            }
+
         #
         # ---------------------------------------------------------
         # Account
@@ -287,160 +425,148 @@ class AWSDriver(
         account = self.account()
 
         if not account.authenticated:
+            messages.append("AWS account is not connected.")
+            return _partial(capabilities=self.capabilities())
 
-            return {
-                "success": False,
-                "provider": self.name,
-                "region": self.config.region,
-                "account": account,
-                "storage": None,
-                "network": None,
-                "iam": None,
-                "registry": None,
-                "batch": None,
-                "capabilities": self.capabilities(),
-                "messages": [
-                    "AWS account is not connected.",
-                ],
-            }
+        row_status["account"] = "connected"
+        messages.append("AWS account connected.")
 
-        messages.append(
-            "AWS account connected."
-        )
-
-        #
-        # ---------------------------------------------------------
-        # Storage
-        # ---------------------------------------------------------
-        #
+        # From here, one abort point: a stage raising stops preparation, records
+        # a sanitized reason, and returns the partial state. `AWSCredentialsError`
+        # keeps its dedicated message; any other error is classified.
+        #: which UI row a mid-preparation failure belongs to
+        _STAGE_ROW = {
+            "storage": "storage",
+            "network": "compute", "iam": "compute", "batch": "compute",
+            "registry": "registry",
+        }
+        stage = "storage"
         try:
 
-            storage = self.prepare_storage(
-                bucket=bucket,
+            #
+            # ---------------------------------------------------------
+            # Storage
+            # ---------------------------------------------------------
+            #
+            storage = self.prepare_storage(bucket=bucket)
+            row_status["storage"] = "ready"
+            messages.append(
+                "CryoStack S3 storage created."
+                if storage.created
+                else "CryoStack S3 storage already exists."
+            )
+
+            #
+            # ---------------------------------------------------------
+            # Network
+            # ---------------------------------------------------------
+            #
+            stage = "network"
+            network = self.network()
+            if (
+                network.vpc_id
+                and network.subnet_ids
+                and network.security_group_ids
+            ):
+                messages.append("AWS networking discovered.")
+            else:
+                messages.append("AWS networking is incomplete.")
+
+            #
+            # ---------------------------------------------------------
+            # IAM
+            # ---------------------------------------------------------
+            #
+            stage = "iam"
+            _want_ec2 = normalize_compute_mode(compute_mode) == COMPUTE_MODE_EC2
+            iam_result = ensure_iam_resources(
+                self.config,
+                bucket=storage.bucket,
+                # reconcile the ISSM MATLAB-license secret grant on the ECS
+                # execution role every Prepare Cloud (scoped to exactly this
+                # ARN; removed when unconfigured)
+                matlab_secret_arn=matlab_secret_arn,
+                # Advanced: create the ECS instance profile only when EC2 mode
+                # was selected -- Fargate-only accounts never get an EC2 role
+                include_ec2=_want_ec2,
+            )
+            iam = iam_result.resources
+            if iam_result.created:
+                messages.append(
+                    "Created IAM resources: " + ", ".join(iam_result.created)
+                )
+            if getattr(iam_result, "updated", None):
+                messages.append(
+                    "Updated IAM resources: " + ", ".join(iam_result.updated)
+                )
+            if iam_result.reused:
+                messages.append(
+                    "Reused IAM resources: " + ", ".join(iam_result.reused)
+                )
+
+            #
+            # ---------------------------------------------------------
+            # Registry
+            # ---------------------------------------------------------
+            #
+            stage = "registry"
+            # Prepare Cloud provisions every currently-tested model's ECR
+            # repository -- cryostack-issm, cryostack-icepack and
+            # cryostack-icesee -- from the single tested combined image
+            # (models=("issm","icepack","icesee")); idempotent, never a
+            # rebuild.
+            registry_result = self.prepare_registry(
+                include_icepack=True, include_icesee=True)
+            registry = registry_result.resources
+            if registry_result.created:
+                messages.append(
+                    "Created ECR repositories: "
+                    + ", ".join(registry_result.created)
+                )
+            if registry_result.reused:
+                messages.append(
+                    "Reused ECR repositories: "
+                    + ", ".join(registry_result.reused)
+                )
+            row_status["registry"] = "ready"
+
+            #
+            # ---------------------------------------------------------
+            # Batch (Fargate) provisioning
+            # ---------------------------------------------------------
+            #
+            stage = "batch"
+            batch_result = self.prepare_batch(
+                network=network,
+                iam=iam,
+                registry=registry,
+                include_icepack=True,
+                include_icesee=True,
+                matlab_secret_arn=matlab_secret_arn,
+                compute_mode=compute_mode,
+                ec2_instance_role_arn=getattr(
+                    iam_result, "ec2_instance_profile", "") or "",
+                ec2_config=ec2_config,
             )
 
         except AWSCredentialsError:
-
-            return {
-                "success": False,
-                "provider": self.name,
-                "region": self.config.region,
-                "account": account,
-                "storage": None,
-                "network": None,
-                "iam": None,
-                "registry": None,
-                "batch": None,
-                "capabilities": None,
-                "messages": [
-                    "AWS credentials are not available.",
-                ],
-            }
-
-        if storage.created:
-
+            row_status[_STAGE_ROW.get(stage, "compute")] = "failed"
             messages.append(
-                "CryoStack S3 storage created."
+                "[cloud][ERROR] AWS access was lost while preparing the cloud "
+                "environment. Re-check the connected AWS account and try again."
             )
+            return _partial()
 
-        else:
-
+        except Exception as error:  # noqa: BLE001 -- surfaced + carried to the Run Log
+            row_status[_STAGE_ROW.get(stage, "compute")] = "failed"
             messages.append(
-                "CryoStack S3 storage already exists."
+                f"[cloud][ERROR] Could not prepare the cloud environment "
+                f"(stage: {stage}). See the detail below and the AWS role's "
+                f"permissions."
             )
-
-        #
-        # ---------------------------------------------------------
-        # Network
-        # ---------------------------------------------------------
-        #
-        network = self.network()
-
-        if (
-            network.vpc_id
-            and network.subnet_ids
-            and network.security_group_ids
-        ):
-
-            messages.append(
-                "AWS networking discovered."
-            )
-
-        else:
-
-            messages.append(
-                "AWS networking is incomplete."
-            )
-
-        #
-        # ---------------------------------------------------------
-        # IAM
-        # ---------------------------------------------------------
-        #
-        iam_result = ensure_iam_resources(
-            self.config,
-            bucket=storage.bucket,
-        )
-
-        iam = iam_result.resources
-
-        if iam_result.created:
-
-            messages.append(
-                "Created IAM resources: "
-                + ", ".join(
-                    iam_result.created
-                )
-            )
-
-        if iam_result.reused:
-
-            messages.append(
-                "Reused IAM resources: "
-                + ", ".join(
-                    iam_result.reused
-                )
-            )
-
-        #
-        # ---------------------------------------------------------
-        # Registry
-        # ---------------------------------------------------------
-        #
-        registry_result = self.prepare_registry(
-            include_icepack=False,
-        )
-
-        registry = registry_result.resources
-
-        if registry_result.created:
-
-            messages.append(
-                "Created ECR repositories: "
-                + ", ".join(
-                    registry_result.created
-                )
-            )
-
-        if registry_result.reused:
-
-            messages.append(
-                "Reused ECR repositories: "
-                + ", ".join(
-                    registry_result.reused
-                )
-            )
-
-        #
-        # ---------------------------------------------------------
-        # Batch (Fargate) provisioning
-        # ---------------------------------------------------------
-        #
-        batch_result = self.prepare_batch(
-            network=network,
-            iam=iam,
-            registry=registry,
-        )
+            # raw detail is carried verbatim; the Run Log emitter sanitizes it
+            messages.append(f"[cloud][detail] {_redact(str(error))[:1500]}")
+            return _partial()
 
         batch = batch_result.resources
 
@@ -492,6 +618,19 @@ class AWSDriver(
             and capabilities.batch_ready
         )
 
+        # every stage completed without raising; reflect the recalculated
+        # capability state per row (a stage can still be "incomplete" without
+        # having raised -- e.g. discovery found no usable VPC).
+        row_status["account"] = "connected" if capabilities.authenticated else "not_connected"
+        row_status["storage"] = "ready" if capabilities.storage_ready else "failed"
+        row_status["registry"] = "ready" if capabilities.registry_ready else "failed"
+        row_status["compute"] = (
+            "ready"
+            if (capabilities.network_ready and capabilities.iam_ready
+                and capabilities.batch_ready)
+            else "failed"
+        )
+
         return {
             "success": success,
             "provider": self.name,
@@ -503,6 +642,7 @@ class AWSDriver(
             "registry": registry,
             "batch": batch,
             "capabilities": capabilities,
+            "row_status": dict(row_status),
             "messages": messages,
         }
 
@@ -510,32 +650,122 @@ class AWSDriver(
         self,
         *,
         include_icepack: bool = False,
+        include_icesee: bool = False,
     ):
 
         return ensure_registry_resources(
             self.config,
             include_icepack=include_icepack,
+            include_icesee=include_icesee,
         )
 
-    def submit(
-        self,
-        **kwargs,
-    ):
+    def submit(self, **kwargs):
+        """Submit a staged CryoStack cloud run to AWS Batch.
+
+        Flow: ``assert_cloud_run_allowed`` (license / model gate, before any
+        upload) -> ``stage_run_inputs`` (the StagedExample tree + descriptor to
+        ``s3://<bucket>/runs/<run-id>/input/``) -> ``aws batch submit-job`` with
+        three non-secret env values.
+
+        A legacy ``submitter`` may still be injected (old ICESEE path); it wins
+        when present so nothing existing breaks.
+
+        Returns a dict:
+            {run_id, batch_job_id, s3_run, s3_input, s3_outputs, model,
+             run_target, job_queue, job_definition, messages}
         """
-        Submit a cloud workload.
+        if self._submitter is not None:
+            return self._submitter(**kwargs)
 
-        During the strangler migration, existing cloud submission
-        implementations may be injected through ``submitter``.
-        """
-
-        if self._submitter is None:
-            raise RuntimeError(
-                "AWS cloud submission is not configured yet."
-            )
-
-        return self._submitter(
-            **kwargs
+        from cryostack_src.cloud.preflight import assert_cloud_run_allowed
+        from .staging import stage_run_inputs
+        from .submit import submit_batch_job
+        from .batch_config import (
+            job_definition_name, job_queue_name, normalize_compute_mode,
         )
+
+        staged_source = kwargs.get("staged_source") or kwargs.get("source")
+        model = (kwargs.get("model") or "").strip().lower()
+        run_target = (kwargs.get("run_target") or "runme.m").strip()
+        bucket = (kwargs.get("bucket") or "").strip()
+        working_directory = kwargs.get("working_directory") or "."
+        run_id = kwargs.get("run_id")
+        run_prefix = kwargs.get("run_prefix") or ""
+        job_name = kwargs.get("job_name") or "cryostack"
+        # "fargate" (default / anything unrecognised) or "ec2" -- selects which
+        # Batch queue + job definition the run targets. An old caller that
+        # passes nothing gets the Fargate pair, exactly as before.
+        compute_mode = normalize_compute_mode(kwargs.get("compute_mode"))
+        # the full EC2 sub-mode selection (capacity/network/accelerator/
+        # topology) -- optional; a caller that only passes compute_mode="ec2"
+        # gets the plain On-Demand/default-network/CPU/single-node EC2 path.
+        ec2_config = kwargs.get("ec2_config") or EC2ComputeConfig()
+        job_queue = (
+            (kwargs.get("job_queue") or "").strip()
+            or job_queue_name(compute_mode, ec2_config.capacity))
+        job_definition = (
+            (kwargs.get("job_definition") or "").strip()
+            or job_definition_name(
+                model, compute_mode,
+                accelerator=ec2_config.accelerator, topology=ec2_config.topology))
+        matlab_license_configured = bool(kwargs.get("matlab_license_configured", False))
+        s3 = kwargs.get("s3")
+        aws = kwargs.get("aws")
+
+        if staged_source is None:
+            raise RuntimeError("AWS cloud submission needs a staged run (staged_source).")
+        if not bucket:
+            raise RuntimeError("AWS cloud submission needs an S3 bucket.")
+
+        # 1. gate the run BEFORE anything is uploaded or a job is created --
+        # model/license AND the AWS Batch compute-selection compatibility
+        # matrix (Fargate+Spot/GPU/custom-network/multi-node rejected; EC2+GPU
+        # or EC2+multi-node rejected unless the image/runtime actually
+        # supports it).
+        assert_cloud_run_allowed(
+            model=model, matlab_license_configured=matlab_license_configured,
+            compute_mode=compute_mode, ec2_config=ec2_config,
+        )
+
+        # 2. stage the run's inputs to S3
+        staging = stage_run_inputs(
+            self.config,
+            source=staged_source,
+            model=model,
+            run_target=run_target,
+            bucket=bucket,
+            run_id=run_id,
+            run_prefix=run_prefix,
+            working_directory=working_directory,
+            s3=s3,
+        )
+
+        # 3. submit to Batch
+        submission = submit_batch_job(
+            self.config,
+            job_name=job_name,
+            job_queue=job_queue,
+            job_definition=job_definition,
+            s3_run=staging.s3_run,
+            model=model,
+            run_target=run_target,
+            run_id=staging.run_id,
+            aws=aws,
+        )
+
+        return {
+            "run_id": staging.run_id,
+            "batch_job_id": submission.job_id,
+            "s3_run": staging.s3_run,
+            "s3_input": staging.s3_input,
+            "s3_outputs": staging.s3_outputs,
+            "model": model,
+            "run_target": run_target,
+            "job_queue": submission.job_queue,
+            "job_definition": submission.job_definition,
+            "aws_batch_compute": compute_mode,
+            "messages": [*staging.messages, *submission.messages],
+        }
 
     def status(
         self,

@@ -67,12 +67,15 @@ class CloudBackend(
         provider: str = "aws",
         region: str = "us-east-2",
         profile: str | None = None,
+        credentials: dict[str, str] | None = None,
         submitter=None,
     ) -> None:
 
         self.provider = provider
         self.region = region
-        self.profile = profile
+        #: assumed-role temporary credentials (BYO-AWS mode); win over profile
+        self.credentials = credentials
+        self.profile = None if credentials else profile
 
         self._submitter = submitter
 
@@ -83,16 +86,13 @@ class CloudBackend(
         **kwargs,
     ) -> ExecutionResult:
 
-        if self._submitter is None:
-            raise RuntimeError(
-                "Cloud submitter has not been "
-                "configured."
-            )
-
+        # A legacy submitter (old ICESEE params.yaml path) is still honoured
+        # when injected; otherwise the driver's real submit path is used.
         result = self.manager.submit(
             provider=self.provider,
             region=self.region,
             profile=self.profile,
+            credentials=self.credentials,
             submitter=self._submitter,
             **kwargs,
         )
@@ -101,6 +101,7 @@ class CloudBackend(
         # Existing cloud implementations may return
         # either dictionaries or dataclass objects.
         #
+        extra: dict = {}
         if isinstance(
             result,
             dict,
@@ -127,6 +128,15 @@ class CloudBackend(
             run_id = result.get(
                 "run_id"
             )
+
+            extra = {
+                k: result[k]
+                for k in (
+                    "s3_input", "s3_outputs", "model", "run_target",
+                    "job_queue", "job_definition", "aws_batch_compute",
+                )
+                if result.get(k)
+            }
 
         else:
 
@@ -192,6 +202,7 @@ class CloudBackend(
                 "provider": "aws",
                 "run_id": run_id,
                 "s3_run": s3_run,
+                **extra,
             },
             messages=list(
                 messages or []
@@ -202,7 +213,7 @@ class CloudBackend(
         self,
         *,
         job_id: str,
-        region: str = "us-east-2",
+        region: str | None = None,
         profile: str | None = None,
         **kwargs,
     ) -> ExecutionStatus:
@@ -217,6 +228,7 @@ class CloudBackend(
                 if profile is not None
                 else self.profile
             ),
+            credentials=self.credentials,
             job_id=job_id,
         )
 
@@ -241,13 +253,16 @@ class CloudBackend(
                 "provider": "aws",
                 "region": (
                     region
-                    or "us-east-2"
+                    or self.region
                 ),
                 "log_stream": (
                     result.get(
                         "log_stream"
                     )
                 ),
+                "log_group": result.get("log_group"),
+                "image": result.get("image"),
+                "task_arn": result.get("task_arn"),
                 "created_at": (
                     result.get(
                         "created_at"
@@ -296,6 +311,7 @@ class CloudBackend(
                 if profile is not None
                 else self.profile
             ),
+            credentials=self.credentials,
             job_id=job_id,
         )
 
@@ -319,6 +335,7 @@ class CloudBackend(
                 if profile is not None
                 else self.profile
             ),
+            credentials=self.credentials,
             job_id=job_id,
         )
 

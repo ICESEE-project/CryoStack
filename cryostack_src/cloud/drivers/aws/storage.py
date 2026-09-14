@@ -39,6 +39,7 @@ from .auth import (
     run_aws,
 )
 from .models import AWSConfig
+from cryostack_src.cloud.s3_uri import bucket_name as _s3_bucket_name
 
 
 @dataclass
@@ -250,9 +251,12 @@ def ensure_bucket(
             "Could not determine AWS account ID."
         )
 
+    # normalize whatever the caller/UI passed: 'bucket', 's3://bucket',
+    # 's3://bucket/prefix' -> the bucket NAME only. AWS S3 APIs reject a URI.
     bucket_name = (
-        bucket
-        or cryostack_resource_name(
+        _s3_bucket_name(bucket)
+        if (bucket or "").strip()
+        else cryostack_resource_name(
             account_id=account_id,
             resource="runs",
         )
