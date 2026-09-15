@@ -74,7 +74,7 @@ from urllib.parse import quote, urlencode
 #: LOGICAL id -- no longer the role's PHYSICAL name (see module docstring).
 EXECUTION_ROLE_NAME = "CryoStackExecutionRole"
 DEFAULT_STACK_NAME = "cryostack-access"
-TEMPLATE_VERSION = "2026-09-14"
+TEMPLATE_VERSION = "2026-09-14b"
 
 _STACK_NAME_MAX_LENGTH = 128
 _STACK_SLUG_RE = re.compile(r"[^a-z0-9]+")
@@ -276,6 +276,44 @@ def _permissions_policy() -> dict:
                 "Resource": sub(
                     f"arn:{partition}:logs:*:{account}:log-group:/cryostack/*"
                 ),
+            },
+            # -- Secrets Manager: guided ISSM MATLAB-license secret setup --
+            #
+            # `secretsmanager:CreateSecret` has NO resource-level permission
+            # support in AWS IAM: at authorization time the secret does not
+            # exist yet, so its final ARN (which AWS suffixes with a random
+            # 6-character string) cannot be named in `Resource`. AWS's own
+            # documented pattern for restricting CreateSecret is `Resource:
+            # "*"` combined with the `secretsmanager:Name` condition key --
+            # used here exactly as documented, scoped to the ONE prefix
+            # `cryostack_src/cloud/drivers/aws/secrets.py`'s
+            # `create_matlab_license_secret` is hard-restricted to
+            # (`SECRET_NAME_PREFIX = "cryostack/"`) -- never `secretsmanager:*`,
+            # never an unconditioned `Resource: "*"`. No Region condition:
+            # this ONE template is shared by every CryoStack connection
+            # regardless of which Region it connects in (every other
+            # resource family above is likewise Region-wildcarded, e.g.
+            # `logs:*:{account}:...`), so a fixed `aws:RequestedRegion` value
+            # cannot be baked into it.
+            #
+            # This is CREATE only -- no `GetSecretValue`, no `PutSecretValue`,
+            # no `UpdateSecret`, no `DeleteSecret`. Reading the secret at
+            # container-launch time is a SEPARATE, already-existing grant on
+            # a SEPARATE role (`cryostack-ecs-execution-role`'s
+            # `CryoStackMatlabLicenseSecret` inline policy -- see
+            # `iam_policies.py:matlab_license_secret_policy` /
+            # `iam_provision.py:_reconcile_matlab_license_secret`), scoped to
+            # the exact ARN CreateSecret returns.
+            {
+                "Sid": "CryoStackMatlabLicenseSecretCreate",
+                "Effect": "Allow",
+                "Action": "secretsmanager:CreateSecret",
+                "Resource": "*",
+                "Condition": {
+                    "StringLike": {
+                        "secretsmanager:Name": "cryostack/*"
+                    }
+                },
             },
             # -- IAM: discover existing roles (ListRoles is account-level) --
             {

@@ -143,6 +143,46 @@ def invalidate_status_cache(session_id: str | None = None) -> None:
             _STATUS_CACHE.pop(str(session_id), None)
 
 
+def mint_tunnel_grant(session_id: str, purpose: str, *, ttl_seconds: int | None = None,
+                       timeout: float = 30) -> dict:
+    """Mint a short-lived, ``purpose``-scoped tunnel grant for the bound
+    session -- reuses the SAME control_secret binding ``send_command`` does,
+    never a new credential type this kernel has to manage. The returned
+    ``token`` is narrower than ``control_secret``: it can only ever open a
+    tunnel for this one ``purpose`` on this one session, never issue a
+    command or read anything else. Meant to be handed to a cloud workload
+    (e.g. as a plain, non-Secrets-Manager container env var) at job-submit
+    time, never rendered in the UI.
+    """
+    headers, owner_user_id = _control_headers_for(session_id)
+    body: dict = {"owner_user_id": owner_user_id, "purpose": purpose}
+    if ttl_seconds is not None:
+        body["ttl_seconds"] = int(ttl_seconds)
+    r = requests.post(
+        f"{RELAY_URL}/connector/tunnel-grant/{session_id}",
+        json=body,
+        headers=headers,
+        timeout=timeout,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def revoke_tunnel_grant(session_id: str, grant_id: str, *, timeout: float = 30) -> dict:
+    """Revoke a previously minted tunnel grant now, closing any tunnel still
+    open under it -- the explicit "the run ended" path, not merely relying
+    on the grant's TTL. Safe to call even if the grant was never used."""
+    headers, owner_user_id = _control_headers_for(session_id)
+    r = requests.post(
+        f"{RELAY_URL}/connector/tunnel-grant/{session_id}/revoke",
+        json={"owner_user_id": owner_user_id, "grant_id": grant_id},
+        headers=headers,
+        timeout=timeout,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
 def send_command(session_id: str, command_type: str, payload: dict, *, timeout: float = 120) -> dict:
     """Issue a command to the bound session's connector. Fails closed.
 

@@ -7,15 +7,21 @@ Reorganised around the user's workflow instead of the transport internals:
     Your HPC identity     HPC username / Remote working directory
     Access                Connection method / Authentication method
     Status                * Not checked / Verified / Mismatch / Failed
-    [ Check SSH Access ] [ Open Connector Setup ]
-
-    CryoStack Connector   Status: Waiting / Connected + Pairing code
-                          > Diagnostics (session id / ws path / relay state)
-    > Advanced            remote job tag (only when extra controls exist)
+    [ Check SSH Access ] [ Open Connector... ] [ Disconnect ]
+    (pairing code / connected line -- shown only while relevant, one line,
+     the SAME Remote visual language as everything above it, never a
+     second boxed "CRYOSTACK CONNECTOR" card)
+    > Advanced             remote job tag + connector diagnostics (session
+                            id / ws path / relay state), only when present
 
 This is a presentation helper. It takes the gateway's existing widget
 instances and arranges them; it never changes transport behaviour, the B3
-AccessState machine, identity verification, or the Run gate.
+AccessState machine, identity verification, or the Run gate. The single
+Connector pairing/session this panel drives is also the ONE binding Cloud
+workflows read (``connector_relay_client.current_binding()``) -- see
+``cryostack_src.frontend.cryolauncher.cloud_environment.
+wire_institutional_connection_widgets``. There is exactly one Connector
+implementation/pairing/session; Cloud never creates its own.
 """
 from __future__ import annotations
 
@@ -123,6 +129,57 @@ def _status_html(kind: str) -> str:
 
 def _group_title(text: str) -> W.HTML:
     return W.HTML(f"<div class='cryostack-group-title'>{text}</div>")
+
+
+def connector_pairing_status_html(
+    *, session_id: str | None, pairing_code: str | None, online: bool,
+) -> str:
+    """One compact line -- the ONLY thing shown while pairing is in
+    progress (never a second boxed "CRYOSTACK CONNECTOR" card). Empty
+    when there is nothing to say yet (no session started)."""
+    if online:
+        return "<div class='cryostack-help'>&#10003; CryoStack Connector connected.</div>"
+    if not session_id:
+        return ""
+    return (
+        "<div class='cryostack-help'>Pairing code: "
+        f"<code style='font-size:13px;background:#eef1f4;padding:1px 7px;"
+        f"border-radius:6px;'>{pairing_code or '—'}</code> "
+        "&mdash; enter it in the CryoStack Connector on your workstation "
+        "(&ldquo;Pair with CryoStack&hellip;&rdquo;).</div>"
+    )
+
+
+def connector_pairing_link_html(*, session_id: str | None, app: str) -> str:
+    """The one actual navigation control (an ipywidgets Button cannot open
+    a new browser tab itself) -- reuses the existing portal-link style
+    already used for "Register your key", never a second large duplicate
+    "Open CryoStack Connector Setup" button next to the real one."""
+    if not session_id:
+        return ""
+    return (
+        "<a class='cryostack-portal-link' href="
+        f"'https://cryostack.eas.gatech.edu/connect/?session={session_id}"
+        f"&app={app}' target='_blank' rel='noopener'>Open the Connector "
+        "pairing page</a>"
+    )
+
+
+def connector_diagnostics_html(
+    *, session_id: str | None, ws_url: str | None, relay_state: str | None,
+) -> str:
+    """Session id / ws path / relay state -- genuinely technical, never
+    shown in the compact Remote view. Lives only inside the existing
+    Advanced accordion."""
+    if not session_id:
+        return ""
+    return (
+        "<div class='cryostack-diag'>"
+        f"<span class='cryostack-diag__k'>Connector session:</span> {session_id}<br>"
+        f"<span class='cryostack-diag__k'>ws path:</span> {ws_url or '—'}<br>"
+        f"<span class='cryostack-diag__k'>relay state:</span> {relay_state or 'unknown'}"
+        "</div>"
+    )
 
 
 def _field(label: str, widget: W.Widget, help_text: str = "") -> W.VBox:
@@ -293,6 +350,7 @@ def build_remote_connection_panel(
     open_connector_button: W.Widget,
     connector_card: W.Widget,
     connector_setup_link: W.Widget,
+    disconnect_button: W.Widget | None = None,
     profile=None,
     auth_extra_children: list[W.Widget] | None = None,
     advanced_children: list[W.Widget] | None = None,
@@ -343,32 +401,30 @@ def build_remote_connection_panel(
     )
     status_group.add_class("cryostack-conn-status-group")
 
-    actions = W.HBox(
-        [check_ssh_button, open_connector_button],
-        layout=W.Layout(width="100%", gap="12px"),
-    )
+    action_buttons = [check_ssh_button, open_connector_button]
+    if disconnect_button is not None:
+        action_buttons.append(disconnect_button)
+    actions = W.HBox(action_buttons, layout=W.Layout(width="100%", gap="12px"))
     actions.add_class("cryostack-conn-actions")
 
-    connector_section = W.VBox(
-        [
-            _group_title("CryoStack Connector"),
-            connector_card,
-            connector_setup_link,
-        ],
-        layout=W.Layout(width="100%", gap="6px"),
+    # Minimum pairing information only -- one status line (connector_card)
+    # plus, only while pairing, the one real navigation link
+    # (connector_setup_link). Never a second boxed "CRYOSTACK CONNECTOR"
+    # card duplicating the Open Connector.../Disconnect actions above.
+    # Session/relay diagnostics live in the Advanced accordion instead
+    # (see advanced_children), never inline here.
+    connector_status = W.VBox(
+        [connector_card, connector_setup_link],
+        layout=W.Layout(width="100%", gap="2px"),
     )
-    connector_section.add_class("cryostack-connector-card")
 
-    # Session/relay diagnostics live in the Connector status card itself
-    # (connector_card). This accordion carries only genuinely extra controls
-    # (e.g. the remote job tag) and is omitted entirely when there are none.
     sections = [
         compute_resource,
         identity,
         access,
         status_group,
         actions,
-        connector_section,
+        connector_status,
     ]
     if advanced_children:
         adv_inner = W.VBox(list(advanced_children), layout=W.Layout(width="100%", gap="8px"))

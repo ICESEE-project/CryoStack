@@ -248,6 +248,20 @@ templates, and — where relevant — expose a curated parameter schema. A new
 model is added by implementing that interface; the gateway code stays
 model-neutral.
 
+**Workflow capability resolution** (`cryostack_src/models/workflow_capabilities.py`).
+`resolve_workflow_capabilities(model, forecast_model=...)` is the single
+authoritative answer to "what does this SELECTED workflow need and support"
+— `uses_issm`, `uses_icepack`, `requires_matlab_license` (true exactly when
+`uses_issm`), `supports_ec2`, `supports_gpu`, `supports_multi_node` — never
+re-derived ad hoc from the top-level `model` name. This matters because
+ICESEE is a data-assimilation framework that can wrap ISSM, Icepack, or (in
+principle) both as its forward model: an ICESEE run whose forecast model is
+ISSM needs a MATLAB license exactly like a direct ISSM run does, while an
+ICESEE run on Lorenz-96 or Icepack does not — keying the check on
+`model == "issm"` alone would silently miss that. UI visibility (the MATLAB
+license field), preflight gating, and review rendering all call this one
+resolver, so the answer is always consistent across CryoLauncher and ICESEE.
+
 **WorkspaceManager contracts.** Every workspace is scoped to one
 authenticated CryoStack user and stored under a per-user owner root. The
 manager enforces containment: a path outside the owner root is rejected, and
@@ -388,21 +402,164 @@ in the gateway:
   (`cryostack_src/cloud/matlab_license.py`): the user creates an AWS Secrets
   Manager secret in **their own** account holding the `MLM_LICENSE_FILE` value
   and registers only its **ARN** on the `AWSConnection`
-  (`matlab_license_secret_arn`, non-secret). `resolve_cloud_matlab_license()`
-  turns that into a `containerProperties.secrets` entry
-  (`{"name": "MLM_LICENSE_FILE", "valueFrom": <arn>}`) on the ISSM job
-  definition, and AWS Batch injects the value at container launch. CryoStack
-  never reads, logs, persists, or fingerprints the license value — only the ARN;
+  (`matlab_license_secret_arn`, non-secret). CryoStack never reads, logs,
+  persists, or fingerprints the license value — only the ARN;
   `assert_not_a_license_value()` and the connect-security tests guard against a
   raw value ever reaching a manifest, command preview, or job-definition
   fingerprint. Review shows a distinct **ISSM runtime** row
   (`CloudRunReview.issm_runtime_ready`) that stays "Needs a MATLAB license"
   until the ARN is configured, independent of the container/compute rows.
+  Full data-flow chain:
+
+  ```text
+  UI: "Existing secret ARN" field, inside Advanced license configuration
+      (cloud_environment.py -- Basic mode never shows an ARN, secret name,
+       MLM_LICENSE_FILE, or IAM terminology; see the guided-setup note below)
+    -> AWSConnection.matlab_license_secret_arn        (persisted, non-secret)
+    -> resolve_cloud_matlab_license()                 (matlab_license.py)
+    -> ISSM workflow capability / preflight            (requires_matlab_license gate)
+    -> _issm_matlab_secrets() -> CloudMatlabLicense.batch_secrets_block()
+    -> AWS Batch ISSM job definition:
+         containerProperties.secrets =
+           [{"name": "MLM_LICENSE_FILE", "valueFrom": <secret ARN>}]
+    -> MLM_LICENSE_FILE (container env var at launch)
+  ```
+
+  The IAM side is a **separate** role from the cross-account
+  `CryoStackExecutionRole` a connection assumes — it is the ECS
+  task-execution role Prepare Cloud provisions **inside the connected
+  account**, reconciled on every Prepare Cloud
+  (`iam_provision.py:_reconcile_matlab_license_secret`):
+
+  ```text
+  cryostack-ecs-execution-role (in the connected account)
+    -> inline policy "CryoStackMatlabLicenseSecret"   (iam_policies.py:
+                                                          matlab_license_secret_policy)
+    -> secretsmanager:GetSecretValue
+    -> Resource: <exact configured secret ARN>          (never a wildcard)
+  ```
+
+  `valueFrom` is always the **bare** secret ARN — never a
+  `:json-key::`-suffixed ARN — so AWS injects the secret's entire
+  `SecretString` verbatim into `MLM_LICENSE_FILE`. This is exactly why the
+  documented secret format is a **plaintext** string, not a JSON object: a
+  JSON-typed secret would inject its raw JSON text as the env var value and
+  break MATLAB's license-string parsing.
+  `container_properties_payload()` rejects any `secrets[].valueFrom` that
+  is not itself an ARN, so a raw license value can never reach
+  `RegisterJobDefinition`.
 - *Not enabled:* a real ISSM cloud run still needs that Secrets Manager ARN
-  configured on the connection **and** a `secretsmanager:GetSecretValue` grant
-  in the cross-account role for that ARN; preflight blocks it honestly until
-  then. The ARN input field in Cloud Environment plus the end-to-end validation
-  with a real license remain the externally-blocked remainder.
+  configured on the connection; preflight blocks it honestly until then. The
+  end-to-end validation with a real license remains the externally-blocked
+  remainder — the IAM grant itself is provisioned automatically by Prepare
+  Cloud (see above), not a manual step.
+- *Guided MATLAB license secret setup (implemented; Basic mode's ONLY
+  path).* The manual "paste an existing ARN" path above is now a visually
+  secondary "Advanced license configuration" accordion, collapsed by
+  default, for a user who already manages their own secret -- it remains
+  fully supported and authoritative. Basic mode instead exposes a single
+  masked "MATLAB license" field and a "Configure license" button
+  (`cryostack_src/cloud/drivers/aws/secrets.py`'s
+  `create_matlab_license_secret`), which lets a connected BYO-AWS user
+  create the Secrets Manager secret directly from Cloud Environment instead
+  of the AWS console -- under a FIXED, non-user-editable name
+  (`DEFAULT_MATLAB_LICENSE_SECRET_NAME = "cryostack/issm-matlab-license"` in
+  `cloud_environment.py`; no "Secret name" field exists in the UI at all).
+  It uses the SAME per-operation credential resolution as Prepare Cloud
+  (`cryostack_src/cloud/connect/execution.py:resolve_cloud_execution` -- a
+  fresh `sts:AssumeRole` on the connection's cross-account
+  `CryoStackExecutionRole`; refused for developer/ambient-credential mode,
+  so a secret can never land in the wrong account), and only ever sets the
+  resulting ARN into the existing `matlab_license_secret_arn` field --
+  persisted through the exact same `AWSConnectionStore` save path as the
+  manual ARN entry. Its own chain:
+
+  ```text
+  UI: "MATLAB license" (masked, cloud_environment.py)
+    -> resolve_cloud_execution()                      (fresh AssumeRole,
+                                                         BYO-AWS only)
+    -> create_matlab_license_secret()                 (secrets.py)
+    -> aws secretsmanager create-secret
+         --name cryostack/issm-matlab-license --secret-string file:///dev/stdin
+         (the value is piped to the CLI's OWN stdin -- never argv, never an
+          env var, never a temp file, so it cannot appear in a process
+          listing, shell history, or this call's own error text)
+    -> {"arn": ..., "name": ...}                      (ONLY non-secret
+                                                         metadata returned;
+                                                         the value is never
+                                                         logged or raised in
+                                                         an exception)
+    -> widgets.matlab_license_arn.value = arn
+    -> existing _save() path -> AWSConnection.matlab_license_secret_arn
+    -> _reconcile_license_access()                    (see below)
+  ```
+
+  From here on, guided setup's responsibility ends -- everything below
+  (`resolve_cloud_matlab_license()`, preflight, `_issm_matlab_secrets()`,
+  the Batch job definition, Prepare Cloud's IAM reconciliation) is
+  unchanged and identical for an ARN from either path. An existing secret
+  of the same name is never overwritten (`ResourceExistsException` ->
+  `SecretAlreadyExists`, surfaced as a safe, non-jargon message, not
+  retried as an update); the secret name is restricted to the `cryostack/`
+  prefix before any AWS call, matching the IAM grant below. No
+  `UpdateSecret` / `PutSecretValue` / `DeleteSecret` path exists yet --
+  **now the common case, not just an edge case**, since the name is fixed:
+  clicking Configure license a second time for the same AWS account always
+  collides. A safe non-overwrite message is shown; rotating the value
+  requires the AWS Secrets Manager console/CLI directly, or the manual ARN
+  path. Adding `PutSecretValue` (scoped to `cryostack/*`, mirroring
+  `CreateSecret`) would remove this limitation but needs a new
+  cross-account IAM grant in `deployment/cloudformation/
+  cryostack-execution-role.json` -- deliberately NOT added by the UX
+  redesign that introduced the fixed default name; see the MATLAB-license
+  UX report for this open follow-up.
+
+  **Truthful Reconfigure (`_is_default_managed_matlab_license_arn`,
+  `_refresh_matlab_license_view` in `cloud_environment.py`).** Because
+  `PutSecretValue` does not exist, offering an active "Reconfigure" form
+  once CryoStack's own fixed-name secret is configured would always fail
+  on resubmission -- misleading regardless of how honest the eventual
+  error text is. The configured-state Reconfigure button is therefore
+  shown only when the stored ARN does NOT name that fixed secret (i.e. it
+  was set via Advanced -> "Use existing secret", where Configure license
+  genuinely can create a fresh managed secret and switch the stored
+  reference to it). For CryoStack's own managed secret, a short static
+  note ("update the secret directly in AWS Secrets Manager") replaces the
+  button instead -- a pure string check on the already-stored, non-secret
+  ARN; no new AWS call, no new permission, no architectural change.
+
+  **IAM reconciliation without a full Prepare Cloud
+  (`_reconcile_license_access` in `cloud_environment.py`).** After a
+  successful Configure license (or "Use existing secret"), CryoStack
+  checks whether the cloud environment has already been prepared once
+  (`discover_iam_resources(config).ecs_execution_role` truthy) and, only if
+  so, calls the SAME `ensure_iam_resources(..., matlab_secret_arn=arn)`
+  Prepare Cloud itself calls -- IAM-only, idempotent, touching only the one
+  named inline policy on the ECS execution role; it creates no S3 bucket,
+  ECR repository, or Batch compute environment/queue/job definition, and
+  creates no IAM role that does not already exist. If the environment has
+  never been prepared, this is a no-op and the status message asks for
+  Prepare Cloud in plain terms ("Run Prepare cloud to finish setting up
+  your cloud environment") -- never explaining IAM/ECS mechanics. The
+  Batch job definition's own `containerProperties.secrets` reference is
+  still only (re-)registered by a full Prepare Cloud; a full
+  `prepare_batch()`/`bootstrap()` call was deliberately NOT invoked from
+  Configure license, since it also mirrors container images and can
+  provision the Batch compute environment/queue/job definitions for every
+  model -- excessive side effects for a license update.
+
+  The IAM grant this needs is on the cross-account `CryoStackExecutionRole`
+  itself (unlike the read grant above) -- `resolve_cloud_execution()` is
+  exactly what every Prepare-Cloud-era operation already assumes, and
+  `secretsmanager:CreateSecret` has no resource-level permission support
+  (the secret's ARN, suffixed with a random 6-character string, does not
+  exist at authorization time), so AWS's own documented mitigation is used:
+  `Resource: "*"` plus a `secretsmanager:Name` condition, scoped to the ONE
+  prefix `create_matlab_license_secret` is hard-restricted to (see
+  `cryostack_src/cloud/connect/cloudformation.py`'s
+  `CryoStackMatlabLicenseSecretCreate` statement). No Region condition --
+  this one template is shared by every connection regardless of which
+  Region it connects in, matching every other resource family in it.
 - *Compute mode: Fargate vs. EC2.* EC2 is not a second cloud backend — it is
   an alternate **AWS Batch compute environment** behind the same `AWSDriver`.
   Everything above (auth model, credential routing, staging, ECR/image
@@ -426,11 +583,36 @@ in the gateway:
   image has no CUDA runtime and that the scientific runners do not yet
   coordinate distributed MPI across Batch nodes, so selecting either stages
   infrastructure without CryoStack ever attempting a run neither the image
-  nor the runners can perform. On-Demand/Spot and custom-network EC2
-  provisioning are implemented and covered by the same test suite as Fargate,
-  but — unlike the Fargate path above — have not been exercised against live
-  AWS in this repository's evidence; do not describe EC2 as AWS-validated
-  without a checkpoint that says otherwise.
+  nor the runners can perform. **On-Demand, single-node EC2 is now
+  AWS-validated**: CryoLauncher/Icepack's `00-meshes-functions` tutorial ran
+  end to end on a CryoStack-provisioned managed EC2 compute environment
+  (`cryostack-ec2`), submitted to `cryostack-ec2-queue` /
+  `cryostack-icepack-ec2` (2 vCPU / 8 GiB), and completed successfully. Spot
+  capacity, GPU, multi-node, and custom-network EC2 provisioning are
+  implemented and covered by the same test suite as Fargate, but — unlike
+  the On-Demand/single-node/CPU path above — have not been exercised against
+  live AWS in this repository's evidence; the same is true of EC2 for ISSM
+  or ICESEE (only Icepack has an EC2-validated checkpoint). Do not describe
+  any of those as AWS-validated without a checkpoint that says otherwise.
+- *CloudWatch log-group resolution (`cryostack_src/cloud/legacy/aws_batch.py`).*
+  `batch_logs()` never assumes a single fixed log group. It resolves the
+  group per job: `DescribeJobs(jobId)` → that job's `jobDefinition` ARN →
+  `DescribeJobDefinitions` → `containerProperties.logConfiguration.options
+  ["awslogs-group"]`; the log **stream** is always
+  `DescribeJobs(...).container.logStreamName`. When a job definition never
+  set an explicit `awslogs-group` (a legacy/default Batch job definition),
+  resolution falls back to AWS Batch's own default group, `/aws/batch/job`
+  — never guessed from the model name. `resolve_log_group()` never raises:
+  a `DescribeJobDefinitions` failure (permissions, a deregistered
+  definition) also falls back to the default group rather than blocking the
+  log read. `GetLogEvents` `AccessDenied` is classified by
+  `cloud_run_controller.classify_cloud_failure` /
+  `is_log_read_permission_error` into a non-fatal message — the job and its
+  results are unaffected by a role that cannot read CloudWatch Logs — and a
+  `ResourceNotFoundException` (stream not created yet, or genuinely absent
+  on a completed job) is likewise reported, never raised as a job/result
+  failure. See `cryostack_src/cloud/tests/test_aws_batch_log_resolution.py`
+  for the resolution-order and non-fatal-error regression coverage.
 
 ## Results and visualization
 
@@ -612,3 +794,33 @@ direct-launch path while addressing these.
   </footer>
 </div>
 :::
+
+
+### Agent configuration integration
+
+`CRYOSTACK_AGENT_PANEL` enables the configuration planner in both gateways.
+The mounted planner uses `cryostack_src/agents/intent.py` and
+`icesee_jupyter_book/ui/configuration_agent.py`. It creates an inert delta over
+manual widget state, not an executable or approved RunPlan. The older
+RunAssistant/tool-loop APIs remain available for integrations but are no longer
+the mounted CryoLauncher configuration path.
+
+Catalogs are rebuilt from model capabilities, runnable workspace/application
+examples, compute profiles, curated solver-aware parameters, and ICESEE's
+example registry/templates. Missing or unsupported requests are surfaced;
+there is no new model/runtime capability registry. GPU/multi-node restrictions
+come from `resolve_workflow_capabilities`.
+
+Applying requires unchanged catalog/configuration state and independently
+recomputed inference. It mutates only allowlisted configuration controls and
+runs the existing model/Slurm or cloud checks. It never invokes approval,
+job staging, or submission. Example selection may perform the same local
+workspace preparation as a manual selection. The normal manual execution handlers remain responsible
+for fresh identity, backend, scientific staging and cloud readiness checks.
+A configuration check is not an execution authorization. On an application
+error, the current configuration is displayed for review; no run is started.
+
+The planner is deterministic and supports a bounded natural-language grammar.
+It is not a conversational scientific reasoning service. Add new vocabulary
+through metadata where possible, and test real gateway controls as well as
+inference. New core planner modules must remain in the agent policy scan.

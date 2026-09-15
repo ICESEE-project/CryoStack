@@ -257,8 +257,9 @@
           contract are wired for CryoLauncher and ICESEE, on a default
           Fargate compute mode with an Advanced EC2 alternative; Icepack and
           ICESEE have each completed a real run end-to-end on Fargate, and
-          the full onboarding and operational lifecycle is still being
-          validated end-to-end — see the
+          Icepack has additionally done so on EC2 On-Demand (single node,
+          CPU). EC2 Spot/GPU/multi-node and the full onboarding and
+          operational lifecycle are still being validated end-to-end — see the
           <a href="docs/hpc_cloud.html">Cloud Run Guide</a>.
         </p>
       </div>

@@ -179,6 +179,18 @@ in the Cloud Run Guide.
   configuration is inside CryoStack's verified runtime contract;
 - live status, log, and result retrieval once a run is submitted.
 
+The **MATLAB license** field (Cloud Environment) only appears when ICESEE's
+own forecast model actually needs one — it follows the same capability
+resolver every ISSM-driven run uses, not the ICESEE application name or
+Basic/Advanced mode. A **Lorenz-96** or **Icepack** forecast model never
+shows the field; an **ISSM** (or coupled **ISSM+Icepack**) forecast model
+does, because that workflow uses ISSM — and Launch stays blocked until a
+cloud-reachable license (an AWS Secrets Manager ARN) is configured for it.
+See CryoLauncher's
+<a href="../icesheets/user_manual.html#matlab-licensing-for-issm-cloud-runs">MATLAB
+licensing for ISSM cloud runs</a> for the one-time setup — the same
+mechanism applies here.
+
 Today that verified contract covers exactly one configuration: the
 **Lorenz-96** example at a single process (**Processes = 1**). Selecting a
 different example, or more than one process, is refused at Review — not
@@ -814,3 +826,25 @@ For reliable experiments:
   </div>
 </div>
 :::
+
+### Agent · Beta: prepare an ICESEE experiment
+
+When enabled, expand **Agent · Beta** in Run settings. For example:
+
+> Prepare Lorenz96 locally with ensemble size 20 and DEnKF.
+
+The planner uses enabled example metadata and each example's parameter template
+to identify its forecast model. It can infer local, remote or cloud execution,
+a compute profile, remote CPU/node resources, ensemble size and an available
+assimilation filter. **Create plan** prepares a proposal; **Apply to
+configuration** updates the existing example, resource and scientific controls.
+Review the full configuration and reported checks before using the normal run
+controls. Nothing is approved or submitted by the planner.
+
+Unspecified settings retain the current manual values. Unresolved choices are
+shown explicitly. Selecting an example does not establish that its runtime is
+ready: under-development examples and cloud runtime restrictions still apply.
+Cloud review checks the actual forecast model, verified example/process
+contract and account readiness. Additional YAML settings and combined forecast
+workflows require manual configuration. Each revision should state the full
+experiment request.

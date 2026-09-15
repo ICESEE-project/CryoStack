@@ -124,7 +124,7 @@ persistence, execution, and deployment services, and lets a compute backend
 implement a common submit/status/logs/terminate lifecycle independent of any
 one frontend.
 
-![CryoStack's current layered architecture. A shared gateway and operations plane supplies identity, per-user workspaces, experiments, administration, deployment, and health services to four scientific applications. Shared contracts cover model capabilities, structured results, and visualization. Modeling and data-assimilation workflows can use local, connector-mediated HPC, or AWS Batch execution backends (Fargate default, EC2 advanced) over reproducible Spack and container environments.](cryostack_architecture.svg)
+![CryoStack's current layered architecture. A shared gateway and operations plane supplies identity, per-user workspaces, experiments, administration, deployment, and health services to four scientific applications. Shared contracts cover model capabilities, structured results, and visualization. Modeling and data-assimilation workflows can use local, connector-mediated HPC, or AWS Batch execution backends (Fargate default, EC2 advanced) over reproducible Spack and container environments.](cryostack_architecture.png)
 
 **Figure 1:** CryoStack platform architecture; solid components are present
 in the repository (qualification status of the execution backends is
@@ -179,14 +179,15 @@ enabled for a scientific run). This shared driver serves CryoLauncher and
 ICESEE alike: a personal AWS account connects through a connection-scoped
 CloudFormation onboarding flow, and both ICESEE's Lorenz-96 example (NP=1,
 single-process execution) and CryoLauncher's Icepack path have each run end
-to end through this path on Fargate. That does not extend to ICESEE's other
-examples, to multi-process execution, to the EC2 compute mode, or to the
-ISSM Batch path, which still runs against a single account-wide bucket
-without per-user isolation or an allow-listed job definition and
-additionally requires a MATLAB license the reference deployment does not
-provide: architectural reach across applications and compute modes is
-currently broader than what has been validated end to end for any one of
-them.
+to end through this path on Fargate; the Icepack path has additionally run
+end to end on the EC2 On-Demand compute mode (single node, CPU). That does
+not extend to ICESEE's other examples, to multi-process execution, to EC2
+Spot capacity, GPU, or multi-node execution, to EC2 for ICESEE or the ISSM
+Batch path, which still runs against a single account-wide bucket without
+per-user isolation or an allow-listed job definition and additionally
+requires a MATLAB license the reference deployment does not provide:
+architectural reach across applications and compute modes is currently
+broader than what has been validated end to end for any one of them.
 
 An experimental human-in-the-loop layer lets an assistant assemble, not
 submit, a run: a request becomes a declarative plan, validated against the
@@ -219,8 +220,10 @@ adoption-based, and this section states that directly. Two ice-sheet models
 integrated with curated configuration, execution, and a structured
 result-and-visualization contract exercised through automated tests;
 Icepack and ICESEE's Lorenz-96 example have each also completed a real run
-on the validated Fargate cloud path described above, not only a designed
-path. Frozen Legacies integrates an actual historical dataset (LYRA-derived
+on the validated Fargate cloud path described above, and Icepack has
+additionally done so on the validated EC2 On-Demand path (single node,
+CPU) — not only a designed path. Frozen Legacies integrates an actual
+historical dataset (LYRA-derived
 airborne radar records) into a working catalog with geolocation and
 processing tools, and LIVIST integrates a deployed radar/borehole
 temperature-inference application, showing the platform absorbing two

@@ -6,7 +6,6 @@ observed.
 """
 from __future__ import annotations
 
-import inspect
 import sys
 from pathlib import Path
 from urllib.parse import parse_qs
@@ -15,10 +14,10 @@ _REPO = Path(__file__).resolve().parents[4]
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
+import ipywidgets as W
 import pytest
 
 from cryostack_src.cloud.connect.onboarding import AWSOnboarding
-from cryostack_src.frontend.cryolauncher import cloud_environment as ce_mod
 from cryostack_src.frontend.cryolauncher.cloud_connect_runtime import (
     build_aws_connect_callbacks,
 )
@@ -130,9 +129,20 @@ def test_card_has_no_access_key_or_secret_field_anywhere(card):
     assert "secret access key" not in blob
     assert "aws password" not in blob
     assert "enter your" not in blob or "access" not in blob
-    # the source module never builds a password/secret input
-    src = inspect.getsource(ce_mod)
-    assert "Password(" not in src
+    # A masked (Password) widget is now expected -- the guided-setup MATLAB
+    # LICENSE VALUE field (a Secrets Manager write, never an AWS
+    # credential) -- but it must be the ONLY Password widget on the card,
+    # and (already checked above) never labeled as an AWS access key/secret.
+    passwords: list = []
+
+    def find_passwords(w):
+        if isinstance(w, W.Password):
+            passwords.append(w)
+        for child in getattr(w, "children", []) or []:
+            find_passwords(child)
+
+    find_passwords(card.container)
+    assert passwords == [card.matlab_license_value]
 
 
 def test_disconnected_copy_is_the_contract_text(card):

@@ -1,6 +1,6 @@
 {
   "AWSTemplateFormatVersion": "2010-09-09",
-  "Description": "CryoStack cross-account access role. Grants CryoStack least-privilege access to run scientific experiments on AWS Batch in your account, assumable only with your unique ExternalId. (template 2026-09-14)",
+  "Description": "CryoStack cross-account access role. Grants CryoStack least-privilege access to run scientific experiments on AWS Batch in your account, assumable only with your unique ExternalId. (template 2026-09-14b)",
   "Parameters": {
     "ExternalId": {
       "Type": "String",
@@ -199,6 +199,17 @@
                   ],
                   "Resource": {
                     "Fn::Sub": "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:/cryostack/*"
+                  }
+                },
+                {
+                  "Sid": "CryoStackMatlabLicenseSecretCreate",
+                  "Effect": "Allow",
+                  "Action": "secretsmanager:CreateSecret",
+                  "Resource": "*",
+                  "Condition": {
+                    "StringLike": {
+                      "secretsmanager:Name": "cryostack/*"
+                    }
                   }
                 },
                 {

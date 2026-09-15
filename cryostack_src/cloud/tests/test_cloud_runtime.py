@@ -161,8 +161,20 @@ def test_runner_and_job_command_stay_safely_below_the_batch_override_limit():
     serialized = json.dumps(cmd)
     assert len(serialized) < BATCH_CONTAINER_OVERRIDE_LIMIT
     # real headroom, not a hair's-breadth pass -- catches the next helper
-    # someone is tempted to embed inline before it blows the limit again
-    assert len(serialized) < BATCH_CONTAINER_OVERRIDE_LIMIT - 2000
+    # someone is tempted to embed inline before it blows the limit again.
+    # The private-service license tunnel's ISSM-branch invocation
+    # (test_cloud_runtime_license_tunnel.py) initially narrowed this from
+    # 2000 to 1500 by passing 6 flags explicitly; moving that argument
+    # resolution into license_tunnel_client.py itself (it now reads
+    # CRYOSTACK_LT_* directly from its own environment -- see
+    # _ENV_FALLBACK there) let the runner invoke `listen` with NO flags,
+    # restoring the margin to 1800. Fixing the runtime-packaging bug (the
+    # tunnel client is now invoked by its staged FILE PATH -- see
+    # LICENSE_TUNNEL_CLIENT_FILENAME -- never `python3 -m cryostack_src...`,
+    # which cannot work inside the scientific Batch container) cost a
+    # little of that back; ~1600 chars of real headroom remain under the
+    # hard 8192 cap checked just above.
+    assert len(serialized) < BATCH_CONTAINER_OVERRIDE_LIMIT - 1600
     # the runner still carries everything a run needs to be located/run
     for required in ("CRYOSTACK_S3_RUN", "CRYOSTACK_MODEL", "CRYOSTACK_RUN_TARGET"):
         assert required in r

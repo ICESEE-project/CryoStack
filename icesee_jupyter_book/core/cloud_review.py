@@ -163,6 +163,8 @@ def build_icesee_cloud_review(
     account_freshly_verified: bool,
     example_name: str,
     matlab_license_configured: bool = False,
+    matlab_license_requires_tunnel: bool = False,
+    connector_connected: bool = False,
     compute_mode: str = "fargate",
 ) -> IceseeCloudReview:
     """Assemble an ICESEE cloud review and decide whether Launch is
@@ -203,6 +205,22 @@ def build_icesee_cloud_review(
             "(MLM_LICENSE_FILE value) in your AWS account and give CryoStack "
             "its ARN in Cloud Environment. The license value never leaves "
             "your account."
+        )
+    elif (capabilities.requires_matlab_license and matlab_license_requires_tunnel
+          and not connector_connected):
+        # Distinct from the "not configured" reason above: the license CAN
+        # be configured and this can still block -- the already-resolved
+        # CloudMatlabLicense.requires_tunnel (never re-derived here) says
+        # this workflow needs the CryoStack Connector, and it is not
+        # currently paired. Fail closed, exactly like a direct ISSM run.
+        # No tunnel/relay/session/token wording -- the scientist only
+        # needs to know CryoStack needs the Connector to reach their
+        # institution.
+        reasons.append(
+            "This ICESEE run's forecast model is ISSM, which needs your "
+            "institution's MATLAB license service. This requires the "
+            "CryoStack Connector. Open Connector... and pair it, then try "
+            "again."
         )
 
     if not account_freshly_verified:

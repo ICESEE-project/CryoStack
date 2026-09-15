@@ -374,8 +374,17 @@ def submit_cloud_example(
     model_nprocs: int | None = None,
     run_dir_base: "Path | str | None" = None,
     run_dir_name: str | None = None,
+    matlab_license_configured: bool = False,
+    matlab_license_requires_tunnel: bool = False,
     aws=None,
 ) -> CloudSubmitResult:
+    # Accepted for interface parity with the gateway's `.submit(...)` call
+    # (icesee_gateway.py propagates CloudExecution.matlab_license here) --
+    # not yet forwarded into aws_batch_submit's container env: no
+    # ISSM-coupled ICESEE example has a verified cloud path yet (see
+    # ICESEE_VERIFIED_EXAMPLES), so there is nothing to gate here today.
+    del matlab_license_configured, matlab_license_requires_tunnel
+
     rd = run_dir(run_dir_base, run_dir_name)
     dump_yaml(config, rd / "params.yaml")
 

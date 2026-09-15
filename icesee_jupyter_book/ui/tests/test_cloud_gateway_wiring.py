@@ -684,9 +684,14 @@ def test_icepack_cloud_submit_stages_the_postprocess_helper_alongside_run_py(
 
 
 def test_issm_cloud_submit_never_gets_the_icepack_extra_file(monkeypatch, tmp_path):
-    """ISSM behaviour is untouched: its own staging call never carries the
-    Icepack-only extra_files entry."""
-    from cryostack_src.cloud.runtime import ICEPACK_POSTPROCESS_FILENAME
+    """ISSM behaviour is untouched apart from the license tunnel client fix:
+    its own staging call never carries the Icepack-only extra_files entry,
+    but DOES carry the license tunnel client helper (staged as an ordinary
+    file, never `python3 -m cryostack_src...` inside the Batch container)."""
+    from cryostack_src.cloud.runtime import (
+        ICEPACK_POSTPROCESS_FILENAME,
+        LICENSE_TUNNEL_CLIENT_FILENAME,
+    )
 
     launch_handler = _build_gateway_and_launch_handler(
         monkeypatch, tmp_path, user="issm-8192-user")
@@ -731,9 +736,13 @@ def test_issm_cloud_submit_never_gets_the_icepack_extra_file(monkeypatch, tmp_pa
     submit_fn(example_dir.value, {}, review=None)
 
     assert "extra_files" in captured, "the staging call never ran (still blocked earlier)"
-    assert not captured["extra_files"]         # None (or empty) for ISSM
-    if captured["extra_files"]:
-        assert ICEPACK_POSTPROCESS_FILENAME not in captured["extra_files"]
+    assert captured["extra_files"]
+    assert ICEPACK_POSTPROCESS_FILENAME not in captured["extra_files"]
+    assert LICENSE_TUNNEL_CLIENT_FILENAME in captured["extra_files"]
+    _staged_src = captured["extra_files"][LICENSE_TUNNEL_CLIENT_FILENAME]
+    assert "import cryostack_src" not in _staged_src
+    assert "from cryostack_src" not in _staged_src
+    assert "import websockets" in _staged_src
 
 
 # ── compute-mode selection must reach actual submission resources ────────
@@ -1299,3 +1308,684 @@ def test_advanced_cloud_settings_helper_states_the_blank_equals_prepared_contrac
     assert "CryoStack-prepared resources for the connected AWS account" in caption
     assert "override that specific resource" in caption
     assert "Developer / override settings." not in "\n".join(htmls)   # old text gone
+
+
+# ── matlab_license_requires_tunnel propagation: one resolved
+# CloudMatlabLicense (CloudExecution.matlab_license) is the SOURCE of both
+# matlab_license_configured and matlab_license_requires_tunnel handed to
+# the real .submit(...) call -- no new resolution/profile logic, no
+# Fargate/EC2 branching. ─────────────────────────────────────────────────
+def _patch_matlab_license(monkeypatch, *, configured, requires_tunnel):
+    """Patch CloudExecution.matlab_license itself (not
+    resolve_cloud_matlab_license) -- in developer mode (no BYO connection,
+    the test environment here) CloudExecution.matlab_license short-circuits
+    on ``self.connection is None`` before ever calling the resolver, so the
+    property itself is the only seam that reaches every caller."""
+    import cryostack_src.cloud.matlab_license as ml
+    from cryostack_src.cloud.connect.execution import CloudExecution
+
+    fake = ml.CloudMatlabLicense(
+        configured=configured,
+        mechanism="secrets-manager" if configured else "none",
+        secret_arn=("arn:aws:secretsmanager:us-east-2:774888247882:secret:"
+                    "cryostack/issm-matlab-Ab1" if configured else ""),
+        requires_tunnel=requires_tunnel,
+    )
+    monkeypatch.setattr(CloudExecution, "matlab_license", property(lambda self: fake))
+    return fake
+
+
+def _connect_connector(state, monkeypatch):
+    """Mark THIS test's kernel Connector session as paired/online --
+    reuses the same SESSION/relay_check_status seam _connector_is_online
+    reads, so a run that requires the Connector (matlab_license_requires_
+    tunnel=True) can actually reach .submit(...) in tests that are not
+    themselves about the Connector-pairing preflight gate."""
+    import icesee_jupyter_book.ui.icesheets_gateway as gw
+
+    monkeypatch.setattr(
+        gw, "relay_check_status",
+        lambda session_id, force=False: {"online": True, "state": "connected"},
+    )
+    connector_is_online = _freevar(state["submit_fn"], "_connector_is_online")
+    SESSION = _freevar(connector_is_online, "SESSION")
+    SESSION["id"] = "sess-test"
+
+
+def test_issm_pace_cloud_submission_passes_matlab_license_requires_tunnel_true(
+    monkeypatch, tmp_path,
+):
+    """The exact live-acceptance scenario the trace identified: a connected
+    account with a Georgia Tech/PACE MATLAB license configured
+    (ComputeProfile.matlab_license_cloud_requires_tunnel == True for PACE)
+    must reach AWSDriver.submit() -- here, the gateway's own .submit(...)
+    call -- with matlab_license_requires_tunnel=True, not the previous
+    always-False default. The Connector is paired here (via
+    _connect_connector) because that is now also a fail-closed
+    prerequisite -- the Connector-pairing gate itself is covered by
+    test_preflight_blocks_launch_when_connector_required_but_not_paired."""
+    _patch_matlab_license(monkeypatch, configured=True, requires_tunnel=True)
+    state = _gateway_state(monkeypatch, tmp_path, user="issm-pace-tunnel-user")
+    _setup_common(state, model="issm")
+    _connect_connector(state, monkeypatch)
+
+    captured = _capture_submit(state, monkeypatch)
+    assert captured["matlab_license_configured"] is True
+    assert captured["matlab_license_requires_tunnel"] is True
+
+
+def test_icepack_non_matlab_workflow_does_not_require_the_tunnel(monkeypatch, tmp_path):
+    """No MATLAB license configured on the connection (the ordinary Icepack
+    user) -- matlab_license_requires_tunnel must stay False, never
+    incorrectly True."""
+    state = _gateway_state(monkeypatch, tmp_path, user="icepack-no-tunnel-user")
+    _setup_common(state, model="icepack")
+
+    captured = _capture_submit(state, monkeypatch)
+    assert captured["matlab_license_configured"] is False
+    assert captured["matlab_license_requires_tunnel"] is False
+
+
+def test_matlab_license_configured_flag_is_unchanged_by_the_tunnel_propagation(
+    monkeypatch, tmp_path,
+):
+    """matlab_license_configured must keep reflecting ONLY whether a license
+    secret is configured -- independent of requires_tunnel -- proving the
+    two fields are read from the same resolved object without coupling
+    one's value to the other."""
+    _patch_matlab_license(monkeypatch, configured=True, requires_tunnel=False)
+    state = _gateway_state(monkeypatch, tmp_path, user="matlab-configured-only-user")
+    _setup_common(state, model="issm")
+
+    captured = _capture_submit(state, monkeypatch)
+    assert captured["matlab_license_configured"] is True
+    assert captured["matlab_license_requires_tunnel"] is False
+
+
+def test_fargate_and_ec2_receive_the_same_tunnel_requirement_no_backend_branching(
+    monkeypatch, tmp_path,
+):
+    """The tunnel requirement is backend-neutral: Fargate and EC2 must both
+    receive the identical matlab_license_requires_tunnel value with no
+    compute-mode-specific logic added at the gateway."""
+    _patch_matlab_license(monkeypatch, configured=True, requires_tunnel=True)
+
+    fargate = _submit_and_capture(
+        monkeypatch, tmp_path, user="tunnel-fargate-user", model="issm",
+        compute_mode="fargate",
+    )
+    ec2 = _submit_and_capture(
+        monkeypatch, tmp_path, user="tunnel-ec2-user", model="issm",
+        compute_mode="ec2",
+    )
+    assert fargate["matlab_license_requires_tunnel"] is True
+    assert ec2["matlab_license_requires_tunnel"] is True
+    assert fargate["matlab_license_configured"] is True
+    assert ec2["matlab_license_configured"] is True
+    # the compute-mode fields themselves still diverge normally -- only the
+    # tunnel requirement is backend-neutral
+    assert fargate["compute_mode"] != ec2["compute_mode"]
+
+
+# ── INSTITUTIONAL CONNECTION: Cloud reuses the SAME Connector Remote uses ──
+def _all_widgets(widget):
+    out = [widget]
+
+    def walk(w):
+        for c in getattr(w, "children", ()):
+            out.append(c)
+            walk(c)
+
+    walk(widget)
+    return out
+
+
+def _remote_open_connector_handler(page, cloud_environment):
+    """The real "Open Connector..." button Remote renders -- distinct from
+    Cloud's own institutional_connection_open_button (same label, a
+    different widget) -- and its click handler (create_or_refresh_
+    connector_session), by walking the built page."""
+    candidates = [
+        w for w in _all_widgets(page)
+        if isinstance(w, W.Button) and w.description == "Open Connector..."
+        and w is not cloud_environment.institutional_connection_open_button
+    ]
+    assert len(candidates) == 1, "expected exactly one Remote Open Connector... button"
+    btn = candidates[0]
+    return btn, btn._click_handlers.callbacks[0]
+
+
+def _remote_disconnect_handler(page, cloud_environment):
+    candidates = [
+        w for w in _all_widgets(page)
+        if isinstance(w, W.Button) and w.description == "Disconnect"
+        and w is not cloud_environment.institutional_connection_disconnect_button
+        and w is not cloud_environment.disconnect_button
+    ]
+    assert len(candidates) == 1, "expected exactly one Remote Disconnect button"
+    btn = candidates[0]
+    return btn, btn._click_handlers.callbacks[0]
+
+
+def test_institutional_connection_hidden_for_icepack_only_workflow(monkeypatch, tmp_path):
+    """Must remain hidden for Icepack-only / other workflows that do not
+    require private institutional license connectivity."""
+    state = _gateway_state(monkeypatch, tmp_path, user="inst-conn-icepack-user")
+    _setup_common(state, model="icepack")
+    assert (state["cloud_environment"].institutional_connection_box
+            .layout.display == "none")
+
+
+def test_institutional_connection_shown_for_issm_pace_workflow(monkeypatch, tmp_path):
+    """Shown only when the resolved workflow/license capability requires
+    it -- ISSM at a site whose CloudMatlabLicense.requires_tunnel is True
+    (PACE)."""
+    state = _gateway_state(monkeypatch, tmp_path, user="inst-conn-issm-user")
+    _setup_common(state, model="issm")
+    assert state["cloud_environment"].institutional_connection_box.layout.display == ""
+
+
+def test_institutional_connection_starts_not_connected(monkeypatch, tmp_path):
+    state = _gateway_state(monkeypatch, tmp_path, user="inst-conn-initial-user")
+    _setup_common(state, model="issm")
+    ce = state["cloud_environment"]
+    assert "not connected" in ce.institutional_connection_status.value.lower()
+    assert ce.institutional_connection_open_button.layout.display != "none"
+    assert ce.institutional_connection_recheck_button.layout.display == "none"
+    assert ce.institutional_connection_disconnect_button.layout.display == "none"
+
+
+def test_remote_and_cloud_open_connector_share_the_exact_same_handler(monkeypatch, tmp_path):
+    """No second Connector implementation, pairing, identity, or session:
+    Cloud's Open Connector... action is literally the SAME function object
+    Remote's own button calls."""
+    state = _gateway_state(monkeypatch, tmp_path, user="inst-conn-shared-open-user")
+    _setup_common(state, model="issm")
+    ce = state["cloud_environment"]
+
+    _remote_btn, remote_handler = _remote_open_connector_handler(state["page"], ce)
+    cloud_open_click = ce.institutional_connection_open_button._click_handlers.callbacks[0]
+    cloud_open_connector_fn = _freevar(cloud_open_click, "open_connector")
+    assert cloud_open_connector_fn is remote_handler
+
+
+def test_remote_and_cloud_disconnect_share_the_exact_same_handler(monkeypatch, tmp_path):
+    state = _gateway_state(monkeypatch, tmp_path, user="inst-conn-shared-disc-user")
+    _setup_common(state, model="issm")
+    ce = state["cloud_environment"]
+
+    _remote_btn, remote_handler = _remote_disconnect_handler(state["page"], ce)
+    cloud_disc_click = ce.institutional_connection_disconnect_button._click_handlers.callbacks[0]
+    cloud_disconnect_fn = _freevar(cloud_disc_click, "disconnect")
+    assert cloud_disconnect_fn is remote_handler
+
+
+def test_pairing_in_remote_is_immediately_reflected_in_cloud(monkeypatch, tmp_path):
+    """pair in Remote -> Cloud immediately recognizes the same Connector."""
+    import icesee_jupyter_book.ui.icesheets_gateway as gw
+
+    monkeypatch.setattr(
+        gw, "create_session",
+        lambda *, owner_user_id: {
+            "session_id": "sess-1", "ws_url": "/x", "pairing_code": "AB12"},
+    )
+    monkeypatch.setattr(
+        gw, "relay_check_status",
+        lambda session_id, force=False: {"online": True, "state": "connected"},
+    )
+
+    state = _gateway_state(monkeypatch, tmp_path, user="inst-conn-pair-remote-user")
+    _setup_common(state, model="issm")
+    ce = state["cloud_environment"]
+
+    remote_btn, _handler = _remote_open_connector_handler(state["page"], ce)
+    remote_btn.click()
+
+    assert "connected" in ce.institutional_connection_status.value.lower()
+    assert "not connected" not in ce.institutional_connection_status.value.lower()
+    assert ce.institutional_connection_open_button.layout.display == "none"
+    assert ce.institutional_connection_disconnect_button.layout.display != "none"
+
+
+def test_disconnect_in_cloud_is_immediately_reflected_in_remote(monkeypatch, tmp_path):
+    """disconnecting/revoking the Connector updates both views consistently."""
+    import icesee_jupyter_book.ui.icesheets_gateway as gw
+
+    monkeypatch.setattr(
+        gw, "create_session",
+        lambda *, owner_user_id: {
+            "session_id": "sess-1", "ws_url": "/x", "pairing_code": "AB12"},
+    )
+    monkeypatch.setattr(
+        gw, "relay_check_status",
+        lambda session_id, force=False: {"online": True, "state": "connected"},
+    )
+    cleared = {"called": False}
+    monkeypatch.setattr(
+        gw, "clear_connector_binding", lambda: cleared.__setitem__("called", True))
+
+    state = _gateway_state(monkeypatch, tmp_path, user="inst-conn-disc-cloud-user")
+    _setup_common(state, model="issm")
+    ce = state["cloud_environment"]
+
+    remote_btn, remote_handler = _remote_open_connector_handler(state["page"], ce)
+    remote_btn.click()
+    assert "connected" in ce.institutional_connection_status.value.lower()
+
+    SESSION = _freevar(remote_handler, "SESSION")
+    relay_status = _freevar(remote_handler, "relay_status")
+    disconnect_connector_btn = _freevar(remote_handler, "disconnect_connector_btn")
+    assert SESSION.get("id") == "sess-1"
+
+    ce.institutional_connection_disconnect_button.click()
+
+    assert cleared["called"] is True
+    assert SESSION.get("id") is None
+    assert relay_status.value == ""
+    assert disconnect_connector_btn.layout.display == "none"
+    assert "not connected" in ce.institutional_connection_status.value.lower()
+
+
+def test_no_duplicate_pairing_session_is_created(monkeypatch, tmp_path):
+    """Clicking Open Connector... from Cloud after Remote already paired
+    must not mint a second relay session -- there is exactly ONE Connector
+    session, reused by both views."""
+    import icesee_jupyter_book.ui.icesheets_gateway as gw
+
+    calls = {"n": 0}
+
+    def fake_create_session(*, owner_user_id):
+        calls["n"] += 1
+        return {"session_id": "sess-1", "ws_url": "/x", "pairing_code": "AB12"}
+
+    monkeypatch.setattr(gw, "create_session", fake_create_session)
+    monkeypatch.setattr(
+        gw, "relay_check_status",
+        lambda session_id, force=False: {"online": True, "state": "connected"},
+    )
+
+    state = _gateway_state(monkeypatch, tmp_path, user="inst-conn-no-dup-user")
+    _setup_common(state, model="issm")
+    ce = state["cloud_environment"]
+
+    remote_btn, _handler = _remote_open_connector_handler(state["page"], ce)
+    remote_btn.click()
+    ce.institutional_connection_open_button.click()   # already hidden, but even if invoked...
+    ce.institutional_connection_recheck_button.click()
+
+    assert calls["n"] == 1
+
+
+def test_institutional_connection_never_leaks_implementation_details(monkeypatch, tmp_path):
+    """The scientist only needs to know CryoStack needs the Connector to
+    reach their institution -- Basic mode must not show tunnel/relay/
+    WebSocket/session id/tunnel token/FlexNet/vendor daemon/host-port/
+    MLM_LICENSE_FILE/Secrets Manager implementation details."""
+    import icesee_jupyter_book.ui.icesheets_gateway as gw
+
+    monkeypatch.setattr(
+        gw, "create_session",
+        lambda *, owner_user_id: {
+            "session_id": "sess-abc123", "ws_url": "/connector/ws/sess-abc123",
+            "pairing_code": "XZ99"},
+    )
+    monkeypatch.setattr(
+        gw, "relay_check_status",
+        lambda session_id, force=False: {"online": False, "state": "waiting"},
+    )
+
+    state = _gateway_state(monkeypatch, tmp_path, user="inst-conn-no-leak-user")
+    _setup_common(state, model="issm")
+    ce = state["cloud_environment"]
+
+    remote_btn, _handler = _remote_open_connector_handler(state["page"], ce)
+    remote_btn.click()
+
+    blob = "\n".join([
+        ce.institutional_connection_status.value,
+        "\n".join(w.value for w in _all_widgets(ce.institutional_connection_box)
+                   if isinstance(w, W.HTML)),
+    ]).lower()
+    for forbidden in (
+        "tunnel", "relay", "websocket", "session id", "token", "flexnet",
+        "vendor", "mlm_license_file", "secrets manager",
+    ):
+        assert forbidden not in blob, forbidden
+    # Cloud never renders the technical diagnostics (session id / ws path)
+    # at all -- those stay confined to Remote's own Advanced accordion.
+    # (The pairing-page link's href necessarily carries the opaque session
+    # id as a URL parameter -- the same accepted, already-tested Remote
+    # behaviour -- that is a navigation target, never a readable label.)
+    assert "/connector/ws" not in blob
+
+
+def test_existing_remote_controls_are_preserved(monkeypatch, tmp_path):
+    """Restore the Remote Connector UI: the established compact controls
+    (Connection method, Status, Check SSH Access, Open Connector..., and
+    the existing Advanced section) remain present and reachable."""
+    page = _build_gateway_page(monkeypatch, tmp_path, user="inst-conn-preserve-user")
+    html = "\n".join(
+        w.value for w in _all_widgets(page) if isinstance(w, W.HTML))
+    assert "Compute resource" in html
+    assert "Your HPC identity" in html
+    assert "Access" in html
+    assert "Status" in html
+
+    buttons = [w for w in _all_widgets(page) if isinstance(w, W.Button)]
+    assert any(b.description == "Check SSH Access" for b in buttons)
+    assert any(b.description == "Open Connector..." for b in buttons)
+
+    accordions = [w for w in _all_widgets(page) if isinstance(w, W.Accordion)]
+    titles = [
+        t for acc in accordions
+        for t in (acc.titles if getattr(acc, "titles", None)
+                   else [acc.get_title(i) for i in range(len(acc.children))])
+    ]
+    assert "Advanced" in titles
+    assert "🔌 Remote connection" in titles
+
+
+def test_preflight_blocks_launch_when_connector_required_but_not_paired(monkeypatch, tmp_path):
+    """If institutional connectivity is required and no Connector is
+    currently paired, Cloud launch must remain blocked before AWS
+    submission -- the existing fail-closed cloud_run_preflight gate,
+    reached before _cloud["controller"].submit(...) is ever called."""
+    _patch_matlab_license(monkeypatch, configured=True, requires_tunnel=True)
+    state = _gateway_state(monkeypatch, tmp_path, user="inst-conn-preflight-block-user")
+    _setup_common(state, model="issm")
+
+    submitted = {"called": False}
+    monkeypatch.setattr(
+        state["_cloud"]["controller"], "submit",
+        lambda **kw: submitted.__setitem__("called", True))
+
+    state["submit_fn"](str(tmp_path / "already-staged"), {}, review=None)
+
+    assert submitted["called"] is False
+
+
+# ── Cloud completes the ENTIRE compact pairing flow itself (no switching
+# to Remote merely to pair) ────────────────────────────────────────────
+def test_pairing_initiated_entirely_from_cloud(monkeypatch, tmp_path):
+    """A scientist must never have to switch to Remote merely to pair the
+    Connector: clicking Cloud's own Open Connector... creates the session
+    through the SAME create_or_refresh_connector_session Remote uses."""
+    import icesee_jupyter_book.ui.icesheets_gateway as gw
+
+    calls = {"n": 0}
+
+    def fake_create_session(*, owner_user_id):
+        calls["n"] += 1
+        return {"session_id": "sess-cloud-1", "ws_url": "/x", "pairing_code": "QR77"}
+
+    monkeypatch.setattr(gw, "create_session", fake_create_session)
+    monkeypatch.setattr(
+        gw, "relay_check_status",
+        lambda session_id, force=False: {"online": False, "state": "waiting"},
+    )
+
+    state = _gateway_state(monkeypatch, tmp_path, user="inst-conn-cloud-pair-user")
+    _setup_common(state, model="issm")
+    ce = state["cloud_environment"]
+
+    ce.institutional_connection_open_button.click()
+
+    assert calls["n"] == 1
+    open_click = ce.institutional_connection_open_button._click_handlers.callbacks[0]
+    open_connector_fn = _freevar(open_click, "open_connector")
+    SESSION = _freevar(open_connector_fn, "SESSION")
+    assert SESSION.get("id") == "sess-cloud-1"
+
+
+def test_cloud_displays_pairing_code_and_action_while_waiting(monkeypatch, tmp_path):
+    """The exact fix for this task: previously Cloud lost the pairing code
+    entirely (falling back to "Connector not connected") because refresh()
+    only distinguished connected/not-connected. Now a waiting session shows
+    the pairing code and the pairing-page action, reusing Remote's own
+    presentation helpers."""
+    import icesee_jupyter_book.ui.icesheets_gateway as gw
+
+    monkeypatch.setattr(
+        gw, "create_session",
+        lambda *, owner_user_id: {
+            "session_id": "sess-wait-1", "ws_url": "/x", "pairing_code": "QR77"},
+    )
+    monkeypatch.setattr(
+        gw, "relay_check_status",
+        lambda session_id, force=False: {"online": False, "state": "waiting"},
+    )
+
+    state = _gateway_state(monkeypatch, tmp_path, user="inst-conn-cloud-waiting-user")
+    _setup_common(state, model="issm")
+    ce = state["cloud_environment"]
+
+    ce.institutional_connection_open_button.click()
+
+    assert "waiting" in ce.institutional_connection_status.value.lower()
+    assert "QR77" in ce.institutional_connection_pairing_info.value
+    assert "QR77" not in ce.institutional_connection_pairing_link.value  # never in the URL
+    assert ce.institutional_connection_pairing_link.value.count("<a ") == 1
+    assert "session=sess-wait-1" in ce.institutional_connection_pairing_link.value
+    assert "app=icesheets" in ce.institutional_connection_pairing_link.value
+    # scientist never needs to reload the page or change execution mode --
+    # this is the SAME synchronous click -> refresh already proven above.
+    assert ce.institutional_connection_open_button.layout.display == "none"
+    assert ce.institutional_connection_recheck_button.layout.display != "none"
+    assert ce.institutional_connection_disconnect_button.layout.display != "none"
+
+
+def test_successful_cloud_pairing_updates_cloud_to_connected(monkeypatch, tmp_path):
+    """Waiting -> connected, driven entirely from Cloud's own Re-check."""
+    import icesee_jupyter_book.ui.icesheets_gateway as gw
+
+    online = {"value": False}
+    monkeypatch.setattr(
+        gw, "create_session",
+        lambda *, owner_user_id: {
+            "session_id": "sess-succeed-1", "ws_url": "/x", "pairing_code": "QR77"},
+    )
+    monkeypatch.setattr(
+        gw, "relay_check_status",
+        lambda session_id, force=False: {
+            "online": online["value"],
+            "state": "connected" if online["value"] else "waiting"},
+    )
+
+    state = _gateway_state(monkeypatch, tmp_path, user="inst-conn-cloud-success-user")
+    _setup_common(state, model="issm")
+    ce = state["cloud_environment"]
+
+    ce.institutional_connection_open_button.click()
+    assert "waiting" in ce.institutional_connection_status.value.lower()
+
+    online["value"] = True
+    ce.institutional_connection_recheck_button.click()
+
+    assert "connected" in ce.institutional_connection_status.value.lower()
+    assert ce.institutional_connection_pairing_info.value == ""
+    assert ce.institutional_connection_pairing_link.value == ""
+    assert ce.institutional_connection_recheck_button.layout.display != "none"
+    assert ce.institutional_connection_disconnect_button.layout.display != "none"
+
+
+def test_cloud_created_pairing_is_immediately_recognized_by_remote(monkeypatch, tmp_path):
+    """Cloud -> pair -> Remote already connected (recognizes the SAME
+    session/pairing code -- never a second Connector session)."""
+    import icesee_jupyter_book.ui.icesheets_gateway as gw
+
+    monkeypatch.setattr(
+        gw, "create_session",
+        lambda *, owner_user_id: {
+            "session_id": "sess-cloud-2", "ws_url": "/x", "pairing_code": "MK55"},
+    )
+    monkeypatch.setattr(
+        gw, "relay_check_status",
+        lambda session_id, force=False: {"online": True, "state": "connected"},
+    )
+
+    state = _gateway_state(monkeypatch, tmp_path, user="inst-conn-cloud-to-remote-user")
+    _setup_common(state, model="issm")
+    ce = state["cloud_environment"]
+
+    ce.institutional_connection_open_button.click()
+
+    remote_btn, remote_handler = _remote_open_connector_handler(state["page"], ce)
+    SESSION = _freevar(remote_handler, "SESSION")
+    relay_status = _freevar(remote_handler, "relay_status")
+    disconnect_connector_btn = _freevar(remote_handler, "disconnect_connector_btn")
+
+    assert SESSION.get("id") == "sess-cloud-2"
+    assert "connected" in relay_status.value.lower()
+    assert disconnect_connector_btn.layout.display != "none"
+    # Remote's own Open Connector... button, when clicked, must reuse the
+    # SAME session rather than minting a new one -- proven separately by
+    # test_no_duplicate_pairing_session_is_created below.
+    assert remote_btn is not ce.institutional_connection_open_button
+
+
+def test_remote_created_waiting_pairing_is_immediately_recognized_by_cloud(
+    monkeypatch, tmp_path,
+):
+    """Remote -> start pairing (still waiting) -> Cloud shows the SAME
+    pairing code/state without switching modes or reloading."""
+    import icesee_jupyter_book.ui.icesheets_gateway as gw
+
+    monkeypatch.setattr(
+        gw, "create_session",
+        lambda *, owner_user_id: {
+            "session_id": "sess-remote-1", "ws_url": "/x", "pairing_code": "TT21"},
+    )
+    monkeypatch.setattr(
+        gw, "relay_check_status",
+        lambda session_id, force=False: {"online": False, "state": "waiting"},
+    )
+
+    state = _gateway_state(monkeypatch, tmp_path, user="inst-conn-remote-to-cloud-user")
+    _setup_common(state, model="issm")
+    ce = state["cloud_environment"]
+
+    remote_btn, _handler = _remote_open_connector_handler(state["page"], ce)
+    remote_btn.click()
+
+    assert "waiting" in ce.institutional_connection_status.value.lower()
+    assert "TT21" in ce.institutional_connection_pairing_info.value
+    assert "session=sess-remote-1" in ce.institutional_connection_pairing_link.value
+
+
+def test_disconnect_from_remote_updates_cloud_state(monkeypatch, tmp_path):
+    """disconnecting/revoking the Connector updates both views consistently
+    -- the Remote -> Cloud direction (the Cloud -> Remote direction is
+    covered by test_disconnect_in_cloud_is_immediately_reflected_in_remote)."""
+    import icesee_jupyter_book.ui.icesheets_gateway as gw
+
+    monkeypatch.setattr(
+        gw, "create_session",
+        lambda *, owner_user_id: {
+            "session_id": "sess-rd-1", "ws_url": "/x", "pairing_code": "PP44"},
+    )
+    monkeypatch.setattr(
+        gw, "relay_check_status",
+        lambda session_id, force=False: {"online": True, "state": "connected"},
+    )
+    monkeypatch.setattr(gw, "clear_connector_binding", lambda: None)
+
+    state = _gateway_state(monkeypatch, tmp_path, user="inst-conn-remote-disc-user")
+    _setup_common(state, model="issm")
+    ce = state["cloud_environment"]
+
+    remote_btn, remote_handler = _remote_open_connector_handler(state["page"], ce)
+    remote_btn.click()
+    assert "connected" in ce.institutional_connection_status.value.lower()
+
+    remote_disconnect_btn, _h = _remote_disconnect_handler(state["page"], ce)
+    remote_disconnect_btn.click()
+
+    SESSION = _freevar(remote_handler, "SESSION")
+    assert SESSION.get("id") is None
+    assert "not connected" in ce.institutional_connection_status.value.lower()
+    assert ce.institutional_connection_open_button.layout.display != "none"
+    assert ce.institutional_connection_disconnect_button.layout.display == "none"
+
+
+def test_repeated_open_connector_from_cloud_does_not_create_duplicate_sessions(
+    monkeypatch, tmp_path,
+):
+    import icesee_jupyter_book.ui.icesheets_gateway as gw
+
+    calls = {"n": 0}
+
+    def fake_create_session(*, owner_user_id):
+        calls["n"] += 1
+        return {"session_id": "sess-nodup-1", "ws_url": "/x", "pairing_code": "ZZ00"}
+
+    monkeypatch.setattr(gw, "create_session", fake_create_session)
+    monkeypatch.setattr(
+        gw, "relay_check_status",
+        lambda session_id, force=False: {"online": False, "state": "waiting"},
+    )
+
+    state = _gateway_state(monkeypatch, tmp_path, user="inst-conn-cloud-nodup-user")
+    _setup_common(state, model="issm")
+    ce = state["cloud_environment"]
+
+    ce.institutional_connection_open_button.click()
+    ce.institutional_connection_recheck_button.click()
+    ce.institutional_connection_recheck_button.click()
+
+    assert calls["n"] == 1
+
+
+def test_cloud_institutional_connection_box_stays_compact(monkeypatch, tmp_path):
+    """No duplicate/oversized Connector card in Cloud: the box carries the
+    heading, caption, status line, pairing info/link lines and the
+    actions row only -- nothing else, and no second "CryoStack Connector"
+    heading duplicating the one already in Remote."""
+    state = _gateway_state(monkeypatch, tmp_path, user="inst-conn-compact-user")
+    _setup_common(state, model="issm")
+    ce = state["cloud_environment"]
+
+    children = list(ce.institutional_connection_box.children)
+    assert len(children) == 6   # heading, caption, status, pairing info/link, actions
+    for expected in (
+        ce.institutional_connection_status,
+        ce.institutional_connection_pairing_info,
+        ce.institutional_connection_pairing_link,
+    ):
+        assert expected in children
+
+    html = "\n".join(w.value for w in _all_widgets(ce.institutional_connection_box)
+                      if isinstance(w, W.HTML))
+    assert html.count("INSTITUTIONAL CONNECTION") == 1
+
+
+def test_cloud_waiting_state_terminology_hygiene(monkeypatch, tmp_path):
+    """Basic mode stays free of tunnel/relay/WebSocket/session-ID/token/
+    FlexNet/vendor-port/MLM_LICENSE_FILE terminology in the waiting state
+    too (not just not-connected/connected, already covered elsewhere)."""
+    import icesee_jupyter_book.ui.icesheets_gateway as gw
+
+    monkeypatch.setattr(
+        gw, "create_session",
+        lambda *, owner_user_id: {
+            "session_id": "sess-hygiene-1", "ws_url": "/connector/ws/sess-hygiene-1",
+            "pairing_code": "HY99"},
+    )
+    monkeypatch.setattr(
+        gw, "relay_check_status",
+        lambda session_id, force=False: {"online": False, "state": "waiting"},
+    )
+
+    state = _gateway_state(monkeypatch, tmp_path, user="inst-conn-cloud-hygiene-user")
+    _setup_common(state, model="issm")
+    ce = state["cloud_environment"]
+
+    ce.institutional_connection_open_button.click()
+
+    blob = "\n".join(w.value for w in _all_widgets(ce.institutional_connection_box)
+                      if isinstance(w, W.HTML)).lower()
+    for forbidden in (
+        "tunnel", "relay", "websocket", "session id", "token", "flexnet",
+        "vendor", "mlm_license_file", "secrets manager",
+    ):
+        assert forbidden not in blob, forbidden
+    assert "/connector/ws" not in blob

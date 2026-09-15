@@ -54,8 +54,9 @@ run-history and downloads workflow; after a run its figures and output files are
 collected into the results package. Icepack does **not** yet have curated
 Basic-mode configuration or an interactive field viewer (edit the
 notebook/script in Advanced mode). Cloud execution on AWS Batch is available
-for both models, on a default Fargate compute mode, and Icepack has already
-completed a real cloud run end-to-end; ISSM's cloud path is implemented and
+for both models, on a default Fargate compute mode; Icepack has already
+completed a real cloud run end-to-end on both Fargate and, in Advanced mode,
+EC2 On-Demand (single node, CPU). ISSM's cloud path is implemented and
 provisioned but additionally needs a cloud-reachable MATLAB license (see
 [Preparing and launching runs](https://cryostack.eas.gatech.edu/applications/icesheets/user_manual.html#preparing-and-launching-runs)).
 See the [Cloud Run Guide](https://cryostack.eas.gatech.edu/docs/hpc_cloud.html)
@@ -198,8 +199,9 @@ Set the **Execution** and **Backend** menus:
   <span class="cryostack-status dev">In validation</span>
   &nbsp;— AWS Batch execution, on a default Fargate compute mode (an
   Advanced EC2 option also exists). Icepack has completed a real cloud run
-  end-to-end; ISSM's cloud path is provisioned but needs a cloud-reachable
-  MATLAB license before a real run. See the
+  end-to-end on both Fargate and EC2 On-Demand (single node, CPU); ISSM's
+  cloud path is provisioned but needs a cloud-reachable MATLAB license
+  before a real run. See the
   <a href="../../docs/hpc_cloud.html">Cloud Run Guide</a> for the current scope.
 </p>
 :::

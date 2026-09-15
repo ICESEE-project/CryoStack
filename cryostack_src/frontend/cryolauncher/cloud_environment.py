@@ -61,14 +61,63 @@ class CloudEnvironmentWidgets:
     job_queue: W.Text
     job_definition: W.Text
     job_name: W.Text
+    #: Basic (primary) path: the scientist enters only the license value.
+    #: CryoStack creates/reuses a CryoStack-managed secret under a fixed
+    #: default name (never shown) and stores only the resulting ARN --
+    #: the value widget is a masked Password -- never rendered, logged, or
+    #: persisted -- and is cleared after a successful (or failed) attempt.
+    matlab_license_value: "W.Password"
+    matlab_license_create_button: W.Button
+    matlab_license_create_status: "W.HTML"
+    #: shown instead of the entry form once an ARN is configured.
+    matlab_license_configured_row: "W.HBox"
+    matlab_license_reconfigure_button: W.Button
+    #: shown instead of the Reconfigure button when the configured ARN is
+    #: CryoStack's own fixed-name managed secret (no in-app rotate path).
+    matlab_license_rotate_note: "W.HTML"
+    #: the entry form (caption + value field + Configure button + status) --
+    #: hidden once configured, shown again while reconfiguring.
+    matlab_license_entry_box: "W.VBox"
+    #: Advanced (secondary): paste the ARN of a secret the user already
+    #: manages themselves. The only place the Secrets Manager ARN / secret
+    #: terminology is shown by default.
     matlab_license_arn: W.Text
     matlab_license_save_button: W.Button
-    #: the whole MATLAB license row (caption + field + save button) --
-    #: toggled independently of the Advanced accordion, on whether the
-    #: SELECTED WORKFLOW needs MATLAB (see
-    #: cryostack_src.models.workflow_capabilities), never on Basic/Advanced
-    #: mode alone.
+    matlab_license_advanced: "W.Accordion"
+    #: the whole MATLAB license row (heading + entry/configured state +
+    #: advanced accordion) -- toggled independently of the Advanced cloud
+    #: settings accordion, on whether the SELECTED WORKFLOW needs MATLAB
+    #: (see cryostack_src.models.workflow_capabilities), never on
+    #: Basic/Advanced mode alone -- Basic/Advanced only controls how much
+    #: AWS implementation detail is exposed within this box.
     matlab_license_box: "W.VBox"
+
+    #: INSTITUTIONAL CONNECTION -- shown only when the resolved workflow's
+    #: CloudMatlabLicense.requires_tunnel is True (set by the caller from
+    #: cryostack_src.models.workflow_capabilities + the already-resolved
+    #: CloudExecution.matlab_license, exactly like matlab_license_box's own
+    #: visibility). Reads/drives the SAME Connector pairing/session Remote
+    #: uses (via caller-supplied check_connected/open_connector/disconnect
+    #: callables in wire_institutional_connection_widgets) -- never a
+    #: second Connector implementation, pairing, identity, or session.
+    #: Never shows tunnel/relay/websocket/session id/token/vendor-daemon/
+    #: host-port/MLM_LICENSE_FILE wording -- only that the Connector is (or
+    #: is not) connected.
+    institutional_connection_box: "W.VBox"
+    institutional_connection_status: "W.HTML"
+    #: the compact pairing-code line (Remote's own connector_pairing_
+    #: status_html), shown only while a session exists and is not yet
+    #: online -- empty otherwise.
+    institutional_connection_pairing_info: "W.HTML"
+    #: the one real "open a new tab" pairing-page link (Remote's own
+    #: connector_pairing_link_html) -- Cloud's complete pairing flow
+    #: (create session -> show code + link -> pair -> connected) lives
+    #: entirely in this box, sourced from the SAME Connector session
+    #: Remote uses. Empty except while waiting to pair.
+    institutional_connection_pairing_link: "W.HTML"
+    institutional_connection_open_button: W.Button
+    institutional_connection_recheck_button: W.Button
+    institutional_connection_disconnect_button: W.Button
 
     #: Advanced: AWS Batch compute environment -- "fargate" (default) or "ec2"
     compute_mode: W.Dropdown
@@ -695,23 +744,120 @@ def _yn(ready: bool) -> str:
     return f"<span style='color:{color};'>{'Ready' if ready else 'Not ready'}</span>"
 
 
+#: the ONE CryoStack-managed secret name Configure License uses -- never
+#: shown in the UI or collected from the user. Matches the ``cryostack/``
+#: prefix the cross-account role's CreateSecret grant is scoped to (see
+#: cryostack_src/cloud/drivers/aws/secrets.py, deployment/cloudformation/
+#: cryostack-execution-role.json).
+DEFAULT_MATLAB_LICENSE_SECRET_NAME = "cryostack/issm-matlab-license"
+
+
+def _matlab_license_status_html(message: str, *, ok: bool) -> str:
+    color = "#2f8f4e" if ok else "#b23c3c"
+    return f"<div style='font-size:11px;color:{color};'>{message}</div>"
+
+
+def _matlab_license_progress_html(message: str) -> str:
+    """A neutral (neither success-green nor error-red) in-progress status
+    line -- the operation has not yet succeeded or failed."""
+    return f"<div style='font-size:11px;color:#66758d;'>{message}</div>"
+
+
+def _sanitize_secret_create_error(error: object) -> tuple[str, str]:
+    """Map a backend ``SecretCreateError`` to a (scientist-facing message,
+    short technical detail) pair. NEITHER string ever carries the raw AWS
+    CLI text -- which, as observed live for CreateSecret AccessDenied,
+    includes the STS assumed-role ARN and account id -- only a short,
+    categorized, human reason. The technical detail is for the Run Log
+    (the existing developer/debug channel) only, never the main status.
+    """
+    text = str(error)
+    if "AccessDenied" in text:
+        return (
+            "Could not configure the MATLAB license. Your CryoStack AWS "
+            "connection needs updated permissions. Select 'Update role "
+            "permissions', then try again.",
+            "Access denied for AWS Secrets Manager CreateSecret.",
+        )
+    return (
+        "Could not configure the MATLAB license. Please try again, or "
+        "check your AWS connection.",
+        "AWS Secrets Manager CreateSecret failed.",
+    )
+
+
+def _is_default_managed_matlab_license_arn(arn: str) -> bool:
+    """True when ``arn`` names the ONE fixed-name secret Configure license
+    creates (:data:`DEFAULT_MATLAB_LICENSE_SECRET_NAME`, plus the random
+    suffix AWS appends to it). Used ONLY to decide whether "Reconfigure"
+    can honestly do anything: since no ``PutSecretValue``/``UpdateSecret``
+    path exists, a Configure-license retry against this exact fixed name
+    always collides (``SecretAlreadyExists``) -- offering an active
+    reconfigure form for it would imply a working rotate path that does
+    not exist. An ARN naming a DIFFERENT secret (set via Advanced -> "Use
+    existing secret") is not CryoStack-managed, and Reconfigure there can
+    genuinely create a fresh managed secret, so it stays available.
+
+    A pure string check on the already-non-secret, already-stored ARN --
+    no AWS call, no new permission, no change to what is persisted.
+    """
+    arn = (arn or "").strip()
+    marker = ":secret:"
+    idx = arn.find(marker)
+    if not arn.startswith("arn:aws:secretsmanager:") or idx < 0:
+        return False
+    name = arn[idx + len(marker):]
+    return (name == DEFAULT_MATLAB_LICENSE_SECRET_NAME
+            or name.startswith(DEFAULT_MATLAB_LICENSE_SECRET_NAME + "-"))
+
+
+def _refresh_matlab_license_view(widgets: "CloudEnvironmentWidgets") -> None:
+    """Show the configured status once an ARN is set, the entry form
+    otherwise. Never reads or displays the secret value -- only whether
+    the (non-secret) ARN field is populated.
+
+    Within the configured state, "Reconfigure" is shown only when it can
+    honestly do something; for CryoStack's own fixed-name managed secret
+    (see :func:`_is_default_managed_matlab_license_arn`) a short static
+    note replaces it instead of an active form that would always fail.
+    """
+    arn = (widgets.matlab_license_arn.value or "").strip()
+    configured = bool(arn)
+    widgets.matlab_license_entry_box.layout.display = (
+        "none" if configured else "flex")
+    widgets.matlab_license_configured_row.layout.display = (
+        "flex" if configured else "none")
+
+    rotatable = configured and not _is_default_managed_matlab_license_arn(arn)
+    widgets.matlab_license_reconfigure_button.layout.display = (
+        "inline-flex" if rotatable else "none")
+    widgets.matlab_license_rotate_note.layout.display = (
+        "none" if rotatable else "flex")
+
+
 def wire_matlab_license_widgets(widgets: "CloudEnvironmentWidgets", *, owner, log_output) -> None:
-    """Prefill ``widgets.matlab_license_arn`` from the owner's AWS connection
-    and wire ``widgets.matlab_license_save_button`` to save it back.
+    """Prefill the MATLAB-license view from the owner's AWS connection and
+    wire the Basic "Configure license" path and the Advanced "Use existing
+    secret" path -- both ending at the SAME persisted state:
+    ``AWSConnection.matlab_license_secret_arn``.
 
     The MATLAB license ARN is ONE piece of state per connected AWS account
-    (an ``AWSConnection.matlab_license_secret_arn``) -- never a separate
-    implementation per gateway. Every cloud UI that shows
-    ``widgets.matlab_license_box`` (CryoLauncher's own Cloud panel, ICESEE's)
-    calls this ONE function so a direct ISSM run and an ICESEE run using
-    ISSM configure and save the license identically. The license VALUE
-    itself never passes through here or is rendered anywhere -- only the
-    non-secret Secrets Manager ARN.
+    -- never a separate implementation per gateway. Every cloud UI that
+    shows ``widgets.matlab_license_box`` (CryoLauncher's own Cloud panel,
+    ICESEE's) calls this ONE function so a direct ISSM run and an ICESEE
+    run using ISSM configure and save the license identically. The license
+    VALUE itself never passes through here or is rendered anywhere -- only
+    the non-secret Secrets Manager ARN.
 
     ``owner`` is the :class:`~cryostack_src.workspace.identity.WorkspaceUser`
     whose connection record this ARN is read from / saved to.
     """
     from cryostack_src.cloud.connect import AWSConnectionStore
+
+    #: re-entrancy guard for Configure license -- a click while a
+    #: CreateSecret call is already in flight is ignored outright, never
+    #: starting a second one (see _create_secret / _set_configuring).
+    _license_configure_busy = False
 
     def _store() -> AWSConnectionStore:
         return AWSConnectionStore(user=owner)
@@ -722,6 +868,7 @@ def wire_matlab_license_widgets(widgets: "CloudEnvironmentWidgets", *, owner, lo
             widgets.matlab_license_arn.value = existing.matlab_license_secret_arn
     except Exception:
         pass    # unauthenticated / dev-mode build: leave the field blank
+    _refresh_matlab_license_view(widgets)
 
     def _save(_=None) -> None:
         from cryostack_src.cloud.matlab_license import assert_not_a_license_value
@@ -744,8 +891,326 @@ def wire_matlab_license_widgets(widgets: "CloudEnvironmentWidgets", *, owner, lo
         with log_output:
             print("[cloud] MATLAB license ARN saved." if arn
                   else "[cloud] MATLAB license ARN cleared.")
+        _refresh_matlab_license_view(widgets)
 
     widgets.matlab_license_save_button.on_click(_save)
+
+    def _on_reconfigure(_=None) -> None:
+        """Reveal the entry form again WITHOUT touching the stored ARN or
+        connection -- nothing changes unless Configure license is clicked
+        again and succeeds. Never pre-fills the value field.
+
+        Defensive no-op for CryoStack's own fixed-name managed secret (the
+        button that reaches this is already hidden for that case by
+        _refresh_matlab_license_view -- this guard just ensures a stray or
+        programmatic call cannot reveal a form that would always fail)."""
+        if _is_default_managed_matlab_license_arn(widgets.matlab_license_arn.value):
+            return
+        widgets.matlab_license_create_status.value = ""
+        widgets.matlab_license_value.value = ""
+        widgets.matlab_license_entry_box.layout.display = "flex"
+        widgets.matlab_license_configured_row.layout.display = "none"
+
+    widgets.matlab_license_reconfigure_button.on_click(_on_reconfigure)
+
+    # -- guided setup: create/rotate the secret directly from CryoStack ---
+    def _clear_raw_value() -> None:
+        # the ONLY place the entered license value is ever cleared from --
+        # it is never read again after create_matlab_license_secret() (or
+        # the validation that precedes it) returns, success or failure.
+        widgets.matlab_license_value.value = ""
+
+    def _reconcile_license_access(execution, arn: str) -> bool:
+        """Best-effort, IAM-only: if the cloud environment has already been
+        prepared once (its ECS execution role exists), immediately grant
+        that role read access to THIS secret ARN -- reusing exactly the
+        reconciliation Prepare Cloud itself runs on every call
+        (cryostack_src.cloud.drivers.aws.iam_provision.ensure_iam_resources
+        -> _reconcile_matlab_license_secret), scoped to the one named
+        inline policy on the ECS execution role. Never touches S3, ECR, or
+        Batch compute/queue/job-definition resources, and never creates IAM
+        roles that do not already exist -- if the environment has not been
+        prepared yet, this is a no-op and returns False: the next Prepare
+        Cloud (already required to provision compute) picks up the stored
+        ARN on its own. Any failure here is swallowed -- Prepare Cloud
+        remains the source of truth and can always be re-run.
+        """
+        from cryostack_src.cloud.drivers.aws.iam import discover_iam_resources
+        from cryostack_src.cloud.drivers.aws.iam_provision import (
+            ensure_iam_resources,
+        )
+        from cryostack_src.cloud.drivers.aws.models import AWSConfig
+
+        try:
+            config = AWSConfig(region=execution.region, credentials=execution.credentials)
+            current = discover_iam_resources(config)
+            if not current.ecs_execution_role:
+                return False
+            ensure_iam_resources(
+                config,
+                bucket=execution.bucket(developer_fallback=""),
+                matlab_secret_arn=arn,
+            )
+            return True
+        except Exception:  # noqa: BLE001 -- best-effort; never blocks the UI
+            return False
+
+    def _set_configuring(active: bool) -> None:
+        widgets.matlab_license_create_button.disabled = active
+        widgets.matlab_license_create_button.description = (
+            "Configuring license..." if active else "Configure license")
+
+    def _create_secret(_=None) -> None:
+        nonlocal _license_configure_busy
+        from cryostack_src.cloud.connect import resolve_cloud_execution
+        from cryostack_src.cloud.connect.execution import CloudAccessError
+        from cryostack_src.cloud.drivers.aws.models import AWSConfig
+        from cryostack_src.cloud.drivers.aws.secrets import (
+            SecretAlreadyExists,
+            SecretCreateError,
+            SecretNameInvalid,
+            create_matlab_license_secret,
+        )
+
+        if _license_configure_busy:
+            return   # a click while an operation is already running -- ignored
+        widgets.matlab_license_create_status.value = ""
+        # read the raw value ONCE, into a local that is never re-read from
+        # the widget after this point (the widget itself is cleared below).
+        value = widgets.matlab_license_value.value or ""
+
+        if not value.strip():
+            widgets.matlab_license_create_status.value = _matlab_license_status_html(
+                "Enter your MATLAB license information first.", ok=False)
+            return
+
+        # visible "in progress" state -- set BEFORE any (blocking) AWS call
+        # so it renders immediately, and guaranteed to be undone below no
+        # matter which branch this call takes.
+        _license_configure_busy = True
+        _set_configuring(True)
+        widgets.matlab_license_create_status.value = _matlab_license_progress_html(
+            "Configuring the MATLAB license securely in your AWS account…")
+
+        try:
+            # the currently connected AWS account/session and Region -- the
+            # SAME fresh-AssumeRole resolution every other cloud operation
+            # uses (cryostack_src/cloud/connect/execution.py). Guided
+            # creation only makes sense for a connected BYO-AWS account --
+            # developer/ambient-credential mode is refused rather than
+            # silently creating the secret in the wrong (CryoStack host's
+            # own) account.
+            try:
+                execution = resolve_cloud_execution(user=owner)
+            except CloudAccessError as e:
+                # reuse the SAME connection/session-failure classifier
+                # every other cloud operation's failure message goes
+                # through (cloud_run_controller.classify_cloud_failure) --
+                # its short message never carries raw AWS CLI text.
+                from cryostack_src.frontend.cryolauncher.cloud_run_controller import (
+                    classify_cloud_failure,
+                )
+                _clear_raw_value()
+                message, _detail = classify_cloud_failure(e)
+                widgets.matlab_license_create_status.value = _matlab_license_status_html(
+                    message, ok=False)
+                with log_output:
+                    print(f"[cloud][ERROR] MATLAB license configuration failed: {message}")
+                return
+            if not execution.is_byo:
+                _clear_raw_value()
+                widgets.matlab_license_create_status.value = _matlab_license_status_html(
+                    "Connect an AWS account before configuring a MATLAB "
+                    "license.", ok=False)
+                return
+
+            config = AWSConfig(region=execution.region, credentials=execution.credentials)
+
+            # call Secrets Manager CreateSecret against the ONE fixed
+            # CryoStack-managed name -- the value is piped to the AWS
+            # CLI's stdin (see secrets.py), never passed as an argument,
+            # so it cannot appear in a process listing, this call, or any
+            # exception raised from it.
+            try:
+                result = create_matlab_license_secret(
+                    config, name=DEFAULT_MATLAB_LICENSE_SECRET_NAME, value=value)
+            except SecretAlreadyExists:
+                # The fixed default name already exists in this AWS
+                # account. CryoStack never overwrites a secret it did not
+                # just create -- there is currently no in-app way to
+                # change that secret's value (see the MATLAB-license UX
+                # report / follow-up item on secretsmanager:PutSecretValue).
+                # Point the user at the one safe manual path instead of
+                # silently doing nothing.
+                _clear_raw_value()
+                widgets.matlab_license_create_status.value = _matlab_license_status_html(
+                    "A MATLAB license is already configured for this AWS "
+                    "account. To change its value, update the secret "
+                    "directly in AWS Secrets Manager -- CryoStack will "
+                    "keep using it automatically.", ok=False)
+                return
+            except (SecretNameInvalid, ValueError) as e:
+                # backend-raised, human-authored validation text -- never
+                # derived from raw AWS CLI output -- safe to show as-is.
+                _clear_raw_value()
+                widgets.matlab_license_create_status.value = _matlab_license_status_html(
+                    str(e), ok=False)
+                return
+            except SecretCreateError as e:
+                # the ONE place raw (sanitized-by-the-backend-but-still-
+                # AWS-authored) CLI error text reaches this function --
+                # e.g. CreateSecret AccessDenied, whose message embeds the
+                # STS assumed-role ARN. Never shown to Basic mode as-is;
+                # only a short, categorized, human message is, and only a
+                # short technical phrase (never the raw text) reaches the
+                # Run Log.
+                _clear_raw_value()
+                message, detail = _sanitize_secret_create_error(e)
+                widgets.matlab_license_create_status.value = _matlab_license_status_html(
+                    message, ok=False)
+                with log_output:
+                    print(f"[cloud][ERROR] MATLAB license configuration failed: {detail}")
+                return
+            except Exception:  # noqa: BLE001 -- never let a raw exception surface
+                _clear_raw_value()
+                widgets.matlab_license_create_status.value = _matlab_license_status_html(
+                    "Could not configure the MATLAB license. Please try "
+                    "again, or check your AWS connection.", ok=False)
+                with log_output:
+                    print("[cloud][ERROR] MATLAB license configuration failed "
+                          "(unexpected error).")
+                return
+
+            # populate the (authoritative) ARN field and persist it through
+            # the EXISTING save path -- never a second persistence
+            # mechanism -- then clear the raw value immediately.
+            widgets.matlab_license_arn.value = result["arn"]
+            _clear_raw_value()
+            _save()
+
+            # configure required cloud access now, if it is already
+            # knowable (the environment has been prepared before) -- IAM-
+            # only, never a duplicate of full Prepare Cloud. See
+            # _reconcile_license_access.
+            reconciled = _reconcile_license_access(execution, result["arn"])
+
+            widgets.matlab_license_create_status.value = _matlab_license_status_html(
+                "MATLAB license configured." if reconciled else
+                "MATLAB license configured. Run Prepare cloud to finish "
+                "setting up your cloud environment.", ok=True)
+        finally:
+            _license_configure_busy = False
+            _set_configuring(False)
+
+    widgets.matlab_license_create_button.on_click(_create_secret)
+
+
+def wire_institutional_connection_widgets(
+    widgets: "CloudEnvironmentWidgets",
+    *,
+    check_connected,
+    session_state,
+    open_connector,
+    disconnect,
+    app: str,
+    log_output,
+):
+    """Wire the INSTITUTIONAL CONNECTION box to the CALLER's existing
+    Connector state -- ``check_connected``/``session_state``/
+    ``open_connector``/``disconnect`` are the gateway's own Remote-
+    connection callables (its ``_connector_is_online``/``SESSION``/
+    ``create_or_refresh_connector_session``/``disconnect_connector``),
+    reading and driving the SAME Connector binding/session Remote uses.
+    This function creates no Connector implementation, pairing, identity,
+    or session of its own -- it only renders whatever state those
+    callables report, so pairing (or disconnecting) in Remote is
+    reflected here on the next refresh, and vice versa.
+
+    Cloud completes the ENTIRE compact pairing flow Remote offers --
+    not connected -> waiting (pairing code + pairing-page link) ->
+    connected -- using the SAME presentation helpers Remote renders with
+    (``connector_pairing_status_html``/``connector_pairing_link_html``
+    from ``shared_remote_connection_panel``), never a re-implementation.
+    A scientist never has to switch to Remote merely to pair.
+
+    Returns a ``refresh()`` the caller can invoke whenever Remote's own
+    Connector state changes, so Cloud stays in sync without polling.
+    """
+    from icesee_jupyter_book.ui.shared_remote_connection_panel import (
+        connector_pairing_link_html,
+        connector_pairing_status_html,
+    )
+
+    def refresh(_=None) -> None:
+        try:
+            connected = bool(check_connected())
+        except Exception:
+            connected = False
+        try:
+            session = dict(session_state() or {})
+        except Exception:
+            session = {}
+        session_id = session.get("id")
+
+        if connected:
+            widgets.institutional_connection_status.value = status_badge(
+                "success", label="CryoStack Connector connected")
+            widgets.institutional_connection_pairing_info.value = ""
+            widgets.institutional_connection_pairing_link.value = ""
+        elif session_id:
+            # Waiting: a session exists but the Connector has not paired
+            # yet -- show the SAME pairing code/link Remote shows, off the
+            # SAME session, so the scientist never needs to switch modes.
+            widgets.institutional_connection_status.value = status_badge(
+                "warning", label="Waiting for Connector")
+            widgets.institutional_connection_pairing_info.value = (
+                connector_pairing_status_html(
+                    session_id=session_id,
+                    pairing_code=session.get("pairing_code"), online=False,
+                )
+            )
+            widgets.institutional_connection_pairing_link.value = (
+                connector_pairing_link_html(session_id=session_id, app=app)
+            )
+        else:
+            widgets.institutional_connection_status.value = status_badge(
+                "idle", label="Connector not connected")
+            widgets.institutional_connection_pairing_info.value = ""
+            widgets.institutional_connection_pairing_link.value = ""
+
+        # Open Connector... only while there is no session yet; once one
+        # exists (waiting or connected) Re-check/Disconnect take over --
+        # re-creating a session is never needed to refresh status.
+        widgets.institutional_connection_open_button.layout.display = (
+            "none" if session_id else "inline-flex")
+        widgets.institutional_connection_recheck_button.layout.display = (
+            "inline-flex" if session_id else "none")
+        widgets.institutional_connection_disconnect_button.layout.display = (
+            "inline-flex" if session_id else "none")
+
+    def _open(_=None) -> None:
+        try:
+            open_connector()
+        except Exception as e:  # noqa: BLE001 - never break the panel
+            with log_output:
+                print("[cloud][ERROR]", type(e).__name__, e)
+        # Visible immediately -- the scientist never needs to change
+        # execution mode or reload the page to see the pairing code.
+        refresh()
+
+    def _disconnect(_=None) -> None:
+        try:
+            disconnect()
+        except Exception as e:  # noqa: BLE001 - never break the panel
+            with log_output:
+                print("[cloud][ERROR]", type(e).__name__, e)
+        refresh()
+
+    widgets.institutional_connection_open_button.on_click(_open)
+    widgets.institutional_connection_recheck_button.on_click(refresh)
+    widgets.institutional_connection_disconnect_button.on_click(_disconnect)
+    refresh()
+    return refresh
 
 
 def set_review_panel(widgets: "CloudEnvironmentWidgets", review) -> None:
@@ -1357,8 +1822,121 @@ def build_cloud_environment_card(
     ec2_topology_widget.observe(_on_topology_change, names="value")
     ec2_accelerator_widget.observe(_on_accelerator_change, names="value")
 
+    # ---------------------------------------------------------
+    # MATLAB license -- Basic: only the license value. AWS Secrets
+    # Manager, ARNs, secret names, MLM_LICENSE_FILE, and IAM are
+    # implementation detail CryoStack handles; they appear only inside
+    # "Advanced license configuration" below, for the power user who
+    # manages their own secret.
+    # ---------------------------------------------------------
+
+    matlab_license_heading = W.HTML(
+        value=(
+            "<div style='font-size:12px;font-weight:700;color:#172033;"
+            "letter-spacing:.02em;margin-top:2px;'>MATLAB LICENSE</div>"
+        ),
+    )
+
+    matlab_license_caption = W.HTML(
+        value=(
+            "<div style='font-size:11px;color:#66758d;line-height:1.45;'>"
+            "ISSM requires a MATLAB license for cloud execution. Enter the "
+            "license information provided by your institution. CryoStack "
+            "securely configures it in your connected AWS account. This is "
+            "normally required only once."
+            "</div>"
+            "<div style='font-size:10px;color:#96a1b4;line-height:1.4;"
+            "margin-top:3px;'>"
+            "The MATLAB license service must be reachable from the cloud "
+            "environment."
+            "</div>"
+        ),
+    )
+
+    matlab_license_value_widget = W.Password(
+        description="MATLAB license:",
+        placeholder="e.g. 27000@license.example.edu",
+        layout=W.Layout(
+            width="100%",
+        ),
+        style={
+            "description_width": "150px",
+        },
+    )
+    matlab_license_create_button = secondary_button(
+        "Configure license",
+        icon="lock",
+    )
+    matlab_license_create_status = W.HTML(value="")
+
+    matlab_license_entry_box = W.VBox(
+        [
+            matlab_license_caption,
+            matlab_license_value_widget,
+            matlab_license_create_button,
+            matlab_license_create_status,
+        ],
+        layout=W.Layout(
+            width="100%",
+            gap="5px",
+        ),
+    )
+
+    # -- configured state: never redisplay the raw or stored secret value,
+    # only a status line + a way to reconfigure it.
+    matlab_license_configured_status = W.HTML(
+        value=(
+            "<div style='font-size:11px;color:#2f8f4e;'>"
+            "&#10003; MATLAB license configured</div>"
+        ),
+    )
+    matlab_license_reconfigure_button = secondary_button(
+        "Reconfigure",
+        icon="pencil",
+    )
+    # -- shown INSTEAD of the Reconfigure button when the configured ARN
+    # names CryoStack's own fixed-name managed secret: there is currently
+    # no in-app way to change that secret's value (no PutSecretValue path),
+    # so offering an active "Reconfigure" form there would always fail --
+    # this tells the truth up front instead. See
+    # _is_default_managed_matlab_license_arn / _refresh_matlab_license_view.
+    matlab_license_rotate_note = W.HTML(
+        value=(
+            "<div style='font-size:10.5px;color:#8a94a6;'>"
+            "To change it, update the secret directly in AWS Secrets "
+            "Manager.</div>"
+        ),
+        layout=W.Layout(display="none"),
+    )
+    matlab_license_configured_row = W.HBox(
+        [
+            matlab_license_configured_status,
+            matlab_license_reconfigure_button,
+            matlab_license_rotate_note,
+        ],
+        layout=W.Layout(
+            width="100%",
+            gap="10px",
+            align_items="center",
+        ),
+    )
+
+    # -- Advanced (secondary, visually subordinate): a power/institutional
+    # user who already manages their own AWS Secrets Manager secret can
+    # point CryoStack at its ARN directly. This is the ONLY place the ARN
+    # / secret-name / Secrets Manager terminology is shown by default.
+    matlab_license_advanced_caption = W.HTML(
+        value=(
+            "<div style='font-size:10.5px;color:#8a94a6;line-height:1.4;'>"
+            "If you already manage your own AWS Secrets Manager secret for "
+            "the MATLAB license, paste its ARN below instead of using "
+            "Configure license above. Paste the secret's ARN only -- never "
+            "the license value itself."
+            "</div>"
+        ),
+    )
     matlab_license_arn_widget = W.Text(
-        description="MATLAB license ARN:",
+        description="Existing secret ARN:",
         value=matlab_license_secret_arn,
         placeholder="arn:aws:secretsmanager:<region>:<account>:secret:<name>",
         layout=W.Layout(
@@ -1368,22 +1946,34 @@ def build_cloud_environment_card(
             "description_width": "150px",
         },
     )
-
-    matlab_license_caption = W.HTML(
-        value=(
-            "<div style='font-size:11px;color:#96a1b4;line-height:1.45;'>"
-            "ISSM cloud runs need a MATLAB license reachable from AWS Batch. "
-            "Create a Secrets Manager secret <b>in your own AWS account</b> "
-            "holding the license value, then paste its ARN here -- CryoStack "
-            "never sees or stores the license value itself, only this "
-            "non-secret identifier."
-            "</div>"
+    matlab_license_save_button = secondary_button(
+        "Use existing secret",
+        icon="link",
+    )
+    matlab_license_advanced_body = W.VBox(
+        [
+            matlab_license_advanced_caption,
+            matlab_license_arn_widget,
+            matlab_license_save_button,
+        ],
+        layout=W.Layout(
+            width="100%",
+            gap="5px",
+            padding="6px 0",
         ),
     )
-
-    matlab_license_save_button = secondary_button(
-        "Save license ARN",
-        icon="save",
+    matlab_license_advanced = W.Accordion(
+        children=[
+            matlab_license_advanced_body,
+        ],
+        selected_index=None,
+        layout=W.Layout(
+            width="100%",
+        ),
+    )
+    matlab_license_advanced.set_title(
+        0,
+        "Advanced license configuration",
     )
 
     advanced_body = W.VBox(
@@ -1404,24 +1994,121 @@ def build_cloud_environment_card(
         ),
     )
 
-    # Independent of the Advanced accordion -- and of Basic/Advanced mode --
-    # so a workflow that needs MATLAB (ISSM, or an ICESEE run whose forecast
-    # model is ISSM) always shows this field, even in Basic mode. Visibility
-    # is set by the caller (the gateway) from
+    # Independent of the Advanced cloud settings accordion -- and of
+    # Basic/Advanced mode -- so a workflow that needs MATLAB (ISSM, or an
+    # ICESEE run whose forecast model is ISSM) always shows this box, even
+    # in Basic mode. Visibility is set by the caller (the gateway) from
     # cryostack_src.models.workflow_capabilities, not from a Basic/Advanced
     # or model-name check here. Defaults hidden; the gateway sets it
-    # correctly on first render.
+    # correctly on first render. Basic/Advanced mode instead controls how
+    # much AWS implementation detail is exposed WITHIN this box (the entry
+    # form above vs. the nested "Advanced license configuration" accordion).
     matlab_license_box = W.VBox(
         [
-            matlab_license_caption,
-            matlab_license_arn_widget,
-            matlab_license_save_button,
+            matlab_license_heading,
+            matlab_license_entry_box,
+            matlab_license_configured_row,
+            matlab_license_advanced,
         ],
         layout=W.Layout(
             width="100%",
             gap="5px",
             display="none",
         ),
+    )
+
+    # ---------------------------------------------------------
+    # INSTITUTIONAL CONNECTION -- shown immediately below the MATLAB
+    # license section, only for a workflow whose already-resolved
+    # CloudMatlabLicense.requires_tunnel is True (the caller sets
+    # visibility, exactly like matlab_license_box above -- never a
+    # Basic/Advanced or model-name check here). No tunnel/relay/
+    # WebSocket/session id/token/FlexNet/vendor-daemon/host-port/
+    # MLM_LICENSE_FILE wording -- the scientist only needs to know
+    # CryoStack needs the Connector to reach their institution. The
+    # Connector state shown here is Remote's own Connector binding
+    # (wire_institutional_connection_widgets), never a second one.
+    # ---------------------------------------------------------
+    institutional_connection_heading = W.HTML(
+        value=(
+            "<div style='font-size:12px;font-weight:700;color:#172033;"
+            "letter-spacing:.02em;margin-top:2px;'>INSTITUTIONAL CONNECTION"
+            "</div>"
+        ),
+    )
+    institutional_connection_caption = W.HTML(
+        value=(
+            "<div style='font-size:11px;color:#66758d;line-height:1.45;'>"
+            "ISSM requires access to your institution's MATLAB license "
+            "service during this cloud run."
+            "</div>"
+        ),
+    )
+    institutional_connection_status_widget = W.HTML(
+        value=status_badge("idle", label="Connector not connected"),
+        layout=W.Layout(width="auto"),
+    )
+    # The pairing-code line and the pairing-page link -- both empty until
+    # a pairing attempt starts, and both rendered by the SAME presentation
+    # helpers Remote uses (connector_pairing_status_html /
+    # connector_pairing_link_html, wired in wire_institutional_connection_
+    # widgets) -- so Cloud's pairing flow is visually and behaviourally
+    # identical to Remote's, never a second implementation.
+    institutional_connection_pairing_info = W.HTML(value="")
+    institutional_connection_pairing_link = W.HTML(value="")
+    institutional_connection_open_button = secondary_button(
+        "Open Connector...", icon="plug",
+    )
+    institutional_connection_recheck_button = secondary_button(
+        "Re-check", icon="refresh",
+    )
+    institutional_connection_disconnect_button = secondary_button(
+        "Disconnect", icon="unlink",
+    )
+    institutional_connection_recheck_button.layout.display = "none"
+    institutional_connection_disconnect_button.layout.display = "none"
+    institutional_connection_actions = toolbar(
+        institutional_connection_open_button,
+        institutional_connection_recheck_button,
+        institutional_connection_disconnect_button,
+    )
+    institutional_connection_box = W.VBox(
+        [
+            institutional_connection_heading,
+            institutional_connection_caption,
+            institutional_connection_status_widget,
+            institutional_connection_pairing_info,
+            institutional_connection_pairing_link,
+            institutional_connection_actions,
+        ],
+        layout=W.Layout(
+            width="100%",
+            gap="5px",
+            display="none",
+        ),
+    )
+
+    # Initial state matches whatever ARN (if any) was passed in -- the
+    # entry form for nothing configured yet, the configured status once one
+    # is. Refreshed live by wire_matlab_license_widgets after this.
+    _matlab_license_initially_configured = bool(
+        (matlab_license_secret_arn or "").strip()
+    )
+    matlab_license_entry_box.layout.display = (
+        "none" if _matlab_license_initially_configured else "flex"
+    )
+    matlab_license_configured_row.layout.display = (
+        "flex" if _matlab_license_initially_configured else "none"
+    )
+    _matlab_license_initially_rotatable = (
+        _matlab_license_initially_configured
+        and not _is_default_managed_matlab_license_arn(matlab_license_secret_arn)
+    )
+    matlab_license_reconfigure_button.layout.display = (
+        "inline-flex" if _matlab_license_initially_rotatable else "none"
+    )
+    matlab_license_rotate_note.layout.display = (
+        "none" if _matlab_license_initially_rotatable else "flex"
     )
 
     advanced = W.Accordion(
@@ -1516,6 +2203,7 @@ def build_cloud_environment_card(
             aws_account["aws_account_section"],
             advanced,
             matlab_license_box,
+            institutional_connection_box,
             infra_heading,
             status_panel,
             actions,
@@ -1549,9 +2237,25 @@ def build_cloud_environment_card(
         job_queue=job_queue_widget,
         job_definition=job_definition_widget,
         job_name=job_name_widget,
+        matlab_license_value=matlab_license_value_widget,
+        matlab_license_create_button=matlab_license_create_button,
+        matlab_license_create_status=matlab_license_create_status,
+        matlab_license_configured_row=matlab_license_configured_row,
+        matlab_license_reconfigure_button=matlab_license_reconfigure_button,
+        matlab_license_rotate_note=matlab_license_rotate_note,
+        matlab_license_entry_box=matlab_license_entry_box,
         matlab_license_arn=matlab_license_arn_widget,
         matlab_license_save_button=matlab_license_save_button,
+        matlab_license_advanced=matlab_license_advanced,
         matlab_license_box=matlab_license_box,
+
+        institutional_connection_box=institutional_connection_box,
+        institutional_connection_status=institutional_connection_status_widget,
+        institutional_connection_pairing_info=institutional_connection_pairing_info,
+        institutional_connection_pairing_link=institutional_connection_pairing_link,
+        institutional_connection_open_button=institutional_connection_open_button,
+        institutional_connection_recheck_button=institutional_connection_recheck_button,
+        institutional_connection_disconnect_button=institutional_connection_disconnect_button,
 
         compute_mode=compute_mode_widget,
         ec2_max_vcpus=ec2_max_vcpus_widget,

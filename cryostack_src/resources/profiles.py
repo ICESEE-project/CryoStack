@@ -94,6 +94,14 @@ class ComputeProfile:
     # ---- MATLAB licensing (unchanged behaviour) --------------------------
     matlab_license_env: str = "MLM_LICENSE_FILE"
     matlab_license_value: str | None = None
+    #: SITE fact: does a CLOUD (AWS Batch/Fargate) run need the
+    #: private-service tunnel through the user's paired Connector to reach
+    #: this resource's MATLAB license service? Never true for Local/Remote
+    #: execution (those already reach it directly, e.g. over VPN/on-campus)
+    #: -- this flag is read ONLY by the cloud driver's license-path
+    #: decision (cryostack_src.cloud.matlab_license.
+    #: site_requires_cloud_license_tunnel). Never user-configurable.
+    matlab_license_cloud_requires_tunnel: bool = False
 
     def __post_init__(self) -> None:
         if not _ENV_NAME_RE.match(self.matlab_license_env):
@@ -144,6 +152,10 @@ _PACE = ComputeProfile(
     account_required=True,
     matlab_license_env="MLM_LICENSE_FILE",
     matlab_license_value="1711@matlablic.ecs.gatech.edu",
+    # Fargate cannot reach this institutional address directly (it resolves
+    # internally to 10.138.23.10); a cloud run needs the private-service
+    # tunnel through the user's paired Connector.
+    matlab_license_cloud_requires_tunnel=True,
 )
 
 COMPUTE_PROFILES: dict[str, ComputeProfile] = {

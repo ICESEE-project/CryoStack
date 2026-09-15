@@ -40,6 +40,19 @@ _NO_MATLAB_LICENSE = (
     "never leaves your account."
 )
 
+#: The marker string ``build_cloud_run_review``/``build_icesee_cloud_review``
+#: look for ("CryoStack Connector") to keep this reason distinct from
+#: _NO_MATLAB_LICENSE's -- telling a scientist to "add a Secrets Manager
+#: ARN" when the real, already-satisfied requirement is "pair the
+#: Connector" would send them down the wrong path. No tunnel/relay/session/
+#: token/port wording -- the scientist only needs to know CryoStack needs
+#: the Connector to reach their institution.
+_NO_CONNECTOR = (
+    "[cloud][ERROR] ISSM cloud execution needs your institution's MATLAB "
+    "license service, which requires the CryoStack Connector. Open "
+    "Connector... and pair it, then try again."
+)
+
 
 def cloud_run_preflight(
     *,
@@ -47,12 +60,22 @@ def cloud_run_preflight(
     matlab_license_configured: bool,
     compute_mode: str | None = None,
     ec2_config=None,
+    connector_required: bool = False,
+    connector_connected: bool = False,
 ) -> list[str]:
     """Return the blocking reasons for a cloud run (empty list == clear to go).
 
     * unknown / unsupported model -> blocked (Icepack cloud is not ready);
     * ISSM without a configured cloud MATLAB license -> blocked. The license
       value itself is never handled here -- only whether one is configured;
+    * ``connector_required`` (the caller's already-resolved
+      ``CloudMatlabLicense.requires_tunnel``) with no Connector paired
+      (``connector_connected`` False) -> blocked, fail-closed, distinct from
+      the "license not configured" reason above -- the license CAN be
+      configured and this can still block. Never re-derived here: the
+      caller (gateway) supplies both booleans from state it already owns
+      (the workflow capability and the existing Connector binding Remote
+      also reads) -- no new resolution/session/transport logic lives here;
     * an invalid AWS Batch compute selection (Spot/GPU/custom-network/multi-
       node on Fargate; GPU without a GPU-qualified image; multi-node without
       distributed-runner support) -> blocked. ``compute_mode``/``ec2_config``
@@ -78,6 +101,8 @@ def cloud_run_preflight(
     capabilities = resolve_workflow_capabilities(model=m)
     if capabilities.requires_matlab_license and not matlab_license_configured:
         reasons.append(_NO_MATLAB_LICENSE)
+    elif capabilities.requires_matlab_license and connector_required and not connector_connected:
+        reasons.append(_NO_CONNECTOR)
 
     # AWS Batch compute-mode compatibility matrix lives in ONE place
     # (drivers.aws.batch_config) so the frontend, preflight and provisioning
@@ -100,10 +125,14 @@ def assert_cloud_run_allowed(
     matlab_license_configured: bool,
     compute_mode: str | None = None,
     ec2_config=None,
+    connector_required: bool = False,
+    connector_connected: bool = False,
 ) -> None:
     reasons = cloud_run_preflight(
         model=model, matlab_license_configured=matlab_license_configured,
         compute_mode=compute_mode, ec2_config=ec2_config,
+        connector_required=connector_required,
+        connector_connected=connector_connected,
     )
     if reasons:
         from .runtime import CloudRuntimeError

@@ -83,6 +83,44 @@ def test_issm_without_cloud_matlab_license_is_blocked_honestly():
     assert r.issm_runtime_ready is False        # distinct readiness signal
 
 
+def test_connector_required_but_not_connected_is_blocked_distinctly_from_no_license():
+    """The preflight-produced Connector reason (cryostack_src.cloud.
+    preflight._NO_CONNECTOR) must survive verbatim -- never rewritten into
+    the "add a Secrets Manager ARN" message, which would send a scientist
+    who already configured the license down the wrong path."""
+    from cryostack_src.cloud.preflight import cloud_run_preflight
+
+    problems = cloud_run_preflight(
+        model="issm", matlab_license_configured=True,
+        connector_required=True, connector_connected=False,
+    )
+    r = _review(preflight_problems=problems)
+    assert not r.can_launch
+    assert any("CryoStack Connector" in x for x in r.blocked_reasons)
+    assert not any("Secrets Manager secret ARN" in x for x in r.blocked_reasons)
+    assert r.issm_runtime_ready is False
+
+
+def test_connector_required_and_connected_can_launch():
+    from cryostack_src.cloud.preflight import cloud_run_preflight
+
+    problems = cloud_run_preflight(
+        model="issm", matlab_license_configured=True,
+        connector_required=True, connector_connected=True,
+    )
+    r = _review(preflight_problems=problems)
+    assert r.can_launch and not r.blocked_reasons
+    assert r.issm_runtime_ready is True
+
+
+def test_explicit_issm_runtime_ready_can_reflect_connector_state_too():
+    """A caller that already combined "configured AND connector reachable"
+    into issm_runtime_ready (as the gateways do) has that value honoured
+    verbatim, even with no preflight_problems supplied."""
+    r = _review(issm_runtime_ready=False)
+    assert r.issm_runtime_ready is False
+
+
 def test_unsupported_model_is_blocked():
     r = _review(model="firedrake")
     assert not r.can_launch
@@ -267,3 +305,20 @@ def test_changing_the_default_image_invalidates_an_open_review(monkeypatch):
     after = _review(config=cfg, model="icepack")
     assert after.digest != before
     assert after.image_reference == "bkyanjo/icesee-combined:v9.9.9"
+
+
+# ── license_path: Advanced-diagnostics-only, never Basic-mode ──────────
+def test_license_path_defaults_to_empty_and_never_gates_launch():
+    review = _review()
+    assert review.license_path == ""
+    assert review.to_public_dict()["license_path"] == ""
+
+
+def test_license_path_is_reported_but_does_not_affect_can_launch():
+    """license_path is diagnostic only -- it must never itself block Launch
+    (issm_runtime_ready / preflight_problems already own that decision)."""
+    review = _review(license_path="institutional_connector")
+    assert review.license_path == "institutional_connector"
+    assert review.to_public_dict()["license_path"] == "institutional_connector"
+    assert review.can_launch is True
+    assert review.blocked_reasons == []

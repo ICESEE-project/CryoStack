@@ -59,8 +59,8 @@ The interface has two areas:
     <h3>Run settings</h3>
     <p>
       Model, example, Basic/Advanced mode, execution mode and backend, the
-      guided configuration panel or the file editor, datasets, and the
-      computing-resource settings.
+      guided configuration panel, datasets, and the computing-resource
+      settings.
     </p>
   </article>
 
@@ -68,8 +68,9 @@ The interface has two areas:
     <div class="cryostack-manual-number">02</div>
     <h3>Workspace</h3>
     <p>
-      Run history and status, per-run files, the run log, and the Results tab
-      with the field-visualization panel and download controls.
+      Run history and status, per-run files, the Advanced-mode file editor,
+      the run log, and the Results tab with the field-visualization panel and
+      download controls.
     </p>
   </article>
 
@@ -109,9 +110,11 @@ The interface has two areas:
   Firedrake results are function-space DOF vectors, not the ISSM
   solution/field/timestep structure the viewer is built on.</li>
   <li><b>Cloud (AWS Batch) execution.</b> Icepack has run end-to-end on Cloud
-  for <code>04-synthetic-ice-stream-xy</code>; other Icepack examples share
-  the same code path but have not each been individually confirmed there —
-  see the <a href="../../docs/hpc_cloud.html#verified-runtime-contracts">Cloud
+  for <code>04-synthetic-ice-stream-xy</code> (Fargate) and for
+  <code>00-meshes-functions</code> (EC2 Advanced, On-Demand, single node,
+  CPU); other Icepack examples share the same code path but have not each
+  been individually confirmed there — see the
+  <a href="../../docs/hpc_cloud.html#verified-runtime-contracts">Cloud
   Run Guide</a>.</li>
 </ul>
 <p>
@@ -182,6 +185,12 @@ directly. No ISSM parameter names or `md` semantics are used for Icepack.
 Advanced mode is a **model-neutral workspace and file editor** for modifying
 examples and files directly.
 
+- **Where it lives.** The editor is an **Editor** tab in the Workspace
+  (alongside Runs, Files, Run Log, and Results), giving it substantially more
+  vertical room than a Run-settings row would. It appears only in Advanced
+  mode — Basic mode's Workspace has no Editor tab. This is the same editor
+  widget and controller either way; switching Basic↔Advanced only shows or
+  hides the tab, it never recreates the editor or discards its content.
 - **Canonical examples are read-only.** Application examples shipped with a
   model cannot be edited, renamed, or deleted. Opening a file from one shows
   it disabled.
@@ -298,9 +307,11 @@ example**, in your personal dataset area.
   <a href="../../docs/hpc_cloud.html#compute-mode-fargate-default-or-ec2-advanced">Compute
   mode</a> in the Cloud Run Guide. The onboarding, infrastructure-provisioning,
   and Fargate execution steps below are exercised and working — Icepack and
-  ICESEE have each completed a real run on Fargate; the full BYO-AWS
-  operational lifecycle (budget/quota/cleanup automation) and the EC2 compute
-  mode are still being validated — see the platform-wide
+  ICESEE have each completed a real run on Fargate, and Icepack has
+  additionally completed a real run on EC2 (Advanced, On-Demand, single node,
+  CPU); the full BYO-AWS operational lifecycle (budget/quota/cleanup
+  automation), EC2 Spot/GPU/multi-node, and EC2 for ISSM or ICESEE are still
+  being validated — see the platform-wide
   <a href="../../docs/hpc_cloud.html">Cloud Run Guide</a> for the current
   scope and known limits before depending on Cloud for production work.
 </p>
@@ -329,10 +340,13 @@ example**, in your personal dataset area.
    recreated. Detailed provisioning output goes to the Run Log.
 6. Once everything is <b>Ready</b>, a <b>RUN ESTIMATE</b> appears — expected
    runtime, the resources the run will request (e.g. 2 vCPU · 8 GiB), and an
-   estimated AWS cost. Click <b>Review &amp; Launch</b> to see the full
-   <b>Review cloud run</b> card (experiment, account, resources, expected
-   runtime, estimated cost with its basis and price-check time, and
-   infrastructure readiness), then click <b>Launch cloud run</b> to start.
+   estimated AWS cost (Fargate only — EC2 shows <b>Estimated cost:
+   unavailable</b>; no EC2 pricing model exists yet). Click <b>Review &amp;
+   Launch</b> to see the full <b>Review cloud run</b> card (experiment,
+   account, resources, expected runtime, estimated cost with its basis and
+   price-check time, and infrastructure readiness — the <b>Compute</b> row
+   names the backend explicitly, e.g. <b>Compute (AWS Batch Fargate)</b> or
+   <b>Compute (AWS Batch EC2)</b>), then click <b>Launch cloud run</b> to start.
    Launch is always an explicit action; if you change the example, resources
    or a model parameter after opening the review, CryoStack asks you to review
    the updated estimate again before launching.
@@ -645,24 +659,91 @@ Some backends need a one-time setup on the remote resource:
     license server (`MLM_LICENSE_FILE=<port>@<host>`), passed to the
     container with `apptainer exec --env`. It is never logged or persisted.
   - **Cloud (AWS Batch):** "Container image ready" is **not** "ISSM runtime
-    ready". The tested image ships no license and a campus license server is
-    not reachable from AWS Fargate. You supply a cloud-reachable mechanism
-    by creating an **AWS Secrets Manager** secret *in your own AWS account*
-    whose value is the `MLM_LICENSE_FILE` string (a license server you can
-    reach from the Batch VPC — CryoStack's default Fargate compute
-    environment always uses your account's discovered default VPC, so
-    reaching an institutional network-license server may additionally
-    require the EC2 Advanced compute mode's
-    <a href="../../docs/hpc_cloud.html#compute-mode-fargate-default-or-ec2-advanced">custom/private
-    networking</a> — or a MathWorks online-licensing token), and
-    giving CryoStack only that secret's **ARN**. Prepare Cloud then wires the
-    ARN into the ISSM job definition (`containerProperties.secrets`) and AWS
-    Batch injects the value when the container starts. The license value
-    never reaches CryoStack, Git, the image, an S3 run artifact, a run
-    manifest, a command preview, or a log — only the (non-secret) ARN is
-    stored, on your AWS connection. The Review card shows an explicit **ISSM
-    runtime** row (Ready / *Needs a MATLAB license*) distinct from the
+    ready" — the tested image ships no license. See
+    <a href="#matlab-licensing-for-issm-cloud-runs">MATLAB licensing for ISSM
+    cloud runs</a> below for the one-time setup. The Review card shows an
+    explicit **ISSM runtime** row (Ready / *Needs a MATLAB license*) distinct from the
     container row.
+
+### MATLAB licensing for ISSM cloud runs
+
+This applies to **ISSM cloud runs specifically** — the field is driven by
+whether the selected workflow actually needs MATLAB, not by Basic/Advanced
+mode; Icepack never shows or requires it.
+
+**First-time setup.** Normally done **once per AWS account/Region**, then
+reused automatically.
+
+1. Have access to a MATLAB license server reachable from AWS (directly, or,
+   for a private/institutional server, through the EC2 Advanced compute
+   mode's
+   <a href="../../docs/hpc_cloud.html#compute-mode-fargate-default-or-ec2-advanced">custom/private
+   networking</a>).
+2. In CryoLauncher, under **Cloud Environment → MATLAB License**, enter your
+   license information — for example (placeholder only)
+   `27000@matlab-license.example.edu` — in the **MATLAB license** field.
+3. Click **Configure license**. CryoStack securely configures it in your
+   connected AWS account and clears the entered value from the screen
+   immediately — it is never shown again. The section now reads
+   **✓ MATLAB license configured**.
+4. If CryoStack cannot yet finish connecting the license to your cloud
+   environment, the status line says so and names the next step (normally
+   **Prepare cloud**, which most workflows run anyway before a cloud
+   launch).
+
+That's it — no secret name, ARN, or AWS console step is needed for the
+common case.
+
+**Changing the license value later.** CryoStack cannot yet replace the
+value of the license it created for you in place, so once configured the
+section shows **✓ MATLAB license configured** with no active "change it
+here" control for that case — this is deliberate: offering one would imply
+a working path that does not exist yet. To change the value, update the
+secret directly in AWS Secrets Manager (a short note next to the checkmark
+says this too), or use the **Advanced** section below to point CryoStack at
+a different secret you manage yourself, which *does* offer a **Reconfigure**
+control since switching to a different secret genuinely works.
+
+**Advanced: using a secret you already manage.** If you (or your
+institution) already manage an AWS Secrets Manager secret for the MATLAB
+license, open **Advanced license configuration** under the MATLAB License
+section instead of using Configure license:
+
+1. In the **same AWS account and Region** as your CryoStack connection,
+   store the license as a **plaintext SecretString** — the
+   `MLM_LICENSE_FILE` value, normally `PORT@HOST` — for example, with
+   placeholders only: `27000@matlab-license.example.edu`. Do **not** store
+   it as JSON/key-value data — the current implementation injects the
+   secret's entire value verbatim, so a JSON secret would break MATLAB's
+   license parsing.
+2. Copy the secret's ARN.
+3. Under **Advanced license configuration**, paste it into **Existing
+   secret ARN** — never the license value itself.
+4. Click **Use existing secret**.
+
+Both paths converge on the same stored state — one Secrets Manager ARN on
+your AWS connection — and the same underlying Prepare Cloud reconciliation.
+
+**Subsequent runs.** This is normally **not** repeated for every ISSM run —
+CryoStack remembers the license on your AWS connection and reuses it for
+every later ISSM cloud run automatically. Revisit the setup only when you
+change AWS account, change Region, replace the MATLAB license, or change
+the license endpoint.
+
+**Security.** CryoStack never stores the license value itself — only a
+non-secret reference on your AWS connection. The value stays in your own
+AWS account and never reaches CryoStack, Git, the image, an S3 run
+artifact, a run manifest, a command preview, or a log. The **MATLAB
+license** field is a masked input, is never redisplayed once entered, and
+is cleared immediately after **Configure license** succeeds (or fails) — it
+is used exactly once and nowhere else. Never put the actual license value
+into the Advanced **Existing secret ARN** field, a source file, the
+repository, or documentation.
+
+**Network requirement.** Configuring the license does **not** by itself
+make a campus or private license server reachable from AWS. The license
+server itself must be reachable from the AWS Batch environment (its default
+VPC, or a custom/private network under EC2 Advanced).
 
 ### Launching
 
@@ -947,3 +1028,32 @@ description of what a run produced.
   </div>
 </div>
 :::
+
+
+### Agent · Beta: prepare a configuration
+
+When Agent mode is enabled, describe one experiment, for example:
+
+> Run SquareIceShelf with ISSM on PACE using 4 CPUs.
+
+**Create plan** shows the inferred model, example and requested settings, along
+with unresolved choices or unsupported requests. Example names come from the
+available application and workspace examples. Omitted settings retain the
+current manual configuration; scientific values remain those of the example
+and any enabled overrides. A request for a default tutorial uses the currently
+selected example only when it belongs to the requested model.
+
+**Apply to configuration** fills the same controls used by Basic/Advanced and
+reports configuration validation findings. **Review in Advanced** opens those
+controls. Applying a proposal does not approve or submit a run. The normal
+execution path still checks identity, resources, model parameters, backend
+readiness and cloud preflight before submission.
+
+The planner supports explicit example/model names, remote/cloud location,
+compute profiles, CPU/task and node counts, Slurm account, wall time in
+`HH:MM:SS`, memory such as `64G memory`, and numeric/boolean settings named by
+the curated parameter labels. Use one complete description for each revision.
+Ambiguous alternatives, unknown assignments and unrecognized numbers require
+clarification. Local standalone execution remains unavailable. Cloud resource
+customization and unsupported GPU/multi-node requests require manual review or
+are rejected; the planner does not substitute HPC resources for cloud values.

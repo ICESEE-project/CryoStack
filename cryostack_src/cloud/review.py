@@ -106,6 +106,12 @@ class CloudRunReview:
     #: ISSM only: whether ISSM RUNTIME (MATLAB license) is ready -- distinct
     #: from container readiness. ``None`` for non-ISSM runs.
     issm_runtime_ready: bool | None = None
+    #: ISSM only, Advanced-diagnostics use: "direct" or
+    #: "institutional_connector" (cryostack_src.cloud.matlab_license.
+    #: CloudMatlabLicense.license_path) -- never shown in Basic mode, never
+    #: a substitute for issm_runtime_ready. "" for non-ISSM runs / when
+    #: unconfigured.
+    license_path: str = ""
 
     # -- presentation ------------------------------------------------
     @property
@@ -170,6 +176,7 @@ class CloudRunReview:
             "image_digest": self.image_digest,
             "image_public_url": self.image_public_url,
             "issm_runtime_ready": self.issm_runtime_ready,
+            "license_path": self.license_path,
         }
 
 
@@ -245,6 +252,7 @@ def build_cloud_run_review(
     preflight_problems: list[str] | None = None,
     scientific_overrides: dict | None = None,
     issm_runtime_ready: bool | None = None,
+    license_path: str = "",
 ) -> CloudRunReview:
     """Assemble a review and decide whether Launch is allowed.
 
@@ -280,10 +288,17 @@ def build_cloud_run_review(
     for problem in (config_problems or []):
         reasons.append(problem)
 
-    # preflight (includes: ISSM needs a cloud-reachable MATLAB license)
+    # preflight (includes: ISSM needs a cloud-reachable MATLAB license, and
+    # -- distinct from that -- a paired CryoStack Connector when the license
+    # requires one). The Connector reason is already scientist-facing
+    # (cryostack_src.cloud.preflight._NO_CONNECTOR) and must be kept
+    # distinct from the "not configured" rewrite below, which would send
+    # the scientist to add a Secrets Manager ARN they may already have.
     for problem in (preflight_problems or []):
         cleaned = problem.replace("[cloud][ERROR] ", "").strip()
-        if "MATLAB" in cleaned or "matlab" in cleaned:
+        if "CryoStack Connector" in cleaned:
+            reasons.append(cleaned)
+        elif "MATLAB" in cleaned or "matlab" in cleaned:
             reasons.append(
                 "The container image is ready, but ISSM runtime is not: it "
                 "needs a MATLAB license reachable from AWS (an AWS Secrets "
@@ -298,7 +313,8 @@ def build_cloud_run_review(
     _model_l = (model or "").strip().lower()
     if issm_runtime_ready is None and _model_l == "issm":
         issm_runtime_ready = not any(
-            "MATLAB" in r or "matlab" in r for r in reasons)
+            "MATLAB" in r or "matlab" in r or "CryoStack Connector" in r
+            for r in reasons)
 
     # the container image this run will actually execute in -- the CryoStack
     # tested image for the model (what Prepare Cloud mirrored into ECR). A
@@ -347,6 +363,7 @@ def build_cloud_run_review(
         image_digest=image_digest,
         image_public_url=image_public_url,
         issm_runtime_ready=issm_runtime_ready,
+        license_path=license_path,
     )
 
 

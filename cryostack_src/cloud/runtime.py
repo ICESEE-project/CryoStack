@@ -81,6 +81,16 @@ ICEPACK_POSTPROCESS_FILENAME = "cryostack_icepack_postprocess.py"
 ICEPACK_RUNNER_FILENAME = "cryostack_icepack_runner.py"
 ICEPACK_EXPORT_FILENAME = "cryostack_icepack_export.py"
 
+#: ISSM's optional private-service license tunnel client
+#: (cryostack_src.cloud.license_tunnel_client) -- staged as a standalone
+#: FILE alongside the run's other inputs, the SAME mechanism the Icepack
+#: helpers above already use, and invoked by filename after phase 1 --
+#: NEVER via ``python3 -m cryostack_src...``. The Batch container is a
+#: scientific image (ISSM/Icepack/MATLAB); it does not, and must not need
+#: to, have the CryoLauncher web application's own ``cryostack_src``
+#: package installed to run this one small, dependency-minimal helper.
+LICENSE_TUNNEL_CLIENT_FILENAME = "cryostack_license_tunnel_client.py"
+
 #: version of the structured-result contract the run must produce
 RESULT_CONTRACT_VERSION = 1
 
@@ -194,6 +204,17 @@ case "${CRYOSTACK_MODEL}" in
     rc=0
     ;;
   issm)
+    # optional private-service license tunnel (values read from env by
+    # license_tunnel_client.py itself); aborts before matlab on failure.
+    # Staged as an ACTUAL FILE (phase 1 already synced it into WORKDIR) --
+    # never `python3 -m cryostack_src...`: this container has no reason to
+    # have the CryoLauncher web app's own package installed.
+    if [ "${CRYOSTACK_LICENSE_TUNNEL_REQUIRED:-0}" = "1" ]; then
+      _lt_msg="$(python3 "${WORKDIR}/__CRYOSTACK_LICENSE_TUNNEL_CLIENT_FILENAME__" listen)" \
+        || fail 65 "${_lt_msg}"
+      _mlm="MLM_LICENSE_FILE"
+      export "${_mlm}=${CRYOSTACK_LT_PORT}@127.0.0.1"
+    fi
     with-issm matlab -nodesktop -nosplash -batch \
       "ICESEE_RUN_DIR='${WORKDIR}'; setenv('ICESEE_RUN_DIR','${WORKDIR}'); run('${RUN_TARGET}'); run('${WORKDIR}/postprocess_icesee.m');"
     rc=$?
@@ -289,6 +310,7 @@ def build_cloud_runner() -> str:
         _RUNNER
         .replace("__CRYOSTACK_ICEPACK_PP_FILENAME__", ICEPACK_POSTPROCESS_FILENAME)
         .replace("__CRYOSTACK_ICEPACK_RUNNER_FILENAME__", ICEPACK_RUNNER_FILENAME)
+        .replace("__CRYOSTACK_LICENSE_TUNNEL_CLIENT_FILENAME__", LICENSE_TUNNEL_CLIENT_FILENAME)
     )
 
 
@@ -323,6 +345,67 @@ def icepack_postprocess_extra_files() -> dict[str, str]:
         ICEPACK_EXPORT_FILENAME: export_module_source(),
         ICEPACK_POSTPROCESS_FILENAME: build_postprocess(),
     }
+
+
+#: dedicated runtime-support directory the tunnel client's own dependency
+#: bundle is staged under -- NEVER mixed into the scientist's model/example
+#: files. cryostack_src.cloud.license_tunnel_client adds this (resolved
+#: next to its own staged file) to sys.path for THIS PROCESS ONLY before
+#: ``import websockets`` is attempted; nothing outside that one process is
+#: ever touched (no /opt/venv-* modification, no global PYTHONPATH).
+RUNTIME_SUPPORT_DIRNAME = ".cryostack_runtime"
+
+#: the pinned, vendored websockets subset -- see
+#: cryostack_src/cloud/_vendor/websockets_16_0/PROVENANCE.md for exactly
+#: which modules and why (empirically traced against the real client-only
+#: connect/send/recv/close code path, no C extension -- frames.py's own
+#: ``try: from .speedups import apply_mask / except ImportError: from
+#: .utils import apply_mask`` fallback is relied on deliberately).
+_VENDOR_WEBSOCKETS_DIR = "websockets_16_0"
+_VENDOR_WEBSOCKETS_STAGED_PACKAGE = "websockets"
+
+
+def license_tunnel_client_extra_files() -> dict[str, str]:
+    """The ``extra_files`` a cloud-run caller merges into
+    ``WorkspaceManager.stage_example_for_run`` so ISSM's optional private-
+    service license tunnel client -- AND its pinned ``websockets``
+    dependency bundle -- are staged as ordinary files alongside the run's
+    other inputs -- the SAME mechanism :func:`icepack_postprocess_extra_files`
+    already uses, extended (see ``WorkspaceManager._write_extra_file``) to
+    also accept the few ``/``-separated, safely-contained relative paths
+    needed to lay out a real importable package tree under
+    ``.cryostack_runtime/websockets/`` -- never mixed with the scientist's
+    own model/example files.
+
+    The module itself (``cryostack_src.cloud.license_tunnel_client``) has
+    no ``cryostack_src`` imports of its own, precisely so its raw source
+    text is safe to stage and run standalone inside the scientific Batch
+    container, which does not have the CryoLauncher web application's own
+    package installed. Staged unconditionally for every ISSM cloud run
+    (cheap, and the runner only ever INVOKES the client when
+    ``CRYOSTACK_LICENSE_TUNNEL_REQUIRED=1``) -- never embedded into the
+    runner script itself (see the module docstring and
+    :data:`BATCH_CONTAINER_OVERRIDE_LIMIT`)."""
+    from pathlib import Path
+
+    import cryostack_src.cloud.license_tunnel_client as _ltc
+
+    files: dict[str, str] = {
+        LICENSE_TUNNEL_CLIENT_FILENAME: Path(_ltc.__file__).read_text(encoding="utf-8"),
+    }
+
+    vendor_root = Path(__file__).with_name("_vendor") / _VENDOR_WEBSOCKETS_DIR
+    for path in sorted(vendor_root.rglob("*")):
+        if not path.is_file():
+            continue
+        if path.suffix not in (".py",) and path.name != "LICENSE":
+            continue    # never the .md provenance note -- repo-only documentation
+        rel = path.relative_to(vendor_root)
+        staged_rel = "/".join(
+            (RUNTIME_SUPPORT_DIRNAME, _VENDOR_WEBSOCKETS_STAGED_PACKAGE, *rel.parts))
+        files[staged_rel] = path.read_text(encoding="utf-8")
+
+    return files
 
 
 def cloud_run_command() -> list[str]:

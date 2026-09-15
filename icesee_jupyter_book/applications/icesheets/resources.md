@@ -189,8 +189,9 @@
     <h3>Cloud <span class="cryostack-status dev">In validation</span></h3>
     <p>
       AWS Batch execution, Fargate by default (EC2 Advanced also exists).
-      Icepack has run a real cloud job end-to-end; ISSM's cloud path is
-      provisioned but needs a cloud-reachable MATLAB license.
+      Icepack has run a real cloud job end-to-end on both Fargate and EC2
+      On-Demand (single node, CPU); ISSM's cloud path is provisioned but
+      needs a cloud-reachable MATLAB license.
     </p>
     <a href="../../docs/hpc_cloud.html">Cloud Run Guide &rarr;</a>
   </article>

@@ -281,6 +281,28 @@ class WorkspaceManager:
             raise ValueError(f"Unsafe name: {name!r}")
         return name
 
+    def _write_extra_file(self, target: Path, fname: str, body) -> None:
+        """Write one ``extra_files`` entry under ``target``. A plain
+        filename (the existing, exclusive contract -- ``runme.m``,
+        ``cryostack_md_overrides.m``, the Icepack cloud helpers, ...) goes
+        through ``_safe_segment`` exactly as before: one path segment, no
+        subdirectory. A caller that needs a small, self-contained runtime-
+        support TREE (e.g. a staged Python helper's own pinned dependency
+        bundle) may instead pass a ``/``-separated relative path -- the
+        SAME per-segment validation :meth:`_safe_relpath` already applies
+        to staged dataset references, plus the same containment check
+        every other staging path in this class enforces. Never a behaviour
+        change for any existing flat-filename caller."""
+        if "/" in fname or "\\" in fname:
+            rel = self._safe_relpath(fname)
+            dest = (target / rel).resolve()
+            if not self._within(dest.parent, target):
+                raise ValueError(f"Unsafe name: {fname!r}")
+            dest.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            dest = target / self._safe_segment(fname)
+        dest.write_text(str(body), encoding="utf-8")
+
     @staticmethod
     def _within(path: Path, root: Path) -> bool:
         try:
@@ -622,7 +644,7 @@ class WorkspaceManager:
             from_canonical = True
 
         for fname, body in (extra_files or {}).items():
-            (target / self._safe_segment(fname)).write_text(str(body), encoding="utf-8")
+            self._write_extra_file(target, fname, body)
 
         entry = target / entrypoint
         if entrypoint_transform is not None and entry.is_file():

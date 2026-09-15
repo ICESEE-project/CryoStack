@@ -93,6 +93,12 @@ def test_no_administrator_access_and_no_star_star(template):
                 "CryoStackIdentityAndPricing",
                 "CryoStackIamListRoles",
                 "CryoStackIamListInstanceProfiles",
+                # secretsmanager:CreateSecret has NO resource-level
+                # permission support (the secret's ARN does not exist yet
+                # at authorization time) -- AWS's own documented mitigation
+                # is Resource:"*" + a secretsmanager:Name condition, which
+                # this statement carries (see the next test).
+                "CryoStackMatlabLicenseSecretCreate",
             }, stmt["Sid"]
 
 
@@ -276,14 +282,34 @@ def test_no_wildcard_iam_action_is_introduced(template):
     assert star_iam_actions == {"iam:ListRoles", "iam:ListInstanceProfiles"}
 
 
-def test_matlab_license_secret_grant_is_not_part_of_this_template(template):
-    """The ISSM MATLAB-license secretsmanager:GetSecretValue grant is applied
-    per-connection at Prepare Cloud time (iam_provision.py, on the ECS
-    execution role) -- it must never appear in the cross-account onboarding
-    template, so this EC2 IAM fix cannot have widened it."""
+def test_matlab_license_secret_read_grant_is_not_part_of_this_template(template):
+    """The ISSM MATLAB-license READ grant (secretsmanager:GetSecretValue) is
+    applied per-connection at Prepare Cloud time (iam_provision.py, on the
+    cryostack-ecs-execution-role -- a DIFFERENT role, inside the connected
+    account) -- it must never appear in this cross-account onboarding
+    template. Only the guided-setup CREATE action belongs here, because
+    Prepare Cloud/guided-setup calls run under THIS role's assumed session
+    (cryostack_src/cloud/connect/execution.py:resolve_cloud_execution)."""
     blob = json.dumps(template)
-    assert "secretsmanager" not in blob
-    assert "MatlabLicense" not in blob
+    assert "secretsmanager:GetSecretValue" not in blob
+    assert "secretsmanager:PutSecretValue" not in blob
+    assert "secretsmanager:UpdateSecret" not in blob
+    assert "secretsmanager:DeleteSecret" not in blob
+
+
+def test_matlab_license_secret_create_grant_is_scoped_to_the_cryostack_prefix(template):
+    """secretsmanager:CreateSecret cannot be Resource-scoped (the secret
+    doesn't exist yet) -- AWS's documented mitigation is Resource:"*" plus a
+    secretsmanager:Name condition, used here exactly as documented and
+    scoped to the ONE prefix cryostack_src/cloud/drivers/aws/secrets.py's
+    create_matlab_license_secret() is hard-restricted to."""
+    sids = {s["Sid"]: s for s in _all_statements(template)}
+    stmt = sids["CryoStackMatlabLicenseSecretCreate"]
+    assert stmt["Action"] == "secretsmanager:CreateSecret"
+    assert stmt["Resource"] == "*"
+    assert stmt["Condition"] == {
+        "StringLike": {"secretsmanager:Name": "cryostack/*"}
+    }
 
 
 def test_fargate_onboarding_statements_are_unchanged_by_the_ec2_iam_fix(template):

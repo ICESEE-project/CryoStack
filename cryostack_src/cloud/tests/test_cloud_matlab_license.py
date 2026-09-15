@@ -186,3 +186,139 @@ def test_iam_grant_is_scoped_to_exactly_the_configured_secret_arn():
     assert stmt["Action"] == "secretsmanager:GetSecretValue"
     assert stmt["Resource"] == secret_block[0]["valueFrom"] == _ARN
     assert "*" not in json.dumps(policy)
+
+
+# ── private-service tunnel: site fact, never per-user/per-run ───────────
+def test_site_requires_cloud_license_tunnel_reflects_the_pace_profile():
+    from cryostack_src.cloud.matlab_license import site_requires_cloud_license_tunnel
+
+    assert site_requires_cloud_license_tunnel() is True  # PACE: not reachable from Fargate
+
+
+def test_resolve_cloud_matlab_license_carries_requires_tunnel(monkeypatch):
+    conn = _conn(matlab_license_secret_arn=_ARN)
+    lic = resolve_cloud_matlab_license(conn)
+    assert lic.configured is True
+    assert lic.requires_tunnel is True                       # PACE site fact
+    assert lic.license_path() == "institutional_connector"
+
+
+def test_unconfigured_license_is_always_the_direct_path():
+    assert NOT_CONFIGURED.license_path() == "direct"
+    assert NOT_CONFIGURED.requires_tunnel is False
+
+
+def test_requires_tunnel_false_when_site_profile_does_not_need_it(monkeypatch):
+    """If a future/other site's license IS reachable from Fargate directly,
+    the existing (unchanged) direct path is retained -- the tunnel is used
+    only when the site profile says the service needs it."""
+    from cryostack_src.resources import profiles as resources_profiles
+
+    monkeypatch.setitem(
+        resources_profiles.COMPUTE_PROFILES, "pace",
+        resources_profiles.ComputeProfile(
+            name="pace", matlab_license_value="1711@public-license.example.edu",
+            matlab_license_cloud_requires_tunnel=False,
+        ),
+    )
+    conn = _conn(matlab_license_secret_arn=_ARN)
+    lic = resolve_cloud_matlab_license(conn)
+    assert lic.requires_tunnel is False
+    assert lic.license_path() == "direct"
+    # the Secrets Manager representation is completely unaffected either way
+    assert lic.batch_secrets_block() == [{"name": "MLM_LICENSE_FILE", "valueFrom": _ARN}]
+
+
+def test_as_public_dict_reports_requires_tunnel():
+    lic = CloudMatlabLicense(configured=True, mechanism="secrets-manager",
+                              secret_arn=_ARN, requires_tunnel=True)
+    assert lic.as_public_dict()["requires_tunnel"] is True
+
+
+def test_local_mlm_license_file_points_at_loopback():
+    from cryostack_src.cloud.matlab_license import local_mlm_license_file
+
+    assert local_mlm_license_file(1711) == "1711@127.0.0.1"
+
+
+def test_site_cloud_license_port_parses_the_pace_site_value():
+    from cryostack_src.cloud.matlab_license import site_cloud_license_port
+
+    assert site_cloud_license_port() == 1711
+
+
+# ── plan_license_tunnel: the one decision point joining Cloud + Connector ──
+def test_plan_returns_none_when_no_tunnel_is_required():
+    from cryostack_src.cloud.matlab_license import plan_license_tunnel
+
+    assert plan_license_tunnel(
+        requires_tunnel=False, session_id="sid-1", relay_url="https://relay.example") is None
+
+
+def test_plan_fails_closed_without_a_connector_session():
+    from cryostack_src.cloud.matlab_license import (
+        LicenseTunnelUnavailable, plan_license_tunnel,
+    )
+
+    with pytest.raises(LicenseTunnelUnavailable):
+        plan_license_tunnel(requires_tunnel=True, session_id=None, relay_url="https://relay.example")
+    with pytest.raises(LicenseTunnelUnavailable):
+        plan_license_tunnel(requires_tunnel=True, session_id="", relay_url="https://relay.example")
+
+
+def test_plan_never_falls_back_to_direct_when_tunnel_required_and_unavailable():
+    """Explicit regression for "do not silently fall back to an insecure
+    path": a caller that (incorrectly) tried to swallow the exception and
+    proceed would still have no env vars to submit with -- there is no
+    partial/degraded dict returned on this path, only a raise."""
+    from cryostack_src.cloud.matlab_license import (
+        LicenseTunnelUnavailable, plan_license_tunnel,
+    )
+
+    try:
+        result = plan_license_tunnel(
+            requires_tunnel=True, session_id=None, relay_url="https://relay.example")
+        pytest.fail(f"expected LicenseTunnelUnavailable, got a result: {result!r}")
+    except LicenseTunnelUnavailable:
+        pass
+
+
+def test_plan_mints_a_grant_and_returns_the_expected_env_vars():
+    from cryostack_src.cloud.matlab_license import plan_license_tunnel
+
+    seen = {}
+
+    def fake_mint(session_id, purpose, *, ttl_seconds=None):
+        seen.update(session_id=session_id, purpose=purpose, ttl_seconds=ttl_seconds)
+        return {"grant_id": "g-1", "token": "tok-1", "purpose": purpose, "expires_at": 1.0}
+
+    plan = plan_license_tunnel(
+        requires_tunnel=True, session_id="sid-1", relay_url="https://relay.example",
+        mint_grant=fake_mint, ttl_seconds=3600,
+    )
+    assert plan == {
+        "CRYOSTACK_LICENSE_TUNNEL_REQUIRED": "1",
+        "CRYOSTACK_LT_RELAY": "https://relay.example",
+        "CRYOSTACK_LT_SESSION": "sid-1",
+        "CRYOSTACK_LT_TOKEN": "tok-1",
+        "CRYOSTACK_LT_PURPOSE": "matlab-license",
+        "CRYOSTACK_LT_ENDPOINT": "primary",
+        "CRYOSTACK_LT_PORT": "1711",
+        "_grant_id": "g-1",
+    }
+    assert seen == {"session_id": "sid-1", "purpose": "matlab-license", "ttl_seconds": 3600}
+
+
+def test_plan_never_receives_or_leaks_the_raw_license_value():
+    """plan_license_tunnel takes only a bool (never a CloudMatlabLicense,
+    a secret, or an ARN) and the resulting env-var dict never contains
+    anything shaped like a real institutional host/value -- only the relay
+    URL, session id, an opaque token, symbolic purpose/endpoint, and a
+    port number."""
+    from cryostack_src.cloud.matlab_license import plan_license_tunnel
+
+    plan = plan_license_tunnel(
+        requires_tunnel=True, session_id="sid-1", relay_url="https://relay.example",
+        mint_grant=lambda *a, **k: {"grant_id": "g-1", "token": "tok-1", "purpose": "matlab-license"},
+    )
+    assert "matlablic.ecs.gatech.edu" not in json.dumps(plan)

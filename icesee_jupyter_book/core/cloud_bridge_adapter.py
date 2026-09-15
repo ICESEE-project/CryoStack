@@ -90,6 +90,8 @@ def submit_icesee_cloud_run(
     model_nprocs: int | None = None,
     run_dir_base: "Path | str | None" = None,
     run_dir_name: str | None = None,
+    matlab_license_configured: bool = False,
+    matlab_license_requires_tunnel: bool = False,
 ) -> ExecutionResult:
     """Submit an ICESEE DA run through the bridge. The local workspace
     directory (for the run_records.py manifest) is deterministic from
@@ -102,12 +104,19 @@ def submit_icesee_cloud_run(
     ``ICESEE_NENS``/``ICESEE_MODEL_NPROCS`` container-override env vars a
     real ICESEE Batch entrypoint would read to run the same ``mpirun -np
     NP ...`` command Remote already runs (see MAX_SINGLE_TASK_MPI_RANKS in
-    cloud_runner.py for the single-Fargate-task ceiling this maps onto)."""
+    cloud_runner.py for the single-Fargate-task ceiling this maps onto).
+
+    ``matlab_license_configured``/``matlab_license_requires_tunnel`` are the
+    caller's already-resolved ``CloudMatlabLicense`` fields (an ICESEE run
+    whose forecast model is ISSM) -- passed through unchanged, never
+    re-derived here."""
     return bridge.submit(
         example_name=example_name, example_cfg=example_cfg, config=config,
         s3_prefix=s3_prefix, job_queue=job_queue, job_definition=job_definition,
         job_name=job_name, np=np, nens=nens, model_nprocs=model_nprocs,
         run_dir_base=run_dir_base, run_dir_name=run_dir_name,
+        matlab_license_configured=matlab_license_configured,
+        matlab_license_requires_tunnel=matlab_license_requires_tunnel,
     )
 
 
