@@ -420,8 +420,9 @@
 
     <p class="cryostack-section-intro">
       Major work completed as CryoStack matures. Cloud execution runs real
-      jobs today on AWS Batch's default Fargate compute mode; a newer,
-      not-yet-AWS-validated EC2 Advanced compute mode is also available.
+      jobs today on AWS Batch's default Fargate compute mode, and now also on
+      its Advanced EC2 On-Demand compute mode (single node, CPU); EC2 Spot,
+      GPU, and multi-node remain not-yet-AWS-validated.
     </p>
 
     <div class="cryostack-updates-grid">
@@ -481,8 +482,10 @@
 
         <p>
           AWS Batch execution, on a default Fargate compute mode. Icepack and
-          ICESEE have each completed a real cloud run end-to-end; an Advanced
-          EC2 compute mode is provisioned but not yet AWS-validated, and ISSM
+          ICESEE have each completed a real cloud run end-to-end there, and
+          Icepack has additionally done so on the Advanced EC2 On-Demand
+          compute mode (single node, CPU). EC2 Spot, GPU, multi-node, and EC2
+          for ISSM or ICESEE remain not yet AWS-validated, and ISSM
           additionally needs a cloud-reachable MATLAB license.
         </p>
 

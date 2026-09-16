@@ -166,18 +166,24 @@
            onboarding, provisioning, and submission architecture implemented
            and exercised, but a real ISSM run still needs a cloud-reachable
            MATLAB license (see
-           <a href="../applications/icesheets/user_manual.html#preparing-and-launching-runs">MATLAB licensing</a>)
+           <a href="../applications/icesheets/user_manual.html#matlab-licensing-for-issm-cloud-runs">MATLAB licensing</a>)
            and this page makes no claim of a fully verified live run-to-results
            cycle for it.</p>
       </div>
 
       <div class="cryostack-docs-summary-card">
         <div class="cryostack-docs-summary-icon">CM</div>
-        <h3>Compute mode <span class="cryostack-status dev">Fargate validated, EC2 advanced</span></h3>
-        <p><strong>Fargate</strong> is the default AWS Batch compute mode and
-           the one every validated run above used. <strong>EC2</strong> is an
-           Advanced, opt-in alternative — implemented and exercised locally,
-           not yet run against live AWS in this repository's evidence. See
+        <h3>Compute mode <span class="cryostack-status dev">Fargate and EC2 On-Demand validated</span></h3>
+        <p><strong>Fargate</strong> is the default AWS Batch compute mode.
+           <strong>EC2 (Advanced)</strong> is an opt-in alternative; its
+           <strong>On-Demand, single-node, CPU</strong> configuration has now
+           also run end to end on live AWS — CryoLauncher/Icepack's
+           <code>00-meshes-functions</code> tutorial, submitted to a
+           CryoStack-provisioned managed EC2 compute environment. EC2
+           <strong>Spot</strong>, <strong>GPU</strong>, and
+           <strong>multi-node</strong>, and EC2 for ISSM or ICESEE, remain
+           implemented/provisioned but not yet run against live AWS in this
+           repository's evidence. See
            <a href="#compute-mode-fargate-default-or-ec2-advanced">Compute mode</a>
            below.</p>
       </div>
@@ -330,22 +336,28 @@ under **Advanced** in Cloud Environment:
     already routed to an institutional network. CryoStack does not create a
     VPN, Direct Connect connection, Transit Gateway, or firewall rule itself
     — the VPC you point it at must already have whatever route it needs. See
-    the ISSM MATLAB-licensing note under
-    <a href="../applications/icesheets/user_manual.html#preparing-and-launching-runs">Preparing and launching runs</a>
-    for the case this is meant to unblock.
+    <a href="../applications/icesheets/user_manual.html#matlab-licensing-for-issm-cloud-runs">MATLAB
+    licensing for ISSM cloud runs</a> for the case this is meant to unblock.
   - **Execution** — **Single node** (default) or **Multi-node** — registers
     an AWS Batch multi-node parallel job definition (EC2 only), but
     CryoStack's scientific runners do not yet coordinate distributed MPI
     across Batch nodes, so this stages the infrastructure ahead of a
     scientific run rather than enabling one today.
 
-On-Demand and Spot capacity, and custom/private networking, are implemented
-and exercised locally; they have not yet been exercised against live AWS
-infrastructure in this repository's evidence, so treat them as an advanced,
-not-yet-AWS-validated configuration rather than a second validated backend.
-GPU and multi-node are guarded at submission specifically so that selecting
-them stages infrastructure without ever silently attempting a scientific run
-neither the image nor the runners can actually perform.
+**On-Demand, single-node capacity has now run end to end against live AWS**
+for CryoLauncher/Icepack's `00-meshes-functions` tutorial (Advanced Cloud,
+EC2, On-Demand, single node, CPU, 2 vCPU / 8 GiB) — CryoStack submitted to
+its own managed EC2 compute environment (`cryostack-ec2`), the
+`cryostack-ec2-queue` job queue, and the `cryostack-icepack-ec2` job
+definition, and the job completed successfully. This does **not** extend
+to: **Spot** capacity, **GPU**, **multi-node** execution, custom/private
+networking, ISSM on EC2, ICESEE on EC2, or every Icepack example — each of
+those is implemented and exercised locally but not yet run against live AWS
+in this repository's evidence, so treat them as advanced, not-yet-AWS-validated
+configurations rather than a second fully validated backend. GPU and
+multi-node are additionally guarded at submission specifically so that
+selecting them stages infrastructure without ever silently attempting a
+scientific run neither the image nor the runners can actually perform.
 
 ## Connecting your AWS account (BYO-AWS)
 
@@ -402,7 +414,9 @@ resources are reused, never recreated or duplicated.
 
 Once infrastructure is **Ready**, a **RUN ESTIMATE** appears (expected
 runtime, requested resources, and an estimated AWS cost when pricing is
-available). Click **Review & Launch** to open the full review card, which
+available — on **Fargate**; **EC2** has no cost model implemented yet, so
+its review honestly shows **Estimated cost: unavailable** rather than a
+guessed figure). Click **Review & Launch** to open the full review card, which
 shows the experiment, the AWS account and region, the resources, and an
 infrastructure-readiness checklist. **Launch cloud run** is only enabled
 once every check passes — CryoStack never launches a configuration it
@@ -444,18 +458,35 @@ unvalidated version of the same behavior:**
   in its cloud code path; this page does not name a specific button label
   for it until that label is verified against the running UI.)
 
+**View log** reads CloudWatch Logs from whichever log group the job's own
+Batch job definition actually configured — never a single fixed group — so
+it works the same way whether the job used the CryoStack-managed log group
+or AWS Batch's own default. If the run's log stream is not available yet
+(too early after submission) or genuinely absent, CryoStack says so directly
+in the Run Log rather than presenting it as a run failure — **your job and
+its results are unaffected either way.**
+
 ## Worked examples verified on AWS
 
-Two configurations have been run and confirmed end-to-end against the
-current container image, on the default Fargate compute mode: **ICESEE
-Lorenz-96 at NP = 1**, walked through below, and **CryoLauncher/Icepack
-04-synthetic-ice-stream-xy** (exit 0, 12 figures, 5 structured fields,
-results rendering the same way a local run's do). Both follow the identical
-Connect → Prepare cloud → Review & Launch → Monitor → Results sequence; the
-Lorenz-96 walkthrough below spells out every step, and the Icepack path
-differs only in which application and example you open in step 1. Steps
-this platform does not yet support are called out explicitly rather than
-skipped over.
+Three configurations have been run and confirmed end-to-end against the
+current container image: **ICESEE Lorenz-96 at NP = 1**, walked through
+below, and **CryoLauncher/Icepack 04-synthetic-ice-stream-xy**, both on the
+default **Fargate** compute mode (exit 0, 12 figures, 5 structured fields,
+results rendering the same way a local run's do, and — for the Icepack run —
+CloudWatch log retrieval also confirmed via **View log**). A third,
+**CryoLauncher/Icepack `00-meshes-functions`**, has run end to end on the
+**EC2 (Advanced) On-Demand** compute mode instead (single node, CPU, 2 vCPU /
+8 GiB) — submitted to the `cryostack-ec2-queue` job queue and
+`cryostack-icepack-ec2` job definition, on CryoStack's managed
+`cryostack-ec2` compute environment, and completed successfully. All three
+follow the identical Connect → Prepare cloud → Review & Launch → Monitor →
+Results sequence; the Lorenz-96 walkthrough below spells out every step, and
+the Icepack paths differ only in which application/example you open in step
+1 and, for the EC2 run, selecting **Advanced → EC2 → On-Demand** under
+Compute mode before Prepare cloud (see
+<a href="#compute-mode-fargate-default-or-ec2-advanced">Compute mode</a>
+above). Steps this platform does not yet support are called out explicitly
+rather than skipped over.
 
 1. **Open ICESEE** and select the **Lorenz-96** example.
 2. Leave its configuration at the default (or your own edits) — the same

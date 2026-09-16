@@ -62,3 +62,19 @@ def test_a_resource_can_use_a_different_env_var():
 def test_invalid_env_var_name_is_rejected():
     with pytest.raises(ValueError):
         ComputeProfile(name="x", matlab_license_env="bad name", matlab_license_value="1@h")
+
+
+# ── FlexNet vendor-daemon port: institutional, never a universal default ──
+def test_pace_profile_declares_the_confirmed_gt_vendor_daemon_port():
+    p = get_compute_profile("pace")
+    assert p.matlab_license_vendor_port == 17110
+
+
+def test_a_resource_with_no_confirmed_vendor_port_declares_none():
+    other = ComputeProfile(name="frontera", matlab_license_value="27000@license.tacc.utexas.edu")
+    assert other.matlab_license_vendor_port is None
+
+
+def test_invalid_vendor_port_is_rejected():
+    with pytest.raises(ValueError):
+        ComputeProfile(name="x", matlab_license_value="1@h", matlab_license_vendor_port=0)

@@ -257,16 +257,34 @@ def resolve_job_definition(
 def cloud_run_plan_summary(
     *, model: str, region: str, bucket: str, job_queue: str, job_definition: str,
     vcpu: str = "2", memory_mib: str = "8192", timeout_seconds: int = 3600,
+    compute_mode: str = "fargate",
 ) -> str:
     """A short pre-submit summary. No dollar figure -- AWS pricing depends on
-    the account, so we state the resources and that charges apply."""
+    the account, so we state the resources and that charges apply.
+
+    ``compute_mode`` is the SAME resolved compute mode
+    (``CloudRunConfig.compute_mode``/``normalize_compute_mode``) already
+    used to pick ``job_queue``/``job_definition`` -- never inferred from
+    their names -- so the submit sentence names the backend that will
+    actually run the job.
+    """
+    from cryostack_src.cloud.drivers.aws.batch_config import (
+        COMPUTE_MODE_EC2,
+        normalize_compute_mode,
+    )
+
+    backend = (
+        "AWS Batch (EC2)"
+        if normalize_compute_mode(compute_mode) == COMPUTE_MODE_EC2
+        else "AWS Batch (Fargate)"
+    )
     gib = "?"
     try:
         gib = f"{int(memory_mib) / 1024:.0f}"
     except (TypeError, ValueError):
         pass
     return (
-        "This submits an AWS Batch (Fargate) job. It will use AWS resources "
+        f"This submits an {backend} job. It will use AWS resources "
         "and may incur charges on your account.\n"
         f"  model          {model}\n"
         f"  region         {region}\n"

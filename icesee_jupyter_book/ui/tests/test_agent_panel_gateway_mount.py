@@ -136,7 +136,9 @@ def test_gateway_builds_with_agent_mode_on(builder, monkeypatch):
 
 def test_mode_switching_keeps_one_intact_workspace(monkeypatch):
     """Basic -> Agent -> Advanced -> Agent -> Basic must not duplicate the
-    Workspace Tab or lose its Runs/Files/Run Log/Results structure."""
+    Workspace Tab or lose its Runs/Files/Run Log/Results structure. Advanced
+    additionally gets an "Editor" tab prepended (same Tab widget, same
+    editor instance -- never a duplicate)."""
     monkeypatch.setenv("CRYOSTACK_AGENT_PANEL", "1")
     monkeypatch.setenv("CRYOSTACK_WORKSPACE_USER", "mode-switch-user")
     monkeypatch.setenv("USER", "mode-switch-service")
@@ -160,7 +162,11 @@ def test_mode_switching_keeps_one_intact_workspace(monkeypatch):
         mode.value = value
         again = _tabs()
         assert len(again) == 1 and again[0] is ws[0]        # same Tab, no duplicate
-        assert len(again[0].children) == 4                  # structure intact
+        titles = [again[0].get_title(i) for i in range(len(again[0].children))]
+        if value == "advanced":
+            assert titles == ["Editor", "Runs", "Files", "Run Log", "Results"]
+        else:
+            assert titles == ["Runs", "Files", "Run Log", "Results"]
 
 
 @pytest.mark.parametrize("builder", ["build_icesheets_ui"])

@@ -104,6 +104,59 @@ def test_send_command_uses_the_bound_control_secret_and_owner(monkeypatch):
     assert seen["json"]["payload"] == {"host": "h"}
 
 
+def test_mint_tunnel_grant_fails_closed_without_a_binding(monkeypatch):
+    monkeypatch.setattr(rc.requests, "post", lambda *a, **k: pytest.fail("must not call relay"))
+    with pytest.raises(rc.RelayAuthError):
+        rc.mint_tunnel_grant("sid-1", "matlab-license")
+
+
+def test_mint_tunnel_grant_fails_closed_for_a_different_session(monkeypatch):
+    rc.bind_session("sid-1", "ctl-1", "user-a")
+    monkeypatch.setattr(rc.requests, "post", lambda *a, **k: pytest.fail("must not call relay"))
+    with pytest.raises(rc.RelayAuthError):
+        rc.mint_tunnel_grant("sid-OTHER", "matlab-license")
+
+
+def test_mint_tunnel_grant_uses_the_bound_control_secret_and_owner(monkeypatch):
+    rc.bind_session("sid-1", "ctl-1", "user-a")
+    seen = {}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        seen.update(url=url, json=json, headers=headers)
+        return _Resp({"ok": True, "grant_id": "g-1", "token": "tok-1", "purpose": "matlab-license", "expires_at": 1.0})
+
+    monkeypatch.setattr(rc.requests, "post", fake_post)
+    data = rc.mint_tunnel_grant("sid-1", "matlab-license", ttl_seconds=600)
+
+    assert seen["url"].endswith("/connector/tunnel-grant/sid-1")
+    assert seen["headers"]["Authorization"] == "Bearer ctl-1"
+    assert seen["json"] == {"owner_user_id": "user-a", "purpose": "matlab-license", "ttl_seconds": 600}
+    assert data["token"] == "tok-1"
+
+
+def test_revoke_tunnel_grant_fails_closed_without_a_binding(monkeypatch):
+    monkeypatch.setattr(rc.requests, "post", lambda *a, **k: pytest.fail("must not call relay"))
+    with pytest.raises(rc.RelayAuthError):
+        rc.revoke_tunnel_grant("sid-1", "g-1")
+
+
+def test_revoke_tunnel_grant_uses_the_bound_control_secret_and_owner(monkeypatch):
+    rc.bind_session("sid-1", "ctl-1", "user-a")
+    seen = {}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        seen.update(url=url, json=json, headers=headers)
+        return _Resp({"ok": True, "grant_id": "g-1", "revoked": True})
+
+    monkeypatch.setattr(rc.requests, "post", fake_post)
+    data = rc.revoke_tunnel_grant("sid-1", "g-1")
+
+    assert seen["url"].endswith("/connector/tunnel-grant/sid-1/revoke")
+    assert seen["headers"]["Authorization"] == "Bearer ctl-1"
+    assert seen["json"] == {"owner_user_id": "user-a", "grant_id": "g-1"}
+    assert data["revoked"] is True
+
+
 def test_bind_session_rejects_incomplete_credentials():
     with pytest.raises(rc.RelayAuthError):
         rc.bind_session("sid", "", "user")

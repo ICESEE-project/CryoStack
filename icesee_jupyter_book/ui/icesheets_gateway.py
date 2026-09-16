@@ -48,6 +48,7 @@ from icesee_jupyter_book.ui.shared_ssh_widgets import build_ssh_key_manager
 from icesee_jupyter_book.core.connector_relay_client import (
     create_session,
     check_status as relay_check_status,
+    clear_binding as clear_connector_binding,
     send_command,
 )
 
@@ -62,6 +63,9 @@ from icesee_jupyter_book.ui.shared_app_styles import (
 from icesee_jupyter_book.ui.shared_remote_connection_panel import (
     build_remote_connection_panel,
     classify_bootstrap_result,
+    connector_diagnostics_html,
+    connector_pairing_link_html,
+    connector_pairing_status_html,
 )
 from icesee_jupyter_book.ui.shared_slurm_resources_panel import (
     build_slurm_resources_panel,
@@ -110,6 +114,7 @@ from cryostack_src.frontend.shared import (
 from cryostack_src.frontend.cryolauncher.cloud_environment import (
     build_cloud_environment_card,
     set_cloud_status,
+    wire_institutional_connection_widgets,
     wire_matlab_license_widgets,
 )
 from cryostack_src.frontend.cryolauncher.cloud_runtime import (
@@ -586,10 +591,17 @@ def build_icesheets_ui():
 
         connector_panel, refresh_connector = build_connector_panel(mode_dd)
         relay_status = W.HTML("")
+        connector_diagnostics = W.HTML("")
         start_connector_session_btn = W.Button(
             description="Create connector session",
             icon="plug",
             button_style="info",
+        )
+        disconnect_connector_btn = W.Button(
+            description="Disconnect",
+            icon="unlink",
+            button_style="",
+            layout=W.Layout(display="none"),
         )
 
         check_backend_btn = W.Button(
@@ -780,14 +792,24 @@ def build_icesheets_ui():
         #: late-bound; assigned once the CloudRunController is built (below).
         _cloud = {"controller": None}
 
+        def _cloud_matlab_license():
+            """The resolved, non-secret ISSM cloud MATLAB-license state
+            (``CloudMatlabLicense``) for the connected BYO account -- the ONE
+            place ``.configured`` and ``.requires_tunnel`` are both read from
+            a single ``_resolve_cloud_execution()`` call. Fail closed (the
+            unconfigured/no-tunnel sentinel) on any resolution error."""
+            try:
+                return _resolve_cloud_execution().matlab_license
+            except Exception:  # noqa: BLE001
+                from cryostack_src.cloud.matlab_license import NOT_CONFIGURED
+
+                return NOT_CONFIGURED
+
         def _cloud_matlab_license_configured() -> bool:
             """True when the connected BYO account has an ISSM cloud MATLAB
             license mechanism configured (a Secrets Manager ARN). Non-secret;
             the license value never reaches CryoStack. Fail closed."""
-            try:
-                return bool(_resolve_cloud_execution().matlab_license.configured)
-            except Exception:  # noqa: BLE001
-                return False
+            return bool(_cloud_matlab_license().configured)
 
         def _default_tested_image(model: str):
             """The CryoStack tested container image for ``model`` (what Prepare
@@ -897,6 +919,18 @@ def build_icesheets_ui():
 
             return icepack_postprocess_extra_files()
 
+        def _issm_cloud_license_tunnel_files() -> dict:
+            """ISSM's optional private-service license tunnel client, staged
+            as an ordinary standalone file alongside runme.m -- never
+            imported as ``cryostack_src.cloud.license_tunnel_client`` inside
+            the Batch container, which has no reason to (and does not) have
+            the CryoLauncher web application's own package installed. Staged
+            unconditionally for every ISSM cloud run; the runner only
+            invokes it when CRYOSTACK_LICENSE_TUNNEL_REQUIRED=1."""
+            from cryostack_src.cloud.runtime import license_tunnel_client_extra_files
+
+            return license_tunnel_client_extra_files()
+
         def _submit_cloud_run(staged_dir, md_provenance, *, review=None):
             """Validate + preflight + stage the user-owned working copy
             (synchronous, local, fast), then hand the run to the
@@ -948,11 +982,17 @@ def build_icesheets_ui():
                     aws_batch_compute=_compute_mode,
                     ec2=_ec2_cfg,
                 )
-            _lic = _cloud_matlab_license_configured()
+            # one resolution, both fields -- CloudMatlabLicense.configured
+            # and .requires_tunnel (the latter is the already-authoritative,
+            # capability/profile-derived site fact; never re-derived here).
+            _matlab_license = _cloud_matlab_license()
+            _lic = bool(_matlab_license.configured)
             _problems = validate_cloud_config(_cfg, model=_model)
             _problems += cloud_run_preflight(
                 model=_model, matlab_license_configured=_lic,
                 compute_mode=_cfg.compute_mode, ec2_config=_cfg.ec2,
+                connector_required=bool(_matlab_license.requires_tunnel),
+                connector_connected=_connector_is_online(),
             )
             if _problems:
                 status_chip.value = status_html("fail")
@@ -973,17 +1013,23 @@ def build_icesheets_ui():
             # cloud always uploads a user-owned working copy (parity with Remote)
             if str(staged_dir) == str(example_dir.value):
                 try:
+                    # Icepack: stage the output collector; ISSM: stage the
+                    # license tunnel client -- both as ACTUAL FILES alongside
+                    # the run's inputs, never embedded into the Batch runner
+                    # script itself (see cloud/runtime.py's execution-artifact
+                    # contract; this is what fixed "Container Overrides
+                    # length must be at most 8192", and what keeps the ISSM
+                    # cloud image free of any CryoLauncher-application-source
+                    # dependency).
+                    if _model == "icepack":
+                        _extra_files = _icepack_cloud_postprocess_files()
+                    elif _model == "issm":
+                        _extra_files = _issm_cloud_license_tunnel_files()
+                    else:
+                        _extra_files = None
                     _sc = workspace_manager.stage_example_for_run(
                         source_example=example_dir.value,
-                        # Icepack: stage the output collector as an ACTUAL
-                        # FILE alongside run.py -- never embedded into the
-                        # Batch runner script itself (see cloud/runtime.py's
-                        # execution-artifact contract; this is what fixed
-                        # "Container Overrides length must be at most 8192").
-                        extra_files=(
-                            _icepack_cloud_postprocess_files()
-                            if _model == "icepack" else None
-                        ),
+                        extra_files=_extra_files,
                     )
                     staged_dir = str(_sc.path)
                 except Exception as _e:
@@ -999,6 +1045,7 @@ def build_icesheets_ui():
                 print(cloud_run_plan_summary(
                     model=_model, region=_cfg.region, bucket=_cfg.bucket,
                     job_queue=_cfg.job_queue, job_definition=_cfg.job_definition,
+                    compute_mode=_cfg.compute_mode,
                 ))
 
             status_chip.value = status_html("running")
@@ -1046,6 +1093,7 @@ def build_icesheets_ui():
                 ec2_config=_cfg.ec2,
                 job_name=(batch_job_name.value.strip() or "cryostack"),
                 matlab_license_configured=_lic,
+                matlab_license_requires_tunnel=bool(_matlab_license.requires_tunnel),
                 _region=_cfg.region,
                 _profile=_cfg.profile,
                 _md_provenance=md_provenance,
@@ -1266,6 +1314,25 @@ def build_icesheets_ui():
                 bootstrap_btn.disabled = False
                 cluster_password.value = ""     # never persisted/logged
 
+        # Reassigned below, once the Cloud panel's INSTITUTIONAL CONNECTION
+        # box is wired (wire_institutional_connection_widgets) -- a no-op
+        # until then so Remote's own connector handlers (defined here,
+        # called from buttons that exist immediately) never fail if
+        # clicked before Cloud finishes building.
+        _refresh_institutional_connection = lambda: None  # noqa: E731
+
+        def _connector_is_online() -> bool:
+            """Whether THIS kernel's Connector session/binding is currently
+            paired -- the SAME fact Cloud reads (institutional_connection_
+            box). No new resolution: reuses the existing SESSION/relay
+            status check Remote already performs."""
+            if not SESSION.get("id"):
+                return False
+            try:
+                return bool(relay_check_status(SESSION["id"]).get("online"))
+            except Exception:
+                return False
+
         def create_or_refresh_connector_session(_=None):
             log_out.clear_output()
 
@@ -1284,49 +1351,33 @@ def build_icesheets_ui():
                     SESSION["ws_url"] = sess["ws_url"]
                     SESSION["pairing_code"] = sess["pairing_code"]
 
-                    connector_setup_link.value = f"""
-                    <a href="https://cryostack.eas.gatech.edu/connect/?session={SESSION['id']}&app=icesheets"
-                    target="_blank"
-                    style="
-                        display:inline-block;
-                        background:#0d6efd;
-                        color:white;
-                        padding:8px 12px;
-                        border-radius:8px;
-                        text-decoration:none;
-                        font-weight:700;
-                        margin:6px 0;">
-                    Open CryoStack Connector Setup
-                    </a>
-                    """
-
                 st = relay_check_status(SESSION["id"])
                 online = bool(st.get("online"))
 
-                relay_status.value = f"""
-                <div style="
-                    border:1px solid {'rgba(25,135,84,.25)' if online else 'rgba(13,110,253,.18)'};
-                    background:{'rgba(25,135,84,.08)' if online else 'rgba(13,110,253,.06)'};
-                    border-radius:12px; padding:12px; line-height:1.6; margin:8px 0;
-                ">
-                  <b>Connector:</b> {'connected ✅' if online else 'waiting for connector'}<br>
-                  <b>Pairing code:</b>
-                  <code style="font-size:15px;background:#eef1f4;padding:2px 8px;border-radius:6px;">
-                  {SESSION.get('pairing_code', '—')}</code><br>
-                  <span style="color:#5f6b7a;font-size:13px;">
-                  Enter this code in the CryoStack Connector on your workstation
-                  (“Pair with CryoStack…”). It is one-time and expires with this session.
-                  </span>
-                  <details style="margin-top:8px;">
-                    <summary style="cursor:pointer;color:#5f6b7a;font-size:13px;">Diagnostics</summary>
-                    <div style="font-size:12px;color:#5f6b7a;margin-top:4px;">
-                      session id: {SESSION['id']}<br>
-                      ws path: {SESSION['ws_url']}<br>
-                      relay state: {st.get('state', 'unknown')}
-                    </div>
-                  </details>
-                </div>
-                """
+                # Minimum pairing information/action only, in the existing
+                # Remote visual language -- never a second boxed
+                # "CRYOSTACK CONNECTOR" card duplicating the real Open
+                # Connector.../Disconnect actions above. Session id / ws
+                # path / relay state stay out of this compact line -- see
+                # connector_diagnostics below (rendered only in Advanced).
+                connector_setup_link.value = (
+                    "" if online else connector_pairing_link_html(
+                        session_id=SESSION.get("id"), app="icesheets")
+                )
+                relay_status.value = connector_pairing_status_html(
+                    session_id=SESSION.get("id"),
+                    pairing_code=SESSION.get("pairing_code"),
+                    online=online,
+                )
+                connector_diagnostics.value = connector_diagnostics_html(
+                    session_id=SESSION.get("id"), ws_url=SESSION.get("ws_url"),
+                    relay_state=st.get("state"),
+                )
+                # A session exists (paired or still waiting) -> Disconnect
+                # is reachable either way, matching Cloud's own pairing
+                # flow (never only once fully online).
+                disconnect_connector_btn.layout.display = (
+                    "inline-flex" if SESSION.get("id") else "none")
 
                 with log_out:
                     print("[connector] pairing code:", SESSION.get("pairing_code"))
@@ -1336,6 +1387,27 @@ def build_icesheets_ui():
                 relay_status.value = ""
                 with log_out:
                     print("[connector][ERROR]", type(e).__name__, e)
+            finally:
+                # Cloud reads the SAME Connector binding/session -- reflect
+                # every Remote-side change there too, never a second
+                # Connector state that could drift out of sync.
+                _refresh_institutional_connection()
+
+        def disconnect_connector(_=None) -> None:
+            """Disconnect the paired CryoStack Connector -- reuses the
+            existing relay-client binding revocation (clear_binding());
+            never a second Connector state. Cloud reads the SAME binding,
+            so this is immediately reflected there too."""
+            log_out.clear_output()
+            SESSION.clear()
+            clear_connector_binding()
+            relay_status.value = ""
+            connector_setup_link.value = ""
+            connector_diagnostics.value = ""
+            disconnect_connector_btn.layout.display = "none"
+            with log_out:
+                print("[connector] Disconnected.")
+            _refresh_institutional_connection()
 
         # Cloud controls
         # -----------------------------
@@ -1355,6 +1427,7 @@ def build_icesheets_ui():
             [cloud_state_chip, cloud_environment.container],
             layout=W.Layout(width="100%", gap="8px"),
         )
+        cloud_box.add_class("cryostack-cloud-config")
 
         aws_region = cloud_environment.region
         aws_profile = cloud_environment.profile
@@ -1630,7 +1703,25 @@ def build_icesheets_ui():
         # exists. Any failure downgrades the selector to Basic / Advanced.
         if _agent_mode and agent_panel is None:
             try:
-                agent_panel = _build_agent_panel(workspace_manager)
+                from icesee_jupyter_book.ui.configuration_agent import build_icesheets_configuration_agent
+
+                def _agent_cloud_validate():
+                    cfg = _cloud_run_config()
+                    return validate_cloud_config(cfg, model=model_dd.value) + cloud_run_preflight(
+                        model=model_dd.value, matlab_license_configured=_cloud_matlab_license_configured(),
+                        compute_mode=cfg.compute_mode, ec2_config=cfg.ec2)
+
+                agent_panel = build_icesheets_configuration_agent(
+                    manager=workspace_manager,
+                    fields=dict(profile=cluster_name_for_keys, nodes=slurm_nodes,
+                                cpus=slurm_ntasks, tasks_per_node=slurm_tpn,
+                                wall_time=slurm_time, memory=slurm_mem, account=slurm_account,
+                                user=cluster_user, directory=remote_base_dir),
+                    model=model_dd, example=example_picker, mode=mode_dd, backend=backend_dd,
+                    md_panel=md_panel, icepack_panel=icepack_basic_panel,
+                    snapshot=current_experiment_configuration,
+                    cloud_validate=_agent_cloud_validate,
+                    show_manual=lambda: setattr(ui_mode_dd, "value", "advanced"))
             except Exception as _ag_err:            # never block the gateway
                 with log_out:
                     print("[agent] Agent mode unavailable:",
@@ -1858,6 +1949,31 @@ def build_icesheets_ui():
             cloud_environment.matlab_license_box.layout.display = (
                 "" if _cloud_capabilities.requires_matlab_license else "none")
 
+            # INSTITUTIONAL CONNECTION: shown only when this workflow needs
+            # MATLAB AND this site's CloudMatlabLicense.requires_tunnel is
+            # True -- never a generic "Cloud uses Connector" requirement,
+            # and hidden for Icepack-only / non-MATLAB workflows. Uses the
+            # cheap, config-independent site fact
+            # (site_requires_cloud_license_tunnel -- the SAME source
+            # CloudMatlabLicense.requires_tunnel itself resolves from, see
+            # cryostack_src/cloud/matlab_license.py) rather than a full
+            # _cloud_matlab_license()/_resolve_cloud_execution() call here:
+            # this toggle fires on every mode/model change and must never
+            # trigger a fresh AWS sts:AssumeRole just to decide visibility.
+            # The actual .submit(...) call and Review & Launch still read
+            # the one real, configuration-aware CloudMatlabLicense object.
+            from cryostack_src.cloud.matlab_license import (
+                site_requires_cloud_license_tunnel,
+            )
+
+            _requires_connector = bool(
+                _cloud_capabilities.requires_matlab_license
+                and site_requires_cloud_license_tunnel())
+            cloud_environment.institutional_connection_box.layout.display = (
+                "" if _requires_connector else "none")
+            if _requires_connector:
+                _refresh_institutional_connection()
+
             # Agent is a peer interaction mode: when it is selected, the manual
             # Basic / Advanced configuration is hidden and only the Run
             # Assistant panel + the shared run details (log / results / history)
@@ -1900,7 +2016,17 @@ def build_icesheets_ui():
             exec_row.layout.display = _manual
 
             advanced_action_row.layout.display = "" if (is_advanced and not is_agent) else "none"
-            editor_panel.container.layout.display = "" if (is_advanced and not is_agent) else "none"
+            # The Advanced editor is integrated as tab 0 ("Editor") of the
+            # RIGHT Workspace's SAME Tab widget (built later, alongside
+            # output_workspace) -- the Tab's own children/titles are the
+            # show/hide mechanism, so this only ever reassigns which tabs
+            # are attached, never recreates the Tab or the editor. Defined
+            # later in this function (like run_plan/actions_card below),
+            # hence the NameError guard.
+            try:
+                output_workspace.set_advanced_mode(is_advanced and not is_agent)
+            except NameError:
+                pass
             run_target_row.layout.display = _manual
             dataset_panel.container.layout.display = "" if (is_advanced and not is_agent) else "none"
             download_buttons_row.layout.display = ""
@@ -2307,12 +2433,20 @@ def build_icesheets_ui():
                     _extra = (
                         {"cryostack_md_overrides.m":
                          build_md_override_script(_md_validation.normalized)}
-                        if _md_validation.normalized else None
+                        if _md_validation.normalized else {}
                     )
+                    # cloud only: stage the license tunnel client as an
+                    # ordinary file alongside runme.m -- never embedded into
+                    # the Batch runner script itself, and never relying on
+                    # the CryoLauncher web app's own package being installed
+                    # in the scientific container. Same mechanism as
+                    # Icepack's cloud output collector below.
+                    if for_cloud:
+                        _extra.update(_issm_cloud_license_tunnel_files())
                     try:
                         _staged = workspace_manager.stage_example_for_run(
                             source_example=example_dir.value,
-                            extra_files=_extra,
+                            extra_files=(_extra or None),
                             entrypoint_transform=(
                                 inject_override_step if _md_validation.normalized else None
                             ),
@@ -3077,6 +3211,23 @@ def build_icesheets_ui():
         # not a duplicated one per gateway.
         wire_matlab_license_widgets(
             cloud_environment, owner=workspace_manager.owner, log_output=log_out)
+
+        # -- INSTITUTIONAL CONNECTION: Cloud reads the SAME Connector
+        # binding/session Remote uses (_connector_is_online/create_or_
+        # refresh_connector_session/disconnect_connector, defined above) --
+        # never a second Connector implementation, pairing, identity, or
+        # session. Pairing (or disconnecting) here is exactly the same
+        # action as doing so in Remote; refresh() keeps this box in sync
+        # whenever Remote's own connector state changes.
+        _refresh_institutional_connection = wire_institutional_connection_widgets(
+            cloud_environment,
+            check_connected=_connector_is_online,
+            session_state=lambda: SESSION,
+            open_connector=create_or_refresh_connector_session,
+            disconnect=disconnect_connector,
+            app="icesheets",
+            log_output=log_out,
+        )
         # failed-verification recovery: repair the same account, or start a
         # STAGED switch to a different one (C7 live-acceptance fix -- an
         # "error" connection used to have no reachable action). Change AWS
@@ -3304,7 +3455,14 @@ def build_icesheets_ui():
             # a duplicated "model == issm" check (which would miss e.g. an
             # ICESEE run whose forecast model is ISSM).
             _capabilities = resolve_workflow_capabilities(model=_model)
-            _lic = _cloud_matlab_license_configured()
+            # one resolution, both fields -- see the actual .submit(...)
+            # call above for the same pattern.
+            _review_matlab_license = _cloud_matlab_license()
+            _lic = bool(_review_matlab_license.configured)
+            _connector_ok = (
+                not _review_matlab_license.requires_tunnel
+                or _connector_is_online()
+            )
             return build_cloud_run_review(
                 config=cfg, model=_model, example=_cloud_example_name(),
                 run_target=(Path(run_target.value or "runme.m").name),
@@ -3314,9 +3472,15 @@ def build_icesheets_ui():
                 config_problems=validate_cloud_config(cfg, model=_model),
                 preflight_problems=cloud_run_preflight(
                     model=_model, matlab_license_configured=_lic,
-                    compute_mode=cfg.compute_mode, ec2_config=cfg.ec2),
+                    compute_mode=cfg.compute_mode, ec2_config=cfg.ec2,
+                    connector_required=bool(_review_matlab_license.requires_tunnel),
+                    connector_connected=_connector_is_online(),
+                ),
                 scientific_overrides=(md_panel.overrides() if model_dd.value == "issm" else {}),
-                issm_runtime_ready=(_lic if _capabilities.requires_matlab_license else None),
+                issm_runtime_ready=(
+                    (_lic and _connector_ok)
+                    if _capabilities.requires_matlab_license else None
+                ),
             )
 
         _cloud_review = build_cloud_review_callbacks(
@@ -3580,6 +3744,7 @@ def build_icesheets_ui():
         icepack_config_panel = W.Accordion(children=[icepack_basic_panel.container])
         icepack_config_panel.set_title(0, "⚙️ Icepack configuration (Basic)")
         icepack_config_panel.selected_index = None
+
         container_source_row = form_row("Source:", container_source)
         image_uri_row = form_row("Image:", image_uri)
 
@@ -3648,8 +3813,9 @@ def build_icesheets_ui():
         # Transport behaviour, the B3 AccessState machine, identity verification
         # and the Run gate are unchanged.
         connect_btn.description = "Check SSH Access"
-        start_connector_session_btn.description = "Open Connector Setup"
+        start_connector_session_btn.description = "Open Connector..."
         start_connector_session_btn.icon = "external-link"
+        disconnect_connector_btn.on_click(disconnect_connector)
 
         remote_conn_panel = build_remote_connection_panel(
             resource=cluster_name_for_keys,
@@ -3663,9 +3829,10 @@ def build_icesheets_ui():
             open_connector_button=start_connector_session_btn,
             connector_card=relay_status,
             connector_setup_link=connector_setup_link,
+            disconnect_button=disconnect_connector_btn,
             profile=get_compute_profile(cluster_name_for_keys.value or "pace"),
             auth_extra_children=[cluster_password, bootstrap_btn],
-            advanced_children=[remote_tag_row],
+            advanced_children=[remote_tag_row, connector_diagnostics],
         )
         remote_conn_box = W.Accordion(children=[remote_conn_panel.container])
         remote_conn_box.set_title(0, "🔌 Remote connection")
@@ -3871,6 +4038,7 @@ def build_icesheets_ui():
             ssh_key_manager_box,
             slurm_box,
         ], layout=W.Layout(gap="10px"))
+        remote_box.add_class("cryostack-remote-config")
 
         run_plan = build_run_plan_panel(
             summary_widget=summary_html,
@@ -3899,6 +4067,10 @@ def build_icesheets_ui():
         log_runtime_controls = build_workspace_toolbar([])
 
         run_settings_panel = build_run_settings_panel(
+            # establish the execution environment first: identity/mode rows,
+            # then Remote/Cloud connection -- file/editor/dataset operations
+            # and model/run configuration move to `workspace_rows` (rendered
+            # AFTER remote_panel/cloud_panel), never here.
             configuration_rows=[
                 ui_mode_row,
                 *([agent_panel.container] if agent_panel is not None else []),
@@ -3909,14 +4081,20 @@ def build_icesheets_ui():
                 example_row,
                 exec_row,
                 advanced_action_row,
-                editor_panel.container,
-                run_target_row,
-                md_config_panel,
-                icepack_config_panel,
-                dataset_panel.container,
             ],
             remote_panel=remote_box,
             cloud_panel=cloud_box,
+            # Dataset upload/download (not the editor -- that is now tab 0
+            # ("Editor") of the RIGHT Workspace's Tab widget, see
+            # output_workspace/build_run_details below), then model/run
+            # configuration -- both depend on the execution environment
+            # (Remote/Cloud) already being established above.
+            workspace_rows=[
+                dataset_panel.container,
+                run_target_row,
+                md_config_panel,
+                icepack_config_panel,
+            ],
             run_plan=run_plan.container,
         )
 
@@ -3982,13 +4160,21 @@ def build_icesheets_ui():
         # the existing tail / preview path for the selected run. No second
         # panel, no second viewer, no second result-loading path.
         _workspace_tabs = {"w": None}       # late-bound: set after build_run_details
-        _WS_TAB = {"runs": 0, "files": 1, "log": 2, "results": 3}
+        # by TITLE, not a fixed index: in Advanced mode the Editor tab is
+        # inserted at 0, shifting Runs/Files/Run Log/Results each +1 --
+        # a hardcoded index map would silently switch to the wrong tab.
+        _WS_TAB_TITLE = {"runs": "Runs", "files": "Files", "log": "Run Log",
+                         "results": "Results"}
 
         def _switch_workspace_tab(name):
             tab = _workspace_tabs["w"]
-            idx = _WS_TAB.get(name)
-            if tab is not None and idx is not None and idx < len(tab.children):
-                tab.selected_index = idx
+            title = _WS_TAB_TITLE.get(name)
+            if tab is None or title is None:
+                return
+            for index in range(len(tab.children)):
+                if tab.get_title(index) == title:
+                    tab.selected_index = index
+                    return
 
         def _runs_tail_log():
             rid = workspace_history_panel.runs.value
@@ -4023,6 +4209,15 @@ def build_icesheets_ui():
                 on_download=_runs_download,
             )
 
+        # Advanced-mode file editor -- integrated as tab 0 ("Editor") of the
+        # RIGHT Workspace's SAME Tab widget (LEFT = run/execution
+        # configuration only). The SAME editor_panel.container instance
+        # built earlier -- no new editor widget, no second set of controls,
+        # no wrapper Accordion: the Tab's own children/titles ARE the
+        # show/hide mechanism (see update_visibility's
+        # output_workspace.set_advanced_mode call below). Basic<->Advanced
+        # only reassigns which tabs are attached to the SAME Tab object, so
+        # file selection and unsaved content survive every mode switch.
         output_workspace = build_run_details(
             log_output=log_out,
             results_output=results_out,
@@ -4031,6 +4226,7 @@ def build_icesheets_ui():
             runs_panel=workspace_history_panel.runs_panel,
             files_panel=workspace_history_panel.files_panel,
             visualization_panel=visualization_panel.container,
+            editor_panel=editor_panel.container,
         )
         _workspace_tabs["w"] = output_workspace.tabs
 

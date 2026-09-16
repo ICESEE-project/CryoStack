@@ -191,7 +191,7 @@
       <article class="cryostack-resource-card">
         <div class="cryostack-resource-tag">Execution</div>
         <h3>Cloud <span class="cryostack-status dev">In validation</span></h3>
-        <p>Bring-your-own AWS account via CloudFormation, on AWS Batch (Fargate default, EC2 Advanced). Icepack and ICESEE have each run end-to-end; the full lifecycle is still being validated.</p>
+        <p>Bring-your-own AWS account via CloudFormation, on AWS Batch (Fargate default, EC2 Advanced). Icepack and ICESEE have each run end-to-end on Fargate, and Icepack has also done so on EC2 On-Demand (single node, CPU); EC2 Spot/GPU/multi-node and the full lifecycle are still being validated.</p>
         <a href="docs/hpc_cloud.html">Cloud Run Guide &rarr;</a>
       </article>
 

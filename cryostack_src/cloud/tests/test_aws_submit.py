@@ -81,6 +81,78 @@ def test_overrides_reject_a_secret_smuggled_into_the_run_target():
         )
 
 
+# ── extra_env: the backend-neutral tunnel-plan seam ─────────────────────
+def test_extra_env_is_merged_additively():
+    ov = build_container_overrides(
+        s3_run=S3_RUN, model="issm", run_target="runme.m",
+        extra_env={"CRYOSTACK_LICENSE_TUNNEL_REQUIRED": "1", "CRYOSTACK_LT_PORT": "1711"},
+    )
+    names = {e["name"] for e in ov["environment"]}
+    assert names == {"CRYOSTACK_S3_RUN", "CRYOSTACK_MODEL", "CRYOSTACK_RUN_TARGET",
+                      "CRYOSTACK_LICENSE_TUNNEL_REQUIRED", "CRYOSTACK_LT_PORT"}
+
+
+def test_no_extra_env_leaves_overrides_exactly_as_before():
+    ov = build_container_overrides(s3_run=S3_RUN, model="issm", run_target="runme.m", extra_env=None)
+    names = {e["name"] for e in ov["environment"]}
+    assert names == {"CRYOSTACK_S3_RUN", "CRYOSTACK_MODEL", "CRYOSTACK_RUN_TARGET"}
+
+
+def test_tunnel_env_names_containing_forbidden_substrings_are_allowed_by_name():
+    """CRYOSTACK_LT_TOKEN's NAME contains "token"; CRYOSTACK_LT_SESSION's
+    name is fine either way -- both must be accepted when their VALUES are
+    clean opaque identifiers, never raw secrets."""
+    ov = build_container_overrides(
+        s3_run=S3_RUN, model="issm", run_target="runme.m",
+        extra_env={
+            "CRYOSTACK_LICENSE_TUNNEL_REQUIRED": "1",
+            "CRYOSTACK_LT_RELAY": "https://cryostack.eas.gatech.edu",
+            "CRYOSTACK_LT_SESSION": "a1b2c3d4",
+            "CRYOSTACK_LT_TOKEN": "abcXYZ0123456789",
+            "CRYOSTACK_LT_PURPOSE": "matlab-license",
+            "CRYOSTACK_LT_ENDPOINT": "primary",
+            "CRYOSTACK_LT_PORT": "1711",
+        },
+    )
+    by = {e["name"]: e["value"] for e in ov["environment"]}
+    assert by["CRYOSTACK_LT_TOKEN"] == "abcXYZ0123456789"
+
+
+def test_a_forbidden_shaped_value_is_still_rejected_even_under_an_allow_listed_name():
+    """The name-only exemption never extends to the VALUE -- this is the
+    narrow, safe half of resolving the CRYOSTACK_LT_TOKEN/"token" name
+    conflict without weakening secret detection generally."""
+    with pytest.raises(CloudSubmitError):
+        build_container_overrides(
+            s3_run=S3_RUN, model="issm", run_target="runme.m",
+            extra_env={"CRYOSTACK_LT_TOKEN": "aws_secret_access_key=AKIAEXAMPLE"},
+        )
+
+
+def test_a_non_tunnel_name_with_a_forbidden_substring_is_still_rejected():
+    """Only the exact 7 tunnel env-var names are exempt from the name
+    scan -- an arbitrary future key whose NAME happens to contain a
+    forbidden substring is still rejected, exactly as before."""
+    with pytest.raises(CloudSubmitError):
+        build_container_overrides(
+            s3_run=S3_RUN, model="issm", run_target="runme.m",
+            extra_env={"SOME_OTHER_PASSWORD_VAR": "harmless-value"},
+        )
+
+
+def test_original_forbidden_hints_still_caught_in_extra_env_values():
+    for bad_name, bad_value in [
+        ("CRYOSTACK_EXTRA_ONE", "aws_secret_key=xyz"),
+        ("CRYOSTACK_EXTRA_TWO", "MLM_LICENSE_FILE=27000@host"),
+        ("CRYOSTACK_EXTRA_THREE", "my-password-is-hunter2"),
+    ]:
+        with pytest.raises(CloudSubmitError):
+            build_container_overrides(
+                s3_run=S3_RUN, model="issm", run_target="runme.m",
+                extra_env={bad_name: bad_value},
+            )
+
+
 # ── submit-job args ─────────────────────────────────────────────────
 def test_submit_job_args_are_well_formed():
     args = build_submit_job_args(

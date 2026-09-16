@@ -47,11 +47,34 @@ from .auth import run_aws
 from .models import AWSConfig
 
 _JOB_NAME_RE = re.compile(r"[^A-Za-z0-9_-]+")
-#: keys that must never appear in a submit-job container override
+#: substrings that must never appear in a submit-job container override
+#: VALUE -- this is what actually leaks a credential/license into an
+#: unencrypted, log-visible AWS Batch RunTask override; see
+#: _assert_env_has_no_secrets below for why key NAMES are checked
+#: separately (and more narrowly) from values.
 _FORBIDDEN_ENV_HINTS = (
     "aws_access", "aws_secret", "aws_session", "secret", "token", "password",
     "mlm_license", "license_file", "credential",
 )
+
+#: exact env-var NAMES exempt from the *name* half of the no-secrets scan
+#: below -- narrowly, because their names legitimately contain a forbidden
+#: substring (CRYOSTACK_LT_TOKEN contains "token") while the value they
+#: carry is a short-lived, run-scoped, non-credential tunnel capability
+#: identifier (an opaque grant token authorising exactly one private-
+#: service tunnel for exactly one run), never an AWS credential or the
+#: MATLAB license value -- see cryostack_src.cloud.matlab_license.
+#: plan_license_tunnel. Their VALUES are still fully scanned below like
+#: every other entry's -- this exemption is name-only.
+_TUNNEL_ENV_NAMES = frozenset({
+    "CRYOSTACK_LICENSE_TUNNEL_REQUIRED",
+    "CRYOSTACK_LT_RELAY",
+    "CRYOSTACK_LT_SESSION",
+    "CRYOSTACK_LT_TOKEN",
+    "CRYOSTACK_LT_PURPOSE",
+    "CRYOSTACK_LT_ENDPOINT",
+    "CRYOSTACK_LT_PORT",
+})
 
 
 class CloudSubmitError(RuntimeError):
@@ -79,8 +102,42 @@ def sanitize_job_name(name: str, *, suffix: str = "") -> str:
     return base[:128].rstrip("-") or "cryostack"
 
 
-def build_container_overrides(*, s3_run: str, model: str, run_target: str) -> dict:
-    """The ``--container-overrides`` document -- three non-secret env values."""
+def _assert_env_has_no_secrets(env: list[dict]) -> None:
+    """Per-entry, not a single blob scan: a key NAME in
+    :data:`_TUNNEL_ENV_NAMES` is exempt from the *name* half of the check
+    (its name is fixed, developer-chosen, and known safe) -- but its VALUE
+    is not, and neither is any other entry's name or value. This is
+    narrower than the previous single ``json.dumps(env).lower()`` scan: it
+    resolves the exact conflict where ``CRYOSTACK_LT_TOKEN`` (a NAME)
+    contains the forbidden substring ``"token"`` while carrying a
+    non-credential, run-scoped tunnel grant identifier, WITHOUT weakening
+    the check for anything else -- an unexpected credential-shaped VALUE in
+    ANY entry, tunnel-named or not, is still rejected.
+    """
+    for entry in env:
+        name = str(entry.get("name", ""))
+        value = str(entry.get("value", ""))
+        if name not in _TUNNEL_ENV_NAMES:
+            low_name = name.lower()
+            if any(hint in low_name for hint in _FORBIDDEN_ENV_HINTS):
+                raise CloudSubmitError("container overrides failed their no-secrets check")
+        low_value = value.lower()
+        if any(hint in low_value for hint in _FORBIDDEN_ENV_HINTS):
+            raise CloudSubmitError("container overrides failed their no-secrets check")
+
+
+def build_container_overrides(
+    *, s3_run: str, model: str, run_target: str, extra_env: dict[str, str] | None = None,
+) -> dict:
+    """The ``--container-overrides`` document -- the three core non-secret
+    env values, plus (optionally) additional plain, non-secret run
+    configuration such as the private-service license tunnel plan
+    (``cryostack_src.cloud.matlab_license.plan_license_tunnel``). Backend-
+    neutral by construction: this function has no notion of Fargate vs.
+    EC2 -- ``extra_env`` flows into the SAME override document either way,
+    and into any future compute backend that submits through this same
+    function.
+    """
     s3_run = (s3_run or "").strip().rstrip("/")
     model = (model or "").strip().lower()
     run_target = (run_target or "").strip()
@@ -96,9 +153,10 @@ def build_container_overrides(*, s3_run: str, model: str, run_target: str) -> di
         {"name": "CRYOSTACK_MODEL", "value": model},
         {"name": "CRYOSTACK_RUN_TARGET", "value": run_target},
     ]
-    blob = json.dumps(env).lower()
-    if any(hint in blob for hint in _FORBIDDEN_ENV_HINTS):
-        raise CloudSubmitError("container overrides failed their no-secrets check")
+    for name, value in (extra_env or {}).items():
+        env.append({"name": str(name), "value": str(value)})
+
+    _assert_env_has_no_secrets(env)
     return {"environment": env}
 
 
@@ -111,13 +169,18 @@ def build_submit_job_args(
     model: str,
     run_target: str,
     run_id: str = "",
+    extra_env: dict[str, str] | None = None,
 ) -> list[str]:
-    """The full ``aws batch submit-job ...`` argument list (no ``aws`` prefix)."""
+    """The full ``aws batch submit-job ...`` argument list (no ``aws`` prefix).
+    ``job_queue``/``job_definition`` already encode the Fargate-vs-EC2
+    choice (resolved by the caller before this point); ``extra_env`` is
+    layered on top identically regardless of which was chosen."""
     if not job_queue:
         raise CloudSubmitError("a cloud submission needs a Batch job queue")
     if not job_definition:
         raise CloudSubmitError("a cloud submission needs a Batch job definition")
-    overrides = build_container_overrides(s3_run=s3_run, model=model, run_target=run_target)
+    overrides = build_container_overrides(
+        s3_run=s3_run, model=model, run_target=run_target, extra_env=extra_env)
     return [
         "batch", "submit-job",
         "--job-name", sanitize_job_name(job_name, suffix=run_id),
@@ -137,16 +200,20 @@ def submit_batch_job(
     model: str,
     run_target: str,
     run_id: str = "",
+    extra_env: dict[str, str] | None = None,
     aws=None,
 ) -> BatchSubmission:
     """Issue ``aws batch submit-job`` and return the captured job id.
 
     ``aws`` is an injectable ``callable(args) -> (code, out, err)`` (defaults to
-    the driver's ``run_aws``) so tests never touch AWS.
+    the driver's ``run_aws``) so tests never touch AWS. ``extra_env`` is the
+    SAME mechanism for both Fargate and EC2 (and any future compute mode
+    that submits through this function) -- see ``build_container_overrides``.
     """
     args = build_submit_job_args(
         job_name=job_name, job_queue=job_queue, job_definition=job_definition,
         s3_run=s3_run, model=model, run_target=run_target, run_id=run_id,
+        extra_env=extra_env,
     )
     invoke = aws or (lambda a: run_aws(config, a))
     code, out, err = invoke(args)

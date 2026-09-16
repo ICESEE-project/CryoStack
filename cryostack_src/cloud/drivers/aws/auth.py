@@ -82,7 +82,14 @@ def aws_command(
 def run_aws(
     config: AWSConfig,
     arguments: list[str],
+    *,
+    input: str | None = None,
 ) -> tuple[int, str, str]:
+    """Run an AWS CLI command. ``input`` (optional) is piped to the child
+    process's stdin rather than ever appearing in ``arguments`` -- the
+    caller uses this to pass a sensitive value (e.g. a Secrets Manager
+    ``--secret-string file:///dev/stdin``) without it ever reaching argv,
+    an env var, a temp file, or a process listing."""
 
     env = None
     if config.credentials:
@@ -96,11 +103,16 @@ def run_aws(
             if config.credentials.get(key):
                 env[key] = config.credentials[key]
 
+    # `input` is only ever passed to subprocess.run when actually supplied --
+    # existing callers/tests that stub out subprocess.run with a narrower
+    # signature (no `input` kwarg) must keep working unchanged.
+    extra = {"input": input} if input is not None else {}
     process = subprocess.run(
         aws_command(config) + arguments,
         capture_output=True,
         text=True,
         env=env,
+        **extra,
     )
 
     return (

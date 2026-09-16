@@ -57,6 +57,85 @@ def test_preflight_uses_the_single_workflow_capability_resolver():
     assert '== "issm"' not in src
 
 
+def test_connector_required_but_not_connected_blocks_even_with_a_configured_license():
+    """Distinct from "license not configured" -- the license CAN be
+    configured and this can still block, fail-closed, when the already-
+    resolved CloudMatlabLicense.requires_tunnel says the Connector is
+    needed and it is not currently paired."""
+    reasons = cloud_run_preflight(
+        model="issm", matlab_license_configured=True,
+        connector_required=True, connector_connected=False,
+    )
+    assert reasons
+    assert any("CryoStack Connector" in r for r in reasons)
+    with pytest.raises(CloudRuntimeError):
+        assert_cloud_run_allowed(
+            model="issm", matlab_license_configured=True,
+            connector_required=True, connector_connected=False,
+        )
+
+
+def test_connector_required_and_connected_passes():
+    assert cloud_run_preflight(
+        model="issm", matlab_license_configured=True,
+        connector_required=True, connector_connected=True,
+    ) == []
+    assert_cloud_run_allowed(
+        model="issm", matlab_license_configured=True,
+        connector_required=True, connector_connected=True,
+    )  # no raise
+
+
+def test_connector_not_required_is_unaffected_by_connector_state():
+    """A site/workflow that does not require the Connector never blocks on
+    it, regardless of connector_connected -- never a generic "Cloud uses
+    Connector" requirement."""
+    assert cloud_run_preflight(
+        model="issm", matlab_license_configured=True,
+        connector_required=False, connector_connected=False,
+    ) == []
+
+
+def test_icepack_never_blocked_by_the_connector_reason():
+    """Icepack has no MATLAB requirement at all -- the connector gate is
+    reached only through requires_matlab_license, so it must never fire
+    for a non-MATLAB workflow even if connector_required is mistakenly
+    passed True."""
+    assert cloud_run_preflight(
+        model="icepack", matlab_license_configured=False,
+        connector_required=True, connector_connected=False,
+    ) == []
+
+
+def test_connector_reason_never_leaks_implementation_details():
+    """The scientist only needs to know CryoStack needs the Connector to
+    reach their institution -- no tunnel/relay/WebSocket/session id/
+    token/FlexNet/vendor-daemon/host-port/MLM_LICENSE_FILE wording."""
+    reasons = cloud_run_preflight(
+        model="issm", matlab_license_configured=True,
+        connector_required=True, connector_connected=False,
+    )
+    blob = " ".join(reasons).lower()
+    for forbidden in (
+        "tunnel", "relay", "websocket", "session id", "token",
+        "flexnet", "vendor", "host", "port", "mlm_license_file",
+    ):
+        assert forbidden not in blob, forbidden
+
+
+def test_missing_license_reason_still_wins_over_the_connector_reason():
+    """Configure the license first: when the license itself is not
+    configured, the connector-specific reason must not also fire (avoids
+    a confusing double-blocked message for one root cause)."""
+    reasons = cloud_run_preflight(
+        model="issm", matlab_license_configured=False,
+        connector_required=True, connector_connected=False,
+    )
+    assert len(reasons) == 1
+    assert "MATLAB license reachable from AWS" in reasons[0]
+    assert "CryoStack Connector" not in reasons[0]
+
+
 def test_the_default_aws_compute_profile_has_no_license():
     """The AWS profile must stay unconfigured for MATLAB until a real cloud
     license mechanism exists -- so ISSM cloud is blocked by default."""

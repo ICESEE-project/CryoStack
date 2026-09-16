@@ -173,6 +173,51 @@ async def handle_command(command_type: str, payload: dict):
     }
 
 
+#: Site-supplied, trusted allow-list of private-service tunnel destinations.
+#: NEVER user-configurable and NEVER supplied by the cloud workload -- a
+#: cloud caller sends only a symbolic ``(purpose, endpoint)`` pair over the
+#: relay; only this table, shipped with the Connector build, decides the
+#: real host/port a tunnel is ever allowed to reach. An entry mapped to
+#: ``None`` is deliberately unusable -- "known to exist, not yet confirmed"
+#: -- rather than guessed at.
+#:
+#: Georgia Tech MATLAB Network License Manager
+#: (matlablic.ecs.gatech.edu, internally 10.138.23.10): the primary
+#: (lmgrd) port 1711 is confirmed reachable from the GT VM and from PACE.
+#: FlexLM/MLM licensing is two-hop: the primary port only tells the client
+#: which port the VENDOR daemon is listening on for the actual checkout --
+#: on the SAME host the client already connected to (FlexLM's handoff
+#: conveys a port, not a new hostname), which is exactly why a second,
+#: independent local listener bound to that same vendor port number is
+#: sufficient here, with no protocol rewriting needed. For Georgia Tech
+#: that vendor port has been directly observed/confirmed: MATLAB connects
+#: to matlablic.ecs.gatech.edu:17110 for the actual checkout. This is an
+#: INSTITUTIONAL fact about Georgia Tech's license-file configuration
+#: (whoever administers that FlexNet install pinned the vendor daemon to
+#: 17110) -- never a universal MATLAB/FlexNet constant. A different
+#: institution's Connector build would need its own confirmed vendor
+#: port here (or ``None`` -- "known to exist, not yet confirmed" -- rather
+#: than a guess) via its own site-supplied allow-list.
+SITE_TUNNEL_TARGETS: dict[tuple[str, str], tuple[str, int] | None] = {
+    ("matlab-license", "primary"): ("matlablic.ecs.gatech.edu", 1711),
+    ("matlab-license", "vendor"): ("matlablic.ecs.gatech.edu", 17110),
+}
+
+#: bounded so a stalled/unreachable private service cannot hang the
+#: connector's whole command/tunnel loop.
+TUNNEL_CONNECT_TIMEOUT_SECONDS = 10
+#: how many bytes a local socket read pulls before framing/sending onward.
+TUNNEL_READ_CHUNK_SIZE = 65536
+
+
+def resolve_tunnel_target(purpose: str, endpoint: str) -> tuple[str, int] | None:
+    """The ONLY place a tunnel destination is decided. Returns ``None`` for
+    anything not explicitly present (and confirmed) in
+    :data:`SITE_TUNNEL_TARGETS` -- an unknown, mistyped, or not-yet-confirmed
+    ``(purpose, endpoint)`` is refused, never guessed at."""
+    return SITE_TUNNEL_TARGETS.get(((purpose or "").strip(), (endpoint or "").strip()))
+
+
 class PairingRejected(RuntimeError):
     """The relay refused this connector's session credential -- do not retry."""
 
@@ -188,7 +233,7 @@ _SSH_COMMANDS = {
 
 
 async def main(ws_url: str, session_secret: str, poll_seconds: int = 5,
-               *, stop_event=None, on_event=_noop):
+               *, relay: str = "", stop_event=None, on_event=_noop):
     print(f"[connector] connecting to {ws_url}")
 
     # Bounded connect: a stalled TLS/WS handshake must not hang the worker.
@@ -208,6 +253,17 @@ async def main(ws_url: str, session_secret: str, poll_seconds: int = 5,
             pass
 
     watcher = asyncio.create_task(_watch_stop()) if stop_event is not None else None
+    # tunnel_id -> {"writer", "data_ws", "tasks"} -- one entry per ESTABLISHED
+    # tunnel, each with its OWN dedicated data-plane WebSocket (see
+    # _handle_tunnel_open) -- never this control socket. Scoped to this one
+    # relay connection; a reconnect means the relay already dropped every
+    # tunnel on its side too (connector_relay_server.py:connector_ws),
+    # so nothing here is reused across one.
+    tunnels: dict[int, dict] = {}
+    #: tunnel-open attempts still resolving a local connection / data socket
+    #: (not yet in `tunnels`) -- tracked only so shutdown can cancel them
+    #: too, never consulted for message routing.
+    opening: set[asyncio.Task] = set()
     try:
         await ws.send(json.dumps({"type": "auth", "secret": session_secret}))
         try:
@@ -217,13 +273,42 @@ async def main(ws_url: str, session_secret: str, poll_seconds: int = 5,
         if hello.get("type") != "auth_ok":
             raise PairingRejected(hello.get("type") or "relay rejected the session secret")
 
-        print("[connector] authenticated to session", hello.get("session_id"))
+        session_id = hello.get("session_id")
+        print("[connector] authenticated to session", session_id)
         on_event("websocket-connected")
 
+        # JSON only, by construction -- see the module docstring on tunnel
+        # transport separation. `websockets`' own `async for` would also
+        # yield `bytes` for a binary frame, but the control socket is never
+        # sent one: tunnel DATA always rides the dedicated per-tunnel data
+        # socket opened in _handle_tunnel_open, never this one. A stray
+        # binary frame here (should never happen) is simply skipped rather
+        # than crashing the whole connector loop.
         async for raw in ws:
             if stop_event is not None and stop_event.is_set():
                 break
+
+            if isinstance(raw, bytes):
+                continue
+
             msg = json.loads(raw)
+
+            if msg.get("type") == "tunnel-open":
+                # Fired off, never awaited here: resolving the allow-list
+                # target, dialling the local private service, and opening
+                # the new data-plane socket all take real time (bounded,
+                # but real) -- awaiting them inline would stall this same
+                # loop's ability to read the NEXT command reply or
+                # tunnel-open, exactly the head-of-line-blocking this
+                # split transport exists to avoid. See the module docstring.
+                task = asyncio.create_task(_handle_tunnel_open(
+                    relay, session_id, session_secret, tunnels, msg,
+                    control_ws=ws, on_event=on_event,
+                ))
+                opening.add(task)
+                task.add_done_callback(opening.discard)
+                continue
+
             if "command_id" not in msg and "command_type" not in msg:
                 continue
 
@@ -246,6 +331,10 @@ async def main(ws_url: str, session_secret: str, poll_seconds: int = 5,
                 "result": result,
             }))
     finally:
+        for task in list(opening):
+            task.cancel()
+        for tunnel_id in list(tunnels):
+            await _close_tunnel(tunnels, tunnel_id)
         if watcher is not None:
             watcher.cancel()
         try:
@@ -253,6 +342,142 @@ async def main(ws_url: str, session_secret: str, poll_seconds: int = 5,
         except Exception:
             pass
         on_event("websocket-disconnected")
+
+
+async def _open_tunnel_data_socket(relay: str, session_id: str, session_secret: str,
+                                    tunnel_id: int, *, timeout: float = 20):
+    """Open THIS tunnel's own, dedicated WebSocket to the relay's data
+    plane -- never the control socket. Authenticated with the same
+    ``session_secret`` the control socket used; the relay pairs it to the
+    cloud-side socket waiting on this ``tunnel_id`` (connector_relay_server
+    .py:tunnel_data_ws)."""
+    url = f"{_relay_ws_base(relay)}/connector/tunnel-data/{session_id}"
+    data_ws = await asyncio.wait_for(
+        websockets.connect(url, open_timeout=timeout, close_timeout=5, ping_interval=20),
+        timeout=timeout + 5,
+    )
+    await data_ws.send(json.dumps({
+        "type": "tunnel-data-auth", "secret": session_secret, "tunnel_id": tunnel_id,
+    }))
+    return data_ws
+
+
+async def _pump_tcp_to_data_ws(data_ws, reader: "asyncio.StreamReader",
+                                tunnels: dict[int, dict], tunnel_id: int) -> None:
+    """Read from the local TCP socket (the private service) and forward
+    each chunk, verbatim, to THIS tunnel's own data socket -- no framing
+    overhead, since this socket carries exactly one tunnel. Ends the whole
+    tunnel the moment the local socket closes, rather than leaving the
+    cloud side open with nothing to talk to."""
+    try:
+        while True:
+            chunk = await reader.read(TUNNEL_READ_CHUNK_SIZE)
+            if not chunk:
+                break
+            await data_ws.send(chunk)
+    except Exception:
+        pass
+    finally:
+        await _close_tunnel(tunnels, tunnel_id)
+
+
+async def _pump_data_ws_to_tcp(data_ws, writer: "asyncio.StreamWriter",
+                                tunnels: dict[int, dict], tunnel_id: int) -> None:
+    """The reverse direction: this tunnel's data socket -> the local TCP
+    socket. A completely independent read loop from the control socket's
+    -- and from every OTHER tunnel's -- so one slow/large tunnel can never
+    stall another, or Remote-mode RPC on the control socket."""
+    try:
+        async for raw in data_ws:
+            if not isinstance(raw, bytes):
+                continue
+            writer.write(raw)
+            await writer.drain()
+    except Exception:
+        pass
+    finally:
+        await _close_tunnel(tunnels, tunnel_id)
+
+
+async def _handle_tunnel_open(relay: str, session_id: str, session_secret: str,
+                               tunnels: dict[int, dict], msg: dict, *,
+                               control_ws, on_event=_noop) -> None:
+    """The relay asked (over the CONTROL socket) to open one tunnel.
+    Resolve (purpose, endpoint) against the trusted, site-supplied
+    :data:`SITE_TUNNEL_TARGETS` -- NEVER a host/port the message itself
+    supplies -- dial the local private service, then open a NEW, dedicated
+    data-plane socket for this tunnel and hand both ends to their own pump
+    tasks. Only a fast, small failure (``tunnel-error``) is ever reported
+    back over ``control_ws``; success is signalled to the relay simply by
+    the data socket attaching, never by a reply on the control socket."""
+    tunnel_id = msg.get("tunnel_id")
+    purpose = msg.get("purpose") or ""
+    endpoint = msg.get("endpoint") or ""
+
+    target = resolve_tunnel_target(purpose, endpoint)
+    if target is None:
+        await control_ws.send(json.dumps({
+            "type": "tunnel-error", "tunnel_id": tunnel_id,
+            "error": "This connector has no allow-listed destination for "
+                     f"{purpose!r}/{endpoint!r}.",
+        }))
+        return
+
+    host, port = target
+    on_event("tunnel-open-start")
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(host, port), timeout=TUNNEL_CONNECT_TIMEOUT_SECONDS,
+        )
+    except Exception as e:
+        await control_ws.send(json.dumps({
+            "type": "tunnel-error", "tunnel_id": tunnel_id,
+            "error": f"Could not reach the private service ({type(e).__name__}).",
+        }))
+        return
+    finally:
+        on_event("tunnel-open-complete")
+
+    try:
+        data_ws = await _open_tunnel_data_socket(relay, session_id, session_secret, tunnel_id)
+    except Exception as e:
+        try:
+            writer.close()
+        except Exception:
+            pass
+        await control_ws.send(json.dumps({
+            "type": "tunnel-error", "tunnel_id": tunnel_id,
+            "error": f"Could not reach the relay tunnel data channel ({type(e).__name__}).",
+        }))
+        return
+
+    tasks = [
+        asyncio.create_task(_pump_tcp_to_data_ws(data_ws, reader, tunnels, tunnel_id)),
+        asyncio.create_task(_pump_data_ws_to_tcp(data_ws, writer, tunnels, tunnel_id)),
+    ]
+    tunnels[tunnel_id] = {"writer": writer, "data_ws": data_ws, "tasks": tasks}
+    # No control-socket reply on success -- the data socket attaching IS
+    # the ready signal (connector_relay_server.py:tunnel_data_ws).
+
+
+async def _close_tunnel(tunnels: dict[int, dict], tunnel_id) -> None:
+    handle = tunnels.pop(tunnel_id, None)
+    if handle is None:
+        return
+    for task in handle.get("tasks", []):
+        task.cancel()
+    writer = handle.get("writer")
+    if writer is not None:
+        try:
+            writer.close()
+        except Exception:
+            pass
+    data_ws = handle.get("data_ws")
+    if data_ws is not None:
+        try:
+            await data_ws.close()
+        except Exception:
+            pass
 
 async def run_rsync_upload(payload: dict):
     local_path = payload["local_path"]
@@ -515,7 +740,7 @@ def run_connector(
         try:
             asyncio.run(main(
                 target, session_secret=session_secret, poll_seconds=poll_seconds,
-                stop_event=stop_event, on_event=on_event,
+                relay=relay, stop_event=stop_event, on_event=on_event,
             ))
         except KeyboardInterrupt:
             print("[connector] stopped")

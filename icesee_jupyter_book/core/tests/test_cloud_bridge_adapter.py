@@ -99,6 +99,94 @@ def test_submit_preserves_icesees_exact_upload_and_env_var_contract(tmp_path, mo
     assert (expected_rd / "params.yaml").is_file()
 
 
+def test_real_submit_chain_accepts_matlab_license_fields_without_erroring(
+    tmp_path, monkeypatch,
+):
+    """The full real chain (bridge.submit -> CloudBackend -> CloudManager ->
+    AWSDriver(submitter=...) -> submit_cloud_example) must not raise a
+    TypeError now that the gateway always passes
+    matlab_license_configured/matlab_license_requires_tunnel -- proving
+    the new kwargs were threaded through every fixed-signature hop, not
+    just the CloudBridge/CloudBackend/CloudManager **kwargs passthrough."""
+    example_dir = tmp_path / "lorenz96"
+    example_dir.mkdir()
+    (example_dir / "run_da_lorenz96.py").write_text("# entry\n")
+    monkeypatch.setattr(
+        "icesee_jupyter_book.core.cloud_runner.find_run_script",
+        lambda cfg: example_dir / "run_da_lorenz96.py",
+    )
+
+    fake = _FakeAWS(responses=[
+        (0, '{"Account": "1"}', ""),
+        (0, "", ""), (0, "", ""),
+        (0, json.dumps({"jobId": "job-xyz"}), ""),
+    ])
+    cfg = IceseeCloudBridgeConfig(region="us-east-2", aws=fake)
+    bridge = build_icesee_cloud_bridge(cfg)
+
+    result = submit_icesee_cloud_run(
+        bridge,
+        example_name="lorenz96", example_cfg={}, config={"k": "v"},
+        s3_prefix="s3://bucket/runs", job_queue="q", job_definition="jd",
+        job_name="icesee", run_dir_base=tmp_path / "runs", run_dir_name="r2",
+        matlab_license_configured=True, matlab_license_requires_tunnel=True,
+    )
+    assert result.success is True
+    assert result.job_id == "job-xyz"
+
+
+def test_submit_forwards_matlab_license_fields_to_bridge_submit(monkeypatch):
+    """submit_icesee_cloud_run propagates matlab_license_configured /
+    matlab_license_requires_tunnel into bridge.submit(...) unchanged --
+    the ICESEE analogue of icesheets_gateway.py's `.submit(...)` call."""
+    captured = {}
+
+    class _FakeBridge:
+        def submit(self, **kwargs):
+            captured.update(kwargs)
+            class _R:
+                success = True
+                job_id = "job-1"
+                working_directory = "s3://b/r"
+                metadata = {}
+                messages = []
+            return _R()
+
+    submit_icesee_cloud_run(
+        _FakeBridge(),
+        example_name="lorenz96", example_cfg={}, config={},
+        s3_prefix="s3://bucket/runs", job_queue="q", job_definition="jd",
+        matlab_license_configured=True, matlab_license_requires_tunnel=True,
+    )
+    assert captured["matlab_license_configured"] is True
+    assert captured["matlab_license_requires_tunnel"] is True
+
+
+def test_submit_defaults_matlab_license_fields_to_false(monkeypatch):
+    """A caller that never resolved a MATLAB license (the ordinary,
+    non-ISSM ICESEE path) gets the fail-closed defaults, unchanged."""
+    captured = {}
+
+    class _FakeBridge:
+        def submit(self, **kwargs):
+            captured.update(kwargs)
+            class _R:
+                success = True
+                job_id = "job-1"
+                working_directory = "s3://b/r"
+                metadata = {}
+                messages = []
+            return _R()
+
+    submit_icesee_cloud_run(
+        _FakeBridge(),
+        example_name="lorenz96", example_cfg={}, config={},
+        s3_prefix="s3://bucket/runs", job_queue="q", job_definition="jd",
+    )
+    assert captured["matlab_license_configured"] is False
+    assert captured["matlab_license_requires_tunnel"] is False
+
+
 def test_status_flows_through_the_real_hardened_driver_not_icesees_own(monkeypatch):
     """Status must reach cryostack_src.cloud.legacy.aws_batch.batch_status
     (via CloudBackend/AWSDriver), NOT icesee's own aws_batch_status."""

@@ -24,6 +24,7 @@ from IPython.display import HTML, FileLink
 from icesee_jupyter_book.core.connector_relay_client import (
     create_session,
     check_status as relay_check_status,
+    clear_binding as clear_connector_binding,
     send_command,
 )
 
@@ -97,6 +98,7 @@ from cryostack_src.frontend.cryolauncher.cloud_environment import (
     build_cloud_environment_card,
     set_cloud_status,
     set_run_estimate_view,
+    wire_institutional_connection_widgets,
     wire_matlab_license_widgets,
 )
 from cryostack_src.models.workflow_capabilities import resolve_workflow_capabilities
@@ -121,6 +123,9 @@ from icesee_jupyter_book.ui.shared_app_styles import (
 from icesee_jupyter_book.ui.shared_remote_connection_panel import (
     build_remote_connection_panel,
     classify_bootstrap_result,
+    connector_diagnostics_html,
+    connector_pairing_link_html,
+    connector_pairing_status_html,
 )
 from icesee_jupyter_book.ui.shared_slurm_resources_panel import (
     build_slurm_resources_panel,
@@ -572,11 +577,18 @@ def build_icesee_ui():
 
         relay_status = W.HTML("")
         connector_setup_link = W.HTML("")
+        connector_diagnostics = W.HTML("")
 
         start_connector_session_btn = W.Button(
             description="Create connector session",
             icon="plug",
             button_style="info",
+        )
+        disconnect_connector_btn = W.Button(
+            description="Disconnect",
+            icon="unlink",
+            button_style="",
+            layout=W.Layout(display="none"),
         )
 
         container_image_uri = W.Text(
@@ -920,6 +932,25 @@ def build_icesee_ui():
             W.HTML("<div class='icesee-subtle'>Tip: You may need GT VPN to access OnDemand.</div>"),
         ])
 
+        # Reassigned below, once the Cloud panel's INSTITUTIONAL CONNECTION
+        # box is wired (wire_institutional_connection_widgets) -- a no-op
+        # until then so Remote's own connector handlers (defined here,
+        # called from buttons that exist immediately) never fail if
+        # clicked before Cloud finishes building.
+        _refresh_institutional_connection = lambda: None  # noqa: E731
+
+        def _connector_is_online() -> bool:
+            """Whether THIS kernel's Connector session/binding is currently
+            paired -- the SAME fact Cloud reads (institutional_connection_
+            box). No new resolution: reuses the existing SESSION/relay
+            status check Remote already performs."""
+            if not SESSION.get("id"):
+                return False
+            try:
+                return bool(relay_check_status(SESSION["id"]).get("online"))
+            except Exception:
+                return False
+
         def create_or_refresh_connector_session(_=None):
             log_out.clear_output()
 
@@ -936,49 +967,33 @@ def build_icesee_ui():
                     SESSION["ws_url"] = sess["ws_url"]
                     SESSION["pairing_code"] = sess["pairing_code"]
 
-                    connector_setup_link.value = f"""
-                    <a href="https://cryostack.eas.gatech.edu/connect/?session={SESSION['id']}&app=icesee"
-                    target="_blank"
-                    style="
-                        display:inline-block;
-                        background:#0d6efd;
-                        color:white;
-                        padding:8px 12px;
-                        border-radius:8px;
-                        text-decoration:none;
-                        font-weight:700;
-                        margin:6px 0;">
-                    Open CryoStack Connector Setup
-                    </a>
-                    """
-
                 st = relay_check_status(SESSION["id"])
                 online = bool(st.get("online"))
 
-                relay_status.value = f"""
-                <div style="
-                    border:1px solid {'rgba(25,135,84,.25)' if online else 'rgba(13,110,253,.18)'};
-                    background:{'rgba(25,135,84,.08)' if online else 'rgba(13,110,253,.06)'};
-                    border-radius:12px; padding:12px; line-height:1.6; margin:8px 0;
-                ">
-                  <b>Connector:</b> {'connected ✅' if online else 'waiting for connector'}<br>
-                  <b>Pairing code:</b>
-                  <code style="font-size:15px;background:#eef1f4;padding:2px 8px;border-radius:6px;">
-                  {SESSION.get('pairing_code', '—')}</code><br>
-                  <span style="color:#5f6b7a;font-size:13px;">
-                  Enter this code in the CryoStack Connector on your workstation
-                  (“Pair with CryoStack…”). One-time; expires with this session.
-                  </span>
-                  <details style="margin-top:8px;">
-                    <summary style="cursor:pointer;color:#5f6b7a;font-size:13px;">Diagnostics</summary>
-                    <div style="font-size:12px;color:#5f6b7a;margin-top:4px;">
-                      session id: {SESSION['id']}<br>
-                      ws path: {SESSION['ws_url']}<br>
-                      relay state: {st.get('state', 'unknown')}
-                    </div>
-                  </details>
-                </div>
-                """
+                # Minimum pairing information/action only, in the existing
+                # Remote visual language -- never a second boxed
+                # "CRYOSTACK CONNECTOR" card duplicating the real Open
+                # Connector.../Disconnect actions above. Session id / ws
+                # path / relay state stay out of this compact line -- see
+                # connector_diagnostics below (rendered only in Advanced).
+                connector_setup_link.value = (
+                    "" if online else connector_pairing_link_html(
+                        session_id=SESSION.get("id"), app="icesee")
+                )
+                relay_status.value = connector_pairing_status_html(
+                    session_id=SESSION.get("id"),
+                    pairing_code=SESSION.get("pairing_code"),
+                    online=online,
+                )
+                connector_diagnostics.value = connector_diagnostics_html(
+                    session_id=SESSION.get("id"), ws_url=SESSION.get("ws_url"),
+                    relay_state=st.get("state"),
+                )
+                # A session exists (paired or still waiting) -> Disconnect
+                # is reachable either way, matching Cloud's own pairing
+                # flow (never only once fully online).
+                disconnect_connector_btn.layout.display = (
+                    "inline-flex" if SESSION.get("id") else "none")
 
                 with log_out:
                     print("[connector] pairing code:", SESSION.get("pairing_code"))
@@ -988,6 +1003,27 @@ def build_icesee_ui():
                 relay_status.value = ""
                 with log_out:
                     print("[connector][ERROR]", type(e).__name__, e)
+            finally:
+                # Cloud reads the SAME Connector binding/session -- reflect
+                # every Remote-side change there too, never a second
+                # Connector state that could drift out of sync.
+                _refresh_institutional_connection()
+
+        def disconnect_connector(_=None) -> None:
+            """Disconnect the paired CryoStack Connector -- reuses the
+            existing relay-client binding revocation (clear_binding());
+            never a second Connector state. Cloud reads the SAME binding,
+            so this is immediately reflected there too."""
+            log_out.clear_output()
+            SESSION.clear()
+            clear_connector_binding()
+            relay_status.value = ""
+            connector_setup_link.value = ""
+            connector_diagnostics.value = ""
+            disconnect_connector_btn.layout.display = "none"
+            with log_out:
+                print("[connector] Disconnected.")
+            _refresh_institutional_connection()
 
         def _toggle_remote_backend(_=None):
             is_ssh = (remote_backend.value == "ssh")
@@ -2176,6 +2212,14 @@ def build_icesee_ui():
                     model_nprocs=int(cluster_model_nprocs.value),
                     run_dir_base=_icesee_run_dir_base(),
                     run_dir_name=_run_id,
+                    # one resolution (the SAME `execution` above), both
+                    # fields -- CloudMatlabLicense.configured and
+                    # .requires_tunnel (the latter already
+                    # capability/profile-derived; never re-derived here).
+                    matlab_license_configured=bool(
+                        getattr(execution.matlab_license, "configured", False)),
+                    matlab_license_requires_tunnel=bool(
+                        getattr(execution.matlab_license, "requires_tunnel", False)),
                 )
 
                 STATUS["batch_job_id"] = result.job_id
@@ -2775,8 +2819,9 @@ def build_icesee_ui():
         # behind Diagnostics. Transport, B3 AccessState, identity verification
         # and the Run gate are unchanged.
         connect_btn.description = "Check SSH Access"
-        start_connector_session_btn.description = "Open Connector Setup"
+        start_connector_session_btn.description = "Open Connector..."
         start_connector_session_btn.icon = "external-link"
+        disconnect_connector_btn.on_click(disconnect_connector)
 
         remote_tag_row = form_pair("Tag:", remote_tag, label_width="56px")
         remote_conn_panel = build_remote_connection_panel(
@@ -2791,9 +2836,10 @@ def build_icesee_ui():
             open_connector_button=start_connector_session_btn,
             connector_card=relay_status,
             connector_setup_link=connector_setup_link,
+            disconnect_button=disconnect_connector_btn,
             profile=get_compute_profile(cluster_name_for_keys.value or "pace"),
             auth_extra_children=[cluster_password, bootstrap_btn],
-            advanced_children=[remote_tag_row],
+            advanced_children=[remote_tag_row, connector_diagnostics],
         )
         remote_conn_inner = remote_conn_panel.container
 
@@ -3027,6 +3073,28 @@ def build_icesee_ui():
             icesee_cloud_environment.matlab_license_box.layout.display = (
                 "" if _icesee_capabilities.requires_matlab_license else "none")
 
+            # INSTITUTIONAL CONNECTION: shown only when this ICESEE
+            # workflow needs MATLAB AND this site's CloudMatlabLicense.
+            # requires_tunnel is True -- never a generic "Cloud uses
+            # Connector" requirement. Uses the cheap, config-independent
+            # site fact (site_requires_cloud_license_tunnel) rather than a
+            # full execution.matlab_license resolution here: this summary
+            # re-renders on every widget change and must never trigger a
+            # fresh AWS sts:AssumeRole just to decide visibility. The
+            # actual submit call and Review & Launch still read the one
+            # real, configuration-aware CloudMatlabLicense object.
+            from cryostack_src.cloud.matlab_license import (
+                site_requires_cloud_license_tunnel,
+            )
+
+            _icesee_requires_connector = bool(
+                _icesee_capabilities.requires_matlab_license
+                and site_requires_cloud_license_tunnel())
+            icesee_cloud_environment.institutional_connection_box.layout.display = (
+                "" if _icesee_requires_connector else "none")
+            if _icesee_requires_connector:
+                _refresh_institutional_connection()
+
             # Same row markup CryoLauncher's own Run Plan summary already
             # uses (icesee-summary / icesee-summary-k) -- not a second,
             # ICESEE-only convention -- so both apps share one labeled-row
@@ -3073,12 +3141,14 @@ def build_icesee_ui():
             ],
             layout=W.Layout(gap="8px"),
         )
+        remote_box.add_class("cryostack-remote-config")
 
         # Cloud panel -- the shared Cloud Environment card itself. Status/
         # Logs live in the Workspace Run Log toolbar; Terminate lives in the
         # Execution panel; Submit only happens through its own Review &
         # Launch (wired below) -- neither is duplicated here.
         cloud_panel = icesee_cloud_environment.container
+        cloud_panel.add_class("cryostack-cloud-config")
 
         # =========================================================
         # AWS ACCOUNT -- the SAME generic onboarding callbacks CryoLauncher
@@ -3119,6 +3189,22 @@ def build_icesee_ui():
         wire_matlab_license_widgets(
             icesee_cloud_environment,
             owner=resolve_workspace_user(require_authenticated=False),
+            log_output=log_out,
+        )
+
+        # -- INSTITUTIONAL CONNECTION: Cloud reads the SAME Connector
+        # binding/session Remote uses (_connector_is_online/create_or_
+        # refresh_connector_session/disconnect_connector, defined above) --
+        # never a second Connector implementation, pairing, identity, or
+        # session. Pairing (or disconnecting) here is exactly the same
+        # action as doing so in Remote.
+        _refresh_institutional_connection = wire_institutional_connection_widgets(
+            icesee_cloud_environment,
+            check_connected=_connector_is_online,
+            session_state=lambda: SESSION,
+            open_connector=create_or_refresh_connector_session,
+            disconnect=disconnect_connector,
+            app="icesee",
             log_output=log_out,
         )
 
@@ -3241,6 +3327,9 @@ def build_icesee_ui():
                 example_name=identity.example_name or example_dd.value,
                 matlab_license_configured=bool(
                     getattr(execution.matlab_license, "configured", False)),
+                matlab_license_requires_tunnel=bool(
+                    getattr(execution.matlab_license, "requires_tunnel", False)),
+                connector_connected=_connector_is_online(),
                 compute_mode=getattr(
                     icesee_cloud_environment.compute_mode, "value", "fargate"),
             )
@@ -3341,8 +3430,29 @@ def build_icesee_ui():
         # remote_panel/cloud_panel slots are therefore inert placeholders
         # here, not a second copy of that content.
         # =========================================================
+        agent_rows = []
+        if os.environ.get("CRYOSTACK_AGENT_PANEL", "").strip().lower() in ("1", "true", "on", "yes"):
+            from icesee_jupyter_book.ui.configuration_agent import build_icesee_configuration_agent
+
+            def _agent_cloud_validate():
+                return list(_icesee_build_review().blocked_reasons)
+
+            icesee_agent = build_icesee_configuration_agent(
+                fields=dict(profile=cluster_name_for_keys, nodes=slurm_nodes,
+                            cpus=slurm_ntasks, tasks_per_node=slurm_tpn,
+                            wall_time=slurm_time, memory=slurm_mem, account=slurm_account,
+                            user=cluster_user, directory=remote_base_dir,
+                            parallel_processes=cluster_mpi_np, model_processes=cluster_model_nprocs),
+                example=example_dd, mode_tabs=mode_tabs, filter_widget=filter_alg_dd,
+                ensemble=ens_sl, params_snapshot=build_config_from_widgets,
+                sync_quick=sync_quick_into_widgets, cloud_validate=_agent_cloud_validate)
+            agent_acc = W.Accordion(children=[icesee_agent.container], selected_index=None)
+            agent_acc.set_title(0, "Agent · Beta")
+            agent_rows.append(agent_acc)
+
         icesee_run_settings = build_run_settings_panel(
             configuration_rows=[
+                *agent_rows,
                 W.HBox([W.HTML("<div class='icesee-lbl'>Mode:</div>"), mode_tabs], layout=W.Layout(gap="8px", width="100%")),
                 W.HBox([W.HTML("<div class='icesee-lbl'>Example:</div>"), example_dd], layout=W.Layout(gap="8px", width="100%")),
                 W.HBox([W.HTML("<div class='icesee-lbl'>Preset:</div>"), preset_dd], layout=W.Layout(gap="8px", width="100%")),

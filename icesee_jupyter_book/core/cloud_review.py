@@ -78,6 +78,11 @@ class IceseeCloudReview:
     image_reference: str = ""
     image_digest: str = ""
     image_public_url: str = ""
+    #: plain form of ``compute_backend`` ("AWS Batch Fargate" / "AWS Batch
+    #: EC2", no parens) for labels like "Compute (...)" -- the SAME
+    #: resolved backend, never re-derived. Defaulted for callers that still
+    #: construct this dataclass positionally/without it.
+    compute_backend_label: str = ""
     # infrastructure
     infrastructure: InfrastructureReadiness = field(default_factory=InfrastructureReadiness)
     icesee_runtime_ready: bool = False
@@ -158,6 +163,8 @@ def build_icesee_cloud_review(
     account_freshly_verified: bool,
     example_name: str,
     matlab_license_configured: bool = False,
+    matlab_license_requires_tunnel: bool = False,
+    connector_connected: bool = False,
     compute_mode: str = "fargate",
 ) -> IceseeCloudReview:
     """Assemble an ICESEE cloud review and decide whether Launch is
@@ -183,6 +190,12 @@ def build_icesee_cloud_review(
     capabilities = resolve_workflow_capabilities(
         model="icesee", forecast_model=forecast_model)
 
+    # the SAME resolved backend used below for `compute_backend` (and, by
+    # the caller, to pick the actual queue/job definition) -- never a
+    # separate/inferred value.
+    _is_ec2 = normalize_compute_mode(compute_mode) == "ec2"
+    _backend_plain_label = "AWS Batch EC2" if _is_ec2 else "AWS Batch Fargate"
+
     reasons: list[str] = []
 
     if capabilities.requires_matlab_license and not matlab_license_configured:
@@ -193,6 +206,22 @@ def build_icesee_cloud_review(
             "its ARN in Cloud Environment. The license value never leaves "
             "your account."
         )
+    elif (capabilities.requires_matlab_license and matlab_license_requires_tunnel
+          and not connector_connected):
+        # Distinct from the "not configured" reason above: the license CAN
+        # be configured and this can still block -- the already-resolved
+        # CloudMatlabLicense.requires_tunnel (never re-derived here) says
+        # this workflow needs the CryoStack Connector, and it is not
+        # currently paired. Fail closed, exactly like a direct ISSM run.
+        # No tunnel/relay/session/token wording -- the scientist only
+        # needs to know CryoStack needs the Connector to reach their
+        # institution.
+        reasons.append(
+            "This ICESEE run's forecast model is ISSM, which needs your "
+            "institution's MATLAB license service. This requires the "
+            "CryoStack Connector. Open Connector... and pair it, then try "
+            "again."
+        )
 
     if not account_freshly_verified:
         reasons.append(
@@ -201,7 +230,7 @@ def build_icesee_cloud_review(
         )
     for label, ready in (
         ("Storage", infrastructure.storage),
-        ("Compute (AWS Batch)", infrastructure.compute),
+        (f"Compute ({_backend_plain_label})", infrastructure.compute),
     ):
         if not ready:
             reasons.append(f"{label} is not prepared. Run Prepare cloud first.")
@@ -260,16 +289,13 @@ def build_icesee_cloud_review(
         region=region, account_id=account_id, example_name=example_name,
     )
 
-    compute_backend = (
-        "AWS Batch (EC2)"
-        if normalize_compute_mode(compute_mode) == "ec2"
-        else "AWS Batch (Fargate)"
-    )
+    compute_backend = "AWS Batch (EC2)" if _is_ec2 else "AWS Batch (Fargate)"
 
     return IceseeCloudReview(
         forecast_model=forecast_model, filter_alg=filter_alg,
         ensemble_size=ensemble_size, execution_mode="cloud",
         compute_backend=compute_backend,
+        compute_backend_label=_backend_plain_label,
         parallel_processes=parallel_processes,
         account_id=account_id, region=region,
         image_label=image_label, image_reference=image_reference,
@@ -364,7 +390,7 @@ def render_icesee_review_panel(widgets, review: IceseeCloudReview) -> None:
         <tr><td style="padding:1px 12px 1px 0;">Account</td><td>{_yn(infra.account)}</td></tr>
         <tr><td style="padding:1px 12px 1px 0;">Storage</td><td>{_yn(infra.storage)}</td></tr>
         <tr><td style="padding:1px 12px 1px 0;">Container</td><td>{_yn(review.icesee_runtime_ready)}</td></tr>
-        <tr><td style="padding:1px 12px 1px 0;">Compute</td><td>{_yn(infra.compute)}</td></tr>
+        <tr><td style="padding:1px 12px 1px 0;">Compute ({escape_text(review.compute_backend_label or "AWS Batch")})</td><td>{_yn(infra.compute)}</td></tr>
         <tr><td colspan="2" style="padding-top:6px;font-weight:700;color:#172033;">Verified runtime contract</td></tr>
         <tr><td style="padding:1px 12px 1px 0;">ICESEE runtime</td><td>{_yn(review.runtime_contract_ok)}</td></tr>
         <tr><td style="padding:1px 12px 1px 0;">Parallel mode</td><td>{escape_text(review.parallel_mode_label)}</td></tr>

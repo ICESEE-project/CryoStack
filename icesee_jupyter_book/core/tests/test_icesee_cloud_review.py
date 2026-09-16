@@ -122,6 +122,67 @@ def test_icesee_forecast_model_issm_launches_once_licensed():
     assert review.blocked_reasons == []
 
 
+def test_icesee_forecast_model_issm_blocked_when_connector_required_but_not_connected():
+    """Distinct from "license not configured": the license CAN be
+    configured and this can still block, fail-closed, exactly like a
+    direct ISSM run -- the already-resolved CloudMatlabLicense.
+    requires_tunnel (never re-derived here) says the Connector is needed."""
+    review = build_icesee_cloud_review(
+        forecast_model="issm", filter_alg="EnKF", ensemble_size=30,
+        parallel_processes=1, account_id="774888247882", region="us-east-2",
+        infrastructure=_READY_INFRA, account_freshly_verified=True,
+        example_name="lorenz96", matlab_license_configured=True,
+        matlab_license_requires_tunnel=True, connector_connected=False,
+    )
+    assert review.requires_matlab_license is True
+    assert review.matlab_license_configured is True
+    assert review.can_launch is False
+    assert any("CryoStack Connector" in r for r in review.blocked_reasons)
+
+
+def test_icesee_forecast_model_issm_launches_once_connector_is_paired():
+    review = build_icesee_cloud_review(
+        forecast_model="issm", filter_alg="EnKF", ensemble_size=30,
+        parallel_processes=1, account_id="774888247882", region="us-east-2",
+        infrastructure=_READY_INFRA, account_freshly_verified=True,
+        example_name="lorenz96", matlab_license_configured=True,
+        matlab_license_requires_tunnel=True, connector_connected=True,
+    )
+    assert review.can_launch is True
+    assert review.blocked_reasons == []
+
+
+def test_icesee_connector_reason_never_leaks_implementation_details():
+    review = build_icesee_cloud_review(
+        forecast_model="issm", filter_alg="EnKF", ensemble_size=30,
+        parallel_processes=1, account_id="774888247882", region="us-east-2",
+        infrastructure=_READY_INFRA, account_freshly_verified=True,
+        example_name="lorenz96", matlab_license_configured=True,
+        matlab_license_requires_tunnel=True, connector_connected=False,
+    )
+    blob = " ".join(review.blocked_reasons).lower()
+    for forbidden in (
+        "tunnel", "relay", "websocket", "session id", "token",
+        "flexnet", "vendor", "host", "port", "mlm_license_file",
+    ):
+        assert forbidden not in blob, forbidden
+
+
+def test_icesee_forecast_model_icepack_never_needs_the_connector_either():
+    """Icepack-only ICESEE workflows never need MATLAB, so the connector
+    gate (reached only through requires_matlab_license) never fires even
+    if matlab_license_requires_tunnel is mistakenly True."""
+    review = build_icesee_cloud_review(
+        forecast_model="icepack", filter_alg="EnKF", ensemble_size=30,
+        parallel_processes=1, account_id="774888247882", region="us-east-2",
+        infrastructure=_READY_INFRA, account_freshly_verified=True,
+        example_name="lorenz96", matlab_license_configured=False,
+        matlab_license_requires_tunnel=True, connector_connected=False,
+    )
+    assert review.requires_matlab_license is False
+    assert not any("Connector" in r for r in review.blocked_reasons)
+
+
 def test_icesee_forecast_model_icepack_never_needs_matlab():
     review = build_icesee_cloud_review(
         forecast_model="icepack", filter_alg="EnKF", ensemble_size=30,
@@ -155,6 +216,7 @@ def test_icesee_backend_defaults_to_fargate():
         example_name="lorenz96",
     )
     assert review.compute_backend == "AWS Batch (Fargate)"
+    assert review.compute_backend_label == "AWS Batch Fargate"
 
 
 def test_icesee_backend_reflects_ec2_selection():
@@ -165,6 +227,28 @@ def test_icesee_backend_reflects_ec2_selection():
         example_name="lorenz96", compute_mode="ec2",
     )
     assert review.compute_backend == "AWS Batch (EC2)"
+    assert review.compute_backend_label == "AWS Batch EC2"
+
+
+def test_icesee_compute_not_ready_reason_names_the_resolved_backend():
+    not_ready = InfrastructureReadiness(
+        account=True, storage=True, container=True, compute=False)
+    fargate = build_icesee_cloud_review(
+        forecast_model="lorenz96", filter_alg="EnKF", ensemble_size=30,
+        parallel_processes=1, account_id="774888247882", region="us-east-2",
+        infrastructure=not_ready, account_freshly_verified=True,
+        example_name="lorenz96",
+    )
+    assert any(x.startswith("Compute (AWS Batch Fargate)")
+               for x in fargate.blocked_reasons)
+
+    ec2 = build_icesee_cloud_review(
+        forecast_model="lorenz96", filter_alg="EnKF", ensemble_size=30,
+        parallel_processes=1, account_id="774888247882", region="us-east-2",
+        infrastructure=not_ready, account_freshly_verified=True,
+        example_name="lorenz96", compute_mode="ec2",
+    )
+    assert any(x.startswith("Compute (AWS Batch EC2)") for x in ec2.blocked_reasons)
 
 
 def test_unsupported_icesee_examples_remain_blocked():

@@ -195,6 +195,24 @@ def test_plan_summary_has_charge_warning_and_no_dollar_figure():
     assert "cryostack-issm" in s and "us-east-2" in s
 
 
+# -- Fargate/EC2 labeling ---------------------------------------------------
+def test_plan_summary_defaults_to_fargate_wording():
+    s = cloud_run_plan_summary(model="issm", region="us-east-2", bucket="b",
+                               job_queue="cryostack-queue",
+                               job_definition="cryostack-issm")
+    assert "This submits an AWS Batch (Fargate) job." in s
+    assert "AWS Batch (EC2)" not in s
+
+
+def test_plan_summary_names_ec2_when_that_is_the_resolved_compute_mode():
+    s = cloud_run_plan_summary(model="issm", region="us-east-2", bucket="b",
+                               job_queue="cryostack-ec2-queue",
+                               job_definition="cryostack-issm-ec2",
+                               compute_mode="ec2")
+    assert "This submits an AWS Batch (EC2) job." in s
+    assert "AWS Batch (Fargate)" not in s
+
+
 def test_resolve_job_definition_is_controlled():
     assert resolve_job_definition("issm", "", allow_list=_ALLOW) == ("cryostack-issm", [])
     assert resolve_job_definition("issm", "cryostack-issm:9", allow_list=_ALLOW) == ("cryostack-issm:9", [])

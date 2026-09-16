@@ -47,11 +47,36 @@ def test_relay_and_client_do_not_print_or_format_secrets_into_strings():
 
 
 def test_gateway_keeps_session_id_and_ws_path_in_diagnostics_not_prominent():
+    """B4-follow-up (CryoStack Connector UI restore): session id / ws path
+    now come from shared_remote_connection_panel.connector_diagnostics_html,
+    wired into the gateway's existing (collapsed-by-default) Advanced
+    accordion -- never the compact, always-visible connector status line.
+    The compact line (connector_pairing_status_html) surfaces only the
+    one-time pairing code -- never the session id/ws path -- and the
+    browser-facing setup link (connector_pairing_link_html) carries only
+    the non-secret session id + app, never the pairing code."""
+    from icesee_jupyter_book.ui.shared_remote_connection_panel import (
+        connector_diagnostics_html,
+        connector_pairing_link_html,
+        connector_pairing_status_html,
+    )
+
+    status = connector_pairing_status_html(
+        session_id="sess-123", pairing_code="AB12", online=False)
+    assert "sess-123" not in status
+    assert "AB12" in status
+
+    diag = connector_diagnostics_html(
+        session_id="sess-123", ws_url="/connector/ws/sess-123", relay_state="online")
+    assert "sess-123" in diag and "/connector/ws/sess-123" in diag
+
+    link = connector_pairing_link_html(session_id="sess-123", app="icesheets")
+    assert "session=sess-123" in link and "app=icesheets" in link
+    assert "AB12" not in link
+
     src = _ICESHEETS_GW.read_text()
-    # session id / ws path appear only inside the collapsed <details> block
-    assert "<summary" in src and "Diagnostics" in src
-    # the pairing code (not a long-lived credential) is the surfaced pairing value
-    assert "Pairing code:" in src
-    # the browser-facing setup link carries only the non-secret session id + app
-    assert "connect/?session={SESSION['id']}&app=icesheets" in src
-    assert "pairing_code}" not in src.split("Open CryoStack Connector Setup")[0].rsplit("<a href", 1)[-1]
+    # the diagnostics widget is wired into advanced_children (the existing
+    # Advanced accordion), never into connector_card (the compact,
+    # always-rendered status line)
+    assert "advanced_children=[remote_tag_row, connector_diagnostics]" in src
+    assert "connector_card=relay_status" in src

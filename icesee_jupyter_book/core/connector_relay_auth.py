@@ -31,7 +31,10 @@ DEPLOYMENT_TOKEN_ENV = "CRYOSTACK_RELAY_CONTROL_TOKEN"
 DEFAULT_TOKEN_FILE = Path.home() / ".cryostack" / "relay_control_token"
 
 #: names that must never be written to a log line, provenance record or URL
-SECRET_FIELD_NAMES = ("control_secret", "session_secret", "pairing_code", "password")
+SECRET_FIELD_NAMES = (
+    "control_secret", "session_secret", "pairing_code", "password",
+    "token", "tunnel_token",
+)
 
 
 def new_secret(nbytes: int = 32) -> str:

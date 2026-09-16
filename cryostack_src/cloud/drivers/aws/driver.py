@@ -589,6 +589,14 @@ class AWSDriver(
         for message in batch_result.messages:
             messages.append(message)
 
+        # the SAME resolved compute mode this bootstrap actually provisioned
+        # against -- never inferred from queue/job-definition names.
+        _backend_label = (
+            "AWS Batch EC2"
+            if normalize_compute_mode(compute_mode) == COMPUTE_MODE_EC2
+            else "AWS Batch Fargate"
+        )
+
         if (
             batch.compute_environment
             and batch.job_queue
@@ -596,13 +604,13 @@ class AWSDriver(
         ):
 
             messages.append(
-                "AWS Batch environment is ready."
+                f"{_backend_label} environment is ready."
             )
 
         else:
 
             messages.append(
-                "AWS Batch environment is incomplete."
+                f"{_backend_label} environment is incomplete."
             )
 
         #
@@ -709,6 +717,13 @@ class AWSDriver(
                 model, compute_mode,
                 accelerator=ec2_config.accelerator, topology=ec2_config.topology))
         matlab_license_configured = bool(kwargs.get("matlab_license_configured", False))
+        # Site fact (cryostack_src.cloud.matlab_license.CloudMatlabLicense.
+        # requires_tunnel), resolved by the caller from resolve_cloud_
+        # matlab_license() -- never inferred here, never derived from the
+        # secret's value (never seen here either). Independent of
+        # compute_mode: Fargate and EC2 consume the identical mechanism,
+        # see step 1b below.
+        matlab_license_requires_tunnel = bool(kwargs.get("matlab_license_requires_tunnel", False))
         s3 = kwargs.get("s3")
         aws = kwargs.get("aws")
 
@@ -727,6 +742,38 @@ class AWSDriver(
             compute_mode=compute_mode, ec2_config=ec2_config,
         )
 
+        # 1b. private-service license tunnel plan -- BEFORE staging/upload,
+        # exactly like the gate above, so a run that cannot get a tunnel
+        # never uploads anything or creates a billable job. Backend-neutral
+        # by construction: computed once here, independent of compute_mode,
+        # and consumed identically by Fargate and EC2 at step 3 below (see
+        # submit.py:build_container_overrides). The Secrets Manager secret
+        # itself (matlab_license_configured / the job definition's
+        # containerProperties.secrets, set at Prepare Cloud time) is never
+        # touched here -- only additional, non-secret runtime env for THIS
+        # one submission.
+        extra_env = None
+        if matlab_license_requires_tunnel:
+            from cryostack_src.cloud.matlab_license import plan_license_tunnel
+            from icesee_jupyter_book.core import connector_relay_client
+
+            # the CURRENTLY authenticated user's own paired Connector, if
+            # any -- resolved server-side from this kernel's existing
+            # binding (bound when Remote mode's "Connect" flow ran).
+            # NEVER a user-supplied session id, and no durable cross-
+            # session recovery is attempted here: a missing binding fails
+            # closed (LicenseTunnelUnavailable), below.
+            binding = connector_relay_client.current_binding()
+            plan = plan_license_tunnel(
+                requires_tunnel=True,
+                session_id=binding.get("session_id") or None,
+                relay_url=connector_relay_client.RELAY_URL,
+            )
+            # plan is never None here (requires_tunnel=True); "_grant_id"
+            # is bookkeeping for a future revoke-at-run-end, never itself
+            # a container env var.
+            extra_env = {k: v for k, v in plan.items() if not k.startswith("_")}
+
         # 2. stage the run's inputs to S3
         staging = stage_run_inputs(
             self.config,
@@ -740,7 +787,9 @@ class AWSDriver(
             s3=s3,
         )
 
-        # 3. submit to Batch
+        # 3. submit to Batch -- extra_env (if any) flows into the SAME
+        # container-overrides mechanism for Fargate and EC2 alike; this
+        # call never branches on compute_mode.
         submission = submit_batch_job(
             self.config,
             job_name=job_name,
@@ -750,6 +799,7 @@ class AWSDriver(
             model=model,
             run_target=run_target,
             run_id=staging.run_id,
+            extra_env=extra_env,
             aws=aws,
         )
 
