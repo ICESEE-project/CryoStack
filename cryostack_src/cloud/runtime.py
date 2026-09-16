@@ -91,6 +91,14 @@ ICEPACK_EXPORT_FILENAME = "cryostack_icepack_export.py"
 #: package installed to run this one small, dependency-minimal helper.
 LICENSE_TUNNEL_CLIENT_FILENAME = "cryostack_license_tunnel_client.py"
 
+#: the ISSM branch's own logic (license-tunnel setup + the MATLAB
+#: invocation) -- staged as a standalone FILE, the SAME mechanism as
+#: LICENSE_TUNNEL_CLIENT_FILENAME above, and invoked by filename from the
+#: generic runner's ``issm)`` case. This keeps the inline, per-launch
+#: job-definition command small: see issm_cloud_runner_script() and the
+#: module docstring's execution-artifact contract.
+ISSM_CLOUD_RUNNER_FILENAME = "cryostack_issm_cloud_runner.sh"
+
 #: version of the structured-result contract the run must produce
 RESULT_CONTRACT_VERSION = 1
 
@@ -204,30 +212,10 @@ case "${CRYOSTACK_MODEL}" in
     rc=0
     ;;
   issm)
-    # optional private-service license tunnel (values read from env by
-    # license_tunnel_client.py itself); aborts before matlab on failure.
-    # Staged as an ACTUAL FILE (phase 1 already synced it into WORKDIR) --
-    # never `python3 -m cryostack_src...`: this container has no reason to
-    # have the CryoLauncher web app's own package installed.
-    if [ "${CRYOSTACK_LICENSE_TUNNEL_REQUIRED:-0}" = "1" ]; then
-      _lt_msg="$(python3 "${WORKDIR}/__CRYOSTACK_LICENSE_TUNNEL_CLIENT_FILENAME__" listen)" \
-        || fail 65 "${_lt_msg}"
-      _mlm="MLM_LICENSE_FILE"
-      export "${_mlm}=${CRYOSTACK_LT_PORT}@127.0.0.1"
-      # optional second hop: this site's FlexNet vendor daemon (only set
-      # when the site profile confirms one -- see matlab_license.
-      # site_cloud_license_vendor_port). Reuses the same relay/session/
-      # token/purpose (already in this process's own environment) --
-      # only the endpoint and local port differ, so both are given
-      # explicitly rather than repeating the whole flag set.
-      if [ -n "${CRYOSTACK_LT_VENDOR_PORT:-}" ]; then
-        _lt_msg2="$(python3 "${WORKDIR}/__CRYOSTACK_LICENSE_TUNNEL_CLIENT_FILENAME__" listen \
-          --endpoint vendor --port "${CRYOSTACK_LT_VENDOR_PORT}")" \
-          || fail 65 "${_lt_msg2}"
-      fi
-    fi
-    with-issm matlab -nodesktop -nosplash -batch \
-      "ICESEE_RUN_DIR='${WORKDIR}'; setenv('ICESEE_RUN_DIR','${WORKDIR}'); run('${RUN_TARGET}'); run('${WORKDIR}/postprocess_icesee.m');"
+    # tunnel setup + matlab invocation: a STAGED FILE, not inlined here --
+    # keeps this per-launch command small (see issm_cloud_runner_script()).
+    WORKDIR="${WORKDIR}" RUN_TARGET="${RUN_TARGET}" \
+      bash "${WORKDIR}/__CRYOSTACK_ISSM_CLOUD_RUNNER_FILENAME__"
     rc=$?
     ;;
   icepack)
@@ -322,7 +310,69 @@ def build_cloud_runner() -> str:
         .replace("__CRYOSTACK_ICEPACK_PP_FILENAME__", ICEPACK_POSTPROCESS_FILENAME)
         .replace("__CRYOSTACK_ICEPACK_RUNNER_FILENAME__", ICEPACK_RUNNER_FILENAME)
         .replace("__CRYOSTACK_LICENSE_TUNNEL_CLIENT_FILENAME__", LICENSE_TUNNEL_CLIENT_FILENAME)
+        .replace("__CRYOSTACK_ISSM_CLOUD_RUNNER_FILENAME__", ISSM_CLOUD_RUNNER_FILENAME)
     )
+
+
+#: the ISSM branch's own script: license-tunnel setup (primary, plus the
+#: optional FlexNet vendor-daemon hop -- see matlab_license.
+#: plan_license_tunnel/site_cloud_license_vendor_port) then the MATLAB
+#: invocation. Staged as an ACTUAL FILE (see issm_cloud_runner_extra_files
+#: below), never embedded in the generic runner's own command text -- see
+#: BATCH_CONTAINER_OVERRIDE_LIMIT and this module's docstring. ``WORKDIR``
+#: and ``RUN_TARGET`` are handed in as plain environment variables by the
+#: generic runner's ``issm)`` case (they are not exported there).
+#:
+#: A tunnel failure here (``fail 65 ...``) exits only THIS child process,
+#: unlike the old inlined version which exited the whole top-level runner
+#: immediately. The generic runner still captures this file's exit code
+#: as ``rc`` and propagates it unchanged (phase 4) -- the only observable
+#: difference is a harmless, best-effort phase-3 sync of an (empty, since
+#: MATLAB never started) outputs directory before the same final exit
+#: code is returned.
+_ISSM_CLOUD_RUNNER = r"""#!/usr/bin/env bash
+# =====================================================================
+# CryoStack ISSM cloud-run branch  (auto-generated -- do not edit)
+# =====================================================================
+set -uo pipefail
+
+log()  { printf '[cryostack-cloud] %s\n' "$*" >&2; }
+fail() { log "ERROR ($1): $2"; exit "$1"; }
+
+# optional private-service license tunnel (values read from env by
+# license_tunnel_client.py itself); aborts before matlab on failure.
+# Staged as an ACTUAL FILE (phase 1 already synced it into WORKDIR) --
+# never `python3 -m cryostack_src...`: this container has no reason to
+# have the CryoLauncher web app's own package installed.
+if [ "${CRYOSTACK_LICENSE_TUNNEL_REQUIRED:-0}" = "1" ]; then
+  _lt_msg="$(python3 "${WORKDIR}/__CRYOSTACK_LICENSE_TUNNEL_CLIENT_FILENAME__" listen)" \
+    || fail 65 "${_lt_msg}"
+  _mlm="MLM_LICENSE_FILE"
+  export "${_mlm}=${CRYOSTACK_LT_PORT}@127.0.0.1"
+  # optional second hop: this site's FlexNet vendor daemon (only set
+  # when the site profile confirms one -- see matlab_license.
+  # site_cloud_license_vendor_port). Reuses the same relay/session/
+  # token/purpose (already in this process's own environment) --
+  # only the endpoint and local port differ, so both are given
+  # explicitly rather than repeating the whole flag set.
+  if [ -n "${CRYOSTACK_LT_VENDOR_PORT:-}" ]; then
+    _lt_msg2="$(python3 "${WORKDIR}/__CRYOSTACK_LICENSE_TUNNEL_CLIENT_FILENAME__" listen \
+      --endpoint vendor --port "${CRYOSTACK_LT_VENDOR_PORT}")" \
+      || fail 65 "${_lt_msg2}"
+  fi
+fi
+with-issm matlab -nodesktop -nosplash -batch \
+  "ICESEE_RUN_DIR='${WORKDIR}'; setenv('ICESEE_RUN_DIR','${WORKDIR}'); run('${RUN_TARGET}'); run('${WORKDIR}/postprocess_icesee.m');"
+"""
+
+
+def issm_cloud_runner_script() -> str:
+    """The staged ISSM branch script (see :data:`_ISSM_CLOUD_RUNNER`) --
+    only the license-tunnel-client FILENAME is substituted (a single
+    source of truth shared with :func:`license_tunnel_client_extra_files`),
+    never its source text."""
+    return _ISSM_CLOUD_RUNNER.replace(
+        "__CRYOSTACK_LICENSE_TUNNEL_CLIENT_FILENAME__", LICENSE_TUNNEL_CLIENT_FILENAME)
 
 
 def icepack_postprocess_extra_files() -> dict[str, str]:
@@ -417,6 +467,18 @@ def license_tunnel_client_extra_files() -> dict[str, str]:
         files[staged_rel] = path.read_text(encoding="utf-8")
 
     return files
+
+
+def issm_cloud_runner_extra_files() -> dict[str, str]:
+    """The ``extra_files`` a cloud-run caller merges into
+    ``WorkspaceManager.stage_example_for_run`` so the ISSM branch script
+    (:func:`issm_cloud_runner_script` -- license-tunnel setup + the MATLAB
+    invocation) is staged as an ordinary file alongside the run's other
+    inputs, the SAME mechanism :func:`license_tunnel_client_extra_files`
+    already uses. Staged unconditionally for every ISSM cloud run,
+    alongside that function's files -- callers merge both dicts (see
+    icesheets_gateway.py's ISSM cloud-staging helper)."""
+    return {ISSM_CLOUD_RUNNER_FILENAME: issm_cloud_runner_script()}
 
 
 def cloud_run_command() -> list[str]:
