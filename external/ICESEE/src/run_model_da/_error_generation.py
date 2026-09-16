@@ -3,17 +3,76 @@
 # supprorts: - "fft": old fast spectral method for uniform grids
 #            -  "auto": choose automatically
 #            -  "random_fields": use gstools to generate random fields with specified covariance
-#            - "graph": sparse smoothing on topology/connectivity           
+#            - "graph": sparse smoothing on topology/connectivity
 # @date: 2025-07-30
 # @author: Brian Kyanjo
 # ==============================================================================
-    
+
 # --- Imports ---
 import numpy as np
 import warnings
 from scipy.optimize import brentq
 import scipy.sparse as sp
+import functools
 
+
+@functools.lru_cache(maxsize=256)
+def _cached_fft_calibration(N_ext, dx, rh):
+    """
+    Deterministic part of generate_pseudo_random_field_1d's FFT branch:
+    wavenumbers, dk, and the amplitude array A. Identical to the
+    original inline logic, just cached on (N_ext, dx, rh) since none of
+    it depends on randomness.
+
+    Cache-key note: N_ext is an int (exact), dx and rh are floats. As
+    long as a given run passes the same literal Lx/rh/N values each call
+    (the normal case - these come from config, not from a fresh
+    computation each time), float equality holds and the cache hits
+    reliably. A miss just means falling back to recomputing - never an
+    incorrect result, only a missed speedup.
+    """
+    kx = np.fft.fftfreq(N_ext, d=dx) * 2 * np.pi
+    dk = 2 * np.pi / (N_ext * dx)
+
+    def covariance_eq(sigma):
+        k2 = kx**2
+        exp_term = np.exp(-2 * k2 / sigma**2)
+        return np.sum(exp_term * np.cos(kx * rh)) / np.sum(exp_term) - np.exp(-1)
+
+    a, b = 1e-6, 100
+    fa, fb = covariance_eq(a), covariance_eq(b)
+    sigma = None
+
+    if fa * fb > 0:
+        warnings.warn(
+            "Initial interval [1e-6, 100] does not bracket a root. "
+            "Trying to find a new interval."
+        )
+        sigma_values = np.logspace(-6, 6, 25)
+        f_values = [covariance_eq(s) for s in sigma_values]
+        for i in range(len(f_values) - 1):
+            if f_values[i] * f_values[i + 1] < 0:
+                a, b = sigma_values[i], sigma_values[i + 1]
+                sigma = brentq(covariance_eq, a, b, rtol=1e-6)
+                break
+        if sigma is None:
+            warnings.warn(
+                "Could not find a bracketing interval. Using heuristic sigma based on rh."
+            )
+            sigma = 2 / rh
+    else:
+        try:
+            sigma = brentq(covariance_eq, a, b, rtol=1e-6)
+        except ValueError as e:
+            warnings.warn(f"brentq failed: {str(e)}. Using heuristic sigma.")
+            sigma = 2 / rh
+
+    k2 = kx**2
+    sum_exp = np.sum(np.exp(-2 * k2 / sigma**2))
+    c = np.sqrt(1.0 / (dk * sum_exp))
+    A = c * np.sqrt(dk) * np.exp(-k2 / sigma**2)
+
+    return kx, A
 
 def compute_Q_err_random_fields(hdim, num_blocks, sig_Q, rho, len_scale):
     """
@@ -54,17 +113,17 @@ def compute_noise_random_fields(k, hdim, pos, model, num_blocks, L_C):
     # all_noise.append(total_noise_k)
     return total_noise_k
 
-def generate_pseudo_random_field_1d_(N, Lx, rh, grid_extension=2, verbose=False, **kwargs):
+def generate_pseudo_random_field_1d_(N, Lx, rh, grid_extension=2, verbose=False, **icesee_kwargs):
     """
     Generate a 1D pseudo-random field with zero mean, unit variance, and specified covariance.
-    
+
     Parameters:
     - N: Number of grid points
     - Lx: Physical domain size
     - rh: Decorrelation length for covariance
     - grid_extension: Factor to extend grid to avoid periodicity (default=2)
     - verbose: If True, print diagnostic information (default=False)
-    
+
     Returns:
     - q: 1D array of shape (N,) containing the random field
     """
@@ -72,129 +131,61 @@ def generate_pseudo_random_field_1d_(N, Lx, rh, grid_extension=2, verbose=False,
     import numpy as np
     from scipy.optimize import brentq
     import warnings
-    
+
     # Grid spacing
     dx = Lx / N
     # dx = Lx/nx
-    
+
     # rh = min(min(Lx)/10,rh)
 
     # Validate parameters
     if rh < dx:
         warnings.warn(f"Decorrelation length rh={rh} is smaller than grid spacing dx={dx}. "
                       "Consider increasing rh, decreasing Lx, or increasing N.")
-    
+
     # Extended grid to avoid periodicity
     N_ext = int(N * grid_extension)
-    
-    # Wave numbers
-    kx = np.fft.fftfreq(N_ext, d=dx) * 2 * np.pi
-    
-    # Delta k for Fourier summation
-    dk = 2 * np.pi / (N_ext * dx)
-    
-    # Compute sigma by solving the covariance equation
-    def covariance_eq(sigma):
-        k2 = kx**2
-        exp_term = np.exp(-2 * k2 / sigma**2)
-        numerator = np.sum(exp_term * np.cos(kx * rh))
-        denominator = np.sum(exp_term)
-        return numerator / denominator - np.exp(-1)
-    
-    # Dynamically find a bracketing interval
-    a, b = 1e-6, 100
-    fa = covariance_eq(a)
-    fb = covariance_eq(b)
-    
-    if verbose:
-        print(f"[ICESEE] covariance_eq at sigma={a}: {fa}")
-        print(f"[ICESEE] covariance_eq at sigma={b}: {fb}")
-    
-    # Try expanding the interval if signs are the same
-    if fa * fb > 0:
-        warnings.warn("Initial interval [1e-6, 100] does not bracket a root. Trying to find a new interval.")
-        sigma_values = np.logspace(-6, 6, 25)  # Test a wider, finer range
-        f_values = [covariance_eq(s) for s in sigma_values]
-        
-        if verbose:
-            print("[ICESEE] Testing sigma values:")
-            for s, f in zip(sigma_values, f_values):
-                print(f"[ICESEE] sigma={s:.2e}, covariance_eq={f:.2e}")
-        
-        # Find a sign change
-        for i in range(len(f_values) - 1):
-            if f_values[i] * f_values[i + 1] < 0:
-                a, b = sigma_values[i], sigma_values[i + 1]
-                fa, fb = f_values[i], f_values[i + 1]
-                break
-        else:
-            # Fallback: Estimate sigma based on rh
-            warnings.warn("Could not find a bracketing interval. Using heuristic sigma based on rh.")
-            sigma = 2 / rh  # Heuristic: sigma ~ 2/rh
-            if verbose:
-                print(f"[ICESEE] Fallback sigma: {sigma}")
-    else:
-        # Solve for sigma
-        try:
-            sigma = brentq(covariance_eq, a, b, rtol=1e-6)
-            if verbose:
-                print(f"[ICESEE] Solved sigma: {sigma}")
-        except ValueError as e:
-            warnings.warn(f"brentq failed: {str(e)}. Using heuristic sigma.")
-            sigma = 2 / rh  # Fallback
-            if verbose:
-                print(f"[ICESEE] Fallback sigma: {sigma}")
-    
-    # Compute c from variance condition
-    k2 = kx**2
-    sum_exp = np.sum(np.exp(-2 * k2 / sigma**2))
-    c2 = 1 / (dk * sum_exp)
-    c = np.sqrt(c2)
-    
-    if verbose:
-        print(f"[ICESEE] Computed c: {c}")
-    
-    # Compute amplitude
-    A = c * np.sqrt(dk) * np.exp(-k2 / sigma**2)
-    
+
+    kx, A = _cached_fft_calibration(N_ext, dx, rh)
+
     # Generate random phases with Hermitian symmetry
     phi = np.zeros(N_ext)
     I = np.arange(N_ext)
     I_conj = np.mod(-I, N_ext)
     self_conj_mask = (I == I_conj)  # Points where k=0 or k=pi
     mask_representative = (I <= I_conj)  # Choose half of the spectrum
-    
+
     # Set phases: zero for self-conjugate points, random for representatives
     phi[mask_representative & ~self_conj_mask] = np.random.rand(np.sum(mask_representative & ~self_conj_mask))
     phi[~mask_representative] = (-phi[I_conj[~mask_representative]]) % 1
-    
+
     # Fourier coefficients
     b_q = A * np.exp(2j * np.pi * phi)
-    
+
     # Inverse FFT to get the field
     q_ext = np.real(np.fft.ifft(b_q) * N_ext)
-    
+
     # Crop to original domain
     q = q_ext[:N]
-    
+
     # Normalize to ensure unit variance
     q = q / np.std(q) * 1.0
-    
+
     if verbose:
         print(f"[ICESEE] Field variance: {np.var(q)}")
         print(f"[ICESEE] Field mean: {np.mean(q)}")
-    
+
     return q
 
 
 # -----> debuging
-def generate_pseudo_random_field_1d(N=None, Lx=None, rh=None, grid_extension=2, verbose=False, **kwargs):
+def generate_pseudo_random_field_1d(N=None, Lx=None, rh=None, grid_extension=2, verbose=False, **icesee_kwargs):
     """
     Generate a 1D pseudo-random field with zero mean, unit variance, and specified covariance.
 
     Backward compatible:
       - If called with only the original arguments, behavior remains the same.
-      - Optional kwargs enable automatic handling for coords/connectivity/nonuniform grids.
+      - Optional icesee_kwargs enable automatic handling for coords/connectivity/nonuniform grids.
 
     Original parameters
     -------------------
@@ -209,7 +200,7 @@ def generate_pseudo_random_field_1d(N=None, Lx=None, rh=None, grid_extension=2, 
     verbose : bool
         Print diagnostics
 
-    New optional kwargs
+    New optional icesee_kwargs
     -------------------
     method : {"auto", "fft", "graph"}, default="auto"
     coords : array_like, optional
@@ -243,13 +234,23 @@ def generate_pseudo_random_field_1d(N=None, Lx=None, rh=None, grid_extension=2, 
     # ------------------------------------------------------------------
     # New optional controls. If none are provided, old behavior is used.
     # ------------------------------------------------------------------
-    method = kwargs.get("method", "auto")
-    coords = kwargs.get("coords", None)
-    connectivity = kwargs.get("connectivity", None)
-    seed = kwargs.get("seed", 42)
-    num_passes = kwargs.get("num_passes", "auto")
-    blend = kwargs.get("blend", 0.55)
-    k_neighbors = kwargs.get("k_neighbors", 6)
+    method = str(
+        icesee_kwargs.get(
+            "random_field_method",
+            icesee_kwargs.get("enkf_field_method", icesee_kwargs.get("method", "auto")),
+        )
+    ).strip().lower()
+    if method not in {"auto", "fft", "graph"}:
+        raise ValueError(
+            f"Unsupported random-field method {method!r}; "
+            "expected 'auto', 'fft', or 'graph'"
+        )
+    coords = icesee_kwargs.get("coords", None)
+    connectivity = icesee_kwargs.get("connectivity", None)
+    seed = icesee_kwargs.get("seed", 42)
+    num_passes = icesee_kwargs.get("num_passes", "auto")
+    blend = icesee_kwargs.get("blend", 0.55)
+    k_neighbors = icesee_kwargs.get("k_neighbors", 6)
 
 
     # if seed is not None:
@@ -368,13 +369,19 @@ def generate_pseudo_random_field_1d(N=None, Lx=None, rh=None, grid_extension=2, 
         if connectivity is not None:
             method = "graph"
         elif coords is not None:
-            coords_arr = np.asarray(coords).ravel()
-            if coords_arr.size != N:
-                raise ValueError(f"coords size {coords_arr.size} does not match N={N}")
-            if _is_uniform_1d_coords(coords_arr):
+            coords_arr = np.asarray(coords, dtype=float)
+            if coords_arr.ndim == 1:
+                coords_arr = coords_arr[:, None]
+            if coords_arr.ndim != 2 or coords_arr.shape[0] != N:
+                raise ValueError(
+                    f"coords shape {coords_arr.shape} does not have N={N} rows"
+                )
+            # A multi-dimensional coordinate array describes a physical mesh,
+            # not a scalar uniform line, and must use graph smoothing.
+            if coords_arr.shape[1] == 1 and _is_uniform_1d_coords(coords_arr[:, 0]):
                 method = "fft"
                 if Lx is None:
-                    Lx = float(coords_arr.max() - coords_arr.min()) if N > 1 else 1.0
+                    Lx = float(coords_arr[:, 0].max() - coords_arr[:, 0].min()) if N > 1 else 1.0
                 if rh is None:
                     rh = Lx / 10.0
             else:
@@ -405,72 +412,7 @@ def generate_pseudo_random_field_1d(N=None, Lx=None, rh=None, grid_extension=2, 
     N_ext = int(N * grid_extension)
 
     # Wave numbers
-    kx = np.fft.fftfreq(N_ext, d=dx) * 2 * np.pi
-
-    # Delta k for Fourier summation
-    dk = 2 * np.pi / (N_ext * dx)
-
-    # Compute sigma by solving the covariance equation
-    def covariance_eq(sigma):
-        k2 = kx**2
-        exp_term = np.exp(-2 * k2 / sigma**2)
-        numerator = np.sum(exp_term * np.cos(kx * rh))
-        denominator = np.sum(exp_term)
-        return numerator / denominator - np.exp(-1)
-
-    # Dynamically find a bracketing interval
-    a, b = 1e-6, 100
-    fa = covariance_eq(a)
-    fb = covariance_eq(b)
-
-    if verbose:
-        print(f"[ICESEE] covariance_eq at sigma={a}: {fa}")
-        print(f"[ICESEE] covariance_eq at sigma={b}: {fb}")
-
-    # Try expanding the interval if signs are the same
-    if fa * fb > 0:
-        warnings.warn("Initial interval [1e-6, 100] does not bracket a root. Trying to find a new interval.")
-        sigma_values = np.logspace(-6, 6, 25)
-        f_values = [covariance_eq(s) for s in sigma_values]
-
-        if verbose:
-            print("[ICESEE] Testing sigma values:")
-            for s, f in zip(sigma_values, f_values):
-                print(f"[ICESEE] sigma={s:.2e}, covariance_eq={f:.2e}")
-
-        # Find a sign change
-        for i in range(len(f_values) - 1):
-            if f_values[i] * f_values[i + 1] < 0:
-                a, b = sigma_values[i], sigma_values[i + 1]
-                fa, fb = f_values[i], f_values[i + 1]
-                break
-        else:
-            warnings.warn("Could not find a bracketing interval. Using heuristic sigma based on rh.")
-            sigma = 2 / rh
-            if verbose:
-                print(f"[ICESEE] Fallback sigma: {sigma}")
-    else:
-        try:
-            sigma = brentq(covariance_eq, a, b, rtol=1e-6)
-            if verbose:
-                print(f"[ICESEE] Solved sigma: {sigma}")
-        except ValueError as e:
-            warnings.warn(f"brentq failed: {str(e)}. Using heuristic sigma.")
-            sigma = 2 / rh
-            if verbose:
-                print(f"[ICESEE] Fallback sigma: {sigma}")
-
-    # Compute c from variance condition
-    k2 = kx**2
-    sum_exp = np.sum(np.exp(-2 * k2 / sigma**2))
-    c2 = 1 / (dk * sum_exp)
-    c = np.sqrt(c2)
-
-    if verbose:
-        print(f"[ICESEE] Computed c: {c}")
-
-    # Compute amplitude
-    A = c * np.sqrt(dk) * np.exp(-k2 / sigma**2)
+    kx, A = _cached_fft_calibration(N_ext, dx, rh)
 
     # Generate random phases with Hermitian symmetry
     phi = np.zeros(N_ext)
@@ -505,13 +447,13 @@ def generate_pseudo_random_field_1d(N=None, Lx=None, rh=None, grid_extension=2, 
 
 
 def generate_pseudo_random_field_2D(nx=None, ny=None, Lx=None, Ly=None, rh=None,
-                                    grid_extension=2, verbose=False, **kwargs):
+                                    grid_extension=2, verbose=False, **icesee_kwargs):
     """
     Generate a 2D pseudo-random field with zero mean, unit variance, and specified covariance.
 
     Backward compatible:
       - If called with only the original arguments, behavior remains FFT-based.
-      - Optional kwargs enable automatic handling for coords/connectivity/nonuniform grids.
+      - Optional icesee_kwargs enable automatic handling for coords/connectivity/nonuniform grids.
 
     Original parameters
     -------------------
@@ -526,7 +468,7 @@ def generate_pseudo_random_field_2D(nx=None, ny=None, Lx=None, Ly=None, rh=None,
     verbose : bool
         Print diagnostics.
 
-    New optional kwargs
+    New optional icesee_kwargs
     -------------------
     method : {"auto", "fft", "graph"}, default="auto"
     coords : array_like, optional
@@ -560,13 +502,23 @@ def generate_pseudo_random_field_2D(nx=None, ny=None, Lx=None, Ly=None, rh=None,
     # ------------------------------------------------------------------
     # New optional controls. If none are provided, old behavior is used.
     # ------------------------------------------------------------------
-    method = kwargs.get("method", "auto")
-    coords = kwargs.get("coords", None)
-    connectivity = kwargs.get("connectivity", None)
-    seed = kwargs.get("seed", None)
-    num_passes = kwargs.get("num_passes", "auto")
-    blend = kwargs.get("blend", 0.55)
-    k_neighbors = kwargs.get("k_neighbors", 6)
+    method = str(
+        icesee_kwargs.get(
+            "random_field_method",
+            icesee_kwargs.get("enkf_field_method", icesee_kwargs.get("method", "auto")),
+        )
+    ).strip().lower()
+    if method not in {"auto", "fft", "graph"}:
+        raise ValueError(
+            f"Unsupported random-field method {method!r}; "
+            "expected 'auto', 'fft', or 'graph'"
+        )
+    coords = icesee_kwargs.get("coords", None)
+    connectivity = icesee_kwargs.get("connectivity", None)
+    seed = icesee_kwargs.get("seed", None)
+    num_passes = icesee_kwargs.get("num_passes", "auto")
+    blend = icesee_kwargs.get("blend", 0.55)
+    k_neighbors = icesee_kwargs.get("k_neighbors", 6)
 
     if seed is not None:
         np.random.seed(seed)
@@ -882,7 +834,7 @@ def sample_periodic_exp_cov(hdim: int, sigma2: float, Lx: float, rng=None):
     n = int(hdim)
     if Lx is None:
         Lx = float(n)
-        
+
     if n <= 0:
         raise ValueError("hdim must be positive")
     if Lx <= 0:
@@ -932,11 +884,11 @@ def sample_periodic_exp_cov(hdim: int, sigma2: float, Lx: float, rng=None):
     return x.astype(np.float64, copy=False)
 
 # def generate_enkf_field(ii_sig, Lx, hdim, num_vars, rh=None, grid_extension=2, verbose=False, field_kwargs=None):
-def generate_enkf_field(**kwargs):
+def generate_enkf_field(**icesee_kwargs):
     """
     Generate a pseudo-random field for EnKF with specified DoF.
 
-    Parameters expected in kwargs
+    Parameters expected in icesee_kwargs
     -----------------------------
     ii_sig : int or None
         Variable index when generating one variable at a time.
@@ -947,13 +899,14 @@ def generate_enkf_field(**kwargs):
     num_vars : int
         Number of variables.
     rh : float, list, ndarray, or None
-        Decorrelation length(s).
+        FFT decorrelation length(s). The public YAML key ``length_scale`` is
+        accepted as an alias. Neither setting is used by graph mode.
     grid_extension : int, optional
         FFT grid extension factor.
     verbose : bool, optional
         Print diagnostics.
 
-    Additional kwargs are passed through to generate_pseudo_random_field_1d,
+    Additional runtime-context entries are passed to generate_pseudo_random_field_1d,
     e.g.:
         method, coords, connectivity, seed, coords_by_var,
         connectivity_by_var, num_passes, blend, k_neighbors, ...
@@ -966,16 +919,55 @@ def generate_enkf_field(**kwargs):
     import numpy as np
 
     # ------------------------------------------------------------
-    # unpack core kwargs with defaults
+    # unpack core icesee_kwargs with defaults
     # ------------------------------------------------------------
-    ii_sig = kwargs.get("ii_sig", None)
-    Lx = kwargs.get("Lx_dim", None)
-    hdim = kwargs.get("noise_dim", None)
-    num_vars = kwargs.get("num_vars", None)
-    rh = kwargs.get("rh", None)
-    grid_extension = kwargs.get("grid_extension", 2)
-    verbose = kwargs.get("verbose", False)
-    kwargs['method'] = kwargs.get("method", "fft")
+    ii_sig = icesee_kwargs.get("ii_sig", None)
+    Lx = icesee_kwargs.get("Lx_dim", None)
+    hdim = icesee_kwargs.get("noise_dim", None)
+    num_vars = icesee_kwargs.get("num_vars", None)
+    # ``length_scale`` is the public YAML spelling used by the application
+    # configurations. Keep ``rh`` as the low-level/API spelling, but make the
+    # two names genuine aliases so configured FFT scales reach the generator.
+    rh = icesee_kwargs.get("rh", None)
+    if rh is None:
+        configured_rh = icesee_kwargs.get("length_scale", icesee_kwargs.get("len_scale", None))
+        if configured_rh is not None and np.asarray(configured_rh).size:
+            rh = configured_rh
+    grid_extension = icesee_kwargs.get("grid_extension", 2)
+    verbose = icesee_kwargs.get("verbose", False)
+    method = str(
+        icesee_kwargs.get(
+            "random_field_method",
+            icesee_kwargs.get("enkf_field_method", icesee_kwargs.get("method", "fft")),
+        )
+    ).strip().lower()
+    if method not in {"fft", "graph"}:
+        raise ValueError(
+            f"Unsupported random-field method {method!r}; expected 'fft' or 'graph'"
+        )
+    icesee_kwargs["method"] = method
+
+    # The run drivers pack registered application coordinates once into
+    # icesee_kwargs immediately before ensemble initialization.  Retain a lazy
+    # lookup here as well for tests and other direct generator callers.
+    if icesee_kwargs.get("coords") is None and icesee_kwargs.get("mesh_coords") is not None:
+        icesee_kwargs["coords"] = icesee_kwargs["mesh_coords"]
+    if (
+        method == "graph"
+        and icesee_kwargs.get("coords") is None
+        and icesee_kwargs.get("connectivity") is None
+        and icesee_kwargs.get("coords_by_var") is None
+        and icesee_kwargs.get("connectivity_by_var") is None
+    ):
+        from ICESEE.src.utils.localization import get_mesh_coordinates
+
+        coords = get_mesh_coordinates(icesee_kwargs)
+        if coords is None:
+            raise ValueError(
+                "random_field_method='graph' requires registered mesh "
+                "coordinates, explicit coords, or explicit connectivity"
+            )
+        icesee_kwargs["coords"] = coords
 
     if Lx == 1:
         Lx = None
@@ -992,10 +984,10 @@ def generate_enkf_field(**kwargs):
             rh = max(float(hdim) / 10.0, 1.0)
 
     # ------------------------------------------------------------
-    # kwargs to pass down to generate_pseudo_random_field_1d
+    # icesee_kwargs to pass down to generate_pseudo_random_field_1d
     # remove keys already consumed here
     # ------------------------------------------------------------
-    passthrough_kwargs = dict(kwargs)
+    passthrough_kwargs = dict(icesee_kwargs)
     for key in ["ii_sig", "Lx", "hdim", "num_vars", "rh", "grid_extension", "verbose"]:
         passthrough_kwargs.pop(key, None)
 
@@ -1018,7 +1010,7 @@ def generate_enkf_field(**kwargs):
     # Handle trivial case: no spatial dimension
     # preserve existing behavior
     # ------------------------------------------------------------
-    if hdim < 1e2:
+    if hdim < 1e2 and method != "graph":
         if verbose:
             print(f"[ICESEE] hdim={hdim} small — using FFT exp-cov sampling (no dense cov).")
 
@@ -1074,14 +1066,31 @@ def generate_enkf_field(**kwargs):
 
     else:
         if ii_sig is None:
-            q0 = generate_pseudo_random_field_1d(
-                N=hdim * num_vars,
-                Lx=Lx,
-                rh=rh,
-                grid_extension=grid_extension,
-                verbose=verbose,
-                **_local_kwargs(var_index=None)
-            )
+            if method == "graph":
+                # Each variable is defined on the same physical mesh.  Do not
+                # concatenate variables first: that would incorrectly require
+                # num_vars*hdim distinct coordinates and create graph edges
+                # between unrelated state/parameter blocks.
+                q0 = np.concatenate([
+                    generate_pseudo_random_field_1d(
+                        N=hdim,
+                        Lx=Lx,
+                        rh=rh,
+                        grid_extension=grid_extension,
+                        verbose=verbose,
+                        **_local_kwargs(var_index=i)
+                    )
+                    for i in range(num_vars)
+                ])
+            else:
+                q0 = generate_pseudo_random_field_1d(
+                    N=hdim * num_vars,
+                    Lx=Lx,
+                    rh=rh,
+                    grid_extension=grid_extension,
+                    verbose=verbose,
+                    **_local_kwargs(var_index=None)
+                )
         else:
             q0 = generate_pseudo_random_field_1d(
                 N=hdim,

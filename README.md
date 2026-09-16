@@ -1,14 +1,8 @@
-# CryoStack
+# CryoLauncher
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-CryoStack is an open-source cyberinfrastructure stack for assembling
-reproducible cryosphere workflows from scientific applications, user
-workspaces, data catalogs, experiment records, and heterogeneous execution
-resources (local, institutional HPC, and cloud). It connects ice-sheet
-modeling, ensemble data assimilation, and the discovery and reuse of
-historical Antarctic radar observations behind one shared platform, rather
-than as separate tools with independent installation and execution paths.
+**CryoLauncher** is an interactive **Jupyter Book** environment that brings the ICESEE (Ice-sheet Coupled Ensemble Simulator and Estimator) framework to the cloud through CryoStack. This tool enables users to explore ensemble data assimilation workflows, run lightweight examples, and understand the ICESEE framework without requiring a full HPC setup.
 
 ## Applications
 
@@ -25,19 +19,21 @@ than as separate tools with independent installation and execution paths.
   working with historical Antarctic radar observations and derived
   products.
 
-Not every application uses every execution backend; see `paper/paper.md`
-and `icesee_jupyter_book/docs/` for the current scope of each.
+- **Modular structure** — Reuse the same DA logic across different models
+- **Model coupling** — Integrate external codes/workflows while keeping the assimilation engine consistent  
+- **Scalability** — Execute on HPC and cloud-style environments, including CryoStack
 
 ## Documentation
 
 Full documentation is built as a Jupyter Book from `icesee_jupyter_book/`
 and deployed at <https://cryostack.eas.gatech.edu/>. Start with:
 
-- `icesee_jupyter_book/docs/developer_guide.md` — architecture, build,
-  test, and extension workflow.
-- `icesee_jupyter_book/docs/hpc_cloud.md` — remote HPC and cloud execution.
-- `icesee_jupyter_book/applications/` — per-application user manuals and
-  getting-started guides.
+- **Interactive Jupyter Book** format with comprehensive documentation
+- **Runnable tutorials** including the Lorenz-96 data assimilation demo
+- **Cloud-ready deployment** through CryoStack infrastructure
+- **Ensemble data assimilation** workflows (EnKF-style methods)
+- **Modular design** for coupling with ice-sheet models (ISSM, Icepack, flowline solvers)
+- **No HPC required** for lightweight examples
 
 This README is intentionally short; it does not duplicate that
 documentation.
@@ -49,6 +45,29 @@ git clone https://github.com/ICESEE-project/CryoStack.git
 cd CryoStack
 conda env create -f tools/icesee1_environment.yml -n cryostack-dev
 conda activate cryostack-dev
+- For local development:
+  - Python 3.8+
+  - Anaconda or Miniconda
+  - Jupyter Book
+
+##  Quick Start
+
+### On CryoLauncher
+
+1. Navigate to the Run Center
+2. Launch the tool
+3. The Jupyter Book will open automatically
+4. Start with the **Lorenz-96 tutorial** for a complete end-to-end example
+
+### Local Installation
+
+```bash
+# Clone the repository
+git clone  https://github.com/ICESEE-project/CryoStack.git
+cd CryoStack
+
+# Get dependencies and the kernal installed and activated
+./tools/go.icesee1 && source ./tools/create_icesee1_environment_yml.sh
 ```
 
 `tools/icesee1_environment.yml` is the environment this repository's own
@@ -70,8 +89,79 @@ safety properties, capability-registry and result-contract consistency,
 cloud restrictions and absence of static credentials, per-user workspace
 isolation) without requiring HPC, cloud, or institutional credentials:
 
-```bash
-python -m cryostack_src.acceptance --offline
+- **[Quickstart Guide](icesee_jupyter_book/quickstart.md)** — Fastest way to get started
+- **[User Manual](icesee_jupyter_book/user_manual.md)** — Practical usage notes
+- **[ICESEE Workflow](icesee_jupyter_book/icesee_workflow.md)** — Conceptual overview of the DA cycle
+- **[Tutorial Notebooks](icesee_jupyter_book/icesee_jupyter_notebooks/)** — Interactive examples including:
+  - Lorenz-96 data assimilation demo (runnable in CryoStack)
+  - Flowline model coupling
+  - ISSM and Icepack integration examples
+- **[HPC Coupling Guide](icesee_jupyter_book/icesee_hpc_coupling.md)** — Advanced deployment patterns
+- **[Container Usage](icesee_jupyter_book/running_with_containers.md)** — Docker/Singularity workflows
+
+For upstream ICESEE documentation: [ICESEE Wiki](https://github.com/ICESEE-project/ICESEE/wiki)
+
+##  Project Structure
+
+```
+CryoLauncher/
+├── icesee_jupyter_book/     # Jupyter Book source files
+│   ├── icesee_jupyter_notebooks/  # Tutorial notebooks
+│   ├── _config.yml          # Book configuration
+│   ├── _toc.yml            # Table of contents
+│   └── *.md                # Documentation pages
+├── external/
+│   └── ICESEE/             # ICESEE core (git subtree)
+├── bin/                    # Scripts for launching the book
+├── middleware/             # CryoStack integration scripts
+├── src/                    # Build system
+│   ├── Makefile           # Build commands
+│   └── readme.txt         # Build instructions
+├── LICENSE                 # MIT License
+└── README.md              # This file
+```
+## Simplified architectural diagram
+```text
+                    ┌────────────────────────────┐
+                    │          Users             │
+                    │  Browser / Web Interface   │
+                    └─────────────┬──────────────┘
+                                  │ HTTPS
+                                  ▼
+        ┌────────────────────────────────────────────────┐
+        │        GT-hosted ICESEE Web Server             │
+        │                                                │
+        │  ┌──────────────────────────────────────────┐  │
+        │  │ Jupyter Book Frontend                    │  │
+        │  │ Documentation + workflow entry point     │  │
+        │  └──────────────────────────────────────────┘  │
+        │                                                │
+        │  ┌──────────────────────────────────────────┐  │
+        │  │ Voilà GUI Apps                           │  │
+        │  │ ICESEE DA GUI + Ice-sheet Modeling GUI   │  │
+        │  └──────────────────────────────────────────┘  │
+        │                                                │
+        │  ┌──────────────────────────────────────────┐  │
+        │  │ Backend Orchestration Layer              │  │
+        │  │ SSH, SLURM submission, monitoring, logs  │  │
+        │  └──────────────────────────────────────────┘  │
+        └─────────────┬──────────────────────┬───────────┘
+                      │                      │
+          SSH / SLURM │                      │ Cloud API / SSH
+                      ▼                      ▼
+        ┌──────────────────────┐      ┌──────────────────────┐
+        │   HPC Resources      │      │   Cloud Resources    │
+        │                      │      │                      │
+        │  PACE                │      │  AWS / other cloud   │
+        │  UBuffalo cluster    │      │  compute services    │
+        │  User-owned clusters │      │                      │
+        └──────────┬───────────┘      └──────────┬───────────┘
+                   │                             │
+                   ▼                             ▼
+        ┌────────────────────────────────────────────────┐
+        │              Simulation Outputs                │
+        │  Logs, plots, result files, lightweight views  │
+        └────────────────────────────────────────────────┘
 ```
 
 ## Running the test suite
@@ -98,18 +188,32 @@ repository URL and the commit/tag used.
 
 ## License
 
-CryoStack is distributed under the [MIT License](LICENSE). Some source
-files carry other license identifiers and integrated applications/submodules
-retain their own licenses; see `paper/paper.md` ("Software design") for the
-current, disclosed state of this inconsistency, which has not yet been
-resolved.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+**Copyright (c) 2026 ICESEE, Brian Kyanjo, Alexander Robel**
+
+##  Citation
+
+If you use ICESEE in your research, please cite:
+
+```bibtex
+@software{icesee2026,
+  author = {Kyanjo, Brian and Robel, Alexander},
+  title = {ICESEE: Ice-sheet Coupled Ensemble Simulator and Estimator},
+  year = {2026},
+  url = {https://github.com/ICESEE-project/ICESEE}
+}
+```
+
+##  Support
+
+- **Issues**: [GitHub Issues](https://github.com/ICESEE-project/CryoStack/issues)
+- **Documentation**: [ICESEE Wiki](https://github.com/ICESEE-project/ICESEE/wiki)
+- **CryoStack Support**: bkyanjo3@gatech.edu
 
 ## Contributing and support
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the development, testing, and
-documentation workflow, and the [issue templates](.github/ISSUE_TEMPLATE/)
-for filing bugs or requests. There is no separate support channel; use
-GitHub Issues.
+This work builds upon the ICESEE framework and leverages CryoStack infrastructure for cloud-based scientific computing.
 
 ## Acknowledgements
 
