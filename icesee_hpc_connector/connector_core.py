@@ -185,19 +185,22 @@ async def handle_command(command_type: str, payload: dict):
 #: (matlablic.ecs.gatech.edu, internally 10.138.23.10): the primary
 #: (lmgrd) port 1711 is confirmed reachable from the GT VM and from PACE.
 #: FlexLM/MLM licensing is two-hop: the primary port only tells the client
-#: which port the VENDOR daemon (MLM) is listening on for the actual
-#: checkout, and that second port floats (is assigned at daemon start)
-#: unless a site administrator has pinned it with a ``VENDOR MLM
-#: port=<fixed>`` line in the license file. That has NOT been confirmed for
-#: this deployment (no live network access to test it, and nothing in the
-#: existing site configuration pins it) -- ask Georgia Tech OIT / the
-#: license administrator to confirm or pin it, then fill in the "vendor"
-#: entry below. Until then a run that needs the vendor port fails closed
-#: (see ``resolve_tunnel_target``) rather than silently only forwarding the
-#: primary port and letting MATLAB fail later with a confusing error.
+#: which port the VENDOR daemon is listening on for the actual checkout --
+#: on the SAME host the client already connected to (FlexLM's handoff
+#: conveys a port, not a new hostname), which is exactly why a second,
+#: independent local listener bound to that same vendor port number is
+#: sufficient here, with no protocol rewriting needed. For Georgia Tech
+#: that vendor port has been directly observed/confirmed: MATLAB connects
+#: to matlablic.ecs.gatech.edu:17110 for the actual checkout. This is an
+#: INSTITUTIONAL fact about Georgia Tech's license-file configuration
+#: (whoever administers that FlexNet install pinned the vendor daemon to
+#: 17110) -- never a universal MATLAB/FlexNet constant. A different
+#: institution's Connector build would need its own confirmed vendor
+#: port here (or ``None`` -- "known to exist, not yet confirmed" -- rather
+#: than a guess) via its own site-supplied allow-list.
 SITE_TUNNEL_TARGETS: dict[tuple[str, str], tuple[str, int] | None] = {
     ("matlab-license", "primary"): ("matlablic.ecs.gatech.edu", 1711),
-    ("matlab-license", "vendor"): None,
+    ("matlab-license", "vendor"): ("matlablic.ecs.gatech.edu", 17110),
 }
 
 #: bounded so a stalled/unreachable private service cannot hang the

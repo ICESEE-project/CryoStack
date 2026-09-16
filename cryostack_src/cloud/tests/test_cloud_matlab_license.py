@@ -247,6 +247,26 @@ def test_site_cloud_license_port_parses_the_pace_site_value():
     assert site_cloud_license_port() == 1711
 
 
+# ── FlexNet vendor-daemon hop: institutional, never a universal default ──
+def test_site_cloud_license_vendor_port_reflects_the_confirmed_gt_port():
+    from cryostack_src.cloud.matlab_license import site_cloud_license_vendor_port
+
+    assert site_cloud_license_vendor_port() == 17110
+
+
+def test_site_cloud_license_vendor_port_is_none_when_the_site_has_no_confirmed_one(monkeypatch):
+    from cryostack_src.cloud.matlab_license import site_cloud_license_vendor_port
+    from cryostack_src.resources import profiles as resources_profiles
+
+    monkeypatch.setitem(
+        resources_profiles.COMPUTE_PROFILES, "pace",
+        resources_profiles.ComputeProfile(
+            name="pace", matlab_license_value="1711@public-license.example.edu",
+        ),
+    )
+    assert site_cloud_license_vendor_port() is None
+
+
 # ── plan_license_tunnel: the one decision point joining Cloud + Connector ──
 def test_plan_returns_none_when_no_tunnel_is_required():
     from cryostack_src.cloud.matlab_license import plan_license_tunnel
@@ -304,9 +324,32 @@ def test_plan_mints_a_grant_and_returns_the_expected_env_vars():
         "CRYOSTACK_LT_PURPOSE": "matlab-license",
         "CRYOSTACK_LT_ENDPOINT": "primary",
         "CRYOSTACK_LT_PORT": "1711",
+        # PACE's confirmed FlexNet vendor-daemon port -- see
+        # site_cloud_license_vendor_port(); reuses this SAME grant/token
+        # (purpose-scoped, not (purpose, endpoint)-scoped), never a second
+        # mint call.
+        "CRYOSTACK_LT_VENDOR_PORT": "17110",
         "_grant_id": "g-1",
     }
     assert seen == {"session_id": "sid-1", "purpose": "matlab-license", "ttl_seconds": 3600}
+
+
+def test_plan_omits_vendor_port_when_the_site_profile_has_no_confirmed_one(monkeypatch):
+    from cryostack_src.cloud.matlab_license import plan_license_tunnel
+    from cryostack_src.resources import profiles as resources_profiles
+
+    monkeypatch.setitem(
+        resources_profiles.COMPUTE_PROFILES, "pace",
+        resources_profiles.ComputeProfile(
+            name="pace", matlab_license_value="27000@license.example.edu",
+            matlab_license_cloud_requires_tunnel=True,
+        ),
+    )
+    plan = plan_license_tunnel(
+        requires_tunnel=True, session_id="sid-1", relay_url="https://relay.example",
+        mint_grant=lambda *a, **k: {"grant_id": "g-1", "token": "tok-1", "purpose": "matlab-license"},
+    )
+    assert "CRYOSTACK_LT_VENDOR_PORT" not in plan
 
 
 def test_plan_never_receives_or_leaks_the_raw_license_value():

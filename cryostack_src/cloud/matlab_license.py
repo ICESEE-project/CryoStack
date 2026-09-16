@@ -60,6 +60,12 @@ MATLAB_LICENSE_ENV = "MLM_LICENSE_FILE"
 #: host/port; the paired Connector's own site allow-list resolves them.
 TUNNEL_PURPOSE_MATLAB_LICENSE = "matlab-license"
 TUNNEL_ENDPOINT_PRIMARY = "primary"
+#: the FlexNet vendor-daemon hop, when the site profile confirms one (see
+#: ComputeProfile.matlab_license_vendor_port) -- a SECOND, independent
+#: local listener/tunnel under the SAME purpose and the SAME grant (grants
+#: are purpose-scoped, not (purpose, endpoint)-scoped -- see
+#: connector_relay_server.TunnelGrant), never a separate credential.
+TUNNEL_ENDPOINT_VENDOR = "vendor"
 
 #: Advanced-diagnostics-only labels for how the license was reached --
 #: never shown in Basic mode.
@@ -177,6 +183,21 @@ def site_cloud_license_port() -> int:
     return int(match.group(1)) if match else 1711
 
 
+def site_cloud_license_vendor_port() -> int | None:
+    """This deployment's institution-specific FlexNet VENDOR-daemon port,
+    if the site profile confirms one (``ComputeProfile.
+    matlab_license_vendor_port`` -- e.g. Georgia Tech PACE: 17110).
+    ``None`` when the site has no confirmed vendor daemon (a plain
+    single-port license service, or simply not yet confirmed) -- see
+    :func:`plan_license_tunnel`, which adds the vendor listener's env only
+    when this returns a value. Never a universal MATLAB/FlexNet constant.
+    """
+    from cryostack_src.resources.profiles import get_compute_profile
+
+    port = get_compute_profile("pace").matlab_license_vendor_port
+    return int(port) if port else None
+
+
 class LicenseTunnelUnavailable(RuntimeError):
     """The institutional MATLAB license needs the private-service tunnel,
     but no Connector session is available for this user right now. Callers
@@ -232,7 +253,7 @@ def plan_license_tunnel(
 
     grant = mint_grant(session_id, TUNNEL_PURPOSE_MATLAB_LICENSE, ttl_seconds=ttl_seconds)
     port = site_cloud_license_port()
-    return {
+    plan = {
         "CRYOSTACK_LICENSE_TUNNEL_REQUIRED": "1",
         "CRYOSTACK_LT_RELAY": relay_url,
         "CRYOSTACK_LT_SESSION": session_id,
@@ -244,6 +265,18 @@ def plan_license_tunnel(
         # (connector_relay_client.revoke_tunnel_grant) -- never persisted.
         "_grant_id": grant["grant_id"],
     }
+
+    vendor_port = site_cloud_license_vendor_port()
+    if vendor_port is not None:
+        # A second, independent local listener for the FlexNet vendor-
+        # daemon hop -- reuses the SAME grant/token as the primary tunnel
+        # (grants are purpose-scoped, not (purpose, endpoint)-scoped; see
+        # connector_relay_server.TunnelGrant), so no second mint call is
+        # needed. Only present when the site profile confirms a vendor
+        # port -- absent (never a guessed/default port) for a site that
+        # does not.
+        plan["CRYOSTACK_LT_VENDOR_PORT"] = str(vendor_port)
+    return plan
 
 
 def resolve_cloud_matlab_license(connection) -> CloudMatlabLicense:

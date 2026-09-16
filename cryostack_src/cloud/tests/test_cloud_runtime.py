@@ -172,9 +172,13 @@ def test_runner_and_job_command_stay_safely_below_the_batch_override_limit():
     # tunnel client is now invoked by its staged FILE PATH -- see
     # LICENSE_TUNNEL_CLIENT_FILENAME -- never `python3 -m cryostack_src...`,
     # which cannot work inside the scientific Batch container) cost a
-    # little of that back; ~1600 chars of real headroom remain under the
+    # little of that back, to ~1600. Adding the optional second (FlexNet
+    # vendor-daemon) tunnel invocation -- conditional on
+    # CRYOSTACK_LT_VENDOR_PORT, only ~200 chars since it reuses the same
+    # relay/session/token/purpose already in the process environment --
+    # narrowed this further; ~900 chars of real headroom remain under the
     # hard 8192 cap checked just above.
-    assert len(serialized) < BATCH_CONTAINER_OVERRIDE_LIMIT - 1600
+    assert len(serialized) < BATCH_CONTAINER_OVERRIDE_LIMIT - 900
     # the runner still carries everything a run needs to be located/run
     for required in ("CRYOSTACK_S3_RUN", "CRYOSTACK_MODEL", "CRYOSTACK_RUN_TARGET"):
         assert required in r

@@ -123,13 +123,26 @@ def test_resolve_tunnel_target_unknown_purpose_or_endpoint_is_none():
     assert cc.resolve_tunnel_target("", "") is None
 
 
-def test_vendor_port_is_not_yet_confirmed_and_fails_closed():
-    """The FlexNet vendor-daemon port has not been confirmed for this site
-    (no live network access, nothing in existing site config pins it) --
-    the table must say so explicitly (None), not guess a port."""
-    assert ("matlab-license", "vendor") in cc.SITE_TUNNEL_TARGETS
-    assert cc.SITE_TUNNEL_TARGETS[("matlab-license", "vendor")] is None
-    assert cc.resolve_tunnel_target("matlab-license", "vendor") is None
+def test_vendor_endpoint_resolves_to_the_confirmed_gt_vendor_daemon():
+    """Georgia Tech's FlexNet vendor-daemon port is a confirmed,
+    institution-specific fact (MATLAB observed connecting to
+    matlablic.ecs.gatech.edu:17110 for the actual license checkout after
+    the primary lmgrd handshake on 1711) -- pinned here, never guessed and
+    never treated as a universal MATLAB/FlexNet port."""
+    assert cc.resolve_tunnel_target("matlab-license", "vendor") == (
+        "matlablic.ecs.gatech.edu", 17110,
+    )
+
+
+def test_primary_and_vendor_share_the_host_but_not_the_port():
+    """FlexNet's handoff conveys a port, not a new hostname -- the vendor
+    daemon lives on the SAME host as the primary (lmgrd) port, confirming
+    a second same-host local listener is the right shape for this hop."""
+    primary = cc.resolve_tunnel_target("matlab-license", "primary")
+    vendor = cc.resolve_tunnel_target("matlab-license", "vendor")
+    assert primary is not None and vendor is not None
+    assert primary[0] == vendor[0]
+    assert primary[1] != vendor[1]
 
 
 def test_a_message_supplied_host_or_port_is_never_consulted(monkeypatch):
@@ -254,6 +267,55 @@ def test_two_tunnels_use_independent_data_sockets_no_cross_talk(monkeypatch):
 
             assert fake_1.sent == [b"AAA"]
             assert fake_2.sent == [b"BBB"]
+        finally:
+            await cc._close_tunnel(tunnels, 1)
+            await cc._close_tunnel(tunnels, 2)
+            server.close()
+            await server.wait_closed()
+
+    asyncio.run(run())
+
+
+def test_primary_and_vendor_matlab_license_tunnels_run_concurrently_without_cross_talk(monkeypatch):
+    """The real ``("matlab-license", "primary")`` / ``("matlab-license",
+    "vendor")`` pair, each with its OWN dedicated data socket and TCP
+    connection -- exactly the shape a real run needs (a local listener per
+    endpoint, both live at once) -- never crossing bytes between the two."""
+    async def run():
+        server, host, port = await _start_echo_server()
+        monkeypatch.setitem(cc.SITE_TUNNEL_TARGETS, ("matlab-license", "primary"), (host, port))
+        monkeypatch.setitem(cc.SITE_TUNNEL_TARGETS, ("matlab-license", "vendor"), (host, port))
+
+        fake_primary, fake_vendor = FakeDataWS(), FakeDataWS()
+        fakes = {1: fake_primary, 2: fake_vendor}
+
+        async def fake_open_data_socket(relay, session_id, session_secret, tunnel_id, **kw):
+            return fakes[tunnel_id]
+
+        monkeypatch.setattr(cc, "_open_tunnel_data_socket", fake_open_data_socket)
+
+        try:
+            control_ws = FakeControlWS()
+            tunnels: dict = {}
+            await cc._handle_tunnel_open("http://relay.invalid", "sid", "sec", tunnels,
+                                          {"tunnel_id": 1, "purpose": "matlab-license", "endpoint": "primary"},
+                                          control_ws=control_ws)
+            await cc._handle_tunnel_open("http://relay.invalid", "sid", "sec", tunnels,
+                                          {"tunnel_id": 2, "purpose": "matlab-license", "endpoint": "vendor"},
+                                          control_ws=control_ws)
+            assert set(tunnels) == {1, 2}
+            assert control_ws.json_messages() == []
+
+            await fake_primary.push(b"lmgrd-hello")
+            await fake_vendor.push(b"vendor-checkout")
+
+            for _ in range(50):
+                if fake_primary.sent and fake_vendor.sent:
+                    break
+                await asyncio.sleep(0.02)
+
+            assert fake_primary.sent == [b"lmgrd-hello"]
+            assert fake_vendor.sent == [b"vendor-checkout"]
         finally:
             await cc._close_tunnel(tunnels, 1)
             await cc._close_tunnel(tunnels, 2)

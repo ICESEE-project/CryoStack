@@ -88,6 +88,45 @@ def test_tunnel_block_is_only_in_the_issm_branch_not_icepack_or_smoke():
     assert issm_start < tunnel_idx < icepack_start
 
 
+# ── optional second hop: the FlexNet vendor daemon ───────────────────────
+def test_vendor_tunnel_is_conditional_on_its_own_port_env_var():
+    script = build_cloud_runner()
+    assert 'if [ -n "${CRYOSTACK_LT_VENDOR_PORT:-}" ]; then' in script
+
+
+def test_vendor_tunnel_reuses_the_listen_client_with_explicit_endpoint_and_port():
+    script = build_cloud_runner()
+    assert (
+        f'"${{WORKDIR}}/{LICENSE_TUNNEL_CLIENT_FILENAME}" listen \\\n'
+        '          --endpoint vendor --port "${CRYOSTACK_LT_VENDOR_PORT}"'
+    ) in script
+
+
+def test_vendor_tunnel_runs_after_primary_and_before_matlab():
+    script = build_cloud_runner()
+    primary_idx = script.index(_LISTEN_INVOCATION)
+    vendor_idx = script.index("--endpoint vendor")
+    matlab_idx = script.index("with-issm matlab")
+    assert primary_idx < vendor_idx < matlab_idx
+
+
+def test_vendor_tunnel_failure_aborts_before_matlab_starts():
+    script = build_cloud_runner()
+    vendor_idx = script.index("--endpoint vendor")
+    fail_idx = script.index('|| fail 65 "${_lt_msg2}"')
+    matlab_idx = script.index("with-issm matlab")
+    assert vendor_idx < fail_idx < matlab_idx
+
+
+def test_vendor_tunnel_never_repeats_relay_session_or_token_flags():
+    """Relay/session/token/purpose stay implicit (this process's own
+    environment, unchanged from the primary tunnel) -- only the endpoint
+    and port differ for the vendor hop, so only those are given as flags."""
+    script = build_cloud_runner()
+    for placeholder in ("--relay", "--session", "--token", "--purpose"):
+        assert placeholder not in script
+
+
 def test_script_stays_within_the_container_override_command_cap():
     # Batch's hard cap on containerOverrides.command is 8192 characters --
     # this whole script becomes exactly that on every launch (see the
