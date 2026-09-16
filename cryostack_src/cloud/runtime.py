@@ -339,6 +339,24 @@ set -uo pipefail
 log()  { printf '[cryostack-cloud] %s\n' "$*" >&2; }
 fail() { log "ERROR ($1): $2"; exit "$1"; }
 
+# The Fargate/EC2 task runs this container as whatever user the image
+# defaults to -- bkyanjo/icesee-combined sets no USER (tools/cloud/
+# Dockerfile), so that is root. ISSM's ``generic`` MPI cluster launches
+# its solver via Spack OpenMPI 5 / PRRTE's own ``mpiexec``/``prterun``,
+# which refuses outright to run as root ("prterun has detected an
+# attempt to run as root") -- this is PRRTE's own built-in safety check,
+# not a launch-agent/allocation problem. These are PRRTE/Open MPI's own
+# advertised override variables for a deliberately root-only container
+# (its own failure message names exactly these two) -- never a CLI flag,
+# since ISSM (not CryoStack) constructs the actual mpiexec/prterun
+# command line. Unrelated to, and never applied on, the Slurm/Remote
+# path's own PRTE_MCA_* fix in cryostack_src.models.submission
+# (_issm_container_mpi_env) -- that fixes a different PRRTE failure mode
+# (multi-node Slurm allocation confusing the launch agent), and apptainer
+# there already runs as the submitting HPC user, never root.
+export OMPI_ALLOW_RUN_AS_ROOT=1
+export OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1
+
 # optional private-service license tunnel (values read from env by
 # license_tunnel_client.py itself); aborts before matlab on failure.
 # Staged as an ACTUAL FILE (phase 1 already synced it into WORKDIR) --
