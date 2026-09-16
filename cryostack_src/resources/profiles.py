@@ -102,6 +102,18 @@ class ComputeProfile:
     #: decision (cryostack_src.cloud.matlab_license.
     #: site_requires_cloud_license_tunnel). Never user-configurable.
     matlab_license_cloud_requires_tunnel: bool = False
+    #: SITE fact: this institution's FlexNet VENDOR-daemon port, if known.
+    #: FlexNet/MLM licensing is two-hop -- the primary (lmgrd) port named by
+    #: ``matlab_license_value`` only tells the client which port the vendor
+    #: daemon listens on for the actual checkout, on the SAME host. That
+    #: port is an institutional fact (pinned by whoever administers the
+    #: license server), never a universal MATLAB/FlexNet constant -- ``None``
+    #: means this resource has no confirmed vendor daemon (or the tunnel
+    #: never needs one), not "use a default". Consumed only by
+    #: cryostack_src.cloud.matlab_license.site_cloud_license_vendor_port()
+    #: for the private-service tunnel; Local/Remote execution never needs
+    #: it (it reaches the license service directly).
+    matlab_license_vendor_port: int | None = None
 
     def __post_init__(self) -> None:
         if not _ENV_NAME_RE.match(self.matlab_license_env):
@@ -116,6 +128,11 @@ class ComputeProfile:
             raise ValueError("direct_ssh_trust must be 'shared' or 'single_tenant'")
         if int(self.ssh_port) <= 0:
             raise ValueError(f"ssh_port must be positive: {self.ssh_port!r}")
+        if self.matlab_license_vendor_port is not None and int(self.matlab_license_vendor_port) <= 0:
+            raise ValueError(
+                f"matlab_license_vendor_port must be positive: "
+                f"{self.matlab_license_vendor_port!r}"
+            )
 
     # ---- MATLAB helpers (unchanged) -------------------------------------
     @property
@@ -156,6 +173,12 @@ _PACE = ComputeProfile(
     # internally to 10.138.23.10); a cloud run needs the private-service
     # tunnel through the user's paired Connector.
     matlab_license_cloud_requires_tunnel=True,
+    # Georgia Tech's FlexNet vendor daemon: MATLAB has been observed
+    # connecting to matlablic.ecs.gatech.edu:17110 (same host as the
+    # primary port above) for the actual license checkout, after the
+    # primary (lmgrd) handshake on 1711. Confirmed for this institution's
+    # license-file configuration -- not a universal MATLAB/FlexNet port.
+    matlab_license_vendor_port=17110,
 )
 
 COMPUTE_PROFILES: dict[str, ComputeProfile] = {

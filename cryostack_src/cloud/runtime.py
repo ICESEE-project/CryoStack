@@ -214,6 +214,17 @@ case "${CRYOSTACK_MODEL}" in
         || fail 65 "${_lt_msg}"
       _mlm="MLM_LICENSE_FILE"
       export "${_mlm}=${CRYOSTACK_LT_PORT}@127.0.0.1"
+      # optional second hop: this site's FlexNet vendor daemon (only set
+      # when the site profile confirms one -- see matlab_license.
+      # site_cloud_license_vendor_port). Reuses the same relay/session/
+      # token/purpose (already in this process's own environment) --
+      # only the endpoint and local port differ, so both are given
+      # explicitly rather than repeating the whole flag set.
+      if [ -n "${CRYOSTACK_LT_VENDOR_PORT:-}" ]; then
+        _lt_msg2="$(python3 "${WORKDIR}/__CRYOSTACK_LICENSE_TUNNEL_CLIENT_FILENAME__" listen \
+          --endpoint vendor --port "${CRYOSTACK_LT_VENDOR_PORT}")" \
+          || fail 65 "${_lt_msg2}"
+      fi
     fi
     with-issm matlab -nodesktop -nosplash -batch \
       "ICESEE_RUN_DIR='${WORKDIR}'; setenv('ICESEE_RUN_DIR','${WORKDIR}'); run('${RUN_TARGET}'); run('${WORKDIR}/postprocess_icesee.m');"
