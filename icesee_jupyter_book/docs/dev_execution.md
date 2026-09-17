@@ -31,55 +31,72 @@
 
 ## Execution architecture
 
-Every application funnels a run through the same shape, regardless of which
-execution path it ends on. **Local execution exists only where an
-application/workflow actually supports it** (e.g. ICESEE's Local mode) — it
-is never assumed for CryoLauncher, which offers Remote and Cloud only.
-Remote and Cloud are always available, on the two access mechanisms and one
-cloud provider described below.
+**CryoLauncher and ICESEE do not share one execution adapter.** Each
+application has its own submission code, its own Cloud runner, and its own
+result-presentation path — verified against the actual gateways, not
+assumed from the shared Local/Remote/Cloud vocabulary both happen to use.
+`icesee_gateway.py` never imports `WorkspaceManager`, `discover_results`, or
+any `cryostack_src.models.submission`/`cryostack_src.cloud.runtime` symbol.
+What genuinely is shared across both applications is narrower: the
+Remote direct-SSH-vs-Connector decision (`RemoteBridge`, both apps), the
+Connector/Relay protocol itself, and (within CryoLauncher only, across its
+own models) the Cloud account-connection/onboarding architecture
+(`AWSDriver`/CloudFormation) and `WorkspaceManager`'s Cloud result sync.
 
 ```text
-Application/UI
+CryoStack execution
      |
-     v
-shared configuration/workspace   (WorkspaceManager: per-user, containment-
-     |                            enforced, canonical material read-only)
-     v
-execution adapter                (cryostack_src/models/submission.py,
-     |                            cryostack_src/cloud/runtime.py)
+     +-- CryoLauncher
+     |     +-- Remote
+     |     |     +-- direct SSH
+     |     |     +-- Connector -> Relay -> institutional resource
+     |     |     (cryostack_src/models/submission.py)
+     |     |
+     |     +-- Cloud
+     |     |     +-- AWS Batch
+     |     |           +-- Fargate (default)
+     |     |           +-- EC2 (Advanced: On-Demand/Spot, GPU, multi-node)
+     |     |     (cryostack_src/cloud/runtime.py, cryostack_src/cloud/bridge.py)
+     |     |
+     |     +-- structured result package (outputs/{metadata.json, mesh,
+     |           fields, model, figures} -> discover_results() ->
+     |           cryostack_src/visualization/) -- shared ACROSS
+     |           CryoLauncher's own Remote and Cloud backends, and across
+     |           its models (ISSM/Icepack); not shared with ICESEE.
      |
-     +-- Local            (where the application/workflow supports it --
-     |                      e.g. ICESEE; never assumed for CryoLauncher)
-     |
-     +-- Remote
-     |     +-- direct SSH
-     |     +-- Connector -> Relay -> institutional resource
-     |
-     +-- Cloud
-           +-- AWS Batch
-                 +-- Fargate (default)
-                 +-- EC2 (Advanced: On-Demand/Spot, GPU, multi-node)
-                       |
-                       v
-                 scientific runtime      (ISSM mpiexec/prterun,
-                       |                   Icepack/Firedrake)
-                       v
-                 shared result package   (outputs/{metadata.json, mesh,
-                       |                   fields, model, figures})
-                       v
-                 retrieval/visualization (discover_results(),
-                                           cryostack_src/visualization/)
+     +-- ICESEE
+           +-- Local     (icesee_jupyter_book/core/local_runner.py --
+           |               run_local_example(); in-kernel, no scheduler)
+           |
+           +-- Remote    (icesee_jupyter_book/core/remote_runner.py --
+           |               submit_remote_example[_container][_via_connector]();
+           |               its own ensemble/DA parameters, e.g. ens_size,
+           |               cluster_mpi_np)
+           |
+           +-- Cloud     (icesee_jupyter_book/core/cloud_runner.py +
+           |               icesee_jupyter_book/core/cloud_bridge_adapter.py's
+           |               IceseeCloudBridgeConfig; its own AWSBatchConfig
+           |               and ICESEE_*-prefixed env-var contract, not
+           |               CRYOSTACK_*)
+           |
+           +-- ExperimentBridge (icesee_jupyter_book/ui/experiment_bridge.py)
+                 -- its own run-record type, not WorkspaceManager/RunInfo;
+                 results are a raw file-tree listing + inline image display,
+                 not a discover_results()/ResultPackage read.
 ```
 
-The result package and its reader/visualizer (`discover_results()`,
-`render_field`/`render_timeseries`) are backend-neutral by construction —
-Remote's SSH/rsync/connector-archive fetch and Cloud's `aws s3 sync` both
-land a run's `outputs/` tree into the same shape under the Workspace's local
-run cache (`cache/outputs` for Remote, `cache/cloud_outputs` for Cloud;
-`WorkspaceManager.result_package_for_run` checks both), so nothing
-downstream of that boundary needs to know which backend produced a run. See
+CryoLauncher's own result package and its reader/visualizer
+(`discover_results()`, `render_field`/`render_timeseries`) are backend-
+neutral **within CryoLauncher**: Remote's SSH/rsync/connector-archive fetch
+and Cloud's `aws s3 sync` both land a run's `outputs/` tree into the same
+shape under the Workspace's local run cache (`cache/outputs` for Remote,
+`cache/cloud_outputs` for Cloud; `WorkspaceManager.result_package_for_run`
+checks both), so nothing downstream of that boundary needs to know which
+*CryoLauncher backend* produced a run, or which of CryoLauncher's models
+(ISSM/Icepack) did. This does not extend to ICESEE, whose own Local/Remote/
+Cloud paths above never construct a `ResultPackage` at all. See
 [Models, Examples & Results](dev_models_results.md)
-for the reader/visualizer contract itself.
+for the reader/visualizer contract itself, and its own scope note.
 
 **Connector/Relay as shared infrastructure, not a Cloud-only or
 CryoLauncher-only component.** One Connector pairing/session serves two
@@ -122,6 +139,14 @@ build, and publishing workflow.
 
 ## Remote execution backends
 
+This section documents **CryoLauncher's** own Remote submission
+(`cryostack_src/models/submission.py`) for its ISSM/Icepack models. Despite
+the names below, "ICESEE-Spack"/"ICESEE-Container" are environment-strategy
+labels inherited from the wider ICESEE research project, not the ICESEE
+*application*'s own Remote implementation — see the diagram above for
+ICESEE's actual, separate Remote code
+(`icesee_jupyter_book/core/remote_runner.py`).
+
 A model runs on one of two remote backends, selected in the gateway:
 
 - **ICESEE-Spack** — a source build activated on the allocation. MATLAB (for
@@ -144,6 +169,15 @@ A model runs on one of two remote backends, selected in the gateway:
   reintroduce the removed `srun` shim (`cryostack_src/models/submission.py`).
 
 ## Cloud execution (AWS Batch)
+
+This section documents **CryoLauncher's** Cloud implementation
+(`cryostack_src/cloud/*`, `cryostack_src/frontend/cryolauncher/*`). ICESEE's
+Cloud path is its own separate code
+(`icesee_jupyter_book/core/cloud_runner.py` +
+`icesee_jupyter_book/core/cloud_bridge_adapter.py`) with its own env-var
+contract and its own AWS Batch job definition; it shares the account-
+connection/onboarding layer described below (`AWSDriver`/CloudFormation)
+but not the submission, staging, or result-sync code that follows.
 
 - *Auth model — two modes.* **Developer / operator mode** uses ambient AWS CLI
   credentials + an optional named profile (`aws configure`); it is the local

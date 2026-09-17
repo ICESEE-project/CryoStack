@@ -68,7 +68,9 @@ and <a href="../applications/frozen_legacies/user_manual.html">User Manual</a>.
 LIVIST explores Antarctic englacial-temperature products inferred from
 radar and constrained by boreholes, through its own frontend served under
 the CryoStack deployment registry. It does not use CryoLauncher/ICESEE
-execution-mode concepts.
+execution-mode concepts — see
+<a href="/livist/">Open LIVIST</a> and its own
+<a href="/livist/docs/livist_user_manual/">User Manual</a>.
 
 ## Control Center — administrative infrastructure
 

@@ -73,8 +73,9 @@
       <div class="cryostack-docs-summary-card">
         <div class="cryostack-docs-summary-icon">RV</div>
         <h3><a href="user_results.html">Results &amp; Visualization</a></h3>
-        <p>The shared result lifecycle: retrieval, the neutral result
-           package, plotting, and downloads.</p>
+        <p>Retrieval, inspection, and visualization for each application —
+           CryoLauncher's structured result package and ICESEE's own
+           results workflow.</p>
       </div>
 
       <div class="cryostack-docs-summary-card">
@@ -91,22 +92,29 @@
     <div class="cryostack-section-label">The normal workflow</div>
     <h2>Configure, execute, monitor, visualize.</h2>
     <p class="cryostack-section-intro">
-      Every CryoStack application follows the same shape, even though the
-      controls differ per application:
+      This configure/execute/monitor/visualize shape describes CryoStack's
+      two workflow-execution applications — <strong>CryoLauncher</strong>
+      and <strong>ICESEE</strong> — which run scientific models on a
+      chosen execution environment:
     </p>
     <ol>
       <li>Choose an application and a workflow/example.</li>
       <li>Configure it (Basic/Advanced/Auto-config for CryoLauncher; the
-          equivalent controls for other applications).</li>
+          equivalent controls for ICESEE).</li>
       <li>Choose an available execution environment for that workflow —
           Local where supported, Remote, or Cloud.</li>
       <li>Submit and monitor status, logs, and progress.</li>
       <li>Retrieve, visualize, and download results.</li>
     </ol>
     <p>
-      Not every step applies to every application — see
+      <strong>Frozen Legacies</strong> (a historical-radar catalog and
+      interpretation tool) and <strong>LIVIST</strong> (an
+      englacial-temperature exploration application) are equally
+      first-class CryoStack applications, but neither is organized around
+      this execute/monitor cycle — they have their own interaction models,
+      not a missing or incomplete version of this one. See
       <a href="user_apps.html">Applications &amp; Workflows</a> for what is
-      actually available where.
+      actually available in each application.
     </p>
   </section>
 

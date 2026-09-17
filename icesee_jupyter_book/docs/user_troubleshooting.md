@@ -32,11 +32,11 @@
 ## Connectivity (Remote)
 
 - SSH key, password bootstrap, and manual/web-portal registration issues —
-  see <a href="../applications/icesheets/user_manual.html#473-ssh-keys">SSH keys</a>.
+  see <a href="../applications/icesheets/user_manual.html#ssh-keys">SSH keys</a>.
 - VPN/MFA/campus-network reachability — see
-  <a href="../applications/icesheets/user_manual.html#541-vpn-mfa-campus-network">VPN, MFA, campus network</a>.
+  <a href="../applications/icesheets/user_manual.html#vpn-mfa-campus-network">VPN, MFA, campus network</a>.
 - Verifying a connection before submitting a run — see
-  <a href="../applications/icesheets/user_manual.html#597-check-ssh-access">Check SSH Access</a>.
+  <a href="../applications/icesheets/user_manual.html#check-ssh-access">Check SSH Access</a>.
 
 ## Cloud
 
@@ -47,9 +47,9 @@ consolidated in
 ## Runs and results
 
 - A run that never appears to start, or a state that looks stuck — see
-  <a href="../applications/icesheets/user_manual.html#11-run-monitoring-and-history">Run monitoring and history</a>.
+  <a href="../applications/icesheets/user_manual.html#run-monitoring-and-history">Run monitoring and history</a>.
 - A results view with nothing to preview, or only legacy figures — see
-  <a href="../applications/icesheets/user_manual.html#764-legacy-runs">Legacy runs</a>.
+  <a href="../applications/icesheets/user_manual.html#legacy-runs">Legacy runs</a>.
 
 ## Where to look next
 

@@ -72,6 +72,13 @@ to add a new model adapter.
 
 ## Results and visualization
 
+**Scope: CryoLauncher only.** Everything in this section — the result
+package, `discover_results()`/`ResultPackage`, and the Remote↔Cloud parity
+work below — is CryoLauncher's (ISSM/Icepack) result path. ICESEE has its
+own, separate results implementation (`ExperimentBridge`, a raw file-tree
+listing and inline image display, not this package) — see
+[Execution Backends](dev_execution.md) for exactly where the two diverge.
+
 **Result package.** A completed run exports a transport-neutral package —
 `outputs/{metadata.json, mesh, fields, model, figures}` — that can be read
 without the original modelling stack. `discover_results()` and
@@ -112,8 +119,10 @@ produce the same `outputs/{metadata.json, mesh, fields, model}` shape
 end-to-end sync→discovery→render regression coverage.
 
 **Execution-provider vocabulary.** CryoLauncher distinguishes: *execution mode*
-(Remote / Cloud / Local), *compute backend* (Remote → Slurm/HPC; Cloud → AWS
-Batch, with a *compute mode* of Fargate (default) or EC2 (Advanced)),
+(Remote / Cloud — CryoLauncher has no Local mode; ICESEE's own interface adds
+Local separately, see [Execution Backends](dev_execution.md)), *compute
+backend* (Remote → Slurm/HPC; Cloud → AWS Batch, with a *compute mode* of
+Fargate (default) or EC2 (Advanced)),
 *model environment* (ICESEE-Spack or ICESEE-Container),
 *model* (Icepack / ISSM), *container* (tag + immutable digest + provenance), and
 *experiment* (selected example + source + run target). History cards, the Run

@@ -185,7 +185,11 @@ resolver every ISSM-driven run uses, not the ICESEE application name or
 Basic/Advanced mode. A **Lorenz-96** or **Icepack** forecast model never
 shows the field; an **ISSM** (or coupled **ISSM+Icepack**) forecast model
 does, because that workflow uses ISSM — and Launch stays blocked until a
-cloud-reachable license (an AWS Secrets Manager ARN) is configured for it.
+usable license is configured for it. Normally you provide the institutional
+MATLAB license information once through the dedicated license controls;
+Connector supplies supported institutional connectivity when required.
+This requirement does not itself qualify an ISSM-based ICESEE workflow for
+cloud execution: the example and process restrictions still apply.
 See CryoLauncher's
 <a href="../icesheets/user_manual.html#matlab-licensing-for-issm-cloud-runs">MATLAB
 licensing for ISSM cloud runs</a> for the one-time setup — the same
@@ -195,10 +199,62 @@ Today that verified contract covers exactly one configuration: the
 **Lorenz-96** example at a single process (**Processes = 1**). Selecting a
 different example, or more than one process, is refused at Review — not
 silently coerced — because it has not been run end-to-end against the
-current container image. See the full
+current container image. See the
 [Cloud Run Guide](https://cryostack.eas.gatech.edu/docs/hpc_cloud.html) for
-the complete walkthrough, the reasoning behind that limit, and the current
-onboarding status.
+the platform-wide AWS account/infrastructure concepts this reuses, and the
+walkthrough below for the exact ICESEE steps.
+
+#### Worked example: Lorenz-96 on AWS
+
+1. **Open ICESEE** and select the **Lorenz-96** example.
+2. Leave its configuration at the default (or your own edits) — the same
+   `params.yaml` used for a local or Remote run:
+
+   ```yaml
+   modeling-parameters:
+     example_name: "lorenz96"
+     dt: 0.01
+     num_years: 10
+     timesteps_per_year: 2
+
+   enkf-parameters:
+     Nens: 30
+     filter_type: "EnKF"
+     model_name: "lorenz"
+     parallel_flag: "serial"
+   ```
+
+3. In **Run settings**, set **Execution mode** to **Cloud**.
+4. If you have not connected an AWS account yet, follow
+   [Connecting your AWS account](https://cryostack.eas.gatech.edu/docs/hpc_cloud.html#connecting-your-aws-account-byo-aws)
+   now. CloudFormation onboarding happens in a separate browser tab — your
+   AWS console — not inside CryoStack.
+5. Return to CryoStack and click **Verify connection**; confirm the panel
+   shows **● Connected**.
+6. Click **Prepare cloud** and wait for **Account / Storage / Containers /
+   Compute** to all read **Ready**.
+7. Set **Processes** to **1** — this is the only value CryoStack will let
+   you launch today for ICESEE (see the verified contract above).
+8. Click **Review & Launch**. Confirm the card reads
+   **ICESEE runtime: Ready**, **Parallel mode: Single-rank verified**,
+   **Processes: 1** — this is CryoStack's own honest preflight check, not a
+   cosmetic label.
+9. Click **Launch cloud run**.
+10. ICESEE does not poll AWS in the background — click **Check status** in
+    the Run Log toolbar whenever you want to know whether the job has
+    finished. It prints the current AWS Batch state (e.g. `RUNNABLE`,
+    `RUNNING`, `SUCCEEDED`) to the Run Log.
+11. Once status reads `SUCCEEDED`, open the run from the Workspace **Runs**
+    list. Selecting it triggers a best-effort sync of its S3 outputs into
+    your local run cache, then shows Results — figures and fields render
+    the same way a local run's results do.
+12. To change anything (ensemble size, seed, observation settings), edit
+    the configuration and repeat from step 8 — a new review is always
+    required before a changed configuration can launch.
+13. See
+    [Cleanup](https://cryostack.eas.gatech.edu/docs/hpc_cloud.html#cleanup)
+    in the Cloud Run Guide before you consider the run finished — nothing
+    about the AWS infrastructure this used is removed automatically.
 
 ## Example Selection
 
