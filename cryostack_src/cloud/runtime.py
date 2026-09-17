@@ -379,6 +379,172 @@ if [ "${CRYOSTACK_LICENSE_TUNNEL_REQUIRED:-0}" = "1" ]; then
       || fail 65 "${_lt_msg2}"
   fi
 fi
+
+# -- CPU topology fix (Fargate and EC2 alike): live diagnostics confirmed
+# a 2 vCPU Fargate task is genuinely 2 hardware threads of ONE physical
+# core (1 socket, 1 core/socket, 2 threads/core; cgroup CPU quota unlimited -- no
+# resource shortfall at all). PRRTE has no scheduler/hostfile on this
+# path, so it defaults to counting PHYSICAL CORES as slots: it sees 1
+# core -> 1 slot, and correctly refuses ISSM's mpiexec -np 2 ("not
+# enough slots") even though the task truly has 2 usable logical CPUs.
+#
+# The allocation is not being exceeded -- it is being undercounted --
+# so this is fixed by making PRRTE behave as if `mpiexec
+# --use-hwthread-cpus` had been passed, never by --oversubscribe (which
+# would still be lying about how many slots exist) or a hostfile (which
+# would be manufacturing a number we now know precisely from the real
+# topology). --use-hwthread-cpus itself can't be used directly: ISSM's
+# own generic cluster class (src/m/classes/clusters/generic.m,
+# BuildQueueScript) hardcodes the literal command as
+# `sprintf('mpiexec -np %i ', cluster.np)` with no field at all for
+# extra flags, launcher options, or a hostfile -- confirmed by reading
+# that class's full property list and BuildQueueScript body; there is
+# no supported seam to inject a CLI flag here without modifying ISSM
+# itself or the scientific runme.m, neither of which this patch touches.
+#
+# A first attempt set only PRTE_MCA_rmaps_default_mapping_policy=:hwtcpus
+# (PRRTE's `map-by` "HWTCPUS" qualifier). A live run showed this changes
+# ONLY the mapping/binding CPU type (confirmed by the one-rank probe's
+# binding notation changing from package[0][core:L0] to
+# package[0][hwt:L0]) but NOT slot discovery -- the two-rank probe still
+# reported "not enough slots", and `prterun --help map-by` itself
+# documents this qualifier as governing only "the mapping algorithm",
+# a separate PRRTE subsystem from slot counting.
+#
+# The actual slot-count parameter, found via `prte_info --all` (not
+# guessed): MCA "prte" framework parameter "prte_set_default_slots" --
+# "Set the number of slots on nodes that lack such info to the number
+# of specified objects [... 'cores' (default) ... or 'hwthreads' ...]".
+# Reproduced the exact live failure and fix locally using hwloc's
+# synthetic-topology support (HWLOC_SYNTHETIC="pack:1 core:1 pu:2",
+# which PRRTE's embedded hwloc honors) to emulate Fargate's precise
+# 1-core/2-hwthread shape on hardware that has no real SMT to test
+# against otherwise:
+#   - plain `mpiexec -n 2 --report-bindings true`: fails "not enough
+#     slots" (reproduces the live failure exactly)
+#   - `mpiexec --use-hwthread-cpus -n 2 --report-bindings true`:
+#     succeeds, binds both ranks to package[0][hwt:L0-1]; PRRTE's own
+#     error text for the failing case even names this flag as the fix
+#   - PRTE_MCA_prte_set_default_slots=hwthreads alone: fixes slot
+#     discovery (no more "not enough slots") but then fails at BINDING
+#     instead, because mapping is still CORE-based -- confirming the
+#     two MCA parameters are independent and both are required
+#   - PRTE_MCA_prte_set_default_slots=hwthreads together with
+#     PRTE_MCA_rmaps_default_mapping_policy=:hwtcpus, as plain
+#     environment variables with NO CLI flags at all: succeeds
+#     identically to --use-hwthread-cpus (same exit code, same
+#     package[0][hwt:L0-1] binding output) -- this is the exact,
+#     locally-proven environment-variable equivalent of
+#     --use-hwthread-cpus for an mpiexec invocation whose command line
+#     CryoStack cannot alter
+#   - -n 3 against the same synthetic 2-hwthread topology still
+#     correctly fails "not enough slots" (verified on both the
+#     synthetic topology and, for -n 9 against 8 real cores, on this
+#     machine's real hardware) -- this is not a blanket oversubscribe,
+#     it reflects the real, now-correctly-counted slot total
+#
+# A first live EC2 run then proved LaunchType is the WRONG detection
+# criterion, not merely too narrow: the very first ISSM/EC2 attempt
+# landed on an EC2 instance whose topology is ALSO 1 core / 2 hardware
+# threads (nproc --all=2, Thread(s) per core=2, Core(s) per socket=1,
+# Socket(s)=1) -- ECS reported LaunchType=EC2, this Fargate-only gate
+# left PRRTE's defaults untouched, and slot discovery failed identically
+# to the original Fargate bug. EC2 instance TYPES vary in real core
+# count independently of launch type -- LaunchType tells us nothing
+# about whether the allocated logical CPUs are independent cores or
+# hardware threads of fewer cores; only the topology itself does.
+#
+# The detection criterion is therefore the topology fact this whole
+# investigation has always actually been about: hardware threads per
+# core, read directly from `lscpu` (already relied on, unconditionally,
+# by the diagnostics below -- this reuses that same tool, just earlier
+# and parsed). Thread(s) per core > 1 means the allocated logical CPUs
+# are hardware threads of fewer physical cores than PRRTE's core-based
+# default would count -- exactly the condition the verified
+# --use-hwthread-cpus-equivalent pair (see above) corrects, on ANY
+# provider or instance shape, Fargate or EC2 alike. Thread(s) per
+# core == 1 means the allocated logical CPUs already ARE independent
+# cores -- PRRTE's default core-based accounting is already correct
+# and must be left alone (an EC2 instance with 2 genuine cores must
+# never be forced into hardware-thread semantics it does not need).
+# Fails safe: if `lscpu` is unavailable or its output does not parse to
+# a plain positive integer, PRRTE's untouched defaults (CORECPUS
+# mapping, cores-based slot count) are kept -- never guessed either way.
+#
+# ARCHITECTURAL NOTE (not fixed here, follow-up work): the "2" in
+# "2 vCPU" and the "2" in ISSM's mpiexec -np 2 currently agree only by
+# coincidence -- np comes from the scientist's own scaffolded example
+# (cryostack_src/models/issm/execution.py), completely independent of
+# whatever CPU allocation CryoStack actually requested for this job
+# (cryostack_src/cloud/drivers/aws/batch_config.py). CryoStack does not
+# yet validate or derive the ISSM process count from the selected cloud
+# resource allocation. This patch makes today's np=2 request work
+# correctly against the real topology of whatever instance the task
+# lands on; it does not make the two numbers agree by design for a
+# future np/vCPU mismatch.
+_ecs_task_metadata=""
+if [ -n "${ECS_CONTAINER_METADATA_URI_V4:-}" ]; then
+  _ecs_task_metadata="$(curl -s -m 5 "${ECS_CONTAINER_METADATA_URI_V4}/task" 2>/dev/null)"
+fi
+_ecs_launch_type="$(printf '%s' "${_ecs_task_metadata}" \
+  | grep -o '"LaunchType"[[:space:]]*:[[:space:]]*"[A-Za-z0-9_-]*"' \
+  | grep -o '"[A-Za-z0-9_-]*"$' | tr -d '"')"
+_cs_threads_per_core="$(lscpu 2>/dev/null \
+  | grep -i '^Thread(s) per core:' | grep -o '[0-9]\+' | head -1)"
+case "${_cs_threads_per_core}" in
+  ''|*[!0-9]*)
+    log "topology: could not determine hardware threads per core (lscpu unavailable or unparseable, LaunchType=${_ecs_launch_type:-unknown}) -- leaving PRRTE's defaults (core-based slots and mapping) unchanged"
+    ;;
+  *)
+    if [ "${_cs_threads_per_core}" -gt 1 ]; then
+      log "topology: lscpu reports ${_cs_threads_per_core} hardware thread(s) per core (LaunchType=${_ecs_launch_type:-unknown}) -- using PRRTE's hardware-thread slot count and mapping (== mpiexec --use-hwthread-cpus)"
+      export PRTE_MCA_prte_set_default_slots="hwthreads"
+      export PRTE_MCA_rmaps_default_mapping_policy=":hwtcpus"
+    else
+      log "topology: lscpu reports ${_cs_threads_per_core} hardware thread(s) per core (LaunchType=${_ecs_launch_type:-unknown}) -- leaving PRRTE's defaults (core-based slots and mapping) unchanged"
+    fi
+    ;;
+esac
+
+# -- diagnostics: a compact CPU-topology/PRRTE-slot summary, kept (in
+# trimmed form) as a standing aid for any future slot-discovery failure
+# on a not-yet-seen instance shape -- the original investigation's
+# exhaustive fact-finding (cgroup v1/v2 quota files, cpuset files,
+# /proc/self/status, full lscpu/hwloc dumps) has been removed now that
+# the root cause is closed and permanently encoded in the topology
+# criterion itself above (no cgroup CPU-quota shortfall was ever
+# involved -- confirmed and documented there). Strictly best-effort and
+# informational -- every command is individually guarded and none of
+# their exit codes are consulted, so nothing here can fail, block, or
+# change what runs afterward. `mpiexec` is only resolvable once
+# `with-issm` has set up the Spack OpenMPI PATH (see with-issm's own
+# script), so that probe runs THROUGH with-issm -- the exact environment
+# the real solver launch below uses -- while system-level probes
+# (nproc, lscpu) run directly. Never launches ISSM's own solver
+# (issm.exe) and never changes allocation/mapping behavior (no
+# --oversubscribe, no hostfile, no env var overrides).
+log "diagnostics: begin (CPU/topology/PRRTE, informational only)"
+{
+  echo "== CPU topology =="
+  echo "nproc --all: $(nproc --all 2>&1 || echo unavailable)"
+  lscpu 2>&1 | grep -E '^(Thread\(s\) per core|Core\(s\) per socket|Socket\(s\)):' \
+    || echo "(lscpu unavailable)"
+  echo "== topology detection criterion and PRRTE hardware-thread overrides applied =="
+  echo "LaunchType=${_ecs_launch_type:-<not found>} (informational only -- no longer the detection criterion)"
+  echo "lscpu Thread(s) per core=${_cs_threads_per_core:-<unparseable>}"
+  echo "PRTE_MCA_prte_set_default_slots=${PRTE_MCA_prte_set_default_slots:-<unset -- PRRTE default (cores)>}"
+  echo "PRTE_MCA_rmaps_default_mapping_policy=${PRTE_MCA_rmaps_default_mapping_policy:-<unset -- PRRTE default (CORECPUS)>}"
+  echo "== Open MPI / PRRTE version =="
+  with-issm mpiexec --version 2>&1 || echo "(unavailable)"
+  echo "== PRRTE single-process report-bindings (never launches issm.exe) =="
+  with-issm timeout 15 mpiexec --report-bindings -n 1 true 2>&1 \
+    || echo "(unavailable or failed -- informational only)"
+  echo "== PRRTE two-process report-bindings, matching ISSM's -np 2 (still never launches issm.exe -- direct proof this run's real solver launch will or will not get enough slots) =="
+  with-issm timeout 15 mpiexec --report-bindings -n 2 true 2>&1 \
+    || echo "(unavailable or failed -- informational only)"
+} >&2
+log "diagnostics: end"
+
 with-issm matlab -nodesktop -nosplash -batch \
   "ICESEE_RUN_DIR='${WORKDIR}'; setenv('ICESEE_RUN_DIR','${WORKDIR}'); run('${RUN_TARGET}'); run('${WORKDIR}/postprocess_icesee.m');"
 """

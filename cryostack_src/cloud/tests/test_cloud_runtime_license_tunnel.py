@@ -137,7 +137,13 @@ def test_issm_branch_script_stays_comfortably_small_on_its_own():
     # Not subject to the 8192 container-overrides cap at all (it is
     # synced as an ordinary S3 object, never embedded in the job's
     # command) -- but a runaway size here would still be a bug smell.
-    assert len(issm_cloud_runner_script()) < 4096
+    # Raised 4096 -> 8192 when the CPU/topology/PRRTE-slot diagnostic
+    # block was added, then -> 16384 when the Fargate HWTCPUS mapping
+    # fix (with its ECS LaunchType detection) was added alongside it
+    # (see test_cloud_runtime_cpu_diagnostics.py and
+    # test_cloud_runtime_fargate_hwtcpus.py); still trivially small for
+    # a staged file with no AWS-imposed limit.
+    assert len(issm_cloud_runner_script()) < 16384
 
 
 def test_issm_cloud_runner_extra_files_stages_exactly_the_branch_script():
