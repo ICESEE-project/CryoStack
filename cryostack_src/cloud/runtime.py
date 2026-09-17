@@ -592,6 +592,23 @@ def icepack_postprocess_extra_files() -> dict[str, str]:
     }
 
 
+def issm_postprocess_extra_files() -> dict[str, str]:
+    """The ``extra_files`` a cloud-run caller merges into
+    ``WorkspaceManager.stage_example_for_run`` so ISSM's
+    ``postprocess_icesee.m`` is staged as an ordinary file alongside
+    ``runme.m`` -- the exact same generator the working Remote/SLURM path
+    already uses (``cryostack_src.models.issm.postprocess.build_postprocess``,
+    called from ``cryostack_src.models.submission`` right before it writes
+    the file over SSH), so Cloud and Remote run byte-identical postprocess
+    content. Never embedded into the runner script itself (see the module
+    docstring and :data:`BATCH_CONTAINER_OVERRIDE_LIMIT`) -- the runner's
+    ISSM branch only ever INVOKES ``${WORKDIR}/postprocess_icesee.m`` by
+    filename after phase 1 downloads it from ``<s3-run>/input/``."""
+    from cryostack_src.models.issm.postprocess import build_postprocess
+
+    return {"postprocess_icesee.m": build_postprocess()}
+
+
 #: dedicated runtime-support directory the tunnel client's own dependency
 #: bundle is staged under -- NEVER mixed into the scientist's model/example
 #: files. cryostack_src.cloud.license_tunnel_client adds this (resolved
