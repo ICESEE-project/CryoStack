@@ -22,8 +22,10 @@ from cryostack_src.cloud.drivers.aws.secrets import (
     SECRET_NAME_PREFIX,
     SecretAlreadyExists,
     SecretCreateError,
+    SecretDescribeError,
     SecretNameInvalid,
     create_matlab_license_secret,
+    describe_matlab_license_secret,
     validate_secret_name,
 )
 
@@ -171,3 +173,64 @@ def test_missing_arn_in_response_raises_secret_create_error(monkeypatch):
 
     with pytest.raises(SecretCreateError):
         create_matlab_license_secret(_CFG, name="cryostack/x", value=_VALUE)
+
+
+# ── describe_matlab_license_secret: metadata-only recovery lookup ───────
+def test_describe_secret_calls_run_aws_with_expected_shape(monkeypatch):
+    fake, calls = _fake_run_aws(
+        stdout=json.dumps({"ARN": _ARN, "Name": "cryostack/issm-matlab-license"}))
+    monkeypatch.setattr(secrets_mod, "run_aws", fake)
+
+    result = describe_matlab_license_secret(
+        _CFG, name="cryostack/issm-matlab-license")
+
+    assert result == {"arn": _ARN, "name": "cryostack/issm-matlab-license"}
+    assert len(calls) == 1
+    call = calls[0]
+    assert call["config"] is _CFG
+    assert call["input"] is None                      # never writes anything
+    args = call["arguments"]
+    assert args[:2] == ["secretsmanager", "describe-secret"]
+    assert args[args.index("--secret-id") + 1] == "cryostack/issm-matlab-license"
+    # the value is never requested by this call at all -- no --version-id,
+    # no --version-stage, nothing that could return SecretString/SecretBinary
+    assert "get-secret-value" not in " ".join(args)
+
+
+def test_describe_secret_returned_metadata_has_no_value_shaped_fields(monkeypatch):
+    fake, _calls = _fake_run_aws(
+        stdout=json.dumps({"ARN": _ARN, "Name": "cryostack/x"}))
+    monkeypatch.setattr(secrets_mod, "run_aws", fake)
+
+    result = describe_matlab_license_secret(_CFG, name="cryostack/x")
+
+    assert set(result) == {"arn", "name"}
+
+
+def test_describe_secret_invalid_name_rejected_before_any_aws_call(monkeypatch):
+    fake, calls = _fake_run_aws()
+    monkeypatch.setattr(secrets_mod, "run_aws", fake)
+
+    with pytest.raises(SecretNameInvalid):
+        describe_matlab_license_secret(_CFG, name="not-cryostack")
+    assert calls == []
+
+
+def test_describe_secret_not_found_or_denied_raises_secret_describe_error(monkeypatch):
+    fake, _calls = _fake_run_aws(
+        code=254,
+        stderr=("An error occurred (AccessDeniedException) when calling "
+                "the DescribeSecret operation: not authorized"))
+    monkeypatch.setattr(secrets_mod, "run_aws", fake)
+
+    with pytest.raises(SecretDescribeError) as exc:
+        describe_matlab_license_secret(_CFG, name="cryostack/x")
+    assert "AccessDeniedException" in str(exc.value)
+
+
+def test_describe_secret_missing_arn_in_response_raises_secret_describe_error(monkeypatch):
+    fake, _calls = _fake_run_aws(stdout=json.dumps({"Name": "cryostack/x"}))
+    monkeypatch.setattr(secrets_mod, "run_aws", fake)
+
+    with pytest.raises(SecretDescribeError):
+        describe_matlab_license_secret(_CFG, name="cryostack/x")

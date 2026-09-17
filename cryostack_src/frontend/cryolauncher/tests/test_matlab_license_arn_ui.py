@@ -138,6 +138,27 @@ def _patch_create_secret(monkeypatch, *, result=None, error=None):
     return calls
 
 
+def _patch_describe_secret(monkeypatch, *, result=None, error=None):
+    """Stub for the metadata-only DescribeSecret lookup
+    (cryostack_src.cloud.drivers.aws.secrets.describe_matlab_license_secret)
+    -- fired on a SecretAlreadyExists collision during Configure, and on
+    Re-check for an already-configured, CryoStack-managed ARN. Never
+    touches real AWS, matching _patch_create_secret's own pattern."""
+    calls: list[dict] = []
+
+    def fake(config, *, name):
+        calls.append({"config": config, "name": name})
+        if error is not None:
+            raise error
+        return result
+
+    monkeypatch.setattr(
+        "cryostack_src.cloud.drivers.aws.secrets.describe_matlab_license_secret",
+        fake,
+    )
+    return calls
+
+
 def _patch_iam_not_prepared(monkeypatch):
     """discover_iam_resources reports no ECS execution role yet -- the
     common "never ran Prepare Cloud" case; _reconcile_license_access must
@@ -725,6 +746,9 @@ def test_is_default_managed_arn_helper():
 # ── Existing-secret collision: never silently overwritten ──────────────
 def test_configuring_again_when_the_default_secret_already_exists_does_not_overwrite(
         tmp_path, monkeypatch):
+    """The new value the user typed is NEVER used to overwrite the
+    existing secret -- regardless of whether the metadata-only
+    DescribeSecret recovery (below) succeeds or not."""
     from cryostack_src.cloud.drivers.aws.secrets import SecretAlreadyExists
 
     card, _log, _user, store = _guided_setup(tmp_path, monkeypatch)
@@ -734,10 +758,13 @@ def test_configuring_again_when_the_default_secret_already_exists_does_not_overw
     card.matlab_license_arn.value = old_arn
 
     _patch_execution(monkeypatch)
+    _patch_iam_not_prepared(monkeypatch)
     _patch_create_secret(
         monkeypatch,
         error=SecretAlreadyExists(
             f"A secret named {DEFAULT_MATLAB_LICENSE_SECRET_NAME!r} already exists."))
+    _patch_describe_secret(
+        monkeypatch, result={"arn": old_arn, "name": DEFAULT_MATLAB_LICENSE_SECRET_NAME})
 
     _click_reconfigure(card)
     card.matlab_license_value.value = "a-new-value@license.example.edu"
@@ -746,10 +773,117 @@ def test_configuring_again_when_the_default_secret_already_exists_does_not_overw
     status = card.matlab_license_create_status.value
     assert "already" in status.lower()
     assert "a-new-value" not in status
-    # the previously configured ARN is left exactly as it was
+    # the previously configured ARN is left exactly as it was -- recovered
+    # and reconfirmed, never replaced by the new value that was typed
     assert card.matlab_license_arn.value == old_arn
     reloaded = store.load()
     assert reloaded.matlab_license_secret_arn == old_arn
+
+
+def test_collision_recovers_the_existing_arn_via_describe_secret(tmp_path, monkeypatch):
+    """The completed behavior: when the entry form is reachable (no ARN
+    known locally) and Configure collides with an existing secret,
+    DescribeSecret recovers that secret's ARN and CryoStack persists it
+    and switches to the configured view automatically -- the value typed
+    is never reused for anything (create failed; the ARN comes only from
+    the describe response)."""
+    from cryostack_src.cloud.drivers.aws.secrets import SecretAlreadyExists
+
+    card, _log, _user, store = _guided_setup(tmp_path, monkeypatch)
+    existing_arn = ("arn:aws:secretsmanager:us-east-2:774888247882:secret:"
+                    "cryostack/issm-matlab-license-AbCdEf")
+
+    _patch_execution(monkeypatch)
+    _patch_iam_already_prepared(monkeypatch)
+    _patch_create_secret(
+        monkeypatch,
+        error=SecretAlreadyExists(
+            f"A secret named {DEFAULT_MATLAB_LICENSE_SECRET_NAME!r} already exists."))
+    describe_calls = _patch_describe_secret(
+        monkeypatch, result={"arn": existing_arn, "name": DEFAULT_MATLAB_LICENSE_SECRET_NAME})
+
+    card.matlab_license_value.value = "27000@do-not-leak-me.invalid"
+    _click_create(card)
+
+    assert describe_calls == [
+        {"config": describe_calls[0]["config"], "name": DEFAULT_MATLAB_LICENSE_SECRET_NAME}]
+    status = card.matlab_license_create_status.value
+    assert "already configured" in status.lower()
+    assert "keep using it automatically" in status.lower()
+    assert "27000@do-not-leak-me.invalid" not in status
+    # persisted through the SAME path a fresh Configure uses -- the panel
+    # switches to the configured view, not left showing the entry form
+    assert card.matlab_license_arn.value == existing_arn
+    assert card.matlab_license_entry_box.layout.display == "none"
+    assert card.matlab_license_configured_row.layout.display == "flex"
+    reloaded = store.load()
+    assert reloaded.matlab_license_secret_arn == existing_arn
+
+
+def test_collision_recovery_falls_back_safely_when_describe_secret_fails(
+        tmp_path, monkeypatch):
+    """A connection whose role predates the DescribeSecret IAM grant must
+    never crash and must never silently claim to have recovered the ARN
+    -- it stays unconfigured, with a SPECIFIC message naming the real
+    cause (missing permissions), not just a generic "could not confirm"
+    -- and the real AWS error detail reaches the Run Log rather than
+    being discarded."""
+    from cryostack_src.cloud.drivers.aws.secrets import (
+        SecretAlreadyExists,
+        SecretDescribeError,
+    )
+
+    card, log, _user, store = _guided_setup(tmp_path, monkeypatch)
+    _patch_execution(monkeypatch)
+    _patch_create_secret(
+        monkeypatch,
+        error=SecretAlreadyExists(
+            f"A secret named {DEFAULT_MATLAB_LICENSE_SECRET_NAME!r} already exists."))
+    _patch_describe_secret(
+        monkeypatch, error=SecretDescribeError("AccessDeniedException: not authorized"))
+
+    card.matlab_license_value.value = "27000@do-not-leak-me.invalid"
+    _click_create(card)         # must not raise
+
+    status = card.matlab_license_create_status.value
+    assert "does not yet have the permissions" in status.lower()
+    assert "Update role permissions" in status
+    assert "AccessDeniedException" not in status
+    # the real AWS-reported cause reaches the Run Log, not silence
+    assert "DescribeSecret" in log.blob()
+    assert "Access denied" in log.blob()
+
+
+def test_collision_recovery_generic_describe_failure_gets_a_non_permission_message(
+        tmp_path, monkeypatch):
+    """A describe failure that is NOT AccessDenied (e.g. throttling) must
+    get the generic-but-honest message -- never falsely blamed on
+    permissions, and never the raw AWS text."""
+    from cryostack_src.cloud.drivers.aws.secrets import (
+        SecretAlreadyExists,
+        SecretDescribeError,
+    )
+
+    card, log, _user, _store = _guided_setup(tmp_path, monkeypatch)
+    _patch_execution(monkeypatch)
+    _patch_create_secret(
+        monkeypatch,
+        error=SecretAlreadyExists(
+            f"A secret named {DEFAULT_MATLAB_LICENSE_SECRET_NAME!r} already exists."))
+    _patch_describe_secret(
+        monkeypatch,
+        error=SecretDescribeError(
+            "An error occurred (ThrottlingException) when calling the "
+            "DescribeSecret operation: Rate exceeded"))
+
+    card.matlab_license_value.value = "27000@do-not-leak-me.invalid"
+    _click_create(card)
+
+    status = card.matlab_license_create_status.value
+    assert "could not automatically confirm it" in status.lower()
+    assert "does not yet have the permissions" not in status.lower()
+    assert "ThrottlingException" not in status
+    assert "AWS Secrets Manager DescribeSecret failed." in log.blob()
 
 
 # ── security: the raw value never surfaces anywhere ─────────────────────

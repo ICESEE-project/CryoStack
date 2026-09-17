@@ -213,6 +213,14 @@
                   }
                 },
                 {
+                  "Sid": "CryoStackMatlabLicenseSecretDescribe",
+                  "Effect": "Allow",
+                  "Action": "secretsmanager:DescribeSecret",
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:secretsmanager:*:${AWS::AccountId}:secret:cryostack/*"
+                  }
+                },
+                {
                   "Sid": "CryoStackIamListRoles",
                   "Effect": "Allow",
                   "Action": "iam:ListRoles",

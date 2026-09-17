@@ -10,9 +10,11 @@
 # Description :
 #     Creates the ONE kind of CryoStack-managed Secrets Manager secret this
 #     platform currently needs: an ISSM MATLAB license value
-#     (MLM_LICENSE_FILE). No read/update/delete operations -- the runtime
-#     read path (GetSecretValue via the ECS execution role) already exists
-#     in cryostack_src/cloud/matlab_license.py and iam_policies.py.
+#     (MLM_LICENSE_FILE), plus a metadata-only DescribeSecret lookup to
+#     recover an existing secret's ARN on a name collision. No value
+#     read/update/delete operations -- the runtime VALUE read path
+#     (GetSecretValue via the ECS execution role) already exists in
+#     cryostack_src/cloud/matlab_license.py and iam_policies.py.
 #
 # Author(s)   :
 #     Brian Kyanjo
@@ -32,6 +34,13 @@ exists so a connected BYO-AWS user can create the secret
 (``MLM_LICENSE_FILE``, a plaintext ``PORT@HOST`` string) directly from the
 UI instead of the AWS console -- the manual "paste an existing ARN" path
 this module does not touch remains fully supported and unchanged.
+
+:func:`describe_matlab_license_secret` is the one read this module
+performs, and it is metadata-only (ARN/name, never the value) -- it
+exists so a name collision on create (:class:`SecretAlreadyExists`) can
+recover the pre-existing secret's ARN and complete "CryoStack will keep
+using it automatically" instead of leaving the connection permanently
+unable to reference a secret it is already entitled to create.
 
 Security shape, enforced here:
 
@@ -86,6 +95,15 @@ class SecretCreateError(RuntimeError):
     AccessDenied). The message is sanitized CLI stderr text -- the
     ``--secret-string`` value was never on argv, so it cannot appear here,
     but nothing about this exception is ever built from the raw value."""
+
+
+class SecretDescribeError(RuntimeError):
+    """DescribeSecret failed -- e.g. the connected role has not been
+    granted ``secretsmanager:DescribeSecret`` yet (see
+    ``cryostack_src.cloud.connect.cloudformation``'s
+    ``CryoStackMatlabLicenseSecretDescribe`` statement -- an existing
+    connection made before this grant existed needs 'Update role
+    permissions' once), or no secret exists under this name at all."""
 
 
 def validate_secret_name(name: str) -> str:
@@ -156,6 +174,53 @@ def create_matlab_license_secret(
     arn = (payload.get("ARN") or "").strip()
     if not arn:
         raise SecretCreateError(
+            "AWS Secrets Manager did not return a secret ARN."
+        )
+    return {"arn": arn, "name": (payload.get("Name") or clean_name)}
+
+
+def describe_matlab_license_secret(config: AWSConfig, *, name: str) -> dict:
+    """Look up an EXISTING secret's (non-secret) ARN by name.
+
+    Metadata only, via ``secretsmanager:DescribeSecret`` -- the secret's
+    VALUE is never read, requested, or returned by this call. Used ONLY to
+    recover CryoStack's own reference to a secret that already exists
+    under the fixed CryoStack-managed name (i.e. after
+    :func:`create_matlab_license_secret` raised :class:`SecretAlreadyExists`)
+    so "Configure license" can complete automatically instead of leaving
+    a working secret permanently unreferenced -- never to inspect an
+    arbitrary, caller-supplied secret name (the same ``cryostack/`` prefix
+    check :func:`validate_secret_name` already enforces for creation
+    applies here too).
+
+    Returns ``{"arn": <secret ARN>, "name": <secret name>}``. Raises
+    :class:`SecretNameInvalid` (bad name, checked before any AWS call) or
+    :class:`SecretDescribeError` (no such secret, access denied -- e.g. the
+    connected role predates the ``CryoStackMatlabLicenseSecretDescribe``
+    IAM grant and needs an "Update role permissions" pass -- or any other
+    AWS CLI failure).
+    """
+    clean_name = validate_secret_name(name)
+
+    code, stdout, stderr = run_aws(
+        config,
+        [
+            "secretsmanager", "describe-secret",
+            "--secret-id", clean_name,
+            "--output", "json",
+        ],
+    )
+
+    if code != 0:
+        text = (stderr or stdout or "").strip()
+        raise SecretDescribeError(
+            text[:500] or "AWS Secrets Manager describe-secret failed."
+        )
+
+    payload = json.loads(stdout or "{}")
+    arn = (payload.get("ARN") or "").strip()
+    if not arn:
+        raise SecretDescribeError(
             "AWS Secrets Manager did not return a secret ARN."
         )
     return {"arn": arn, "name": (payload.get("Name") or clean_name)}

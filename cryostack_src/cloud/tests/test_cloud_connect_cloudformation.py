@@ -283,12 +283,14 @@ def test_no_wildcard_iam_action_is_introduced(template):
 
 
 def test_matlab_license_secret_read_grant_is_not_part_of_this_template(template):
-    """The ISSM MATLAB-license READ grant (secretsmanager:GetSecretValue) is
-    applied per-connection at Prepare Cloud time (iam_provision.py, on the
-    cryostack-ecs-execution-role -- a DIFFERENT role, inside the connected
-    account) -- it must never appear in this cross-account onboarding
-    template. Only the guided-setup CREATE action belongs here, because
-    Prepare Cloud/guided-setup calls run under THIS role's assumed session
+    """The ISSM MATLAB-license VALUE grant (secretsmanager:GetSecretValue,
+    plus Put/Update/Delete) is applied per-connection at Prepare Cloud time
+    (iam_provision.py, on the cryostack-ecs-execution-role -- a DIFFERENT
+    role, inside the connected account) -- it must never appear in this
+    cross-account onboarding template. Only the guided-setup CREATE action
+    and the metadata-only DescribeSecret recovery lookup (never the value)
+    belong here, because Prepare Cloud/guided-setup calls run under THIS
+    role's assumed session
     (cryostack_src/cloud/connect/execution.py:resolve_cloud_execution)."""
     blob = json.dumps(template)
     assert "secretsmanager:GetSecretValue" not in blob
@@ -310,6 +312,24 @@ def test_matlab_license_secret_create_grant_is_scoped_to_the_cryostack_prefix(te
     assert stmt["Condition"] == {
         "StringLike": {"secretsmanager:Name": "cryostack/*"}
     }
+
+
+def test_matlab_license_secret_describe_grant_is_metadata_only_and_arn_scoped(template):
+    """secretsmanager:DescribeSecret exists so "Configure license" can
+    recover an existing secret's ARN on a name collision
+    (SecretAlreadyExists) instead of leaving the connection permanently
+    unable to reference a secret it is already entitled to create -- it
+    never returns the secret's value. Unlike CreateSecret, the target
+    already exists and is addressable by ARN, so this is Resource-scoped
+    (not Resource:"*" + a Name condition) -- strictly narrower, and no
+    Condition block is needed."""
+    sids = {s["Sid"]: s for s in _all_statements(template)}
+    stmt = sids["CryoStackMatlabLicenseSecretDescribe"]
+    assert stmt["Action"] == "secretsmanager:DescribeSecret"
+    assert stmt["Resource"] == {
+        "Fn::Sub": "arn:${AWS::Partition}:secretsmanager:*:${AWS::AccountId}:secret:cryostack/*"
+    }
+    assert "Condition" not in stmt
 
 
 def test_fargate_onboarding_statements_are_unchanged_by_the_ec2_iam_fix(template):
