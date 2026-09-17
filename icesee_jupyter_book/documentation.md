@@ -53,6 +53,16 @@
     <div class="cryostack-docs-summary-grid">
 
       <div class="cryostack-docs-summary-card">
+        <div class="cryostack-docs-summary-icon">GS</div>
+        <h3>Getting Started</h3>
+        <p>
+          New here? Start with a short CryoStack orientation and find the
+          right application for your work —
+          <a href="docs/getting_started.html">open Getting Started</a>.
+        </p>
+      </div>
+
+      <div class="cryostack-docs-summary-card">
         <div class="cryostack-docs-summary-icon">CS</div>
         <h3>CryoStack overview</h3>
         <p>
@@ -68,6 +78,16 @@
         <p>
           Run your first ice-sheet simulation and inspect the structured
           results — <a href="applications/icesheets/getting_started.html">open the guide</a>.
+        </p>
+      </div>
+
+      <div class="cryostack-docs-summary-card">
+        <div class="cryostack-docs-summary-icon">UM</div>
+        <h3>User Manual</h3>
+        <p>
+          The operational reference for configuring, running, and
+          retrieving results across applications and execution
+          environments — <a href="docs/user_manual.html">open the manual</a>.
         </p>
       </div>
 
@@ -249,17 +269,18 @@
       </div>
 
       <div>
-        <h3>Cloud <span class="cryostack-status dev">In validation</span></h3>
+        <h3>Cloud <span class="cryostack-status supported">Supported</span></h3>
         <p>
           Bring-your-own AWS account, connected once through a CloudFormation
-          role and used with temporary credentials only. Infrastructure
-          provisioning (storage, container registry, AWS Batch) and the run
-          contract are wired for CryoLauncher and ICESEE, on a default
-          Fargate compute mode with an Advanced EC2 alternative; Icepack and
-          ICESEE have each completed a real run end-to-end on Fargate, and
-          Icepack has additionally done so on EC2 On-Demand (single node,
-          CPU). EC2 Spot/GPU/multi-node and the full onboarding and
-          operational lifecycle are still being validated end-to-end — see the
+          role and used with temporary credentials only, on AWS Batch with a
+          default Fargate compute mode and an Advanced EC2 alternative.
+          CryoLauncher's ISSM and Icepack workflows have each completed
+          end-to-end execution on both Fargate and EC2 On-Demand — for ISSM,
+          MPI-parallel solver execution, institutional MATLAB licensing
+          through Connector/Relay, postprocessing, result retrieval, and
+          visualization; ICESEE's Lorenz-96 example has done the same on
+          Fargate. EC2 Spot/GPU/multi-node and ICESEE's own Cloud/ISSM
+          workflows remain unvalidated — see the
           <a href="docs/hpc_cloud.html">Cloud Run Guide</a>.
         </p>
       </div>
@@ -339,7 +360,7 @@
         <h3>Source code</h3>
         <p>
           The gateway, application layer, connector, and deployment live in the
-          <a href="https://github.com/ICESEE-project/CryoLauncher" target="_blank" rel="noopener noreferrer">CryoLauncher repository</a>,
+          <a href="https://github.com/ICESEE-project/CryoStack" target="_blank" rel="noopener noreferrer">CryoStack repository</a>,
           under the <a href="https://github.com/ICESEE-project" target="_blank" rel="noopener noreferrer">ICESEE project</a>.
         </p>
       </div>

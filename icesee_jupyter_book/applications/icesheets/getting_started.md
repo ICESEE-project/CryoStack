@@ -196,12 +196,12 @@ Set the **Execution** and **Backend** menus:
 </p>
 <p>
   <b>Cloud</b>
-  <span class="cryostack-status dev">In validation</span>
+  <span class="cryostack-status supported">Supported</span>
   &nbsp;— AWS Batch execution, on a default Fargate compute mode (an
-  Advanced EC2 option also exists). Icepack has completed a real cloud run
-  end-to-end on both Fargate and EC2 On-Demand (single node, CPU); ISSM's
-  cloud path is provisioned but needs a cloud-reachable MATLAB license
-  before a real run. See the
+  Advanced EC2 option also exists). Both ISSM and Icepack have completed
+  end-to-end cloud runs on Fargate and EC2 On-Demand (single node, CPU);
+  ISSM's run includes reaching a configured institutional MATLAB license
+  through the CryoStack Connector. See the
   <a href="../../docs/hpc_cloud.html">Cloud Run Guide</a> for the current scope.
 </p>
 :::

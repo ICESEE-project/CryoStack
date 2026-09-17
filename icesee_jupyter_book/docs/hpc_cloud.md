@@ -157,31 +157,34 @@
       </div>
 
       <div class="cryostack-docs-summary-card">
-        <div class="cryostack-docs-summary-icon">EV</div>
-        <h3>End-to-end validation <span class="cryostack-status dev">Growing</span></h3>
-        <p>Two configurations have been run and confirmed end-to-end on AWS Batch's
+        <div class="cryostack-docs-summary-icon">VW</div>
+        <h3>Validated workflows <span class="cryostack-status supported">Demonstrated</span></h3>
+        <p>Three configurations have been run and confirmed end-to-end on AWS Batch's
            <strong>Fargate</strong> compute mode: <strong>ICESEE Lorenz-96 at
-           NP&nbsp;=&nbsp;1</strong>, and <strong>CryoLauncher/Icepack
-           04-synthetic-ice-stream-xy</strong>. CryoLauncher/ISSM has the
-           onboarding, provisioning, and submission architecture implemented
-           and exercised, but a real ISSM run still needs a cloud-reachable
-           MATLAB license (see
-           <a href="../applications/icesheets/user_manual.html#matlab-licensing-for-issm-cloud-runs">MATLAB licensing</a>)
-           and this page makes no claim of a fully verified live run-to-results
-           cycle for it.</p>
+           NP&nbsp;=&nbsp;1</strong>, <strong>CryoLauncher/Icepack
+           04-synthetic-ice-stream-xy</strong>, and <strong>CryoLauncher/ISSM</strong>
+           (MPI-parallel solver execution, postprocessing into CryoStack's shared
+           result package, retrieval, and visualization). CryoLauncher/ISSM has
+           also completed the same end-to-end path on <strong>EC2 On-Demand</strong>,
+           in both cases reaching the configured Georgia Tech institutional MATLAB
+           license through the same Connector/Relay infrastructure used for Remote
+           access. This validates one institutional Cloud/Connector configuration;
+           it does not establish compatibility with arbitrary institutional
+           license-server arrangements. See
+           <a href="../applications/icesheets/user_manual.html#matlab-licensing-for-issm-cloud-runs">MATLAB licensing and Connector setup</a>.</p>
       </div>
 
       <div class="cryostack-docs-summary-card">
         <div class="cryostack-docs-summary-icon">CM</div>
-        <h3>Compute mode <span class="cryostack-status dev">Fargate and EC2 On-Demand validated</span></h3>
+        <h3>Compute mode <span class="cryostack-status supported">Fargate and EC2 On-Demand validated</span></h3>
         <p><strong>Fargate</strong> is the default AWS Batch compute mode.
            <strong>EC2 (Advanced)</strong> is an opt-in alternative; its
            <strong>On-Demand, single-node, CPU</strong> configuration has now
            also run end to end on live AWS — CryoLauncher/Icepack's
-           <code>00-meshes-functions</code> tutorial, submitted to a
-           CryoStack-provisioned managed EC2 compute environment. EC2
-           <strong>Spot</strong>, <strong>GPU</strong>, and
-           <strong>multi-node</strong>, and EC2 for ISSM or ICESEE, remain
+           <code>00-meshes-functions</code> tutorial and CryoLauncher/ISSM,
+           both submitted to a CryoStack-provisioned managed EC2 compute
+           environment. EC2 <strong>Spot</strong>, <strong>GPU</strong>, and
+           <strong>multi-node</strong>, and EC2 for ICESEE, remain
            implemented/provisioned but not yet run against live AWS in this
            repository's evidence. See
            <a href="#compute-mode-fargate-default-or-ec2-advanced">Compute mode</a>
@@ -337,7 +340,8 @@ under **Advanced** in Cloud Environment:
     VPN, Direct Connect connection, Transit Gateway, or firewall rule itself
     — the VPC you point it at must already have whatever route it needs. See
     <a href="../applications/icesheets/user_manual.html#matlab-licensing-for-issm-cloud-runs">MATLAB
-    licensing for ISSM cloud runs</a> for the case this is meant to unblock.
+    licensing for ISSM cloud runs</a> for the supported Connector alternative;
+    custom networking is not required by the validated Fargate/EC2 path.
   - **Execution** — **Single node** (default) or **Multi-node** — registers
     an AWS Batch multi-node parallel job definition (EC2 only), but
     CryoStack's scientific runners do not yet coordinate distributed MPI
@@ -468,7 +472,7 @@ its results are unaffected either way.**
 
 ## Worked examples verified on AWS
 
-Three configurations have been run and confirmed end-to-end against the
+Four configurations have been run and confirmed end-to-end against the
 current container image: **ICESEE Lorenz-96 at NP = 1**, walked through
 below, and **CryoLauncher/Icepack 04-synthetic-ice-stream-xy**, both on the
 default **Fargate** compute mode (exit 0, 12 figures, 5 structured fields,
@@ -478,12 +482,19 @@ CloudWatch log retrieval also confirmed via **View log**). A third,
 **EC2 (Advanced) On-Demand** compute mode instead (single node, CPU, 2 vCPU /
 8 GiB) — submitted to the `cryostack-ec2-queue` job queue and
 `cryostack-icepack-ec2` job definition, on CryoStack's managed
-`cryostack-ec2` compute environment, and completed successfully. All three
-follow the identical Connect → Prepare cloud → Review & Launch → Monitor →
-Results sequence; the Lorenz-96 walkthrough below spells out every step, and
-the Icepack paths differ only in which application/example you open in step
-1 and, for the EC2 run, selecting **Advanced → EC2 → On-Demand** under
-Compute mode before Prepare cloud (see
+`cryostack-ec2` compute environment, and completed successfully. A fourth,
+**CryoLauncher/ISSM**, has completed the same end-to-end path on both
+**Fargate** and **EC2 On-Demand** — MPI-parallel solver execution,
+postprocessing into CryoStack's shared result package, retrieval, and
+visualization — while reaching the configured Georgia Tech institutional
+MATLAB license through the same Connector/Relay infrastructure used for
+Remote access; this validates one institutional Cloud/Connector
+configuration, not arbitrary institutional license-server arrangements. All
+four follow the identical Connect → Prepare cloud → Review & Launch →
+Monitor → Results sequence; the Lorenz-96 walkthrough below spells out every
+step, and the other paths differ only in which application/example you open
+in step 1 and, for an EC2 run, selecting **Advanced → EC2 → On-Demand**
+under Compute mode before Prepare cloud (see
 <a href="#compute-mode-fargate-default-or-ec2-advanced">Compute mode</a>
 above). Steps this platform does not yet support are called out explicitly
 rather than skipped over.
@@ -623,7 +634,7 @@ inserting placeholders styled as real screenshots would be misleading.
     parallel_flag: "serial"
   ```
 
-- [CryoStack on GitHub](https://github.com/ICESEE-project/CryoLauncher) —
+- [CryoStack on GitHub](https://github.com/ICESEE-project/CryoStack) —
   browse the full source, including the CloudFormation template and the
   cloud execution code referenced throughout this page.
 
@@ -687,9 +698,9 @@ retrying blindly; each reason names exactly what to fix.
 
       <div class="cryostack-footer-group">
         <h3>Community</h3>
-        <a href="https://github.com/ICESEE-project/CryoLauncher" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/ICESEE-project/CryoStack" target="_blank" rel="noopener noreferrer">GitHub</a>
         <a href="https://github.com/ICESEE-project" target="_blank" rel="noopener noreferrer">ICESEE Project</a>
-        <a href="https://github.com/ICESEE-project/CryoLauncher/issues" target="_blank" rel="noopener noreferrer">Report an Issue</a>
+        <a href="https://github.com/ICESEE-project/CryoStack/issues" target="_blank" rel="noopener noreferrer">Report an Issue</a>
       </div>
 
     </div>

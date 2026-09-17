@@ -185,8 +185,10 @@ def test_single_node_note_matrix(backend, model, nodes, expect_note):
 
 # ── the documented state stays in sync with the code (issue closure) ────
 def test_developer_guide_documents_the_single_node_container_issm_limit():
+    # This content lives in the Execution Backends child page of the
+    # (now multi-page) Developer Guide, not the landing page itself.
     guide = " ".join(
-        (_REPO_ROOT / "icesee_jupyter_book" / "docs" / "developer_guide.md")
+        (_REPO_ROOT / "icesee_jupyter_book" / "docs" / "dev_execution.md")
         .read_text().split()
     )
     assert "Container ISSM is therefore single-node." in guide
