@@ -514,7 +514,7 @@ def build_icesheets_ui():
             ui_mode_dd.options = [
                 ("Basic", "basic"),
                 ("Advanced", "advanced"),
-                ("Agent · Beta", "agent"),
+                ("Auto-config · Beta", "agent"),
             ]
 
         software_panel = build_software_stack_panel()

@@ -999,30 +999,47 @@ description of what a run produced.
 :::
 
 
-### Agent · Beta: prepare a configuration
+### Auto-config · Beta: prepare a configuration
 
-When Agent mode is enabled, describe one experiment, for example:
+When enabled, select **Auto-config · Beta**. For example:
 
 > Run SquareIceShelf with ISSM on PACE using 4 CPUs.
 
-**Create plan** shows the inferred model, example and requested settings, along
-with unresolved choices or unsupported requests. Example names come from the
-available application and workspace examples. Omitted settings retain the
-current manual configuration; scientific values remain those of the example
-and any enabled overrides. A request for a default tutorial uses the currently
-selected example only when it belongs to the requested model.
+Use **Review in Advanced** to inspect the complete manual configuration.
+Local standalone execution remains unavailable; supported remote and cloud
+choices depend on the selected workflow.
 
-**Apply to configuration** fills the same controls used by Basic/Advanced and
-reports configuration validation findings. **Review in Advanced** opens those
-controls. Applying a proposal does not approve or submit a run. The normal
-execution path still checks identity, resources, model parameters, backend
-readiness and cloud preflight before submission.
+**Create plan** prepares a compact change preview: **Setting | Current |
+Proposed | Source**. Changed settings are primary; important unchanged values
+appear in a short retained summary. **From request** means explicitly requested,
+**Suggested** means a deterministic adjustment from existing metadata or policy,
+and **Retained** means a valid current value is intentionally unchanged.
+Omitted settings stay as configured. Ambiguity requires clarification;
+unsupported requests cannot be applied. A matching request reports **No changes
+needed**.
 
-The planner supports explicit example/model names, remote/cloud location,
-compute profiles, CPU/task and node counts, Slurm account, wall time in
-`HH:MM:SS`, memory such as `64G memory`, and numeric/boolean settings named by
-the curated parameter labels. Use one complete description for each revision.
-Ambiguous alternatives, unknown assignments and unrecognized numbers require
-clarification. Local standalone execution remains unavailable. Cloud resource
-customization and unsupported GPU/multi-node requests require manual review or
-are rejected; the planner does not substitute HPC resources for cloud values.
+**Apply to configuration** updates the existing controls and reports the number
+of settings changed. It never submits or launches a workflow. Review the manual
+controls and complete the ordinary validation and execution steps. A proposal
+becomes stale if the controls change; create it again before applying. Manual
+edits always remain authoritative.
+
+You can refine the current controls with requests such as “Change the CPUs to
+8” or “Keep everything but run this on PACE”. Each request uses the current
+configuration, without conversation history. If a requested change invalidates
+another setting, the preview includes a deterministic required adjustment or
+asks for clarification; it does not silently discard the setting.
+
+“Why can't I run this?” diagnoses configuration issues without changing controls.
+“Fix my configuration” proposes a repair only when existing metadata supplies a
+deterministic supported choice. It cannot repair institutional access, credentials,
+licensing, or infrastructure. “Why is this Suggested?”, “What did you change?”,
+and “Explain this configuration” provide compact read-only explanations from
+proposal provenance and existing capability information. A stale proposal is
+identified as stale rather than explained as current.
+
+This is a bounded configuration aid, not an autonomous scientist or a general
+chat service. It does not authorize execution, provision infrastructure, or
+modify licensing. Existing identity, resource, scientific-parameter, and backend
+checks remain authoritative; a prepared configuration is not proof that a run
+is ready.

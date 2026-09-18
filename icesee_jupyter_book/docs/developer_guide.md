@@ -208,33 +208,3 @@
   </footer>
 </div>
 :::
-
-
-### Agent configuration integration
-
-`CRYOSTACK_AGENT_PANEL` enables the configuration planner in both gateways.
-The mounted planner uses `cryostack_src/agents/intent.py` and
-`icesee_jupyter_book/ui/configuration_agent.py`. It creates an inert delta over
-manual widget state, not an executable or approved RunPlan. The older
-RunAssistant/tool-loop APIs remain available for integrations but are no longer
-the mounted CryoLauncher configuration path.
-
-Catalogs are rebuilt from model capabilities, runnable workspace/application
-examples, compute profiles, curated solver-aware parameters, and ICESEE's
-example registry/templates. Missing or unsupported requests are surfaced;
-there is no new model/runtime capability registry. GPU/multi-node restrictions
-come from `resolve_workflow_capabilities`.
-
-Applying requires unchanged catalog/configuration state and independently
-recomputed inference. It mutates only allowlisted configuration controls and
-runs the existing model/Slurm or cloud checks. It never invokes approval,
-job staging, or submission. Example selection may perform the same local
-workspace preparation as a manual selection. The normal manual execution handlers remain responsible
-for fresh identity, backend, scientific staging and cloud readiness checks.
-A configuration check is not an execution authorization. On an application
-error, the current configuration is displayed for review; no run is started.
-
-The planner is deterministic and supports a bounded natural-language grammar.
-It is not a conversational scientific reasoning service. Add new vocabulary
-through metadata where possible, and test real gateway controls as well as
-inference. New core planner modules must remain in the agent policy scan.

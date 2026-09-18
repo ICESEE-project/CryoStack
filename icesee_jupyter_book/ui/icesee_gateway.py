@@ -3447,7 +3447,7 @@ def build_icesee_ui():
                 ensemble=ens_sl, params_snapshot=build_config_from_widgets,
                 sync_quick=sync_quick_into_widgets, cloud_validate=_agent_cloud_validate)
             agent_acc = W.Accordion(children=[icesee_agent.container], selected_index=None)
-            agent_acc.set_title(0, "Agent · Beta")
+            agent_acc.set_title(0, "Auto-config · Beta")
             agent_rows.append(agent_acc)
 
         icesee_run_settings = build_run_settings_panel(

@@ -28,9 +28,10 @@
 
 ---
 
-**ICESEE** offers a Local execution mode: a selected workflow runs directly
-in the hosting notebook kernel, without a scheduler or cloud resource. This
-is the fastest path for small examples and interactive development — see
+**ICESEE** offers a Local execution mode: a selected workflow runs as a
+Python subprocess on the application host, without a scheduler or cloud
+resource. This is the fastest path for small examples and interactive
+development — see
 <a href="../applications/icesee/user_manual.html">ICESEE's Local Mode</a>
 for scope and limits.
 

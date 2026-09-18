@@ -32,7 +32,7 @@ def test_omission_retains_but_ambiguity_does_not():
     assert not infer_request('Use 4 CPUs.',c).applicable
 
 
-def test_edit_clears_proposal_and_details_remain_collapsed():
+def test_edit_clears_proposal_without_exposing_full_configuration():
     c=catalog(); applied=[]
     panel=build_configuration_agent(catalog=lambda:c, apply_values=applied.append, snapshot=lambda:c['current'],validate=lambda:[])
     text=next(w for w in walk(panel.container) if isinstance(w,W.Textarea))
@@ -47,11 +47,9 @@ def test_edit_clears_proposal_and_details_remain_collapsed():
     button(panel,'Apply to configuration').click()
     assert applied[0]['cpus']==8
     assert 'Configuration updated' in contents(panel)
-    acc=next(w for w in walk(panel.container) if isinstance(w,W.Accordion))
-    assert acc.selected_index is None
+    assert not any(isinstance(w, W.Accordion) for w in walk(panel.container))
+    assert 'Full configuration' not in contents(panel)
     c['current']['cpus']=16
-    acc.selected_index=0
-    assert '>16<' in contents(panel)
     panel.apply(); assert len(applied)==1
 
 
@@ -153,3 +151,113 @@ def test_icesee_example_filter_ensemble_and_manual_changes(gateway):
     panel.apply()
     assert 'ISSM' in c['example'].value and c['mode_tabs'].selected_index==1
     assert c['fields']['cpus'].value==4 and c['fields']['parallel_processes'].value==4
+
+
+def test_change_preview_current_proposed_sources_and_no_scheduler_noise():
+    from icesee_jupyter_book.ui.configuration_agent import _change_preview
+    c = catalog()
+    c['current'].update(cpus=8, tasks_per_node=8, memory='64G', account='allocation')
+    proposal = infer_request('Use 4 CPUs.', c)
+    rendered, changes = _change_preview(c, proposal)
+    assert changes == {'cpus': 4, 'tasks_per_node': 4}
+    assert all(label in rendered for label in ('Setting', 'Current', 'Proposed', 'Source', 'Retained', 'From request'))
+    assert '>8<' in rendered and '>4<' in rendered
+    assert '2 settings to change' in rendered
+    assert '64G' not in rendered and 'allocation' not in rendered
+    assert rendered.index('CPUs') < rendered.index('Retained:')
+    assert rendered.count('<tr>') == 3
+
+
+def test_noop_apply_avoids_writes_and_reports_zero():
+    c = catalog()
+    c['current'].update(cpus=4, tasks_per_node=4)
+    checks = []
+    panel = build_configuration_agent(catalog=lambda: c,
+        apply_values=lambda _: pytest.fail('No-op must not rewrite manual controls'),
+        snapshot=lambda: c['current'], validate=lambda: checks.append(True) or [])
+    panel.ask('Use 4 CPUs.')
+    assert 'No changes needed' in contents(panel)
+    assert 'Retained:' in contents(panel)
+    assert '<table' not in contents(panel)
+    panel.apply()
+    assert '0 settings changed' in contents(panel)
+    assert 'existing controls remain authoritative' in contents(panel)
+    assert 'Configuration changes' not in contents(panel)
+    assert button(panel, 'Apply to configuration').layout.display == 'none'
+    assert checks == [True]
+
+
+def test_change_count_manual_edit_and_stale_refusal():
+    c = catalog()
+    c['current'].update(cpus=8, tasks_per_node=8)
+    writes = []
+    def apply(values):
+        writes.append(values)
+        c['current'].update(values)
+    panel = build_configuration_agent(catalog=lambda: c, apply_values=apply,
+        snapshot=lambda: c['current'], validate=lambda: [])
+    panel.ask('Use 4 CPUs.')
+    panel.apply()
+    assert '2 settings changed' in contents(panel)
+    c['current'].update(cpus=12, tasks_per_node=12)
+    panel.ask('Use 6 CPUs.')
+    assert '>12<' in contents(panel)
+    c['current']['cpus'] = 16
+    panel.apply()
+    assert len(writes) == 1 and c['current']['cpus'] == 16
+    assert 'Settings changed' in contents(panel)
+    panel.ask('Icepack tutorial on Remote')
+    panel.apply()
+    assert c['current']['cpus'] == 16
+
+
+def test_parameter_preview_compares_actual_override_and_escapes_values():
+    from icesee_jupyter_book.ui.configuration_agent import _change_preview
+    from cryostack_src.agents.intent import Proposal
+    c = catalog()
+    c['current']['overrides'] = {'ice_temperature': 250.0}
+    p = Proposal(values={'parameters': {'ice_temperature': 255.0}, 'account': '<unsafe>'})
+    rendered, changes = _change_preview(c, p)
+    assert '>250.0<' in rendered and '>255.0<' in rendered
+    assert changes['parameter:ice_temperature'] == 255.0
+    assert '&lt;unsafe&gt;' in rendered and '<unsafe>' not in rendered
+    p.values['parameters']['ice_temperature'] = 250.0
+    rendered, changes = _change_preview(c, p)
+    assert 'parameter:ice_temperature' not in changes and '250.0' not in rendered
+
+
+def test_compact_preview_and_applied_summary_hide_internal_snapshot():
+    from icesee_jupyter_book.ui.tests.test_agent_diagnosis import configuration
+    c = configuration()
+    c['current'].update(model='issm', example='shelf', wall_time='01:00:00')
+    private = dict(execution_directory='/internal/work', run_target='runme.m')
+    panel = build_configuration_agent(catalog=lambda: c,
+        apply_values=lambda values: c['current'].update(values),
+        snapshot=lambda: dict(c['current'], **private), validate=lambda: [])
+    panel.ask('Change the CPUs to 8')
+    view = contents(panel)
+    assert view.count('<tr>') == 2  # header plus the one actual change
+    assert 'Retained: ISSM · SquareIceShelf · Remote · PACE' in view
+    assert all(value not in view for value in private.values())
+    assert 'Current configuration' not in view and '<pre' not in view
+    panel.apply()
+    view = contents(panel)
+    assert '✓ Configuration updated' in view and '1 setting changed' in view
+    assert 'ISSM · SquareIceShelf · Remote · PACE · 8 CPUs' in view
+    assert '<table' not in view and all(value not in view for value in private.values())
+    # Hidden snapshots still guard stale proposals despite having no UI viewer.
+    panel.ask('Change the CPUs to 12')
+    private['run_target'] = 'different.m'
+    panel.apply()
+    assert c['current']['cpus'] == 8 and 'Settings changed' in contents(panel)
+
+
+def test_icesee_summary_labels_filter_and_ensemble():
+    from icesee_jupyter_book.ui.configuration_agent import _change_preview
+    c = catalog('icesee')
+    c['filters'] = ['EnKF', 'DEnKF']
+    c['current'].update(mode='local', filter='DEnKF', ensemble_size=20)
+    p = infer_request('Change only the filter to EnKF', c)
+    view, changes = _change_preview(c, p)
+    assert changes == {'filter': 'EnKF'} and view.count('<tr>') == 2
+    assert '20 ensemble members' in view and 'Retained:' in view

@@ -883,24 +883,50 @@ For reliable experiments:
 </div>
 :::
 
-### Agent · Beta: prepare an ICESEE experiment
+### Auto-config · Beta: prepare an ICESEE experiment
 
-When enabled, expand **Agent · Beta** in Run settings. For example:
+When enabled, expand **Auto-config · Beta** in Run settings. For example:
 
 > Prepare Lorenz96 locally with ensemble size 20 and DEnKF.
 
-The planner uses enabled example metadata and each example's parameter template
-to identify its forecast model. It can infer local, remote or cloud execution,
-a compute profile, remote CPU/node resources, ensemble size and an available
-assimilation filter. **Create plan** prepares a proposal; **Apply to
-configuration** updates the existing example, resource and scientific controls.
-Review the full configuration and reported checks before using the normal run
-controls. Nothing is approved or submitted by the planner.
+The selected example identifies its forecast model through existing metadata.
+Ensemble and filter changes populate the same controls you edit manually; for
+example, “Use the same configuration with 50 ensemble members” or “Change only
+the filter to EnKF”. Inspect the normal Run settings after applying.
+Example availability does not establish runtime readiness, and the verified
+Lorenz-96 cloud contract does not qualify other forecast workflows.
 
-Unspecified settings retain the current manual values. Unresolved choices are
-shown explicitly. Selecting an example does not establish that its runtime is
-ready: under-development examples and cloud runtime restrictions still apply.
-Cloud review checks the actual forecast model, verified example/process
-contract and account readiness. Additional YAML settings and combined forecast
-workflows require manual configuration. Each revision should state the full
-experiment request.
+**Create plan** prepares a compact change preview: **Setting | Current |
+Proposed | Source**. Changed settings are primary; important unchanged values
+appear in a short retained summary. **From request** means explicitly requested,
+**Suggested** means a deterministic adjustment from existing metadata or policy,
+and **Retained** means a valid current value is intentionally unchanged.
+Omitted settings stay as configured. Ambiguity requires clarification;
+unsupported requests cannot be applied. A matching request reports **No changes
+needed**.
+
+**Apply to configuration** updates the existing controls and reports the number
+of settings changed. It never submits or launches a workflow. Review the manual
+controls and complete the ordinary validation and execution steps. A proposal
+becomes stale if the controls change; create it again before applying. Manual
+edits always remain authoritative.
+
+You can refine the current controls with requests such as “Change the CPUs to
+8” or “Keep everything but run this on PACE”. Each request uses the current
+configuration, without conversation history. If a requested change invalidates
+another setting, the preview includes a deterministic required adjustment or
+asks for clarification; it does not silently discard the setting.
+
+“Why can't I run this?” diagnoses configuration issues without changing controls.
+“Fix my configuration” proposes a repair only when existing metadata supplies a
+deterministic supported choice. It cannot repair institutional access, credentials,
+licensing, or infrastructure. “Why is this Suggested?”, “What did you change?”,
+and “Explain this configuration” provide compact read-only explanations from
+proposal provenance and existing capability information. A stale proposal is
+identified as stale rather than explained as current.
+
+This is a bounded configuration aid, not an autonomous scientist or a general
+chat service. It does not authorize execution, provision infrastructure, or
+modify licensing. Existing identity, resource, scientific-parameter, and backend
+checks remain authoritative; a prepared configuration is not proof that a run
+is ready.

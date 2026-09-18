@@ -23,12 +23,15 @@ Backend availability and validation are specific to each workflow.
 
 Applications reuse shared CryoStack infrastructure rather than each
 maintaining their own: per-user identity and workspaces, experiment
-records, execution/result contracts, and the Connector/Relay for
-reaching institutional or other private resources (from Remote HPC
-access, and, when a Cloud workflow needs it, private connectivity such
-as an institutional MATLAB license). This infrastructure is not itself
-an application. Administrative/operations tooling (Control Center) is
-separate from the scientific applications above.
+records, and the Connector/Relay for reaching institutional or other
+private resources (from Remote HPC access, and, when a Cloud workflow
+needs it, private connectivity such as an institutional MATLAB
+license), plus a shared AWS account/onboarding layer for Cloud.
+CryoLauncher and ICESEE each implement their own submission, execution,
+and result-handling today rather than through one common execution or
+result contract. This infrastructure is not itself an application.
+Administrative/operations tooling (Control Center) is separate from the
+scientific applications above.
 
 ## Documentation
 
@@ -161,7 +164,7 @@ If you use ICESEE in your research, please cite:
 ```bibtex
 @software{icesee2026,
   author = {Kyanjo, Brian and Robel, Alexander},
-  title = {ICESEE: Ice-sheet Coupled Ensemble Simulator and Estimator},
+  title = {ICESEE: Ice Sheet State and Parameter Estimator},
   year = {2026},
   url = {https://github.com/ICESEE-project/ICESEE}
 }
