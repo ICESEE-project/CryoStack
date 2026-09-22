@@ -780,4 +780,11 @@ def make_app() -> web.Application:
 
 
 if __name__ == "__main__":
-    web.run_app(make_app(), host="127.0.0.1", port=8080)
+    # Bare-metal production keeps its existing behavior (loopback-only;
+    # nginx reverse-proxies to it on the same host) as the default. A
+    # container needs to bind the interface Docker's -p port-publishing
+    # actually reaches (the container's eth0, not its loopback) -- set
+    # CRYOSTACK_HOST=0.0.0.0 for that case rather than changing the
+    # production default.
+    host = os.environ.get("CRYOSTACK_HOST", "127.0.0.1")
+    web.run_app(make_app(), host=host, port=8080)
