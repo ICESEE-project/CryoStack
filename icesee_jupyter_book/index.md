@@ -564,7 +564,7 @@
 
       <div class="cryostack-footer-meta">
         <span>© 2026 CryoStack</span>
-        <span>BSD 2-Clause License</span>
+        <span>MIT License</span>
       </div>
 
     </div>

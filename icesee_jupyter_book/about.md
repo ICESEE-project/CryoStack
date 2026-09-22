@@ -458,7 +458,7 @@
     <h2>Open-source licensing.</h2>
 
     <p class="cryostack-section-intro">
-      CryoStack is distributed under the BSD 2-Clause License. Integrated
+      CryoStack is distributed under the MIT License. Integrated
       applications and external scientific packages may use different
       licenses. Users should consult the corresponding project repository
       before redistributing or modifying those components.

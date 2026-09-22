@@ -201,7 +201,7 @@
       <div>Developed by ICCL and PGSL at the Georgia Institute of Technology.</div>
       <div class="cryostack-footer-meta">
         <span>© 2026 CryoStack</span>
-        <span>BSD 2-Clause License</span>
+        <span>MIT License</span>
       </div>
     </div>
 
