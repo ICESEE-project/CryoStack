@@ -1,0 +1,60 @@
+name: Publish container image
+
+# Publishes the CryoStack platform/gateway image (containers/cryostack/Dockerfile)
+# to GHCR. Never runs on a plain push or tag creation -- only once a GitHub
+# Release is actually published, so the image can never drift ahead of a
+# reviewed release, and the source release / Zenodo archive / GHCR image all
+# correspond to the same tagged commit.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags/labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/icesee-project/cryostack
+          tags: |
+            type=semver,pattern={{version}},value=${{ github.event.release.tag_name }}
+            type=raw,value=latest,enable=${{ github.event.release.prerelease == false }}
+          labels: |
+            org.opencontainers.image.title=CryoStack
+            org.opencontainers.image.description=CryoStack: open-source cyberinfrastructure stack for assembling reproducible cryosphere workflows from scientific applications, user workspaces, data catalogs, simulation configurations, and heterogeneous execution resources.
+            org.opencontainers.image.source=https://github.com/ICESEE-project/CryoStack
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.event.release.tag_name }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: containers/cryostack/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          sbom: true

@@ -1,0 +1,106 @@
+# .dockerignore for the public CryoStack platform/gateway image
+# (containers/cryostack/Dockerfile, ghcr.io/icesee-project/cryostack).
+#
+# Security-sensitive: this file is what keeps user workspace data, runtime
+# credentials/state, logs, institutional deployment config, and unrelated
+# development/proposal material out of a PUBLIC container image. Treat any
+# addition to the repo root as untrusted-by-default for this build context
+# until explicitly allow-listed by being left out of this file.
+
+# ---- version control / editor / CI-adjacent tooling ----------------------
+.git/
+.github/
+.claude/
+.pytest_cache/
+.gitmodules
+
+# ---- per-user runtime workspace data (never build-time input) ------------
+# Live user workspaces (per-user hashed directories at repo root).
+/users/
+icesee_jupyter_book/icesee_jupyter_notebooks/users/
+
+# ---- runtime state / secrets-shaped files (created at container runtime,
+# always volume-mounted in production -- never baked into the image) -------
+/var/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+.env
+.env.*
+*.pem
+*.key
+*credentials*
+*secret*
+
+# ---- logs -------------------------------------------------------------
+*.log
+icesee.log
+relay.log
+
+# ---- build/dist output not needed as build INPUT (rebuilt fresh in-image,
+# or belongs to an unrelated release channel) -------------------------------
+/dist/
+/build/
+icesee_jupyter_book/_build/
+
+# ---- unrelated release channel: the desktop Connector client is packaged
+# and published separately (build_connector.sh / publish_connector_artifact.sh
+# -> /downloads/connectors/); it is not part of the gateway container. ------
+/icesee_hpc_connector/
+
+# ---- institutional / production-only deployment config (GT hostnames, AWS
+# account-specific CloudFormation) -- not required to build or run the image
+# and not appropriate to redistribute inside a public MIT-licensed image. --
+deployment/deploy_web_nginx/
+deployment/cloudformation/
+deployment/publish-cloudformation.sh
+
+# ---- LIVIST submodule (external/living-ice-sheet-temperature): its
+# frontend IS now built in-image (containers/cryostack/Dockerfile's
+# livist-builder stage), so unlike the rest of this file this is a
+# narrow allow-list, not a blanket exclude -- only frontend/ (build
+# source) and LICENSE (attribution) are needed; everything else in the
+# submodule (Python/uv backend, docs, tests, scripts, its own docs-site
+# build, and any locally checked-out .venv/node_modules/dist -- the
+# latter two already caught by the generic **/.venv//**/node_modules/
+# rules below) is excluded. Do not remove this block back to a blanket
+# exclude -- Docker cannot negate a path back in once its parent
+# directory itself has been excluded.
+external/living-ice-sheet-temperature/.venv/
+external/living-ice-sheet-temperature/.cache/
+external/living-ice-sheet-temperature/docs/
+external/living-ice-sheet-temperature/tests/
+external/living-ice-sheet-temperature/scripts/
+external/living-ice-sheet-temperature/site/
+external/living-ice-sheet-temperature/src/
+external/living-ice-sheet-temperature/img/
+external/living-ice-sheet-temperature/.github/
+external/living-ice-sheet-temperature/*.toml
+external/living-ice-sheet-temperature/*.lock
+external/living-ice-sheet-temperature/.python-version
+external/living-ice-sheet-temperature/README.md
+external/living-ice-sheet-temperature/frontend/dist/
+
+# ---- generic dev-environment clutter that may exist locally in any dir ---
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/.venv/
+**/venv/
+**/node_modules/
+**/.DS_Store
+**/.ipynb_checkpoints/
+
+# ---- explicitly out of scope for this task (paper/proposal/presentation/
+# advertising/Auto-config work; not modified, and not shipped in the image)
+/paper_/
+/nsf-csi-proposal/
+/presentation/
+/advertising/
+/overnight_/
+
+# ---- the scientific HPC/cloud compute image build context is a separate,
+# non-public artifact -- not needed inside the platform/gateway image -----
+/tools/cloud/
