@@ -16,7 +16,7 @@ external/ICESEE/applications/lorenz_model/examples/lorenz96/_modelrun_datasets/
 
 # Local environment snapshots
 tools/icesee1_conda_list_rhel.txt
-tools/icesee1_environment.yml
+# tools/icesee1_environment.yml #needed for CI and public CryoStack container build
 
 # CryoStack local authentication database
 /var/*.db
