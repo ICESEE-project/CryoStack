@@ -185,7 +185,11 @@ resolver every ISSM-driven run uses, not the ICESEE application name or
 Basic/Advanced mode. A **Lorenz-96** or **Icepack** forecast model never
 shows the field; an **ISSM** (or coupled **ISSM+Icepack**) forecast model
 does, because that workflow uses ISSM — and Launch stays blocked until a
-cloud-reachable license (an AWS Secrets Manager ARN) is configured for it.
+usable license is configured for it. Normally you provide the institutional
+MATLAB license information once through the dedicated license controls;
+Connector supplies supported institutional connectivity when required.
+This requirement does not itself qualify an ISSM-based ICESEE workflow for
+cloud execution: the example and process restrictions still apply.
 See CryoLauncher's
 <a href="../icesheets/user_manual.html#matlab-licensing-for-issm-cloud-runs">MATLAB
 licensing for ISSM cloud runs</a> for the one-time setup — the same
@@ -195,10 +199,62 @@ Today that verified contract covers exactly one configuration: the
 **Lorenz-96** example at a single process (**Processes = 1**). Selecting a
 different example, or more than one process, is refused at Review — not
 silently coerced — because it has not been run end-to-end against the
-current container image. See the full
+current container image. See the
 [Cloud Run Guide](https://cryostack.eas.gatech.edu/docs/hpc_cloud.html) for
-the complete walkthrough, the reasoning behind that limit, and the current
-onboarding status.
+the platform-wide AWS account/infrastructure concepts this reuses, and the
+walkthrough below for the exact ICESEE steps.
+
+#### Worked example: Lorenz-96 on AWS
+
+1. **Open ICESEE** and select the **Lorenz-96** example.
+2. Leave its configuration at the default (or your own edits) — the same
+   `params.yaml` used for a local or Remote run:
+
+   ```yaml
+   modeling-parameters:
+     example_name: "lorenz96"
+     dt: 0.01
+     num_years: 10
+     timesteps_per_year: 2
+
+   enkf-parameters:
+     Nens: 30
+     filter_type: "EnKF"
+     model_name: "lorenz"
+     parallel_flag: "serial"
+   ```
+
+3. In **Run settings**, set **Execution mode** to **Cloud**.
+4. If you have not connected an AWS account yet, follow
+   [Connecting your AWS account](https://cryostack.eas.gatech.edu/docs/hpc_cloud.html#connecting-your-aws-account-byo-aws)
+   now. CloudFormation onboarding happens in a separate browser tab — your
+   AWS console — not inside CryoStack.
+5. Return to CryoStack and click **Verify connection**; confirm the panel
+   shows **● Connected**.
+6. Click **Prepare cloud** and wait for **Account / Storage / Containers /
+   Compute** to all read **Ready**.
+7. Set **Processes** to **1** — this is the only value CryoStack will let
+   you launch today for ICESEE (see the verified contract above).
+8. Click **Review & Launch**. Confirm the card reads
+   **ICESEE runtime: Ready**, **Parallel mode: Single-rank verified**,
+   **Processes: 1** — this is CryoStack's own honest preflight check, not a
+   cosmetic label.
+9. Click **Launch cloud run**.
+10. ICESEE does not poll AWS in the background — click **Check status** in
+    the Run Log toolbar whenever you want to know whether the job has
+    finished. It prints the current AWS Batch state (e.g. `RUNNABLE`,
+    `RUNNING`, `SUCCEEDED`) to the Run Log.
+11. Once status reads `SUCCEEDED`, open the run from the Workspace **Runs**
+    list. Selecting it triggers a best-effort sync of its S3 outputs into
+    your local run cache, then shows Results — figures and fields render
+    the same way a local run's results do.
+12. To change anything (ensemble size, seed, observation settings), edit
+    the configuration and repeat from step 8 — a new review is always
+    required before a changed configuration can launch.
+13. See
+    [Cleanup](https://cryostack.eas.gatech.edu/docs/hpc_cloud.html#cleanup)
+    in the Cloud Run Guide before you consider the run finished — nothing
+    about the AWS infrastructure this used is removed automatically.
 
 ## Example Selection
 
@@ -827,24 +883,50 @@ For reliable experiments:
 </div>
 :::
 
-### Agent · Beta: prepare an ICESEE experiment
+### Auto-config · Beta: prepare an ICESEE experiment
 
-When enabled, expand **Agent · Beta** in Run settings. For example:
+When enabled, expand **Auto-config · Beta** in Run settings. For example:
 
 > Prepare Lorenz96 locally with ensemble size 20 and DEnKF.
 
-The planner uses enabled example metadata and each example's parameter template
-to identify its forecast model. It can infer local, remote or cloud execution,
-a compute profile, remote CPU/node resources, ensemble size and an available
-assimilation filter. **Create plan** prepares a proposal; **Apply to
-configuration** updates the existing example, resource and scientific controls.
-Review the full configuration and reported checks before using the normal run
-controls. Nothing is approved or submitted by the planner.
+The selected example identifies its forecast model through existing metadata.
+Ensemble and filter changes populate the same controls you edit manually; for
+example, “Use the same configuration with 50 ensemble members” or “Change only
+the filter to EnKF”. Inspect the normal Run settings after applying.
+Example availability does not establish runtime readiness, and the verified
+Lorenz-96 cloud contract does not qualify other forecast workflows.
 
-Unspecified settings retain the current manual values. Unresolved choices are
-shown explicitly. Selecting an example does not establish that its runtime is
-ready: under-development examples and cloud runtime restrictions still apply.
-Cloud review checks the actual forecast model, verified example/process
-contract and account readiness. Additional YAML settings and combined forecast
-workflows require manual configuration. Each revision should state the full
-experiment request.
+**Create plan** prepares a compact change preview: **Setting | Current |
+Proposed | Source**. Changed settings are primary; important unchanged values
+appear in a short retained summary. **From request** means explicitly requested,
+**Suggested** means a deterministic adjustment from existing metadata or policy,
+and **Retained** means a valid current value is intentionally unchanged.
+Omitted settings stay as configured. Ambiguity requires clarification;
+unsupported requests cannot be applied. A matching request reports **No changes
+needed**.
+
+**Apply to configuration** updates the existing controls and reports the number
+of settings changed. It never submits or launches a workflow. Review the manual
+controls and complete the ordinary validation and execution steps. A proposal
+becomes stale if the controls change; create it again before applying. Manual
+edits always remain authoritative.
+
+You can refine the current controls with requests such as “Change the CPUs to
+8” or “Keep everything but run this on PACE”. Each request uses the current
+configuration, without conversation history. If a requested change invalidates
+another setting, the preview includes a deterministic required adjustment or
+asks for clarification; it does not silently discard the setting.
+
+“Why can't I run this?” diagnoses configuration issues without changing controls.
+“Fix my configuration” proposes a repair only when existing metadata supplies a
+deterministic supported choice. It cannot repair institutional access, credentials,
+licensing, or infrastructure. “Why is this Suggested?”, “What did you change?”,
+and “Explain this configuration” provide compact read-only explanations from
+proposal provenance and existing capability information. A stale proposal is
+identified as stale rather than explained as current.
+
+This is a bounded configuration aid, not an autonomous scientist or a general
+chat service. It does not authorize execution, provision infrastructure, or
+modify licensing. Existing identity, resource, scientific-parameter, and backend
+checks remain authoritative; a prepared configuration is not proof that a run
+is ready.

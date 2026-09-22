@@ -514,7 +514,7 @@ def build_icesheets_ui():
             ui_mode_dd.options = [
                 ("Basic", "basic"),
                 ("Advanced", "advanced"),
-                ("Agent · Beta", "agent"),
+                ("Auto-config · Beta", "agent"),
             ]
 
         software_panel = build_software_stack_panel()
@@ -926,10 +926,32 @@ def build_icesheets_ui():
             the Batch container, which has no reason to (and does not) have
             the CryoLauncher web application's own package installed. Staged
             unconditionally for every ISSM cloud run; the runner only
-            invokes it when CRYOSTACK_LICENSE_TUNNEL_REQUIRED=1."""
-            from cryostack_src.cloud.runtime import license_tunnel_client_extra_files
+            invokes it when CRYOSTACK_LICENSE_TUNNEL_REQUIRED=1.
 
-            return license_tunnel_client_extra_files()
+            Merged with the ISSM branch script itself (tunnel setup + the
+            MATLAB invocation) -- also staged rather than embedded in the
+            generic runner's own command text, to keep the per-launch job
+            command well under AWS Batch's 8192-char container-overrides
+            limit. See cryostack_src.cloud.runtime's execution-artifact
+            contract.
+
+            Also merges ``postprocess_icesee.m`` (built by the SAME
+            generator the working Remote/SLURM path already uses --
+            :func:`cryostack_src.models.issm.postprocess.build_postprocess`)
+            -- Cloud staged the license tunnel + runner scripts but never
+            this file, so the runner's ``run('${WORKDIR}/postprocess_icesee.m')``
+            invocation had nothing to run after ISSM's solver completed."""
+            from cryostack_src.cloud.runtime import (
+                issm_cloud_runner_extra_files,
+                issm_postprocess_extra_files,
+                license_tunnel_client_extra_files,
+            )
+
+            return {
+                **license_tunnel_client_extra_files(),
+                **issm_cloud_runner_extra_files(),
+                **issm_postprocess_extra_files(),
+            }
 
         def _submit_cloud_run(staged_dir, md_provenance, *, review=None):
             """Validate + preflight + stage the user-owned working copy

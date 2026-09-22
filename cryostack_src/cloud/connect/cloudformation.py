@@ -17,7 +17,7 @@
 # Created     : 2026-09-03
 #
 # Copyright (c) 2026 ICESEE Project
-# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-License-Identifier: MIT
 #
 # =============================================================================
 
@@ -314,6 +314,28 @@ def _permissions_policy() -> dict:
                         "secretsmanager:Name": "cryostack/*"
                     }
                 },
+            },
+            # `DescribeSecret` returns ONLY metadata (ARN, name, tags,
+            # rotation info) -- never the secret's value; it exists so
+            # "Configure license" can recover CryoStack's own reference to
+            # a secret that already exists under the fixed managed name
+            # (CreateSecret collides with `SecretAlreadyExists` -- e.g.
+            # after this AWS account's connection was re-established and
+            # its local record no longer names the secret it created
+            # before) instead of leaving the connection unable to ever
+            # reuse a secret it is already entitled to create. Unlike
+            # CreateSecret, DescribeSecret's target already exists and IS
+            # addressable by ARN, so this is scoped by `Resource`, not a
+            # `Name` condition on `Resource: "*"` -- strictly narrower.
+            # Still no `GetSecretValue`, `PutSecretValue`, `UpdateSecret`,
+            # or `DeleteSecret`.
+            {
+                "Sid": "CryoStackMatlabLicenseSecretDescribe",
+                "Effect": "Allow",
+                "Action": "secretsmanager:DescribeSecret",
+                "Resource": sub(
+                    f"arn:{partition}:secretsmanager:*:{account}:secret:cryostack/*"
+                ),
             },
             # -- IAM: discover existing roles (ListRoles is account-level) --
             {

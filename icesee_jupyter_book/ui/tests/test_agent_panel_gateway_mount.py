@@ -105,7 +105,7 @@ def test_gateway_builds_agent_only_behind_the_opt_in():
     assert "_agent_mode_enabled()" in src
     assert "_build_agent_panel(workspace_manager)" in src
     # the third mode is added only when opted in
-    assert '("Agent · Beta", "agent")' in src
+    assert '("Auto-config · Beta", "agent")' in src
     # no parallel execution stack
     for banned in ("agent_submit(", "agent_results(", "agent_workspace(",
                    "agent_cloud(", "agent_slurm("):

@@ -273,7 +273,7 @@
     <div class="cryostack-exec-status">
       <span><b>Remote / HPC</b> <span class="cryostack-status supported">Supported</span></span>
       <span><b>Containers</b> <span class="cryostack-status supported">Supported</span></span>
-      <span><b>Cloud</b> <span class="cryostack-status dev">In validation</span></span>
+      <span><b>Cloud</b> <span class="cryostack-status supported">Supported</span></span>
     </div>
 
   </section>
@@ -476,17 +476,19 @@
       </article>
 
       <article class="cryostack-update-card">
-        <div class="cryostack-update-status">In validation</div>
+        <div class="cryostack-update-status">Supported</div>
 
         <h3>Cloud execution</h3>
 
         <p>
-          AWS Batch execution, on a default Fargate compute mode. Icepack and
-          ICESEE have each completed a real cloud run end-to-end there, and
-          Icepack has additionally done so on the Advanced EC2 On-Demand
-          compute mode (single node, CPU). EC2 Spot, GPU, multi-node, and EC2
-          for ISSM or ICESEE remain not yet AWS-validated, and ISSM
-          additionally needs a cloud-reachable MATLAB license.
+          AWS Batch execution, on a default Fargate compute mode with an
+          Advanced EC2 alternative. CryoLauncher's ISSM and Icepack
+          workflows have each completed end-to-end execution on both Fargate
+          and EC2 On-Demand (single node, CPU) — for ISSM, including
+          institutional MATLAB licensing through Connector/Relay — and
+          ICESEE's Lorenz-96 example has done the same on Fargate. EC2 Spot,
+          GPU, multi-node, and ICESEE's own Cloud/ISSM workflows remain
+          unvalidated.
         </p>
 
         <a href="docs/hpc_cloud.html">
@@ -531,7 +533,7 @@
         <h3>Community</h3>
 
         <a
-          href="https://github.com/ICESEE-project/CryoLauncher"
+          href="https://github.com/ICESEE-project/CryoStack"
           target="_blank"
           rel="noopener noreferrer">
           GitHub
@@ -545,7 +547,7 @@
         </a>
 
         <a
-          href="https://github.com/ICESEE-project/CryoLauncher/issues"
+          href="https://github.com/ICESEE-project/CryoStack/issues"
           target="_blank"
           rel="noopener noreferrer">
           Report an Issue
@@ -562,7 +564,7 @@
 
       <div class="cryostack-footer-meta">
         <span>© 2026 CryoStack</span>
-        <span>BSD 2-Clause License</span>
+        <span>MIT License</span>
       </div>
 
     </div>

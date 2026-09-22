@@ -1,0 +1,32 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up the CryoStack conda environment
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          environment-file: tools/icesee1_environment.yml
+          activate-environment: cryostack-ci
+          miniforge-version: latest
+
+      - name: Run test suite
+        shell: bash -l {0}
+        # This runs CryoStack's own pytest suite (gateway, auth, model
+        # adapters, connector, cloud modules, deployment engine). It does
+        # not run anything that needs live AWS, PACE, or MATLAB access:
+        # AWS calls in this codebase go through the `aws` CLI rather than a
+        # Python SDK, and tests exercising that path use fakes, not a real
+        # account. A test that genuinely requires a live credential or
+        # external service should be marked/skipped in the test itself
+        # rather than run here against nothing.
+        run: |
+          python -m pytest -q cryostack_src icesee_jupyter_book icesee_hpc_connector deployment

@@ -186,12 +186,12 @@
 
   <article class="cryostack-resource-card">
     <div class="cryostack-resource-tag">Execution Mode</div>
-    <h3>Cloud <span class="cryostack-status dev">In validation</span></h3>
+    <h3>Cloud <span class="cryostack-status supported">Supported</span></h3>
     <p>
       AWS Batch execution, Fargate by default (EC2 Advanced also exists).
-      Icepack has run a real cloud job end-to-end on both Fargate and EC2
-      On-Demand (single node, CPU); ISSM's cloud path is provisioned but
-      needs a cloud-reachable MATLAB license.
+      Both ISSM and Icepack have run end-to-end on Fargate and EC2 On-Demand
+      (single node, CPU); ISSM's runs include reaching a configured
+      institutional MATLAB license through Connector/Relay.
     </p>
     <a href="../../docs/hpc_cloud.html">Cloud Run Guide &rarr;</a>
   </article>
@@ -318,11 +318,11 @@
 
   <article class="cryostack-resource-card">
     <div class="cryostack-resource-tag">Source Code</div>
-    <h3>CryoLauncher repository</h3>
+    <h3>CryoStack repository</h3>
     <p>
       The gateway, application layer, connector, and deployment source.
     </p>
-    <a href="https://github.com/ICESEE-project/CryoLauncher" target="_blank" rel="noopener noreferrer">
+    <a href="https://github.com/ICESEE-project/CryoStack" target="_blank" rel="noopener noreferrer">
       View repository &rarr;
     </a>
   </article>
@@ -331,7 +331,7 @@
     <div class="cryostack-resource-tag">Organization</div>
     <h3>ICESEE project</h3>
     <p>
-      The umbrella organization for ICESEE, CryoLauncher, containers, and
+      The umbrella organization for ICESEE, CryoStack, containers, and
       Spack environments.
     </p>
     <a href="https://github.com/ICESEE-project" target="_blank" rel="noopener noreferrer">
@@ -377,7 +377,7 @@
 
 ## Support
 
-Use the [CryoLauncher issue tracker](https://github.com/ICESEE-project/CryoLauncher/issues)
+Use the [CryoStack issue tracker](https://github.com/ICESEE-project/CryoStack/issues)
 for application bugs, connector and remote-execution problems, documentation
 issues, and feature requests.
 

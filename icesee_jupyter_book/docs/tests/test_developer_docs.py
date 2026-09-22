@@ -82,19 +82,44 @@ def test_developer_guide_hero_matches_the_documentation_pages():
     assert re.search(r"<h1>\s*Developer Guide\s*</h1>", src)
 
 
-def test_nav_cards_anchor_to_real_headings():
+def test_nav_cards_link_to_real_developer_guide_pages():
+    """The Developer Guide landing page's nav cards route to separate,
+    real child pages (Architecture, Frontend & Applications, Execution
+    Backends, Connector & Relay, Models/Examples & Results, Extending
+    CryoStack, Auto-config · Beta, Testing, Deployment & Maintenance) --
+    not same-page anchors into one giant page, and not dead links. Auto-
+    config · Beta must be one topic among these, never the only child."""
     src = _DEV.read_text()
-    anchors = set(re.findall(r'href="#([a-z0-9-]+)"', src))
     nav_targets = {
-        "architecture", "application-development", "shared-ui",
-        "models-and-adapters", "results-and-visualization", "testing",
-        "connector-development", "contribution-workflow",
+        "dev_architecture", "dev_frontend", "dev_execution", "dev_connector",
+        "dev_models_results", "dev_extending", "building_agents",
+        "dev_testing", "dev_deployment",
     }
-    assert nav_targets <= anchors
-    # every nav target has a matching markdown heading that Sphinx slugifies to it
-    headings = re.findall(r"^##\s+(.+?)\s*$", src, re.MULTILINE)
-    slugs = {re.sub(r"[^a-z0-9]+", "-", h.lower()).strip("-") for h in headings}
-    assert nav_targets <= slugs
+    linked = set(re.findall(r'href="([a-z_]+)\.html"', src))
+    assert nav_targets <= linked
+    for page in nav_targets:
+        assert (_BOOK / "docs" / f"{page}.md").is_file(), f"missing page: {page}.md"
+
+    toc_text = _TOC.read_text()
+    assert "docs/developer_guide" in toc_text
+    for page in nav_targets:
+        assert f"docs/{page}" in toc_text, f"{page} not nested under Developer Guide in _toc.yml"
+    assert toc_text.count("docs/building_agents") == 1, \
+        "Auto-config · Beta must appear once, nested among the other Developer Guide topics"
+
+
+def test_developer_guide_child_pages_use_the_cryostack_theme():
+    """Every split-out Developer Guide page (including the re-themed
+    Auto-config · Beta page) carries the same hero/theme wrapper as the
+    rest of the guide, not legacy default Jupyter Book styling."""
+    for page in ("dev_architecture", "dev_frontend", "dev_execution",
+                 "dev_connector", "dev_models_results", "dev_extending",
+                 "building_agents", "dev_testing", "dev_deployment"):
+        text = (_BOOK / "docs" / f"{page}.md").read_text()
+        assert "cryostack-docs-page" in text, f"{page}.md missing the CryoStack theme wrapper"
+        assert "cryostack-docs-hero" in text, f"{page}.md missing the CryoStack hero section"
+        assert 'href="developer_guide.html"' in text, \
+            f"{page}.md missing its back-link to the Developer Guide landing page"
 
 
 # ── 2. clean public/operational split, no duplication ─────────────────

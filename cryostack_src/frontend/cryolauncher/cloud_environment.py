@@ -18,7 +18,7 @@
 # Created     : 2026-08-25
 #
 # Copyright (c) 2026 ICESEE Project
-# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-License-Identifier: MIT
 #
 # =============================================================================
 
@@ -786,6 +786,37 @@ def _sanitize_secret_create_error(error: object) -> tuple[str, str]:
     )
 
 
+def _sanitize_secret_describe_error(error: object) -> tuple[str, str]:
+    """Map a backend ``SecretDescribeError`` (raised recovering an
+    existing secret's ARN after ``SecretAlreadyExists`` -- see
+    ``_create_secret`` -- or on a Re-check) to a (scientist-facing
+    message, short technical detail) pair, mirroring
+    :func:`_sanitize_secret_create_error` exactly. NEITHER string ever
+    carries the raw AWS CLI text; the technical detail is for the Run Log
+    only. Distinguishing AccessDenied specifically matters here: it is
+    the ONLY way a scientist (or whoever reads the Run Log) can tell "the
+    connected role does not have this permission yet" apart from "AWS
+    Secrets Manager did not respond" or any other failure -- a bare
+    'could not automatically confirm it' collapses both into one
+    undiagnosable message.
+    """
+    text = str(error)
+    if "AccessDenied" in text:
+        return (
+            "A MATLAB license is already configured for this AWS "
+            "account, but CryoStack's connection does not yet have the "
+            "permissions needed to confirm it. Select 'Update role "
+            "permissions', then try again.",
+            "Access denied for AWS Secrets Manager DescribeSecret.",
+        )
+    return (
+        "A MATLAB license is already configured for this AWS account, "
+        "but CryoStack could not automatically confirm it. Please try "
+        "again, or check your AWS connection.",
+        "AWS Secrets Manager DescribeSecret failed.",
+    )
+
+
 def _is_default_managed_matlab_license_arn(arn: str) -> bool:
     """True when ``arn`` names the ONE fixed-name secret Configure license
     creates (:data:`DEFAULT_MATLAB_LICENSE_SECRET_NAME`, plus the random
@@ -968,8 +999,10 @@ def wire_matlab_license_widgets(widgets: "CloudEnvironmentWidgets", *, owner, lo
         from cryostack_src.cloud.drivers.aws.secrets import (
             SecretAlreadyExists,
             SecretCreateError,
+            SecretDescribeError,
             SecretNameInvalid,
             create_matlab_license_secret,
+            describe_matlab_license_secret,
         )
 
         if _license_configure_busy:
@@ -1036,18 +1069,56 @@ def wire_matlab_license_widgets(widgets: "CloudEnvironmentWidgets", *, owner, lo
                     config, name=DEFAULT_MATLAB_LICENSE_SECRET_NAME, value=value)
             except SecretAlreadyExists:
                 # The fixed default name already exists in this AWS
-                # account. CryoStack never overwrites a secret it did not
-                # just create -- there is currently no in-app way to
-                # change that secret's value (see the MATLAB-license UX
-                # report / follow-up item on secretsmanager:PutSecretValue).
-                # Point the user at the one safe manual path instead of
-                # silently doing nothing.
+                # account (e.g. a prior "Configure license" -- possibly
+                # under an earlier connection to this same account --
+                # already created it, but THIS connection's own local
+                # record no longer names it). CryoStack never overwrites
+                # a secret it did not just create, but it CAN recover its
+                # own reference to it: a metadata-only DescribeSecret
+                # lookup (never the value -- see secrets.py) gets the
+                # existing secret's ARN, which is then persisted through
+                # the EXACT SAME path a fresh Configure uses below -- so
+                # "CryoStack will keep using it automatically" is actually
+                # true afterward, not just stated.
                 _clear_raw_value()
+                try:
+                    result = describe_matlab_license_secret(
+                        config, name=DEFAULT_MATLAB_LICENSE_SECRET_NAME)
+                except SecretDescribeError as e:
+                    # never silently pretend to have recovered it -- but
+                    # ALSO never discard the actual reason: distinguishing
+                    # "the connected role does not have this permission
+                    # yet" from any other failure is exactly what lets
+                    # this be diagnosed instead of guessed at (see
+                    # _sanitize_secret_describe_error).
+                    message, detail = _sanitize_secret_describe_error(e)
+                    widgets.matlab_license_create_status.value = _matlab_license_status_html(
+                        message, ok=False)
+                    with log_output:
+                        print(f"[cloud][ERROR] MATLAB license recovery failed: {detail}")
+                    return
+                except Exception:  # noqa: BLE001 -- never let a raw exception
+                    # crash the click handler (e.g. a missing AWS CLI, a
+                    # network blip -- not an AWS-reported error at all).
+                    widgets.matlab_license_create_status.value = _matlab_license_status_html(
+                        "A MATLAB license is already configured for this "
+                        "AWS account, but CryoStack could not automatically "
+                        "confirm it. Please try again, or check your AWS "
+                        "connection.", ok=False)
+                    with log_output:
+                        print("[cloud][ERROR] MATLAB license recovery failed "
+                              "(unexpected error, not an AWS response).")
+                    return
+                widgets.matlab_license_arn.value = result["arn"]
+                _save()
+                reconciled = _reconcile_license_access(execution, result["arn"])
                 widgets.matlab_license_create_status.value = _matlab_license_status_html(
                     "A MATLAB license is already configured for this AWS "
-                    "account. To change its value, update the secret "
-                    "directly in AWS Secrets Manager -- CryoStack will "
-                    "keep using it automatically.", ok=False)
+                    "account -- CryoStack will keep using it automatically."
+                    if reconciled else
+                    "A MATLAB license is already configured for this AWS "
+                    "account. Run Prepare cloud to finish setting up your "
+                    "cloud environment.", ok=True)
                 return
             except (SecretNameInvalid, ValueError) as e:
                 # backend-raised, human-authored validation text -- never

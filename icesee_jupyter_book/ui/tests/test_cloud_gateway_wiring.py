@@ -681,13 +681,19 @@ def test_icepack_cloud_submit_stages_the_postprocess_helper_alongside_run_py(
     assert extra is not None and ICEPACK_POSTPROCESS_FILENAME in extra
     assert extra[ICEPACK_POSTPROCESS_FILENAME] == icepack_postprocess_extra_files()[
         ICEPACK_POSTPROCESS_FILENAME]
+    # ISSM's postprocess helper is ISSM-only -- must never leak into Icepack
+    assert "postprocess_icesee.m" not in extra
 
 
 def test_issm_cloud_submit_never_gets_the_icepack_extra_file(monkeypatch, tmp_path):
     """ISSM behaviour is untouched apart from the license tunnel client fix:
     its own staging call never carries the Icepack-only extra_files entry,
     but DOES carry the license tunnel client helper (staged as an ordinary
-    file, never `python3 -m cryostack_src...` inside the Batch container)."""
+    file, never `python3 -m cryostack_src...` inside the Batch container)
+    and the ISSM postprocess helper -- see
+    test_issm_cloud_submit_stages_postprocess_icesee_identically_to_remote
+    below for the live-bug regression this line also covers ("RUN cannot
+    execute the file '/tmp/cryostack/run/postprocess_icesee.m'")."""
     from cryostack_src.cloud.runtime import (
         ICEPACK_POSTPROCESS_FILENAME,
         LICENSE_TUNNEL_CLIENT_FILENAME,
@@ -743,6 +749,71 @@ def test_issm_cloud_submit_never_gets_the_icepack_extra_file(monkeypatch, tmp_pa
     assert "import cryostack_src" not in _staged_src
     assert "from cryostack_src" not in _staged_src
     assert "import websockets" in _staged_src
+
+
+# ── live-acceptance: "RUN cannot execute the file
+# '/tmp/cryostack/run/postprocess_icesee.m'" ─────────────────────────────
+# Live finding: the Fargate PRRTE hardware-thread fix succeeded (both MPI
+# ranks launch, ISSM's solver completes), but the runner's unconditional
+# `run('${WORKDIR}/postprocess_icesee.m')` (cryostack_src/cloud/runtime.py)
+# then failed -- the file was never staged for Cloud. Remote
+# (cryostack_src/models/submission.py) always writes this file over SSH,
+# using cryostack_src.models.issm.postprocess.build_postprocess(), before
+# its own equally-unconditional `run('.../postprocess_icesee.m')` -- so
+# Remote never hit this. This traces the ACTUAL wired gateway code path
+# (the same _submit_cloud_run staging call the test above exercises) and
+# proves it now stages byte-identical content to what Remote writes.
+def test_issm_cloud_submit_stages_postprocess_icesee_identically_to_remote(
+    monkeypatch, tmp_path
+):
+    from cryostack_src.models.issm.postprocess import build_postprocess
+
+    launch_handler = _build_gateway_and_launch_handler(
+        monkeypatch, tmp_path, user="issm-postprocess-user")
+    submit_fn = _freevar(launch_handler, "_submit_cloud_run")
+
+    model_dd = _freevar(submit_fn, "model_dd")
+    example_dir = _freevar(submit_fn, "example_dir")
+    run_target = _freevar(submit_fn, "run_target")
+    aws_region = _freevar(submit_fn, "aws_region")
+    cloud_bucket = _freevar(submit_fn, "cloud_bucket")
+    aws_profile = _freevar(submit_fn, "aws_profile")
+    batch_job_queue = _freevar(submit_fn, "batch_job_queue")
+    batch_job_def = _freevar(submit_fn, "batch_job_def")
+    workspace_manager = _freevar(submit_fn, "workspace_manager")
+
+    example = tmp_path / "SquareIceShelf2"
+    example.mkdir()
+    (example / "runme.m").write_text("md=solve(md,'Stressbalance');\n")
+
+    model_dd.value = "issm"
+    example_dir.value = str(example)
+    run_target.value = "runme.m"
+    aws_region.value = "us-east-2"
+    cloud_bucket.value = "cryostack-runs-774888247882"
+    aws_profile.value = ""
+    batch_job_queue.value = "cryostack-queue"
+    batch_job_def.value = "cryostack-issm"
+
+    import icesee_jupyter_book.ui.icesheets_gateway as _gw
+    monkeypatch.setattr(_gw, "cloud_run_preflight", lambda **kw: [])
+
+    captured = {}
+
+    def fake_stage_example_for_run(**kwargs):
+        captured.update(kwargs)
+        raise RuntimeError("stop before any AWS contact -- staging kwargs already captured")
+
+    monkeypatch.setattr(workspace_manager, "stage_example_for_run", fake_stage_example_for_run)
+    submit_fn(example_dir.value, {}, review=None)
+
+    assert "extra_files" in captured, "the staging call never ran (still blocked earlier)"
+    extra = captured["extra_files"]
+    assert extra is not None and "postprocess_icesee.m" in extra
+    # byte-identical to the SAME generator Remote calls right before its own
+    # SSH write (cryostack_src/models/submission.py) -- not reimplemented,
+    # not merely similar.
+    assert extra["postprocess_icesee.m"] == build_postprocess()
 
 
 # ── compute-mode selection must reach actual submission resources ────────

@@ -103,8 +103,9 @@
 
       <div class="cryostack-docs-summary-card">
         <div class="cryostack-docs-summary-icon">WE</div>
-        <h3><a href="#worked-example-lorenz-96-on-aws">Worked example: Lorenz-96 on AWS</a></h3>
-        <p>A concrete, step-by-step walkthrough on the one verified path.</p>
+        <h3><a href="#worked-examples-verified-on-aws">Worked examples verified on AWS</a></h3>
+        <p>What has actually run end-to-end, and where to find the exact
+           step-by-step walkthrough for each application.</p>
       </div>
 
       <div class="cryostack-docs-summary-card">
@@ -157,31 +158,34 @@
       </div>
 
       <div class="cryostack-docs-summary-card">
-        <div class="cryostack-docs-summary-icon">EV</div>
-        <h3>End-to-end validation <span class="cryostack-status dev">Growing</span></h3>
-        <p>Two configurations have been run and confirmed end-to-end on AWS Batch's
+        <div class="cryostack-docs-summary-icon">VW</div>
+        <h3>Validated workflows <span class="cryostack-status supported">Demonstrated</span></h3>
+        <p>Three configurations have been run and confirmed end-to-end on AWS Batch's
            <strong>Fargate</strong> compute mode: <strong>ICESEE Lorenz-96 at
-           NP&nbsp;=&nbsp;1</strong>, and <strong>CryoLauncher/Icepack
-           04-synthetic-ice-stream-xy</strong>. CryoLauncher/ISSM has the
-           onboarding, provisioning, and submission architecture implemented
-           and exercised, but a real ISSM run still needs a cloud-reachable
-           MATLAB license (see
-           <a href="../applications/icesheets/user_manual.html#matlab-licensing-for-issm-cloud-runs">MATLAB licensing</a>)
-           and this page makes no claim of a fully verified live run-to-results
-           cycle for it.</p>
+           NP&nbsp;=&nbsp;1</strong>, <strong>CryoLauncher/Icepack
+           04-synthetic-ice-stream-xy</strong>, and <strong>CryoLauncher/ISSM</strong>
+           (MPI-parallel solver execution, postprocessing into CryoStack's shared
+           result package, retrieval, and visualization). CryoLauncher/ISSM has
+           also completed the same end-to-end path on <strong>EC2 On-Demand</strong>,
+           in both cases reaching the configured Georgia Tech institutional MATLAB
+           license through the same Connector/Relay infrastructure used for Remote
+           access. This validates one institutional Cloud/Connector configuration;
+           it does not establish compatibility with arbitrary institutional
+           license-server arrangements. See
+           <a href="../applications/icesheets/user_manual.html#matlab-licensing-for-issm-cloud-runs">MATLAB licensing and Connector setup</a>.</p>
       </div>
 
       <div class="cryostack-docs-summary-card">
         <div class="cryostack-docs-summary-icon">CM</div>
-        <h3>Compute mode <span class="cryostack-status dev">Fargate and EC2 On-Demand validated</span></h3>
+        <h3>Compute mode <span class="cryostack-status supported">Fargate and EC2 On-Demand validated</span></h3>
         <p><strong>Fargate</strong> is the default AWS Batch compute mode.
            <strong>EC2 (Advanced)</strong> is an opt-in alternative; its
            <strong>On-Demand, single-node, CPU</strong> configuration has now
            also run end to end on live AWS — CryoLauncher/Icepack's
-           <code>00-meshes-functions</code> tutorial, submitted to a
-           CryoStack-provisioned managed EC2 compute environment. EC2
-           <strong>Spot</strong>, <strong>GPU</strong>, and
-           <strong>multi-node</strong>, and EC2 for ISSM or ICESEE, remain
+           <code>00-meshes-functions</code> tutorial and CryoLauncher/ISSM,
+           both submitted to a CryoStack-provisioned managed EC2 compute
+           environment. EC2 <strong>Spot</strong>, <strong>GPU</strong>, and
+           <strong>multi-node</strong>, and EC2 for ICESEE, remain
            implemented/provisioned but not yet run against live AWS in this
            repository's evidence. See
            <a href="#compute-mode-fargate-default-or-ec2-advanced">Compute mode</a>
@@ -238,6 +242,27 @@ cloud-run controller that polls the job and synchronizes results
 automatically after a successful completion, while ICESEE currently uses
 explicit, manual status and result actions instead (details in
 <a href="#monitoring-a-run-and-retrieving-results">Monitoring a run and retrieving results</a>).
+
+**For CryoLauncher, Basic/Advanced and Remote/Cloud are separate choices** —
+Basic/Advanced is *how you configure* a run; Remote/Cloud is *where it
+executes*. Selecting Cloud does not by itself change which Cloud controls
+you see:
+
+```text
+CryoLauncher Basic  + Cloud  ->  simplified Cloud surface  ->  Fargate-only
+
+CryoLauncher Advanced + Cloud  ->  advanced Cloud controls  ->  supported
+    Fargate/EC2 configuration and other exposed controls, subject to the
+    documented capability limitations below
+```
+
+Basic mode always submits to Fargate — the entire Advanced Cloud panel
+(compute-mode choice, EC2 capacity/accelerator/network/execution options)
+is hidden. Switching to Advanced exposes those controls, but exposing a
+control is not the same as that capability being AWS-validated — see
+<a href="#compute-mode-fargate-default-or-ec2-advanced">Compute mode</a>
+below for exactly which Advanced options have and have not been run
+against live AWS.
 
 In the application's own terms, this is:
 
@@ -317,8 +342,9 @@ environment to schedule jobs onto, and CryoStack lets you choose which kind
 under **Advanced** in Cloud Environment:
 
 - **Fargate** — the default. No infrastructure to choose or manage; this is
-  the compute mode every worked example on this page has actually run
-  against.
+  the compute mode every validated Cloud run to date has actually run
+  against (see
+  <a href="#worked-examples-verified-on-aws">Worked examples verified on AWS</a>).
 - **EC2 (Advanced)** — CryoStack provisions its own EC2-backed Batch compute
   environment instead. Selecting it reveals four further choices, each
   purpose-built rather than exposing raw AWS knobs:
@@ -337,7 +363,8 @@ under **Advanced** in Cloud Environment:
     VPN, Direct Connect connection, Transit Gateway, or firewall rule itself
     — the VPC you point it at must already have whatever route it needs. See
     <a href="../applications/icesheets/user_manual.html#matlab-licensing-for-issm-cloud-runs">MATLAB
-    licensing for ISSM cloud runs</a> for the case this is meant to unblock.
+    licensing for ISSM cloud runs</a> for the supported Connector alternative;
+    custom networking is not required by the validated Fargate/EC2 path.
   - **Execution** — **Single node** (default) or **Multi-node** — registers
     an AWS Batch multi-node parallel job definition (EC2 only), but
     CryoStack's scientific runners do not yet coordinate distributed MPI
@@ -440,23 +467,17 @@ Staging → Submitting → Queued → Running → Completed
 differs by application — this is a real implementation difference, not an
 unvalidated version of the same behavior:**
 
-- **CryoLauncher** shows a **CLOUD RUN** card that tracks the job without
-  blocking the interface. **View log** opens the run's live log in the
-  Workspace **Run Log** tab; **View results** opens the Workspace
-  **Results** tab once the run has reached **Completed**; **Terminate**
-  stops a running job, with a confirmation step. Behind this card,
-  `CloudRunController` (`icesee_jupyter_book/ui/icesheets_gateway.py`)
-  polls the job in the background and, on reaching **Completed**,
-  automatically syncs its S3 outputs into your local run cache — no click
-  required before Results is populated.
-- **ICESEE** does not use that controller or that card. There is no
-  background poller — you click **Check status** yourself to see whether a
-  job has finished (it prints the current AWS Batch state to the Run Log).
-  Opening a completed cloud run from the Workspace **Runs** list then
-  triggers a best-effort sync of its S3 outputs into your local run cache
-  before showing Results. (ICESEE does have a job-termination capability
-  in its cloud code path; this page does not name a specific button label
-  for it until that label is verified against the running UI.)
+- **CryoLauncher** shows a **CLOUD RUN** card that tracks the job in the
+  background and automatically syncs results on completion — no click
+  required before Results is populated. See
+  <a href="../applications/icesheets/user_manual.html#connect-aws-account">Connect
+  AWS Account</a> (step 7) for the full **View log** / **View results** /
+  **Terminate** walkthrough.
+- **ICESEE** has no background poller — you click **Check status** yourself,
+  and opening a completed run triggers a best-effort result sync before
+  showing Results. See
+  <a href="../applications/icesee/user_manual.html#cloud-mode">ICESEE Cloud
+  Mode</a> for the exact steps.
 
 **View log** reads CloudWatch Logs from whichever log group the job's own
 Batch job definition actually configured — never a single fixed group — so
@@ -468,61 +489,30 @@ its results are unaffected either way.**
 
 ## Worked examples verified on AWS
 
-Three configurations have been run and confirmed end-to-end against the
-current container image: **ICESEE Lorenz-96 at NP = 1**, walked through
-below, and **CryoLauncher/Icepack 04-synthetic-ice-stream-xy**, both on the
-default **Fargate** compute mode (exit 0, 12 figures, 5 structured fields,
-results rendering the same way a local run's do, and — for the Icepack run —
-CloudWatch log retrieval also confirmed via **View log**). A third,
-**CryoLauncher/Icepack `00-meshes-functions`**, has run end to end on the
-**EC2 (Advanced) On-Demand** compute mode instead (single node, CPU, 2 vCPU /
-8 GiB) — submitted to the `cryostack-ec2-queue` job queue and
-`cryostack-icepack-ec2` job definition, on CryoStack's managed
-`cryostack-ec2` compute environment, and completed successfully. All three
-follow the identical Connect → Prepare cloud → Review & Launch → Monitor →
-Results sequence; the Lorenz-96 walkthrough below spells out every step, and
-the Icepack paths differ only in which application/example you open in step
-1 and, for the EC2 run, selecting **Advanced → EC2 → On-Demand** under
-Compute mode before Prepare cloud (see
+See <a href="#scope">Validated workflows</a> above for exactly which
+configurations have been confirmed end-to-end, and
 <a href="#compute-mode-fargate-default-or-ec2-advanced">Compute mode</a>
-above). Steps this platform does not yet support are called out explicitly
-rather than skipped over.
+for the EC2-specific evidence (job queue/definition names). Every validated
+run follows the identical Connect → Prepare cloud → Review & Launch →
+Monitor → Results sequence described above; only the application/example
+you open and, for an EC2 run, selecting **Advanced → EC2 → On-Demand** under
+Compute mode before Prepare cloud, differ.
 
-1. **Open ICESEE** and select the **Lorenz-96** example.
-2. Leave its configuration at the default (or your own edits) — the same
-   `params.yaml` used for a local or Remote run.
-3. In **Run settings**, set **Execution mode** to **Cloud**.
-4. If you have not connected an AWS account yet, follow
-   <a href="#connecting-your-aws-account-byo-aws">Connecting your AWS account</a> now.
-   CloudFormation onboarding happens in a separate browser tab — your AWS
-   console — not inside CryoStack.
-5. Return to CryoStack and click **Verify connection**; confirm the panel
-   shows **● Connected**.
-6. Click **Prepare cloud** and wait for **Account / Storage / Containers /
-   Compute** to all read **Ready**.
-7. Set **Processes** to **1** — this is the only value CryoStack will let
-   you launch today for ICESEE (see
-   <a href="#verified-runtime-contracts">ICESEE's verified runtime contract</a>
-   below).
-8. Click **Review & Launch**. Confirm the card reads
-   **ICESEE runtime: Ready**, **Parallel mode: Single-rank verified**,
-   **Processes: 1** — this is CryoStack's own honest preflight check, not a
-   cosmetic label.
-9. Click **Launch cloud run**.
-10. ICESEE does not poll AWS in the background — click **Check status** in
-    the Run Log toolbar whenever you want to know whether the job has
-    finished. It prints the current AWS Batch state (e.g. `RUNNABLE`,
-    `RUNNING`, `SUCCEEDED`) to the Run Log.
-11. Once status reads `SUCCEEDED`, open the run from the Workspace **Runs**
-    list. Selecting it triggers a best-effort sync of its S3 outputs into
-    your local run cache, then shows Results — figures and fields render
-    the same way a local run's results do.
-12. To change anything (ensemble size, seed, observation settings), edit
-    the configuration and repeat from step 8 — a new review is always
-    required before a changed configuration can launch.
-13. See <a href="#cleanup">Cleanup</a> below before you consider the run
-    finished — nothing about the AWS infrastructure this used is removed
-    automatically.
+For the exact, button-by-button steps:
+
+- **CryoLauncher** — see
+  <a href="../applications/icesheets/user_manual.html#connect-aws-account">Connect
+  AWS Account</a> in the CryoLauncher User Manual.
+- **ICESEE** — see
+  <a href="../applications/icesee/user_manual.html#cloud-mode">Cloud Mode</a>
+  in the ICESEE User Manual for the full Lorenz-96 walkthrough, including
+  the **Processes = 1** restriction (see
+  <a href="#verified-runtime-contracts">Verified runtime contracts</a>
+  below) and its own monitoring/retrieval steps.
+
+See <a href="#cleanup">Cleanup</a> below before you consider any run
+finished — nothing about the AWS infrastructure a run used is removed
+automatically.
 
 ## Cleanup
 
@@ -566,6 +556,18 @@ directly for ICESEE — a different example or a higher process count is
 would pass. This is a deliberate design choice: the goal is an honest
 preflight, not a best-effort launch.
 
+An ISSM-coupled ICESEE forecast model is a separate, stronger limitation
+than the process-count restriction above. ICESEE's Cloud Environment shows
+the same MATLAB license field CryoLauncher's does, for interface
+consistency, but that field is not currently connected to ICESEE's own
+Cloud submission path — no institutional license or Connector tunnel is
+actually configured for an ICESEE Cloud job. An ISSM-based ICESEE workflow
+that needs MATLAB is therefore not operational on Cloud today, independent
+of and in addition to the example/process restriction above. This does not
+affect ICESEE's Lorenz-96 or Icepack forecast models, which need no
+license, or CryoLauncher's own ISSM Cloud path, which does have this
+connectivity (see <a href="#scope">Validated workflows</a> above).
+
 **Icepack's** cloud path has confirmed one example end-to-end,
 `04-synthetic-ice-stream-xy`, sharing the same Firedrake export and
 figure-capture code the Remote/Slurm path uses. Unlike ICESEE, CryoLauncher
@@ -606,24 +608,7 @@ inserting placeholders styled as real screenshots would be misleading.
   **Open AWS Setup**. See
   <a href="#preparing-cloud-infrastructure">Preparing cloud infrastructure</a> above
   for what it creates.
-- **Example configuration** — the Lorenz-96 example's `params.yaml` (the
-  same file used for Local, Remote, and Cloud execution):
-
-  ```yaml
-  modeling-parameters:
-    example_name: "lorenz96"
-    dt: 0.01
-    num_years: 10
-    timesteps_per_year: 2
-
-  enkf-parameters:
-    Nens: 30
-    filter_type: "EnKF"
-    model_name: "lorenz"
-    parallel_flag: "serial"
-  ```
-
-- [CryoStack on GitHub](https://github.com/ICESEE-project/CryoLauncher) —
+- [CryoStack on GitHub](https://github.com/ICESEE-project/CryoStack) —
   browse the full source, including the CloudFormation template and the
   cloud execution code referenced throughout this page.
 
@@ -687,9 +672,9 @@ retrying blindly; each reason names exactly what to fix.
 
       <div class="cryostack-footer-group">
         <h3>Community</h3>
-        <a href="https://github.com/ICESEE-project/CryoLauncher" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/ICESEE-project/CryoStack" target="_blank" rel="noopener noreferrer">GitHub</a>
         <a href="https://github.com/ICESEE-project" target="_blank" rel="noopener noreferrer">ICESEE Project</a>
-        <a href="https://github.com/ICESEE-project/CryoLauncher/issues" target="_blank" rel="noopener noreferrer">Report an Issue</a>
+        <a href="https://github.com/ICESEE-project/CryoStack/issues" target="_blank" rel="noopener noreferrer">Report an Issue</a>
       </div>
 
     </div>
@@ -698,7 +683,7 @@ retrying blindly; each reason names exactly what to fix.
       <div>Developed by ICCL and PGSL at the Georgia Institute of Technology.</div>
       <div class="cryostack-footer-meta">
         <span>© 2026 CryoStack</span>
-        <span>BSD 2-Clause License</span>
+        <span>MIT License</span>
       </div>
     </div>
 

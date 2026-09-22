@@ -3,9 +3,27 @@ root: index
 
 chapters:
   - file: documentation
-  - file: resources
-  - file: about
-  - file: docs/hpc_cloud
+    sections:
+      - file: docs/getting_started
+      - file: docs/user_manual
+        sections:
+          - file: docs/user_apps
+          - file: docs/user_local
+          - file: docs/user_remote
+          - file: docs/hpc_cloud
+            title: Running in the Cloud
+          - file: docs/user_results
+          - file: docs/user_troubleshooting
   - file: docs/developer_guide
     sections:
+      - file: docs/dev_architecture
+      - file: docs/dev_frontend
+      - file: docs/dev_execution
+      - file: docs/dev_connector
+      - file: docs/dev_models_results
+      - file: docs/dev_extending
       - file: docs/building_agents
+      - file: docs/dev_testing
+      - file: docs/dev_deployment
+  - file: resources
+  - file: about

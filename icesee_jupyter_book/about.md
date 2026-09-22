@@ -32,7 +32,7 @@
 
       <a
         class="cryostack-btn secondary"
-        href="https://github.com/ICESEE-project/CryoLauncher"
+        href="https://github.com/ICESEE-project/CryoStack"
         target="_blank"
         rel="noopener noreferrer">
         View Source Code
@@ -327,14 +327,14 @@
         </a>
 
         <a
-          href="https://github.com/ICESEE-project/CryoLauncher"
+          href="https://github.com/ICESEE-project/CryoStack"
           target="_blank"
           rel="noopener noreferrer">
-          CryoLauncher Repository
+          CryoStack Repository
         </a>
 
         <a
-          href="https://github.com/ICESEE-project/CryoLauncher/issues"
+          href="https://github.com/ICESEE-project/CryoStack/issues"
           target="_blank"
           rel="noopener noreferrer">
           Issue Tracker
@@ -458,7 +458,7 @@
     <h2>Open-source licensing.</h2>
 
     <p class="cryostack-section-intro">
-      CryoStack is distributed under the BSD 2-Clause License. Integrated
+      CryoStack is distributed under the MIT License. Integrated
       applications and external scientific packages may use different
       licenses. Users should consult the corresponding project repository
       before redistributing or modifying those components.
@@ -476,14 +476,14 @@
 
     <p>
       For platform bugs, documentation problems, deployment questions,
-      integration requests, or feature proposals, use the CryoLauncher
+      integration requests, or feature proposals, use the CryoStack
       GitHub issue tracker.
     </p>
 
     <div class="cryostack-docs-actions">
       <a
         class="cryostack-btn primary"
-        href="https://github.com/ICESEE-project/CryoLauncher/issues"
+        href="https://github.com/ICESEE-project/CryoStack/issues"
         target="_blank"
         rel="noopener noreferrer">
         Open Issue Tracker

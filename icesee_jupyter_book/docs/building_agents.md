@@ -1,303 +1,121 @@
-# Building Agents in CryoStack
+# Auto-config · Beta
 
-CryoStack has a small **agent layer** (`cryostack_src/agents/`) that lets an
-orchestrator — an LLM, a script, a test — drive the platform through
-**bounded, typed, permission-declaring tools**. This page explains how it is
-built and *why it is built that way*, so you can extend it without weakening
-the safety properties.
+:::{raw} html
+<style>
+.bd-article-container section:first-child > h1:first-child {
+  display: none !important;
+}
+</style>
+:::
 
-The guiding rule: **an agent assists a scientific workflow; it never silently
-changes scientific intent, and it never gets unrestricted shell, HPC, or cloud
-access.** Every design decision below follows from that.
-
-The authoritative contract is `overnight/AGENT_SAFETY_MODEL.md` in the
-repository. This page is the narrative version.
-
----
-
-## 1. The shape of the layer
-
-```text
-  orchestrator (LLM / script / test)
-        │  natural language / a plan
-        ▼
-  RunAssistant  ── deterministic loop, capped at PLAN ──┐
-        │                                               │
-        ▼                                               │
-  ToolRegistry.invoke(name, ctx, **kwargs)              │  every call is
-        │   enforces: permission ceiling                │  appended to an
-        │              confirmation gate                │  append-only Trace
-        │              identity (ctx.user)              │
-        ▼                                               │
-  read-only tools   planning tools                      │
-  (OBSERVE)         (PLAN: prepare / validate / estimate)│
-        │                                               │
-        ▼                                               │
-  RunPlan  ──digest──►  approval.ManagedPlan lifecycle ◄─┘
-                              │  human approves (digest-bound)
-                              ▼
-                     DryRunExecutionCoordinator
-                              │  stops before sbatch / aws batch submit-job
-                              ▼
-                        (a real SubmitBackend — not shipped)
-```
-
-Nothing in `cryostack_src/agents/` imports an LLM vendor SDK. `llm.LLMClient`
-is a `Protocol`; `llm.ScriptedLLM` is a deterministic mock that every test
-uses.
+:::{raw} html
+<div class="cryostack-docs-page">
+  <section class="cryostack-docs-hero">
+    <div class="cryostack-section-label">CryoStack Developer Guide</div>
+    <h1>Auto-config · Beta</h1>
+    <p>
+      The deterministic configuration layer mounted in CryoLauncher and
+      ICESEE, and the files/tests that implement it.
+    </p>
+    <div class="cryostack-docs-actions">
+      <a class="cryostack-btn secondary" href="developer_guide.html">
+        &larr; Developer Guide
+      </a>
+    </div>
+  </section>
+</div>
+:::
 
 ---
 
-## 2. Permissions
+Auto-config · Beta is the deterministic configuration layer mounted in
+CryoLauncher and ICESEE. It prepares changes to current manual controls rather
+than an executable plan. It uses no LLM backend, conversational history, or
+persistent planning memory. See
+[Add or modify Auto-config · Beta behavior](dev_extending.md)
+for the recipe view of the same subsystem.
 
-`permissions.Permission` is an ordered ladder:
+## Scientist-facing workflow
 
-| Level | Value | Means | Example |
-|---|---|---|---|
-| `OBSERVE` | 10 | read existing state | list examples, inspect a run |
-| `PLAN` | 20 | build an inert proposal | `prepare_run_plan`, `validate_run_plan` |
-| `PREPARE` | 30 | stage without submitting | write a working copy, render scripts |
-| `EXECUTE` | 40 | submit / run | `sbatch`, `aws batch submit-job` |
-| `DESTRUCTIVE` | 50 | delete / overwrite | remove a run, prune a workspace |
+Describe a configuration or change → Create plan → review the change preview →
+Apply to configuration → inspect the ordinary controls → use existing validation
+and execution controls.
 
-Every tool declares the **minimum** level it needs. A `ToolContext` carries a
-`max_permission` ceiling. `ToolRegistry.invoke` refuses any call whose tool
-needs more than the ceiling, *and* records the refusal in the trace. Discovery
-is filtered too: `registry.describe(ctx=ctx)` never lists a tool the context
-could not call, so an LLM is not even tempted.
+**Create plan** prepares a compact change preview: **Setting | Current |
+Proposed | Source**. Changed settings are primary; important unchanged values
+appear in a short retained summary. **From request** means explicitly requested,
+**Suggested** means a deterministic adjustment from existing metadata or policy,
+and **Retained** means a valid current value is intentionally unchanged.
+Omitted settings stay as configured. Ambiguity requires clarification;
+unsupported requests cannot be applied. A matching request reports **No changes
+needed**.
 
-The ladder is derived from CryoStack's existing boundaries (per-user workspace
-isolation, remote-identity verification, pre-submit Slurm validation), not
-invented on top of them.
+**Apply to configuration** updates the existing controls and reports the number
+of settings changed. It never submits or launches a workflow. Review the manual
+controls and complete the ordinary validation and execution steps. A proposal
+becomes stale if the controls change; create it again before applying. Manual
+edits always remain authoritative.
 
----
+You can refine the current controls with requests such as “Change the CPUs to
+8” or “Keep everything but run this on PACE”. Each request uses the current
+configuration, without conversation history. If a requested change invalidates
+another setting, the preview includes a deterministic required adjustment or
+asks for clarification; it does not silently discard the setting.
 
-## 3. Identity — fail closed
+“Why can't I run this?” diagnoses configuration issues without changing controls.
+“Fix my configuration” proposes a repair only when existing metadata supplies a
+deterministic supported choice. It cannot repair institutional access, credentials,
+licensing, or infrastructure. “Why is this Suggested?”, “What did you change?”,
+and “Explain this configuration” provide compact read-only explanations from
+proposal provenance and existing capability information. A stale proposal is
+identified as stale rather than explained as current.
 
-An agent has **no capability the authenticated user does not have**. It
-inherits the user's scope and cannot widen it.
+This is a bounded configuration aid, not an autonomous scientist or a general
+chat service. It does not authorize execution, provision infrastructure, or
+modify licensing. Existing identity, resource, scientific-parameter, and backend
+checks remain authoritative; a prepared configuration is not proof that a run
+is ready.
 
-* `ToolContext` is built from `resolve_workspace_user(require_authenticated=True)`.
-  There is no anonymous or "developer" fallback — construction raises
-  `WorkspaceIdentityError` if there is no trusted identity.
-* **No tool takes a `user_id` / `owner` argument.** Scope is always
-  `ctx.user`. `policy.assert_same_user` is a call-site guard that makes an
-  accidental mismatch loud.
-* Filesystem-touching helpers go through `policy.assert_within_workspace`,
-  which resolves a path only if it is inside the user's own workspace root.
+## Implementation and integration
 
----
+The deployment flag remains `CRYOSTACK_AGENT_PANEL`; the internal name is not a
+user-facing mode label. The active implementation uses
+`cryostack_src/agents/intent.py`, `cryostack_src/agents/diagnosis.py`, and
+`icesee_jupyter_book/ui/configuration_agent.py`, mounted by the two gateway
+modules. Catalogs use existing model/example metadata, compute profiles,
+curated parameter definitions, and workflow capability resolvers. They are not
+a second source of truth for scientific or backend validity.
 
-## 4. What agents may never touch
+Diagnosis combines configuration metadata with available validation findings.
+Repairs are deliberately bounded: a missing value with a deterministic profile
+default can be suggested, while materially different valid choices require
+clarification. Explanations use structured provenance and existing capability
+findings; they must not invent scientific reasons or expose raw configuration
+JSON, paths, or policy internals.
 
-`policy.PROHIBITED_SYMBOLS` is a set of importable names that must never appear
-in a tool module — arbitrary remote command execution
-(`ssh_run`, `connector_ssh`, `send_command`, `check_backend`, the
-password-bootstrap functions), secret retrieval (`deployment_token`,
-`current_binding`, `matlab_license_config`), and identity spoofing
-(`os.environ`, `getpass`).
+Before Apply, configuration and catalog freshness and the independently
+recomputed proposal are checked. Only supported manual controls are updated.
+Normal manual review and submission retain fresh identity, resource, staging,
+and backend checks. Applying a configuration is not execution authorization.
 
-`policy.assert_tool_modules_are_clean()` parses the AST of every module in
-`policy.TOOL_MODULES` and fails the build if any prohibited name is
-referenced. This is a machine check, not a code-review convention. A test in
-`tests/test_agent_core.py` runs it.
+**Integration boundary to review:** ordinary Cloud proposal validation currently
+reuses gateway callbacks that can resolve the connected cloud execution context;
+ICESEE's callback also synchronizes its quick controls. Diagnosis/refinement and
+explanation use the separate read-only validation path. Therefore the current
+implementation must not be described as having zero credential-resolution or
+control-synchronization effects for every validation callback. No new credential,
+licensing, provisioning, or execution capability is provided by Auto-config.
 
-Secrets never reach a trace either: `trace.redact` strips a frozenset of
-secret-bearing key names and known markers (`-----BEGIN`, `AKIA`, …)
-recursively before any event is stored.
+## Tests and older interfaces
 
----
+Focused gateway tests cover inference, proposals, diagnosis, repair, refinement,
+explanations, stale/tampered proposals, and manual-control authority. Relevant
+suites are `test_agent_interaction.py`, `test_agent_panel_gateway_mount.py`,
+`test_agent_diagnosis.py`, `test_agent_refinement.py`, and
+`test_agent_explanation.py` under `icesee_jupyter_book/ui/tests/`.
 
-## 5. Plans and the digest
-
-`planning.RunPlan` is an **inert, frozen** description of a run: model,
-example, execution mode, compute resource, backend, run target, parameter
-overrides, datasets, Slurm request. Building or validating one submits
-nothing.
-
-The critical method is `RunPlan.digest()` — a SHA-256 over **only the
-scientific and resource fields** (not advisory findings). Two plans with the
-same intent have the same digest regardless of dict ordering; changing any
-parameter override, the backend, or the node count changes it; attaching a
-warning does not.
-
-`validate_run_plan` reuses the *same* validation the gateway uses — B4 Slurm
-rules, the model's Basic-mode parameter spec with solver detection, the
-MATLAB-licence and cloud-support preflight facts — and returns findings plus
-the list of approvals the plan will require. It never mutates intent, so the
-digest is unchanged.
-
----
-
-## 6. Approval is digest-bound
-
-`approval.ManagedPlan` walks a lifecycle:
-
-```text
-DRAFT → VALIDATED → AWAITING_APPROVAL → APPROVED → EXECUTING → COMPLETED / FAILED
-```
-
-`approve()` records an `Approval{plan_digest, approver_user_id, approved_at}`.
-Only the user the plan belongs to can approve it. There is **no agent tool
-that approves a plan** — approval is a human action.
-
-`assert_approved_for_execution(mp)` is the single gate the executor calls. It
-raises `ApprovalError` unless the plan is `APPROVED` **and its live digest
-still equals the approved digest**. Revising any scientific or resource field
-recomputes the digest, drops the approval, and returns the plan to `DRAFT`.
-
-The property this buys: *an agent cannot get approval for configuration A and
-then execute configuration B.* The mandated test
-(`test_approve_A_then_mutate_then_execute_is_rejected`) does exactly that and
-asserts nothing runs.
-
----
-
-## 7. Execution is dry-run first
-
-`execution.DryRunExecutionCoordinator` walks the phases a real run goes
-through — revalidate, check approval, resolve identity, stage, precheck
-scheduler — and **stops at the submit boundary**. In dry-run mode (the only
-mode wired today) the `SUBMIT` phase returns a redacted *description* of the
-command a backend would issue (`sbatch …`, `aws batch submit-job …`) and
-returns. Nothing reaches a scheduler or AWS.
-
-A real submitter is the `SubmitBackend` protocol. None ships in the tree —
-wiring one is a human integration step, gated on the same remote-identity
-verification the gateway uses. Even with a backend injected, a live submit
-also requires an `EXECUTE` context and an approved, digest-matching plan; with
-no backend a live request is silently downgraded to a dry run.
-
-The coordinator never imports the remote or cloud submission modules, so it
-stays clean under `assert_tool_modules_are_clean`.
-
----
-
-## 8. Two separate records
-
-* **Agent operational trace** — `trace.Trace` + `trace_store.TraceStore`.
-  Every request, tool call, validation, approval and execution decision for
-  one agent turn, redacted, written append-only to
-  `.cryostack/agent-traces/<id>.jsonl` (files opened `"a"`, never truncated).
-* **Scientific run provenance** — the run manifest. It records only
-  `trace_store.run_manifest_stamp(...)`: that the run was agent-assisted, the
-  plan digest, who approved it and when, and a *pointer* to the operational
-  trace.
-
-`trace_store.assert_no_agent_chatter(manifest)` rejects a manifest that has
-smuggled tool calls, prompt text, or model output into the scientific record.
-LLM chatter must never contaminate a run's scientific history.
-
----
-
-## 9. The Run Assistant
-
-`assistant.RunAssistant` is the reference bounded agent. `handle(ctx, message)`:
-
-1. hard-caps the context at `Permission.PLAN` (`ctx.with_ceiling`), so even if
-   handed an `EXECUTE` context it can neither see nor call a mutating tool;
-2. runs a deterministic loop over `LLMClient.complete` — the model asks for
-   read/plan tools, they run **through the registry**, results feed back;
-3. returns an `AssistantResult`. If a valid plan was produced it is surfaced
-   as a *proposal*. `AssistantResult.submitted` is always `False`.
-
-`shared_agent_panel.build_agent_panel` is the Voila panel over it: it shows the
-transcript and every tool call, renders the proposed plan, and gates an
-**Approve** button behind an explicit human acknowledgement. Approving only
-hands the plan to the host's `on_approve` callback.
-
-### Agent as an interaction mode
-
-In the CryoLauncher gateway (`icesheets_gateway.py`), the interaction-mode
-selector is **Basic · Advanced · Agent**. *Agent* is the third mode and is
-**opt-in** — it appears only when `CRYOSTACK_AGENT_PANEL` is set; without the
-flag the selector and behaviour are exactly Basic / Advanced.
-
-- **Basic / Advanced** — manual configuration; no agent controls are built or
-  shown.
-- **Agent** — the manual configuration (model / example / backend / remote /
-  cloud panels / Run Plan / Run button) is hidden and the Run Assistant panel
-  takes its place. The mode toggle stays visible so the user can switch back.
-
-All three modes are ways of *preparing the same experiment*. Agent mode
-orchestrates the same services — the plan converges on the existing
-working-copy staging, the same B3 / B4 / Basic-mode / preflight validation, the
-same digest-bound approval, and (when a submit backend is enabled) the same
-execution path. There is no `agent_submit()` / `agent_results()` /
-`agent_workspace()` parallel stack.
-
----
-
-## 10. Adding a tool — checklist
-
-1. Decide the **minimum** `Permission`. If it only reads, it is `OBSERVE` and
-   `read_only=True`.
-2. If it mutates, it must declare a non-empty `scientific_effect` and
-   (usually) `requires_confirmation=True`. `ToolSpec.__post_init__` enforces
-   this.
-3. It takes **no `user_id`**. Use `ctx.user` / `ctx.workspace_manager`.
-4. It must not reference anything in `PROHIBITED_SYMBOLS`. Run
-   `assert_tool_modules_are_clean()`.
-5. It returns plain JSON-ish data — names and ids, **no absolute local
-   paths** (see `_slim_example` / `_slim_run` for the pattern).
-6. Add it to the module drained by `default_registry()`.
-7. Add a test: permission-ceiling refusal, identity scoping, and — if it
-   mutates — that it does nothing without approval.
-
----
-
-## 11. Persistence, the submit backend, and provider adapters
-
-**Persistence.** `agents.AgentStore` is the per-user facade, built from a
-trusted `WorkspaceUser` (never a caller-supplied id). It writes to
-`<workspace>/.cryostack/agents/` — `plans/<id>.json` (atomic replace) and
-`traces/<id>.jsonl` (append-only). On load, `restore_managed_plan` binds the
-owner to the **storage path**, not the serialized blob, and recomputes the
-plan digest: a plan edited on disk while `APPROVED` reloads as `DRAFT` with the
-approval dropped. `trace.scan_for_secrets` is a structural, key-name-independent
-check (PEM, `AKIA`, provider tokens) — a plan matching it is refused, a trace
-event is scrubbed, before anything touches disk.
-
-**The submit backend.** `agents.execution.SubmitBackend` is a `Protocol`. The
-one real implementation, `cryostack_src.agent_execution.RemoteSubmitBackend`,
-lives **outside** the `agents` package (it composes `submit_remote_icesheets`,
-which imports `ssh_run` — a prohibited symbol). It is reached only *after* the
-coordinator has verified the approval digest and the `EXECUTE` ceiling, and it
-re-runs B3 (`enforce_remote_access`), B4 (`validate_slurm_resources`), and the
-MATLAB preflight itself. Connection details (host, user, remote dir, connector
-session) come from the gateway, never the plan or the LLM. It is **not wired
-into the gateway** — see `overnight/AUDIT_agent_submit_backend.md`.
-
-**Input fingerprint.** The plan digest binds *intent* but only names the
-example / run target / datasets. `agents.fingerprint.RunInputFingerprint` is a
-second, optional binding over their *content* (the run-target `sha256`, the
-example source tree, dataset size+mtime). An approval may carry its digest;
-`RemoteSubmitBackend` recomputes it and blocks on drift. See
-`overnight/AUDIT_agent_approval_integrity.md`.
-
-**Provider adapters.** The whole provider contract is `llm.LLMClient.complete`.
-`llm_adapters.assert_declarative_tools` proves a provider only ever sees plain
-tool-description dicts. `RuleBasedAdapter` is a deterministic, network-free
-stub; `AnthropicAdapterSkeleton` / `OpenAIAdapterSkeleton` are commented
-references (no SDK, no key, no call). See
-`overnight/AGENT_LLM_PROVIDER_CONTRACT.md`.
-
-**Inspecting a session.** `python -m cryostack_src.agents.inspect <path-or-id>`
-renders a saved plan or trace — the digest, every permission decision, the
-approval and whether it still binds, the tool calls, the execution decision.
-It never replays a side effect.
-
----
-
-## 12. What is deliberately *not* here
-
-* No autonomous submit. `RemoteSubmitBackend` exists and is tested but is not
-  wired into the gateway; the dry-run coordinator is the default.
-* No autonomous scientific-parameter optimisation. An agent proposes; a human
-  approves the exact digest.
-* No modification of canonical examples through an agent.
-* No LLM vendor SDK dependency anywhere in the package.
-* Agent mode (`CRYOSTACK_AGENT_PANEL=1`) has **no Submit control**, does not
-  weaken Basic-mode scientific validation / B3 identity / B4 Slurm validation /
-  the backend preflight / user isolation, and is never shown in Basic or
-  Advanced mode. Live agent-driven submission is not enabled.
+Older RunAssistant, RunPlan, and tool-loop APIs remain in the repository for
+existing integrations. Their approval/dispatch interfaces are not the mounted
+Auto-config workflow and should not be used to describe its UI. Auto-config
+capability development is frozen pending review; documentation changes do not
+authorize expanding its execution boundary.

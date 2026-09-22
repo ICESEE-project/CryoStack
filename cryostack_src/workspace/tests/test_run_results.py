@@ -352,3 +352,125 @@ def test_another_user_cannot_read_the_package(tmp_path):
     pkg = m_b.result_package_for_run(run.id)
     assert pkg.status == "missing"
     assert pkg.available_solutions() == []
+
+
+# ── ISSM Cloud/Fargate: sync -> discovery -> visualization, end to end ──
+# Every existing sync_cloud_results / cloud_outputs test above uses Icepack.
+# ISSM's own MATLAB postprocessor (cryostack_src.models.issm.postprocess)
+# writes real HDF5 arrays, not the icepack-style artifacts-only package --
+# this proves the SAME sync_cloud_results/result_package_for_run/
+# render_run_plot chain the Icepack tests already cover also renders a real
+# ISSM field plot once artifacts land in cache/cloud_outputs, with no AWS,
+# no MATLAB and no Remote/SSH involved -- the missing "does Cloud retrieval
+# + the existing ISSM visualization actually work together" leg.
+def _issm_h5_bytes(tmp_path, name, builder) -> bytes:
+    h5py = pytest.importorskip("h5py")
+    src = tmp_path / f"_src_{name}.h5"
+    with h5py.File(src, "w") as fh:
+        builder(fh)
+    return src.read_bytes()
+
+
+def _issm_cloud_payload(tmp_path):
+    """The exact flat shape sync_cloud_results downloads from
+    ``s3://.../outputs/`` into ``cache/cloud_outputs/`` -- real HDF5 bytes,
+    the same as cryostack_src.models.issm.postprocess._MATLAB writes."""
+    import numpy as np
+
+    mesh_bytes = _issm_h5_bytes(tmp_path, "mesh", lambda fh: (
+        fh.create_dataset("/x", data=np.array([0.0, 1.0, 0.0])),
+        fh.create_dataset("/y", data=np.array([0.0, 0.0, 1.0])),
+        fh.create_dataset("/elements", data=np.array([[1, 2, 3]], dtype="int64")),
+    ))
+    vel_bytes = _issm_h5_bytes(tmp_path, "vel", lambda fh: fh.create_dataset(
+        "/values", data=np.array([1.5, 2.5, 3.5])))
+
+    metadata = json.dumps({
+        "schema": "cryostack.issm.results", "version": 1, "model": "issm",
+        "status": "ok",
+        "mesh": {"path": "mesh/mesh.h5", "numberofvertices": 3,
+                 "numberofelements": 1, "dimension": 2, "element_columns": 3,
+                 "connectivity_indexing": "1-based", "has_z": False},
+        "solutions": [{
+            "name": "StressbalanceSolution", "transient": False, "timesteps": 1,
+            "time": [], "step": [], "skipped": [],
+            "fields": [{"name": "Vel", "location": "nodal", "shape": [3],
+                        "dtype": "float64",
+                        "path": "fields/StressbalanceSolution/Vel.h5"}],
+        }],
+    })
+    return [
+        ("metadata.json", metadata),
+        ("mesh/mesh.h5", mesh_bytes),
+        ("fields/StressbalanceSolution/Vel.h5", vel_bytes),
+    ]
+
+
+def test_sync_cloud_results_for_issm_run_then_renders_a_real_field(tmp_path):
+    pytest.importorskip("h5py")
+    pytest.importorskip("matplotlib")
+
+    m = _mgr(USER_A, tmp_path / "ws")
+    run = m.register_run(RunInfo(
+        id="issm-cloud-1", name="issm-cloud-1", model="issm", backend="aws",
+        execution_mode="cloud", status="completed", created=datetime.now(),
+        jobid="job-issm-1",
+        metadata={"cloud_run": "s3://b/runs/issm-cloud-1"}))
+    m.select_run(run.id)
+
+    landed = m.sync_cloud_results(
+        s3_uri="s3://b/runs/issm-cloud-1", run_job_id="job-issm-1",
+        aws=_fake_s3_sync(*_issm_cloud_payload(tmp_path)))
+    assert landed == run.workspace_directory / "cache" / "cloud_outputs"
+
+    # discovery: the exact same reader Remote's cache/outputs already uses
+    pkg = m.result_package_for_run(run.id)
+    assert pkg.status == "ok"
+    assert pkg.schema == "cryostack.issm.results"
+    assert pkg.available_solutions() == ["StressbalanceSolution"]
+    assert pkg.available_fields("StressbalanceSolution") == ["Vel"]
+
+    # visualization: the exact same renderer Remote's runs already use
+    plots = m.recommended_plots_for_run(run.id)
+    assert plots, "expected at least one recommended plot for a real field"
+
+    result = m.render_run_plot(run.id, solution="StressbalanceSolution", field="Vel")
+    assert result.ok is True, result.reason
+    assert result.path is not None and result.path.is_file()
+    # figures are written back into the package's OWN outputs dir -- Cloud's
+    # cache/cloud_outputs/figures here, never a Remote-only hardcoded path
+    assert result.path.parent == landed / "figures"
+
+
+def test_issm_cloud_result_package_matches_a_remote_fetched_one_field_for_field(tmp_path):
+    """Remote (cache/outputs) and Cloud (cache/cloud_outputs) must converge
+    on an identical ResultPackage for byte-identical artifacts -- no
+    Cloud-specific result format, no Remote-only reader assumption."""
+    pytest.importorskip("h5py")
+
+    payload = _issm_cloud_payload(tmp_path)
+
+    m = _mgr(USER_A, tmp_path / "ws")
+    remote_run = _register(m, run_id="issm-remote-1")
+    for rel, data in payload:
+        p = remote_run.workspace_directory / "cache" / "outputs" / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(data.encode() if isinstance(data, str) else data)
+    remote_pkg = m.result_package_for_run(remote_run.id)
+
+    cloud_run = m.register_run(RunInfo(
+        id="issm-cloud-2", name="issm-cloud-2", model="issm", backend="aws",
+        execution_mode="cloud", status="completed", created=datetime.now(),
+        jobid="job-issm-2", metadata={"cloud_run": "s3://b/runs/issm-cloud-2"}))
+    m.sync_cloud_results(
+        s3_uri="s3://b/runs/issm-cloud-2", run_job_id="job-issm-2",
+        aws=_fake_s3_sync(*payload))
+    cloud_pkg = m.result_package_for_run(cloud_run.id)
+
+    assert remote_pkg.status == cloud_pkg.status == "ok"
+    assert remote_pkg.schema == cloud_pkg.schema == "cryostack.issm.results"
+    assert remote_pkg.available_solutions() == cloud_pkg.available_solutions()
+    assert (remote_pkg.available_fields("StressbalanceSolution")
+            == cloud_pkg.available_fields("StressbalanceSolution"))
+    assert (remote_pkg.mesh_metadata() == cloud_pkg.mesh_metadata()
+            and remote_pkg.mesh_metadata())

@@ -11,7 +11,7 @@
 #     Brian Kyanjo
 #
 # Copyright (c) 2026 ICESEE Project
-# SPDX-License-Identifier: BSD-3-Clause
+# SPDX-License-Identifier: MIT
 #
 # =============================================================================
 

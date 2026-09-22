@@ -124,7 +124,7 @@ The interface has two areas:
 :::
 
 Basic and Advanced are **CryoLauncher-wide application modes**, not model
-modes. ISSM is simply the first model implemented to full maturity behind
+modes. ISSM is the first model integrated behind
 them.
 
 ## 3. Basic mode
@@ -293,7 +293,7 @@ example**, in your personal dataset area.
   scheduler-managed.
 </p>
 <p>
-  <b>Cloud</b> <span class="cryostack-status dev">In validation</span>
+  <b>Cloud</b> <span class="cryostack-status supported">Supported</span>
   &nbsp;— run on <b>your own</b> AWS account and credits (bring-your-own-AWS),
   on AWS Batch. You connect the account once (<b>Connect AWS Account</b> →
   <b>Open AWS Setup</b> → create the CryoStack access role → <b>Verify</b>),
@@ -306,12 +306,17 @@ example**, in your personal dataset area.
   On-Demand/Spot capacity or a custom/private network — see
   <a href="../../docs/hpc_cloud.html#compute-mode-fargate-default-or-ec2-advanced">Compute
   mode</a> in the Cloud Run Guide. The onboarding, infrastructure-provisioning,
-  and Fargate execution steps below are exercised and working — Icepack and
-  ICESEE have each completed a real run on Fargate, and Icepack has
-  additionally completed a real run on EC2 (Advanced, On-Demand, single node,
-  CPU); the full BYO-AWS operational lifecycle (budget/quota/cleanup
-  automation), EC2 Spot/GPU/multi-node, and EC2 for ISSM or ICESEE are still
-  being validated — see the platform-wide
+  and Fargate execution steps below are exercised and working — Icepack,
+  ISSM, and ICESEE's Lorenz-96 example have each completed a real run on
+  Fargate, and Icepack and ISSM have additionally each completed a real run
+  on EC2 (Advanced, On-Demand, single node, CPU) — ISSM's Fargate and EC2
+  runs each completed MPI-parallel solver execution, postprocessing,
+  retrieval, and visualization while reaching the configured Georgia Tech
+  institutional MATLAB license through Connector/Relay, validating one
+  institutional Cloud/Connector configuration rather than arbitrary
+  license-server arrangements; the full BYO-AWS operational lifecycle
+  (budget/quota/cleanup automation), EC2 Spot/GPU/multi-node, and EC2 for
+  ICESEE are still being validated — see the platform-wide
   <a href="../../docs/hpc_cloud.html">Cloud Run Guide</a> for the current
   scope and known limits before depending on Cloud for production work.
 </p>
@@ -671,79 +676,43 @@ This applies to **ISSM cloud runs specifically** — the field is driven by
 whether the selected workflow actually needs MATLAB, not by Basic/Advanced
 mode; Icepack never shows or requires it.
 
-**First-time setup.** Normally done **once per AWS account/Region**, then
-reused automatically.
+**First-time setup.** Normally configure the license once for the connected
+AWS account and Region, then reuse it for later runs.
 
-1. Have access to a MATLAB license server reachable from AWS (directly, or,
-   for a private/institutional server, through the EC2 Advanced compute
-   mode's
-   <a href="../../docs/hpc_cloud.html#compute-mode-fargate-default-or-ec2-advanced">custom/private
-   networking</a>).
-2. In CryoLauncher, under **Cloud Environment → MATLAB License**, enter your
-   license information — for example (placeholder only)
-   `27000@matlab-license.example.edu` — in the **MATLAB license** field.
-3. Click **Configure license**. CryoStack securely configures it in your
-   connected AWS account and clears the entered value from the screen
-   immediately — it is never shown again. The section now reads
-   **✓ MATLAB license configured**.
-4. If CryoStack cannot yet finish connecting the license to your cloud
-   environment, the status line says so and names the next step (normally
-   **Prepare cloud**, which most workflows run anyway before a cloud
-   launch).
+1. Obtain your institution's MATLAB license information and confirm that you
+   are authorized to use it for the workflow.
+2. Open **Cloud Environment → MATLAB License**, enter that information in the
+   masked **MATLAB license** field, and select **Configure license**. CryoStack
+   clears the input and retains a reference to the license stored in your AWS
+   account. You normally do not need a secret name or an AWS console step.
+3. If institutional connectivity is required, open the Connector setup in
+   CryoStack and install the [Connector for your operating system](https://cryostack.eas.gatech.edu/downloads/connectors/).
+   Follow the setup card's pairing instructions. Run it on a machine that can reach the institutional
+   license service, including through your institution's VPN when required.
+   Keep Connector running and connected while the cloud workflow needs it.
+4. Follow the status shown by **Prepare cloud** and **Review**. A configured
+   license reference alone does not prove that the license service is reachable
+   or that the scientific runtime is ready.
 
-That's it — no secret name, ARN, or AWS console step is needed for the
-common case.
+The configured Georgia Tech institutional environment has been live-tested
+with ISSM on both Fargate and EC2 On-Demand, including MPI-parallel solver
+execution, postprocessing, retrieval, and visualization. Connector allows
+the supported institutional path without exposing the license server
+directly to the cloud. Unknown institutional license-server arrangements
+may require administrator support; automatic
+compatibility with every topology is not established.
 
-**Changing the license value later.** CryoStack cannot yet replace the
-value of the license it created for you in place, so once configured the
-section shows **✓ MATLAB license configured** with no active "change it
-here" control for that case — this is deliberate: offering one would imply
-a working path that does not exist yet. To change the value, update the
-secret directly in AWS Secrets Manager (a short note next to the checkmark
-says this too), or use the **Advanced** section below to point CryoStack at
-a different secret you manage yourself, which *does* offer a **Reconfigure**
-control since switching to a different secret genuinely works.
+**Existing licenses and later changes.** Advanced users can select **Advanced
+license configuration → Use an existing AWS Secrets Manager secret**, provide
+an **Existing secret ARN**, and select **Use existing secret**. This is optional;
+the normal path takes the institutional license information directly. Revisit
+setup when the account, Region, or license endpoint changes, using the update
+options shown by the current interface or your institution's administrator.
 
-**Advanced: using a secret you already manage.** If you (or your
-institution) already manage an AWS Secrets Manager secret for the MATLAB
-license, open **Advanced license configuration** under the MATLAB License
-section instead of using Configure license:
-
-1. In the **same AWS account and Region** as your CryoStack connection,
-   store the license as a **plaintext SecretString** — the
-   `MLM_LICENSE_FILE` value, normally `PORT@HOST` — for example, with
-   placeholders only: `27000@matlab-license.example.edu`. Do **not** store
-   it as JSON/key-value data — the current implementation injects the
-   secret's entire value verbatim, so a JSON secret would break MATLAB's
-   license parsing.
-2. Copy the secret's ARN.
-3. Under **Advanced license configuration**, paste it into **Existing
-   secret ARN** — never the license value itself.
-4. Click **Use existing secret**.
-
-Both paths converge on the same stored state — one Secrets Manager ARN on
-your AWS connection — and the same underlying Prepare Cloud reconciliation.
-
-**Subsequent runs.** This is normally **not** repeated for every ISSM run —
-CryoStack remembers the license on your AWS connection and reuses it for
-every later ISSM cloud run automatically. Revisit the setup only when you
-change AWS account, change Region, replace the MATLAB license, or change
-the license endpoint.
-
-**Security.** CryoStack never stores the license value itself — only a
-non-secret reference on your AWS connection. The value stays in your own
-AWS account and never reaches CryoStack, Git, the image, an S3 run
-artifact, a run manifest, a command preview, or a log. The **MATLAB
-license** field is a masked input, is never redisplayed once entered, and
-is cleared immediately after **Configure license** succeeds (or fails) — it
-is used exactly once and nowhere else. Never put the actual license value
-into the Advanced **Existing secret ARN** field, a source file, the
-repository, or documentation.
-
-**Network requirement.** Configuring the license does **not** by itself
-make a campus or private license server reachable from AWS. The license
-server itself must be reachable from the AWS Batch environment (its default
-VPC, or a custom/private network under EC2 Advanced).
+**Privacy.** The masked license input is handled transiently during setup;
+saved configurations use a reference rather than the raw value. Do not put
+license information in source files, run descriptions, or Auto-config requests.
+Licensing is configured through the dedicated manual controls, not Auto-config.
 
 ### Launching
 
@@ -1030,30 +999,47 @@ description of what a run produced.
 :::
 
 
-### Agent · Beta: prepare a configuration
+### Auto-config · Beta: prepare a configuration
 
-When Agent mode is enabled, describe one experiment, for example:
+When enabled, select **Auto-config · Beta**. For example:
 
 > Run SquareIceShelf with ISSM on PACE using 4 CPUs.
 
-**Create plan** shows the inferred model, example and requested settings, along
-with unresolved choices or unsupported requests. Example names come from the
-available application and workspace examples. Omitted settings retain the
-current manual configuration; scientific values remain those of the example
-and any enabled overrides. A request for a default tutorial uses the currently
-selected example only when it belongs to the requested model.
+Use **Review in Advanced** to inspect the complete manual configuration.
+Local standalone execution remains unavailable; supported remote and cloud
+choices depend on the selected workflow.
 
-**Apply to configuration** fills the same controls used by Basic/Advanced and
-reports configuration validation findings. **Review in Advanced** opens those
-controls. Applying a proposal does not approve or submit a run. The normal
-execution path still checks identity, resources, model parameters, backend
-readiness and cloud preflight before submission.
+**Create plan** prepares a compact change preview: **Setting | Current |
+Proposed | Source**. Changed settings are primary; important unchanged values
+appear in a short retained summary. **From request** means explicitly requested,
+**Suggested** means a deterministic adjustment from existing metadata or policy,
+and **Retained** means a valid current value is intentionally unchanged.
+Omitted settings stay as configured. Ambiguity requires clarification;
+unsupported requests cannot be applied. A matching request reports **No changes
+needed**.
 
-The planner supports explicit example/model names, remote/cloud location,
-compute profiles, CPU/task and node counts, Slurm account, wall time in
-`HH:MM:SS`, memory such as `64G memory`, and numeric/boolean settings named by
-the curated parameter labels. Use one complete description for each revision.
-Ambiguous alternatives, unknown assignments and unrecognized numbers require
-clarification. Local standalone execution remains unavailable. Cloud resource
-customization and unsupported GPU/multi-node requests require manual review or
-are rejected; the planner does not substitute HPC resources for cloud values.
+**Apply to configuration** updates the existing controls and reports the number
+of settings changed. It never submits or launches a workflow. Review the manual
+controls and complete the ordinary validation and execution steps. A proposal
+becomes stale if the controls change; create it again before applying. Manual
+edits always remain authoritative.
+
+You can refine the current controls with requests such as “Change the CPUs to
+8” or “Keep everything but run this on PACE”. Each request uses the current
+configuration, without conversation history. If a requested change invalidates
+another setting, the preview includes a deterministic required adjustment or
+asks for clarification; it does not silently discard the setting.
+
+“Why can't I run this?” diagnoses configuration issues without changing controls.
+“Fix my configuration” proposes a repair only when existing metadata supplies a
+deterministic supported choice. It cannot repair institutional access, credentials,
+licensing, or infrastructure. “Why is this Suggested?”, “What did you change?”,
+and “Explain this configuration” provide compact read-only explanations from
+proposal provenance and existing capability information. A stale proposal is
+identified as stale rather than explained as current.
+
+This is a bounded configuration aid, not an autonomous scientist or a general
+chat service. It does not authorize execution, provision infrastructure, or
+modify licensing. Existing identity, resource, scientific-parameter, and backend
+checks remain authoritative; a prepared configuration is not proof that a run
+is ready.

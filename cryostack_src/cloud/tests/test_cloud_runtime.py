@@ -84,7 +84,13 @@ def test_runner_is_env_driven_and_backend_neutral():
 
 
 def test_runner_issm_runs_target_then_postprocess():
-    r = build_cloud_runner()
+    """The MATLAB invocation itself lives in the staged ISSM branch script
+    (issm_cloud_runner_script(), invoked by the generic runner's ``issm)``
+    case -- see test_cloud_runtime_license_tunnel.py) rather than being
+    embedded here."""
+    from cryostack_src.cloud.runtime import issm_cloud_runner_script
+
+    r = issm_cloud_runner_script()
     assert "with-issm matlab" in r
     assert "run('${RUN_TARGET}')" in r
     assert "run('${WORKDIR}/postprocess_icesee.m')" in r
@@ -147,13 +153,13 @@ def test_runner_icepack_skips_the_collector_gracefully_when_not_staged():
 
 # -- the actual AWS limit this checkpoint fixes ----------------------------
 def test_runner_and_job_command_stay_safely_below_the_batch_override_limit():
-    """The regression for the live failure itself: AWS Batch forwards a
-    job's effective container command through an ECS RunTask override on
-    every launch, capped at BATCH_CONTAINER_OVERRIDE_LIMIT (8192) chars --
-    the SAME limit submit-job's own --container-overrides enforces. Before
-    this fix, embedding the Icepack collector inline pushed the serialized
-    command to 8278 characters (over the limit); it must now stay
-    comfortably under it, with real headroom for future growth."""
+    """An approximate, fast sanity check on the generic runner's OWN command
+    text in isolation (no environment variables) -- not the real,
+    AWS-validated payload; see
+    test_actual_container_overrides_stays_within_the_aws_limit_with_headroom
+    below for that. Before the Icepack-collector fix, embedding it inline
+    pushed the serialized command to 8278 characters (over the limit) on
+    its own; it must stay comfortably under it here too."""
     assert BATCH_CONTAINER_OVERRIDE_LIMIT == 8192
     r = build_cloud_runner()
     assert len(r) < BATCH_CONTAINER_OVERRIDE_LIMIT
@@ -162,26 +168,68 @@ def test_runner_and_job_command_stay_safely_below_the_batch_override_limit():
     assert len(serialized) < BATCH_CONTAINER_OVERRIDE_LIMIT
     # real headroom, not a hair's-breadth pass -- catches the next helper
     # someone is tempted to embed inline before it blows the limit again.
-    # The private-service license tunnel's ISSM-branch invocation
-    # (test_cloud_runtime_license_tunnel.py) initially narrowed this from
-    # 2000 to 1500 by passing 6 flags explicitly; moving that argument
-    # resolution into license_tunnel_client.py itself (it now reads
-    # CRYOSTACK_LT_* directly from its own environment -- see
-    # _ENV_FALLBACK there) let the runner invoke `listen` with NO flags,
-    # restoring the margin to 1800. Fixing the runtime-packaging bug (the
-    # tunnel client is now invoked by its staged FILE PATH -- see
-    # LICENSE_TUNNEL_CLIENT_FILENAME -- never `python3 -m cryostack_src...`,
-    # which cannot work inside the scientific Batch container) cost a
-    # little of that back, to ~1600. Adding the optional second (FlexNet
-    # vendor-daemon) tunnel invocation -- conditional on
-    # CRYOSTACK_LT_VENDOR_PORT, only ~200 chars since it reuses the same
-    # relay/session/token/purpose already in the process environment --
-    # narrowed this further; ~900 chars of real headroom remain under the
-    # hard 8192 cap checked just above.
-    assert len(serialized) < BATCH_CONTAINER_OVERRIDE_LIMIT - 900
+    # The ISSM branch's license-tunnel setup + MATLAB invocation (primary
+    # AND the optional FlexNet vendor-daemon hop) now live in their own
+    # STAGED FILE (issm_cloud_runner_script(), staged as
+    # ISSM_CLOUD_RUNNER_FILENAME) rather than being embedded here -- see
+    # that function and test_cloud_runtime_license_tunnel.py's
+    # test_generic_runner_issm_branch_is_a_thin_staged_file_invocation.
+    # This restored a large margin (~2000+ chars) after the vendor-tunnel
+    # addition had narrowed the old, fully-inlined version's margin to the
+    # point of an actual live SubmitJob failure once the real environment
+    # variables were added on top (see the combined-payload test below).
+    assert len(serialized) < BATCH_CONTAINER_OVERRIDE_LIMIT - 2000
     # the runner still carries everything a run needs to be located/run
     for required in ("CRYOSTACK_S3_RUN", "CRYOSTACK_MODEL", "CRYOSTACK_RUN_TARGET"):
         assert required in r
+
+
+def test_actual_container_overrides_stays_within_the_aws_limit_with_headroom():
+    """The regression for the LIVE SubmitJob failure ("Container Overrides
+    length must be at most 8192"): AWS Batch forwards the job definition's
+    resolved container command through an ECS RunTask override on EVERY
+    launch, and that override is what AWS actually validates -- combined
+    with whatever this submission's own --container-overrides specifies
+    (build_container_overrides's environment list). The command-only check
+    above approximates just the first half of that real payload and missed
+    exactly this failure: a live ISSM Fargate run with the MATLAB license
+    tunnel (primary + the FlexNet vendor-daemon hop) enabled pushed the
+    REAL combined payload over 8192, even though the command-only figure
+    still looked comfortable.
+
+    This builds the SAME combined shape AWS actually receives
+    (command + environment, the closest proxy available without live AWS
+    -- ECS's own wrapping adds a little more on top, which is exactly why
+    real headroom, not a hair's-breadth pass, is required below), for the
+    worst realistic case: ISSM, MATLAB license tunnel required, including
+    the optional FlexNet vendor-daemon hop -- the largest env-var set any
+    cloud run produces today.
+    """
+    from cryostack_src.cloud.drivers.aws.submit import build_container_overrides
+    from cryostack_src.cloud.matlab_license import plan_license_tunnel
+
+    plan = plan_license_tunnel(
+        requires_tunnel=True, session_id="a" * 32,
+        relay_url="https://cryostack.eas.gatech.edu",
+        mint_grant=lambda *a, **k: {
+            "grant_id": "g" * 32, "token": "t" * 43, "purpose": "matlab-license",
+        },
+    )
+    extra_env = {k: v for k, v in plan.items() if not k.startswith("_")}
+    assert "CRYOSTACK_LT_VENDOR_PORT" in extra_env   # the worst case actually includes it
+
+    overrides = build_container_overrides(
+        s3_run="s3://cryostack-runs-123456789012/runs/cloud-20260101-000000-abcdef01",
+        model="issm", run_target="runme.m", extra_env=extra_env,
+    )
+    combined = {**overrides, "command": cloud_run_command()}
+    serialized = json.dumps(combined)
+
+    assert len(serialized) < BATCH_CONTAINER_OVERRIDE_LIMIT
+    # meaningful headroom below the hard cap -- so one more small env var
+    # (or a slightly longer session id / token / S3 run path) cannot
+    # immediately reopen this exact failure again.
+    assert len(serialized) < BATCH_CONTAINER_OVERRIDE_LIMIT - 1000
 
 
 def test_icepack_postprocess_extra_files_carries_the_real_helpers_under_the_expected_names():
@@ -205,14 +253,20 @@ def test_icepack_postprocess_extra_files_carries_the_real_helpers_under_the_expe
 
 
 def test_runner_propagates_true_exit_code_no_swallowing():
+    from cryostack_src.cloud.runtime import issm_cloud_runner_script
+
     lines = build_cloud_runner().splitlines()
     body = [l for l in lines if not l.lstrip().startswith("#")]
     joined = "\n".join(body)
     assert "|| true" not in joined                       # never swallow the science
     assert "rc=$?" in joined                             # capture the real code
     assert 'exit "${rc}"' in joined                      # ... and propagate it
-    # the matlab invocation itself has no "|| true" / "; true" tail
-    matlab_line = next(l for l in body if "with-issm matlab" in l)
+    # the matlab invocation itself (in the staged ISSM branch script) has
+    # no "|| true" / "; true" tail either
+    issm_lines = [l for l in issm_cloud_runner_script().splitlines()
+                  if not l.lstrip().startswith("#")]
+    assert "|| true" not in "\n".join(issm_lines)
+    matlab_line = next(l for l in issm_lines if "with-issm matlab" in l)
     assert "true" not in matlab_line
 
 

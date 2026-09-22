@@ -190,8 +190,8 @@
 
       <article class="cryostack-resource-card">
         <div class="cryostack-resource-tag">Execution</div>
-        <h3>Cloud <span class="cryostack-status dev">In validation</span></h3>
-        <p>Bring-your-own AWS account via CloudFormation, on AWS Batch (Fargate default, EC2 Advanced). Icepack and ICESEE have each run end-to-end on Fargate, and Icepack has also done so on EC2 On-Demand (single node, CPU); EC2 Spot/GPU/multi-node and the full lifecycle are still being validated.</p>
+        <h3>Cloud <span class="cryostack-status supported">Supported</span></h3>
+        <p>Bring-your-own AWS account via CloudFormation, on AWS Batch (Fargate default, EC2 Advanced). CryoLauncher's ISSM and Icepack workflows have each completed end-to-end execution on both Fargate and EC2 On-Demand (single node, CPU), including institutional MATLAB licensing through Connector/Relay for ISSM; ICESEE's Lorenz-96 example has done the same on Fargate. EC2 Spot/GPU/multi-node and ICESEE's own Cloud/ISSM workflows remain unvalidated.</p>
         <a href="docs/hpc_cloud.html">Cloud Run Guide &rarr;</a>
       </article>
 
@@ -287,7 +287,7 @@
         <div class="cryostack-resource-tag">Source Code</div>
         <h3>CryoLauncher</h3>
         <p>The gateway, application layer, connector, and deployment.</p>
-        <a href="https://github.com/ICESEE-project/CryoLauncher" target="_blank" rel="noopener noreferrer">View repository &rarr;</a>
+        <a href="https://github.com/ICESEE-project/CryoStack" target="_blank" rel="noopener noreferrer">View repository &rarr;</a>
       </article>
 
       <article class="cryostack-resource-card">
@@ -314,7 +314,7 @@
 
     <p>
       Use the
-      <a href="https://github.com/ICESEE-project/CryoLauncher/issues" target="_blank" rel="noopener noreferrer">CryoLauncher issue tracker</a>
+      <a href="https://github.com/ICESEE-project/CryoStack/issues" target="_blank" rel="noopener noreferrer">CryoStack issue tracker</a>
       for platform bugs, connector and remote-execution problems, documentation
       issues, and feature requests. Questions about ISSM, Icepack, Firedrake, or
       PETSc themselves belong on those projects' own support channels.
@@ -322,7 +322,7 @@
 
     <div class="cryostack-docs-actions">
       <a class="cryostack-btn primary"
-         href="https://github.com/ICESEE-project/CryoLauncher/issues"
+         href="https://github.com/ICESEE-project/CryoStack/issues"
          target="_blank" rel="noopener noreferrer">
         Open Issue Tracker
       </a>
