@@ -41,8 +41,6 @@ COPY external/living-ice-sheet-temperature/frontend/package.json \
      external/living-ice-sheet-temperature/frontend/yarn.lock \
      external/living-ice-sheet-temperature/frontend/.yarnrc.yml \
      ./
-COPY external/living-ice-sheet-temperature/frontend/.yarn ./.yarn
-
 RUN corepack enable \
     && corepack prepare yarn@4.13.0 --activate \
     && yarn install --immutable
