@@ -282,6 +282,14 @@ def registered_health_targets(
                 ]
 
 
+        # No path and no routes: this registration only names a target
+        # (e.g. application-docs -> cryostack). Keep the target already
+        # registered instead of overwriting it with a missing path.
+
+        if not path:
+            continue
+
+
         config = dict(
             health
         )
