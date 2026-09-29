@@ -19,8 +19,8 @@
 
     <p>
       The operational guide to configuring models, editing examples in your
-      own workspace, managing datasets, launching runs on remote resources,
-      and exploring structured results.
+      own workspace, managing datasets, launching runs on remote resources or
+      your own AWS account, and exploring structured results.
     </p>
 
     <div class="cryostack-docs-actions">
@@ -81,51 +81,43 @@ The interface has two areas:
 
 :::{raw} html
 <p>
-  <b>ISSM</b> <span class="cryostack-status supported">Supported</span><br>
-  The Ice-sheet and Sea-level System Model. This is the mature CryoLauncher
-  path: guided configuration, per-user example staging, structured result
-  export, and deterministic visualization are all implemented and tested.
+  <b>ISSM</b> <span class="cryostack-status supported">Supported — Remote and Cloud</span><br>
+  The Ice-sheet and Sea-level System Model. Solver-aware Basic-mode
+  configuration, per-user example staging, structured result export, and
+  deterministic Solution / Field / Timestep visualization. ISSM runs MATLAB,
+  so every ISSM run needs a MATLAB license available to the compute resource
+  (see <a href="#matlab-licensing-for-issm-cloud-runs">MATLAB licensing</a>).
 </p>
 <p>
-  <b>Icepack</b> <span class="cryostack-status dev">Experimental</span><br>
-  Selectable in the interface. Example discovery, per-user workspace
-  editing/cloning, dataset staging, tested-container selection, Slurm
-  configuration and validation, remote/HPC submission, run history, provenance,
-  and Results/Figures downloads all work the same way they do for ISSM. After a
-  run, CryoLauncher collects the figures and native output files the example
-  produced into the standard results package, and the Results tab shows them.
-</p>
-<p>
-  What is <b>not</b> yet at ISSM parity, because it depends on model-specific
-  science decisions still in review:
-</p>
-<ul>
-  <li><b>Basic-mode curated configuration.</b> ISSM Basic mode edits the
-  <code>md</code> model struct; Icepack configuration is Python
-  (Firedrake <code>Function</code>s, solver options), which needs its own
-  curated parameter set. Use Advanced mode (edit the notebook/script directly)
-  for Icepack today.</li>
-  <li><b>Structured field visualization.</b> The Results tab shows collected
-  figures and output files but not an interactive field/timestep viewer —
-  Firedrake results are function-space DOF vectors, not the ISSM
-  solution/field/timestep structure the viewer is built on.</li>
-  <li><b>Cloud (AWS Batch) execution.</b> Icepack has run end-to-end on Cloud
-  for <code>04-synthetic-ice-stream-xy</code> (Fargate) and for
-  <code>00-meshes-functions</code> (EC2 Advanced, On-Demand, single node,
-  CPU); other Icepack examples share the same code path but have not each
-  been individually confirmed there — see the
-  <a href="../../docs/hpc_cloud.html#verified-runtime-contracts">Cloud
-  Run Guide</a>.</li>
-</ul>
-<p>
-  These are tracked as explicit science checkpoints, not left vague. Treat
-  Icepack runs as exploratory.
+  <b>Icepack</b> <span class="cryostack-status supported">Supported — Remote and Cloud</span><br>
+  The Firedrake-based glacier-flow library. Example discovery, workspace
+  editing and cloning, dataset staging, container and Spack backends, Slurm
+  settings, Remote and Cloud submission, run history, provenance, structured
+  result export, field visualization, and downloads use the same workflow as
+  ISSM. Icepack needs no MATLAB license.
 </p>
 :::
 
-Basic and Advanced are **CryoLauncher-wide application modes**, not model
-modes. ISSM is the first model integrated behind
-them.
+Where Icepack differs from ISSM today:
+
+- **Basic mode has two curated parameters** — ice temperature and the number
+  of timesteps (see <a href="#basic-mode-for-icepack">Basic mode for Icepack</a>). Other
+  changes are made by editing the example in Advanced mode.
+- **Visualization shows maps of the final exported state.** The exported
+  fields are thickness, velocity, surface, bed, accumulation, log-fluidity,
+  and damage — whichever the example defines. There is no timestep selector or
+  time-series plot for Icepack; figures the example saves itself are also
+  collected and shown.
+- **Notebook examples** are shown read-only in the Advanced editor (see
+  <a href="#advanced-mode">Advanced mode</a>).
+- **Cloud validation is per example.** Icepack has completed end-to-end Cloud
+  runs for `04-synthetic-ice-stream-xy` (Fargate) and `00-meshes-functions`
+  (EC2 On-Demand, single node, CPU). Other Icepack examples use the same code
+  path but have not each been confirmed on Cloud.
+
+Basic and Advanced are **CryoLauncher-wide configuration modes**, not model
+modes and not execution backends: every model runs through the same
+Remote or Cloud execution paths whichever mode you configure it in.
 
 ## 3. Basic mode
 
@@ -191,6 +183,15 @@ examples and files directly.
   mode — Basic mode's Workspace has no Editor tab. This is the same editor
   widget and controller either way; switching Basic↔Advanced only shows or
   hides the tab, it never recreates the editor or discards its content.
+- **Action.** Advanced mode adds an **Action** menu in Run settings that
+  decides what the run button does:
+
+  | Action | What it does |
+  |---|---|
+  | **Run** | Submit the run (the default). |
+  | **Test** | Submit a short environment-check job instead of the example: for ISSM it starts MATLAB and reports the ISSM version, for Icepack it imports Icepack. Use it to confirm a Remote backend works before a full run. Remote only — Cloud runs always run the example. |
+  | **Deploy** | Clone the selected example into My Workspace; nothing is submitted. |
+
 - **Canonical examples are read-only.** Application examples shipped with a
   model cannot be edited, renamed, or deleted. Opening a file from one shows
   it disabled.
@@ -294,98 +295,17 @@ example**, in your personal dataset area.
 </p>
 <p>
   <b>Cloud</b> <span class="cryostack-status supported">Supported</span>
-  &nbsp;— run on <b>your own</b> AWS account and credits (bring-your-own-AWS),
-  on AWS Batch. You connect the account once (<b>Connect AWS Account</b> →
-  <b>Open AWS Setup</b> → create the CryoStack access role → <b>Verify</b>),
-  CryoStack prepares the required infrastructure, and you review an estimated
-  cost before launching. CryoStack uses <b>temporary role access</b> and never
-  stores your AWS access keys — you are never asked to paste an access key, a
-  secret, or a CLI profile. ICESEE's own Cloud tab uses this exact same
-  Connect/Prepare/Review flow. Batch runs on <b>Fargate</b> by default; an
-  <b>Advanced</b> section lets you switch to <b>EC2</b> instead for
-  On-Demand/Spot capacity or a custom/private network — see
-  <a href="../../docs/hpc_cloud.html#compute-mode-fargate-default-or-ec2-advanced">Compute
-  mode</a> in the Cloud Run Guide. The onboarding, infrastructure-provisioning,
-  and Fargate execution steps below are exercised and working — Icepack,
-  ISSM, and ICESEE's Lorenz-96 example have each completed a real run on
-  Fargate, and Icepack and ISSM have additionally each completed a real run
-  on EC2 (Advanced, On-Demand, single node, CPU) — ISSM's Fargate and EC2
-  runs each completed MPI-parallel solver execution, postprocessing,
-  retrieval, and visualization while reaching the configured Georgia Tech
-  institutional MATLAB license through Connector/Relay, validating one
-  institutional Cloud/Connector configuration rather than arbitrary
-  license-server arrangements; the full BYO-AWS operational lifecycle
-  (budget/quota/cleanup automation), EC2 Spot/GPU/multi-node, and EC2 for
-  ICESEE are still being validated — see the platform-wide
-  <a href="../../docs/hpc_cloud.html">Cloud Run Guide</a> for the current
-  scope and known limits before depending on Cloud for production work.
+  &nbsp;— run on <b>your own</b> AWS account and credits through AWS Batch,
+  on Fargate by default or on EC2 managed instances. You connect the account
+  once, CryoStack prepares the infrastructure, and you review an estimated
+  cost before every launch — see
+  <a href="#cloud-execution-aws">Cloud execution (AWS)</a>.
 </p>
 :::
 
-### Connect AWS Account
+CryoLauncher has no Local execution mode: ISSM and Icepack runs always execute
+on a Remote resource or on AWS.
 
-1. In <b>Cloud Environment → AWS ACCOUNT</b>, click <b>Connect AWS Account</b>.
-2. Click <b>Open AWS Setup</b>. A CloudFormation <i>Quick Create</i> page opens
-   in your AWS console, pre-filled with a unique <i>ExternalId</i> and the
-   CryoStack principal. Review it and create the stack — it adds one IAM role,
-   <code>CryoStackExecutionRole</code>, with least-privilege access scoped to
-   <code>cryostack-*</code> resources.
-3. Copy the role ARN from the stack's <b>Outputs</b> tab
-   (<code>arn:aws:iam::&lt;account&gt;:role/CryoStackExecutionRole</code>),
-   paste it back into CryoStack, and click <b>Verify connection</b>.
-4. CryoStack assumes the role with your ExternalId, confirms the account, and
-   shows <b>● Connected</b> with your account ID and <i>Access: Temporary
-   role</i>.
-5. Click <b>Prepare cloud</b>. Using temporary role access, CryoStack derives
-   the storage bucket (<code>cryostack-runs-&lt;account-id&gt;</code>), queue
-   and job definition and creates whatever is missing <b>in your account</b> —
-   S3 storage, the container repository, and the Batch compute environment.
-   The panel shows <b>Storage / Containers / Compute</b> moving to <b>Ready</b>.
-   Prepare cloud is safe to run again; existing resources are reused, not
-   recreated. Detailed provisioning output goes to the Run Log.
-6. Once everything is <b>Ready</b>, a <b>RUN ESTIMATE</b> appears — expected
-   runtime, the resources the run will request (e.g. 2 vCPU · 8 GiB), and an
-   estimated AWS cost (Fargate only — EC2 shows <b>Estimated cost:
-   unavailable</b>; no EC2 pricing model exists yet). Click <b>Review &amp;
-   Launch</b> to see the full <b>Review cloud run</b> card (experiment,
-   account, resources, expected runtime, estimated cost with its basis and
-   price-check time, and infrastructure readiness — the <b>Compute</b> row
-   names the backend explicitly, e.g. <b>Compute (AWS Batch Fargate)</b> or
-   <b>Compute (AWS Batch EC2)</b>), then click <b>Launch cloud run</b> to start.
-   Launch is always an explicit action; if you change the example, resources
-   or a model parameter after opening the review, CryoStack asks you to review
-   the updated estimate again before launching.
-7. A <b>CLOUD RUN</b> card then shows live status
-   (<i>Staging → Queued → Running → Completed</i>), the AWS account and region,
-   the resources, an elapsed timer, an estimated cost so far, and the expected
-   runtime. It updates while the run proceeds without blocking the interface.
-   All of the run's AWS work (staging, submission, status, logs, termination,
-   result retrieval) uses a short-lived role session in <b>your</b> account.
-   <b>View log</b> opens the run's log in the Workspace Run Log tab (the same
-   live-tail view every run uses); <b>View results</b> (enabled on completion)
-   opens the Workspace Results tab. <b>Terminate</b> stops a running job (with a
-   confirm step). On completion, CryoStack retrieves the outputs into your run
-   cache automatically and Results renders them.
-
-Cost figures are <b>estimates</b>. AWS charges apply to your AWS account; AWS
-promotional/free-tier credits, billing rules and payment methods are managed by
-AWS (check your AWS Billing &amp; Cost Management console for your credit
-balance). If a price cannot be retrieved, CryoStack shows "Cost estimate
-unavailable" and still lets you launch.
-
-<b>Disconnect</b> removes the stored connection metadata only. There are no
-credentials to revoke — STS sessions are short-lived and are never stored.
-Running <code>aws configure</code> or setting up a CLI profile is <b>not</b>
-required for this path; that is a developer-only workflow (see the Developer
-Guide).
-
-<b>Video tutorials.</b> The
-<a href="https://mediaspace.gatech.edu/media/Brian+Kyanjos+Zoom+Meeting/1_edvr6a1l" target="_blank" rel="noopener noreferrer">Icepack · Cloud</a>
-tutorial follows this whole sequence, including connecting your AWS account
-and preparing the cloud environment. The
-<a href="https://mediaspace.gatech.edu/media/Brian+Kyanjos+Zoom+Meeting/1_7aycdfrg" target="_blank" rel="noopener noreferrer">ISSM · Cloud</a>
-tutorial starts from an already prepared CryoStack AWS environment. See
-<a href="resources.html#video-tutorials">all CryoLauncher video tutorials</a>.
 
 **Backend** (under Remote):
 
@@ -430,10 +350,10 @@ directory, allocation, or key.
 |---|---|
 | **Compute resource** | Resource, Host, Port |
 | **Your HPC identity** | HPC username, Remote working directory |
-| **Access** | Connection method, Authentication method |
+| **Access** | Connection method (CryoStack Connector, Direct SSH from server, or Auto), Authentication method |
 | **Status** | ● Not checked / Checking… / Verified / Mismatch / Failed |
 
-with **[ Check SSH Access ]** and **[ Open Connector Setup ]**, a **CryoStack
+with **[ Check SSH Access ]** and **[ Open Connector... ]**, a **CryoStack
 Connector** card, and a **Diagnostics** section for the session id and relay
 details. Resource facts (host, port, scheduler defaults, VPN/MFA requirements)
 come from the resource's profile; the identity fields start blank and only ever
@@ -446,7 +366,7 @@ method** is the **CryoStack Connector**: a small desktop app on *your*
 workstation that carries CryoStack's SSH through your existing network access.
 
 1. **Remote Connection → Connection method: CryoStack Connector.**
-2. Click **Open Connector Setup** — CryoStack creates a pairing session and
+2. Click **Open Connector...** — CryoStack creates a pairing session and
    shows a **pairing code** on the **CryoStack Connector** card.
 3. On the setup page (`/connect/`), **download the connector for your
    platform**. The offered downloads are exactly the platforms listed in
@@ -650,7 +570,235 @@ earlier is a useful UX signal but is **not** blindly trusted for execution.
 - SSH private keys, bootstrap passwords, pairing codes, and relay tokens are
   **never written into run provenance** or any saved configuration.
 
-## 10. Preparing and launching runs
+## 10. Cloud execution (AWS)
+
+Cloud runs execute on **your own AWS account** (bring-your-own-AWS) through
+AWS Batch. You connect the account once, CryoStack prepares the required
+infrastructure in it, and every launch goes through an explicit review with an
+estimated cost. AWS charges apply to your account.
+
+CryoStack uses **temporary role access** and never stores AWS access keys —
+you are never asked to paste an access key, a secret, or a CLI profile.
+Running `aws configure` is **not** required.
+
+**Video tutorials.** The
+<a href="https://mediaspace.gatech.edu/media/Brian+Kyanjos+Zoom+Meeting/1_edvr6a1l" target="_blank" rel="noopener noreferrer">Icepack · Cloud</a>
+tutorial follows this whole sequence, including connecting your AWS account
+and preparing the cloud environment. The
+<a href="https://mediaspace.gatech.edu/media/Brian+Kyanjos+Zoom+Meeting/1_7aycdfrg" target="_blank" rel="noopener noreferrer">ISSM · Cloud</a>
+tutorial starts from an already prepared CryoStack AWS environment. See
+<a href="resources.html#video-tutorials">all CryoLauncher video tutorials</a>.
+
+### What is validated, available, and guarded
+
+:::{raw} html
+<table>
+  <thead>
+    <tr><th>Cloud option</th><th>Status</th><th>What that means</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>Fargate</b> (default)</td>
+      <td><span class="cryostack-status supported">Validated</span></td>
+      <td>ISSM and Icepack have completed end-to-end runs: submission,
+      execution, retrieval, and visualization.</td>
+    </tr>
+    <tr>
+      <td><b>EC2 On-Demand</b>, single node, CPU</td>
+      <td><span class="cryostack-status supported">Validated</span></td>
+      <td>ISSM and Icepack have completed end-to-end runs.</td>
+    </tr>
+    <tr>
+      <td><b>EC2 Spot</b></td>
+      <td><span class="cryostack-status dev">Available, not yet validated</span></td>
+      <td>Can be selected and submitted; no end-to-end run has been confirmed.
+      Spot capacity can be reclaimed by AWS during a run.</td>
+    </tr>
+    <tr>
+      <td><b>EC2 custom / private network</b></td>
+      <td><span class="cryostack-status dev">Available, not yet validated</span></td>
+      <td>Places the compute environment in a VPC you already control. Not
+      required by the validated path.</td>
+    </tr>
+    <tr>
+      <td><b>EC2 GPU</b></td>
+      <td><span class="cryostack-status planned">Guarded</span></td>
+      <td>Infrastructure can be staged, but submission is blocked: the
+      qualified CryoStack container image has no GPU (CUDA) runtime.</td>
+    </tr>
+    <tr>
+      <td><b>EC2 multi-node</b></td>
+      <td><span class="cryostack-status planned">Guarded</span></td>
+      <td>A multi-node job definition can be registered, but scientific
+      submission is blocked: the runners do not yet run distributed MPI across
+      AWS Batch nodes.</td>
+    </tr>
+  </tbody>
+</table>
+:::
+
+A control being selectable is not a claim of scientific validation. ISSM's
+validated Cloud runs reached a configured Georgia Tech institutional MATLAB
+license; other institutional license arrangements may need administrator
+support. For the platform-wide view, see the
+<a href="../../docs/hpc_cloud.html">Cloud Run Guide</a>.
+
+### Connect AWS Account
+
+1. Set **Execution** to **Cloud**. The **Cloud Environment** panel opens.
+2. In **AWS ACCOUNT**, click **Connect AWS Account**.
+3. Click **Open AWS Setup**. A CloudFormation *Quick Create* page opens in
+   your AWS console, pre-filled with a unique *ExternalId* and the CryoStack
+   principal. Review it and create the stack — it adds one IAM role,
+   `CryoStackExecutionRole`, with least-privilege access scoped to
+   `cryostack-*` resources.
+4. Copy the role ARN from the stack's **Outputs** tab
+   (`arn:aws:iam::<account>:role/CryoStackExecutionRole`), paste it into
+   **Role ARN**, and click **Verify connection**.
+5. CryoStack assumes the role with your ExternalId, confirms the account, and
+   shows **● Connected** with your account ID and *Access: Temporary role*.
+
+### Managing the AWS connection
+
+Once connected, the account card offers:
+
+| Control | What it does |
+|---|---|
+| **Re-check** | Verifies the stored connection again. |
+| **Update role permissions** | Opens the CloudFormation update for your existing stack, so the role picks up the current published permissions. |
+| **Disconnect** | Removes CryoStack's stored connection metadata. There are no credentials to revoke — role sessions are short-lived and never stored. |
+| **Retry connection** | Shown only when verification failed; tries the same account again. |
+| **Change AWS account** | Shown only when verification failed; connects a different account. Your current connection is kept until the new one verifies. |
+
+If your browser is still signed into the **same** AWS account, use
+**Retry connection** — creating a second CryoStack role in an account that
+already has one fails.
+
+### Prepare cloud
+
+Click **Prepare cloud**. Using temporary role access, CryoStack derives the
+storage bucket (`cryostack-runs-<account-id>`), job queue, and job definition,
+and creates whatever is missing **in your account** — S3 storage, the
+container repository, and the Batch compute environment. The panel shows
+**Storage / Containers / Compute** moving to **Ready**; detailed output goes to
+the Run Log. Prepare cloud is safe to run again: existing resources are reused,
+not recreated.
+
+**Test connection** checks the account connection without preparing anything.
+
+### Compute: Fargate or EC2
+
+Batch runs on **Fargate** (serverless) by default. **Advanced cloud
+settings** in the Cloud Environment panel lets you choose **Compute: EC2 — managed
+instances** instead, for more CPU or memory than Fargate allows. With EC2
+selected:
+
+| Field | Meaning |
+|---|---|
+| **Max vCPUs** | Ceiling for the managed compute environment (default 16). It scales to zero when idle. |
+| **Instance types** | `optimal` (let AWS choose) or instance families such as `c5,m5,r5`. |
+| **Capacity** | On-Demand (default) or Spot. |
+| **Accelerator** | None (default) or GPU — guarded, see the table above. |
+| **Network** | Default (discovered VPC) or Custom / Private: **VPC id**, **Subnet ids**, **Security groups**. CryoStack does not create any VPN or route; the VPC must already have the network path it needs. |
+| **Execution** | Single node (default) or Multi-node with a **Node count** — guarded, see the table above. |
+
+Choose these before **Prepare cloud**. Fargate-only runs never see the EC2
+options, and an invalid combination (for example Spot with Fargate) is
+rejected rather than silently changed.
+
+**Region** is set in the main panel. **Advanced cloud settings** also holds
+**Profile**, **S3 bucket**, **Queue**, **Job definition**, and **Job name**;
+you normally leave these as CryoStack derives them.
+
+### Review and launch
+
+Once everything is **Ready**, a **RUN ESTIMATE** appears: expected runtime,
+the resources the run will request (for example 2 vCPU · 8 GiB), and an
+estimated AWS cost. Cost estimates exist for Fargate only — EC2 shows
+**Estimated cost: unavailable**.
+
+Click **Review & Launch** to open the **Review cloud run** card: experiment,
+account, resources, expected runtime, estimated cost with its basis and
+price-check time, and infrastructure readiness. The **Compute** row names the
+backend, for example **Compute (AWS Batch Fargate)** or
+**Compute (AWS Batch EC2)**; for ISSM, an **ISSM runtime** row shows whether a
+MATLAB license is configured. Click **Launch cloud run** to start.
+
+Launch is always an explicit action. If you change the example, resources, or
+a model parameter after opening the review, CryoStack asks you to review the
+updated estimate again.
+
+### Monitoring a cloud run and retrieving results
+
+A **CLOUD RUN** card shows live status (*Staging → Queued → Running →
+Completed*), the AWS account and region, resources, elapsed time, estimated
+cost so far, and expected runtime. It updates in the background without
+blocking the interface.
+
+- **View log** opens the run's log in the Workspace **Run Log** tab.
+- **View results** (enabled on completion) opens the Workspace **Results**
+  tab.
+- **Terminate** stops a running job, after a confirmation step.
+
+On completion CryoStack retrieves the run's outputs from S3 into your run
+cache automatically, and Results renders them exactly as for a Remote run.
+While Cloud is selected, the Run Log toolbar offers **Infrastructure smoke
+test**, **Check status**, **Logs hint**, and **Clear**.
+
+### MATLAB licensing for ISSM cloud runs
+
+This applies to **ISSM cloud runs specifically** — the field is driven by
+whether the selected workflow actually needs MATLAB, not by Basic/Advanced
+mode; Icepack never shows or requires it. The tested container image ships no
+license, so "Container image ready" is not the same as "ISSM runtime ready".
+
+**First-time setup.** Normally configure the license once for the connected
+AWS account and Region, then reuse it for later runs.
+
+1. Obtain your institution's MATLAB license information and confirm that you
+   are authorized to use it for the workflow.
+2. Open **Cloud Environment → MATLAB LICENSE**, enter that information in the
+   masked **MATLAB license** field, and select **Configure license**.
+   CryoStack clears the input and keeps a reference to the license stored in
+   your AWS account. You normally do not need a secret name or an AWS console
+   step.
+3. If your institution's license service is only reachable from its network,
+   use the **INSTITUTIONAL CONNECTION** section: click **Open Connector...**,
+   install the
+   [Connector for your operating system](https://cryostack.eas.gatech.edu/downloads/connectors/),
+   and pair it. Run it on a machine that can reach the license service —
+   through your institution's VPN if required — and keep it running and
+   connected while the cloud run needs the license.
+4. Follow the status shown by **Prepare cloud** and **Review**. A configured
+   license reference alone does not prove that the license service is
+   reachable or that the scientific runtime is ready.
+
+**Existing licenses and later changes.** Advanced users can select **Advanced
+license configuration → Use an existing AWS Secrets Manager secret**, provide
+an **Existing secret ARN**, and select **Use existing secret**. Revisit setup
+when the account, Region, or license endpoint changes.
+
+**Privacy.** The masked license input is handled transiently during setup;
+saved configurations use a reference rather than the raw value. Do not put
+license information in source files, run descriptions, or Auto-config
+requests.
+
+### Costs and cleanup
+
+Cost figures are **estimates**. AWS charges, promotional credits, and billing
+are managed by AWS — check your AWS Billing & Cost Management console. If a
+price cannot be retrieved, CryoStack shows "Cost estimate unavailable" and
+still lets you launch.
+
+CryoStack does not automatically remove the AWS infrastructure a run used.
+See [Cleanup](https://cryostack.eas.gatech.edu/docs/hpc_cloud.html#cleanup) in
+the Cloud Run Guide before you consider a Cloud workflow finished.
+
+## 11. Preparing and launching runs
+
+This section covers Remote runs. Cloud runs are prepared with **Prepare
+cloud** and launched from the **Review cloud run** card — see
+<a href="#cloud-execution-aws">Cloud execution (AWS)</a>.
 
 ### Environment preparation
 
@@ -663,7 +811,8 @@ Some backends need a one-time setup on the remote resource:
   verification confirms the environment is genuinely usable before it is
   marked **Ready**. A scientific run is blocked until the live check reports
   Ready, with a clear message.
-- **Remote + Container (tested image).** No preparation step.
+- **Remote + Container.** No preparation step for a *tested* Docker / OCI
+  image — it is used directly and pinned by digest.
 - **ISSM + MATLAB licensing.** ISSM runs MATLAB inside the container. The
   MATLAB license is a property of the compute resource, injected at run time.
   If the selected resource has no license configured, the run fails fast with
@@ -674,61 +823,18 @@ Some backends need a one-time setup on the remote resource:
   - **Cloud (AWS Batch):** "Container image ready" is **not** "ISSM runtime
     ready" — the tested image ships no license. See
     <a href="#matlab-licensing-for-issm-cloud-runs">MATLAB licensing for ISSM
-    cloud runs</a> below for the one-time setup. The Review card shows an
+    cloud runs</a> in Section&nbsp;10 for the one-time setup. The Review card shows an
     explicit **ISSM runtime** row (Ready / *Needs a MATLAB license*) distinct from the
     container row.
-
-### MATLAB licensing for ISSM cloud runs
-
-This applies to **ISSM cloud runs specifically** — the field is driven by
-whether the selected workflow actually needs MATLAB, not by Basic/Advanced
-mode; Icepack never shows or requires it.
-
-**First-time setup.** Normally configure the license once for the connected
-AWS account and Region, then reuse it for later runs.
-
-1. Obtain your institution's MATLAB license information and confirm that you
-   are authorized to use it for the workflow.
-2. Open **Cloud Environment → MATLAB License**, enter that information in the
-   masked **MATLAB license** field, and select **Configure license**. CryoStack
-   clears the input and retains a reference to the license stored in your AWS
-   account. You normally do not need a secret name or an AWS console step.
-3. If institutional connectivity is required, open the Connector setup in
-   CryoStack and install the [Connector for your operating system](https://cryostack.eas.gatech.edu/downloads/connectors/).
-   Follow the setup card's pairing instructions. Run it on a machine that can reach the institutional
-   license service, including through your institution's VPN when required.
-   Keep Connector running and connected while the cloud workflow needs it.
-4. Follow the status shown by **Prepare cloud** and **Review**. A configured
-   license reference alone does not prove that the license service is reachable
-   or that the scientific runtime is ready.
-
-The configured Georgia Tech institutional environment has been live-tested
-with ISSM on both Fargate and EC2 On-Demand, including MPI-parallel solver
-execution, postprocessing, retrieval, and visualization. Connector allows
-the supported institutional path without exposing the license server
-directly to the cloud. Unknown institutional license-server arrangements
-may require administrator support; automatic
-compatibility with every topology is not established.
-
-**Existing licenses and later changes.** Advanced users can select **Advanced
-license configuration → Use an existing AWS Secrets Manager secret**, provide
-an **Existing secret ARN**, and select **Use existing secret**. This is optional;
-the normal path takes the institutional license information directly. Revisit
-setup when the account, Region, or license endpoint changes, using the update
-options shown by the current interface or your institution's administrator.
-
-**Privacy.** The masked license input is handled transiently during setup;
-saved configurations use a reference rather than the raw value. Do not put
-license information in source files, run descriptions, or Auto-config requests.
-Licensing is configured through the dedicated manual controls, not Auto-config.
 
 ### Launching
 
 Before submitting, confirm the model and example, the run target, the
 execution mode and backend, your HPC access (Section&nbsp;9 — **Check SSH
-Access** should read **Verified**), and any scheduler resources. Submit the
-run. CryoStack re-verifies remote access at submit time, then the Run log
-reports staging, the submission command, the scheduler job id, and progress.
+Access** should read **Verified**), and any scheduler resources. Click
+**Submit job**. CryoStack re-verifies remote access at submit time, then the
+Run log reports staging, the submission command, the scheduler job id, and
+progress.
 
 <b>Video tutorial.</b> The
 <a href="https://mediaspace.gatech.edu/media/Brian+Kyanjos+Zoom+Meeting/1_3iw27chs" target="_blank" rel="noopener noreferrer">ISSM · Remote</a>
@@ -736,30 +842,39 @@ tutorial walks through a complete ISSM workflow on an existing Remote
 computing resource. See
 <a href="resources.html#video-tutorials">all CryoLauncher video tutorials</a>.
 
-## 11. Run monitoring and history
+## 12. Run monitoring and history
 
-- **Runs panel.** Lists your run history with model, date, and status. Select
-  a run to make it the active run for logs and results.
+- **Runs tab.** Lists your run history with model, date, and status. Select
+  a run to make it the active run for logs and results. **Refresh** re-reads
+  the list; **Tail Log**, **Download**, and **Figures** act on the selected
+  run; **Delete** removes it after you tick the confirmation box (deleting a
+  run never deletes examples or datasets).
 - **Run log.** Shows connector activity, file staging, the submission command,
   the job id, standard output and error, warnings, failures, and output
   locations. A scheduler job keeps running after you close the browser, as
-  long as submission completed.
-- **Files panel.** Shows the selected run's workspace files.
+  long as submission completed. For Remote runs its toolbar offers **Test
+  SSH**, **Check status**, **Tail log**, and **Clear**, and **Terminate job**
+  beside the run button stops a running Remote job; for Cloud runs, see
+  <a href="#monitoring-a-cloud-run-and-retrieving-results">Monitoring a cloud run</a>.
+- **Files tab.** Shows the selected run's workspace files.
 - **Isolation.** You only see your own runs. A run id owned by another user is
   simply absent from your history.
 
-## 12. Results
+## 13. Results
 
-CryoLauncher discovers **what a completed ISSM run actually produced**, rather
-than assuming every example has the same outputs.
+CryoLauncher discovers **what a completed ISSM or Icepack run actually
+produced**, rather than assuming every example has the same outputs. Remote and
+Cloud runs end up in the same Results tab: Cloud outputs are retrieved from S3
+automatically when the run completes, Remote outputs when you preview or fetch
+them.
 
 ### Preview Results
 
 Select a completed run, open the **Results** tab, and click **Preview
 Results**. CryoLauncher:
 
-1. synchronizes the run's outputs from the remote resource into a local cache
-   for that run;
+1. synchronizes the run's outputs into a local cache for that run (for a
+   Cloud run this has usually already happened);
 2. reads the structured result package;
 3. populates the field-visualization panel;
 4. renders an initial recommended plot.
@@ -781,11 +896,12 @@ Runs produced before structured export still work: their existing figures and
 model file are shown, with a note that the structured selector is unavailable
 for that run. Old results are never silently rewritten.
 
-## 13. Visualization
+## 14. Visualization
 
 The **Field visualization** panel is model-neutral: it only knows
 Solution → Field → Timestep and delegates the scientific rendering to the
-model.
+model. The details below describe ISSM results; Icepack differences follow at
+the end of this section.
 
 - **Solution selector.** Lists the solution(s) the run actually produced
   (for example `StressbalanceSolution`, `TransientSolution`,
@@ -813,7 +929,15 @@ model.
   the actual run. Unusual result shapes are handled explicitly — an
   unsupported field shows a short reason and never breaks the Results tab.
 
-## 14. Downloads
+**Icepack results.** An Icepack run exports its final state: whichever of
+thickness, velocity, surface, bed, accumulation, log-fluidity, and damage the
+example defines. Each is rendered as a map on the run's 2-D triangular mesh —
+scalar fields as colour maps, velocity as a speed map with a light arrow
+overlay. There is no timestep selector or time-series plot for Icepack.
+Figures the example saves itself are collected into the package and shown
+too; a run that only produced figures still shows them.
+
+## 15. Downloads
 
 From the Results controls:
 
@@ -823,7 +947,7 @@ From the Results controls:
 Downloads operate on the local cache for the selected run, so run Preview
 Results (or Fetch results) first.
 
-## 15. Reproducibility and provenance
+## 16. Reproducibility and provenance
 
 Each run records provenance so it can be understood later:
 
@@ -851,11 +975,96 @@ outputs/
   figures/              # rendered figures (initially empty)
 ```
 
+That layout is ISSM's. An Icepack package uses the same layout with its
+fields under `fields/icepack/` and no `model/` file.
+
 You normally never interact with these files directly — the Results tab and
 the download controls do it for you. `metadata.json` is the authoritative
 description of what a run produced.
 
-## 16. Troubleshooting
+## 17. Auto-config · Beta
+
+Auto-config prepares a configuration from a short written request. It is a
+**configuration aid**, not an execution agent: it proposes changes to the
+existing controls, and applying a proposal changes configuration only — it
+never submits, launches, or provisions anything.
+
+When your deployment enables it, **Auto-config · Beta** appears as a third
+option beside Basic and Advanced. For example:
+
+> Run SquareIceShelf with ISSM on PACE using 4 CPUs.
+
+### How requests are interpreted
+
+Auto-config uses **deterministic, domain-constrained rules**, not a
+general-purpose language model. It only recognizes what CryoLauncher has
+registered — models, examples, compute resources, backends, resource fields,
+curated scientific parameters, and their valid ranges — and it reads the
+**current configuration** as its starting point. The same request against the
+same configuration always gives the same proposal. It does not learn from
+earlier requests or from simulation results.
+
+What it can handle:
+
+| Request kind | Examples |
+|---|---|
+| Model, example, resource, and location | "Run SquareIceShelf on PACE with 4 CPUs"; "Run my example my-shelf with 4 CPUs" (your own My Workspace examples) |
+| Several resources at once | "Run SquareIceShelf on PACE with 8 cores and 32000 MB memory for 90 minutes on one node" — CPUs, nodes, tasks per node, memory, and wall time (`90 minutes` becomes `01:30:00`) |
+| Registered scientific parameters | "Change ice temperature from 250 to 255" — the selected example's curated Basic-mode parameters, within their ranges |
+| Relative changes | "Increase CPUs from 2 to 8"; "Double the number of CPUs"; "Reset CPUs to the default" |
+| Keeping or refining the current setup | "Keep my current model but increase CPUs from 4 to 8"; "Keep ISSM and the current example but use 16 CPUs" |
+
+Requests it will not guess at are reported instead of silently dropped:
+unrecognized words or numbers; alternatives and exclusions ("instead of",
+"or", "without X"); contradictions with something you asked to keep;
+self-contradictory changes such as "Decrease CPUs from 4 to 8"; and negative
+or zero counts. A request that also asks to submit gets no Apply button.
+Cloud compute options (EC2, Spot, GPU) and MATLAB licensing are configured
+through the manual controls, never through Auto-config.
+
+### Create plan and apply
+
+**Create plan** prepares a compact change preview: **Setting | Current |
+Proposed | Source**. Changed settings are primary; important unchanged values
+appear in a short retained summary. The **Source** column records why each
+value is there:
+
+- **From request** — you asked for it explicitly;
+- **Suggested** — a deterministic adjustment from existing metadata or policy;
+- **Retained** — a valid current value intentionally left unchanged.
+
+Omitted settings stay as configured. A matching request reports **No changes
+needed**.
+
+**Apply to configuration** updates the existing controls and reports how many
+settings changed. It never submits or launches a workflow — review the manual
+controls and complete the ordinary validation and execution steps. **Review
+in Advanced** opens the complete manual configuration.
+
+A proposal is rejected at apply time if the controls or available options
+changed after it was created, or if the proposal no longer matches the request
+it was created from; create it again. Manual edits always remain
+authoritative.
+
+### Diagnosis, repair, and explanations
+
+- **Diagnosis.** "Why can't I run this?" or "What's wrong with my
+  configuration?" lists configuration problems without changing controls.
+- **Conservative repair.** "Fix my configuration" proposes a repair only when
+  existing metadata supplies a deterministic supported choice. It cannot
+  repair institutional access, credentials, licensing, or infrastructure.
+- **Explanations.** "Why is this Suggested?", "What did you change?", and
+  "Explain this configuration" give short read-only explanations from the
+  proposal's recorded sources. A stale proposal is identified as stale rather
+  than explained as current.
+
+Each request is evaluated against the current controls, without conversation
+history. Auto-config only sees your own workspace examples, never another
+user's. A prepared configuration is not proof that a run is ready: identity,
+resource, scientific-parameter, and backend checks still run at submission.
+
+
+## 18. Troubleshooting
 
 :::{raw} html
 <div class="cryostack-troubleshooting">
@@ -889,8 +1098,48 @@ description of what a run produced.
   <details>
     <summary>ISSM run fails immediately on a MATLAB license error</summary>
     <p>
-      The selected compute resource has no MATLAB license configured. Choose a
-      resource that does, or contact the platform administrators.
+      <b>Remote:</b> the selected compute resource has no MATLAB license
+      configured. Choose a resource that does, or contact the platform
+      administrators. <b>Cloud:</b> configure the license under
+      <b>Cloud Environment &rarr; MATLAB LICENSE</b> and, if the license service
+      is only reachable from your institution's network, keep the Connector
+      connected in <b>INSTITUTIONAL CONNECTION</b> — see
+      <a href="#matlab-licensing-for-issm-cloud-runs">MATLAB licensing for ISSM
+      cloud runs</a>.
+    </p>
+  </details>
+
+  <details>
+    <summary>Cloud: Launch cloud run is blocked</summary>
+    <p>
+      The Review card names the reason. Common ones: infrastructure not yet
+      <b>Ready</b> (run <b>Prepare cloud</b>), an ISSM run without a MATLAB
+      license, or a guarded EC2 option — <b>GPU</b> and <b>Multi-node</b> can
+      be staged but not submitted today. Spot or GPU with Fargate is rejected;
+      those are EC2-only options. See
+      <a href="#what-is-validated-available-and-guarded">What is validated,
+      available, and guarded</a>.
+    </p>
+  </details>
+
+  <details>
+    <summary>Cloud: Verify connection fails</summary>
+    <p>
+      Confirm you copied the role ARN from the CloudFormation stack's
+      <b>Outputs</b> tab of the stack you just created. Use <b>Retry
+      connection</b> for the same AWS account, or <b>Change AWS account</b> for
+      a different one — creating a second CryoStack role in an account that
+      already has one fails.
+    </p>
+  </details>
+
+  <details>
+    <summary>Cloud: the run finished but Results are empty</summary>
+    <p>
+      CryoStack retrieves outputs from S3 automatically on completion. Open
+      the run from the <b>Runs</b> tab and click <b>Preview results</b>; if
+      the outputs are still missing, use <b>Fetch results</b> and check the
+      run's log with <b>View log</b>.
     </p>
   </details>
 
@@ -898,7 +1147,7 @@ description of what a run produced.
     <summary>Connector not connected</summary>
     <p>
       Confirm the connector is running on your workstation and paired to your
-      <em>current</em> CryoStack session. Click <b>Open Connector Setup</b>
+      <em>current</em> CryoStack session. Click <b>Open Connector...</b>
       again to refresh the session, then quit and relaunch the connector so it
       picks up the newest session.
     </p>
@@ -908,7 +1157,7 @@ description of what a run produced.
     <summary>Pairing code expired</summary>
     <p>
       Pairing codes are one-time and expire with the session. Click
-      <b>Open Connector Setup</b> to generate a new one, then pair again.
+      <b>Open Connector...</b> to generate a new one, then pair again.
     </p>
   </details>
 
@@ -1011,49 +1260,3 @@ description of what a run produced.
   </div>
 </div>
 :::
-
-
-### Auto-config · Beta: prepare a configuration
-
-When enabled, select **Auto-config · Beta**. For example:
-
-> Run SquareIceShelf with ISSM on PACE using 4 CPUs.
-
-Use **Review in Advanced** to inspect the complete manual configuration.
-Local standalone execution remains unavailable; supported remote and cloud
-choices depend on the selected workflow.
-
-**Create plan** prepares a compact change preview: **Setting | Current |
-Proposed | Source**. Changed settings are primary; important unchanged values
-appear in a short retained summary. **From request** means explicitly requested,
-**Suggested** means a deterministic adjustment from existing metadata or policy,
-and **Retained** means a valid current value is intentionally unchanged.
-Omitted settings stay as configured. Ambiguity requires clarification;
-unsupported requests cannot be applied. A matching request reports **No changes
-needed**.
-
-**Apply to configuration** updates the existing controls and reports the number
-of settings changed. It never submits or launches a workflow. Review the manual
-controls and complete the ordinary validation and execution steps. A proposal
-becomes stale if the controls change; create it again before applying. Manual
-edits always remain authoritative.
-
-You can refine the current controls with requests such as “Change the CPUs to
-8” or “Keep everything but run this on PACE”. Each request uses the current
-configuration, without conversation history. If a requested change invalidates
-another setting, the preview includes a deterministic required adjustment or
-asks for clarification; it does not silently discard the setting.
-
-“Why can't I run this?” diagnoses configuration issues without changing controls.
-“Fix my configuration” proposes a repair only when existing metadata supplies a
-deterministic supported choice. It cannot repair institutional access, credentials,
-licensing, or infrastructure. “Why is this Suggested?”, “What did you change?”,
-and “Explain this configuration” provide compact read-only explanations from
-proposal provenance and existing capability information. A stale proposal is
-identified as stale rather than explained as current.
-
-This is a bounded configuration aid, not an autonomous scientist or a general
-chat service. It does not authorize execution, provision infrastructure, or
-modify licensing. Existing identity, resource, scientific-parameter, and backend
-checks remain authoritative; a prepared configuration is not proof that a run
-is ready.

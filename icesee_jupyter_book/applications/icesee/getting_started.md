@@ -42,275 +42,120 @@
   <div class="cryostack-app-doc-content">
 :::
 
-ICESEE, the Ice Sheet State and Parameter Estimator, is the data assimilation application within CryoStack. It combines numerical models, ensemble-based filtering methods, and observations to estimate model states and uncertain parameters.
+ICESEE, the Ice Sheet State and Parameter Estimator, is the data assimilation
+application within CryoStack. It combines a forecast model, an ensemble Kalman
+filter, and observations to estimate model states and uncertain parameters.
 
-This guide introduces the standard workflow for selecting an example, choosing an assimilation method, configuring an ensemble, running the experiment, and reviewing the results.
+This guide runs a first experiment — Lorenz-96 in **Local** mode — and points
+to the Remote and Cloud paths.
 
 ## Before You Begin
 
-To use ICESEE, you need:
+You need:
 
-- A modern web browser.
-- Access to the CryoStack platform.
-- A supported ICESEE example.
-- A configured scientific environment for the selected model.
-- Access to local, remote, HPC, or cloud resources when required.
+- a modern web browser;
+- access to the CryoStack platform;
+- for **Remote** runs: your own access to an HPC system (username, allocation,
+  and an SSH key you can register) — the same access CryoLauncher uses;
+- for **Cloud** runs: an AWS account you can connect to CryoStack.
 
-Some examples can run directly on the CryoStack server, while larger ice-sheet workflows may require a remote or HPC backend.
+A first Lorenz-96 experiment needs none of the Remote or Cloud prerequisites.
 
 ## Open ICESEE
 
-Open:
+Open
+[https://cryostack.eas.gatech.edu/icesee-gui/](https://cryostack.eas.gatech.edu/icesee-gui/).
 
-[https://cryostack.eas.gatech.edu/icesee-gui/](https://cryostack.eas.gatech.edu/icesee-gui/)
+The interface has two areas:
 
-The ICESEE interface is organized into two principal areas:
+1. **Run settings** — the **Local / Remote / Cloud** tabs, the example,
+   filter, ensemble size, seed, output, and the example's parameter sections.
+2. **Workspace** — **Runs**, **Files**, **Run Log**, and **Results**.
 
-1. **Run settings** — select the execution mode, example, preset, filter, ensemble configuration, and output options.
-2. **Run log and Results preview** — monitor execution and inspect generated reports, diagnostics, and output products.
+## Choose Where to Run
 
-## Choose an Execution Mode
-
-ICESEE currently supports multiple execution pathways.
-
-### Local
-
-Local mode runs the selected example on the system hosting CryoStack.
-
-Use Local mode for:
-
-- tutorials,
-- demonstrations,
-- Lorenz-96 experiments,
-- testing,
-- and smaller development workflows.
-
-### Remote
-
-Remote mode runs the workflow on another workstation, server, or HPC cluster.
-
-Remote execution may require:
-
-- SSH configuration,
-- authentication,
-- a connector session,
-- a remote execution directory,
-- and scheduler settings.
-
-### Cloud
-
-Cloud mode runs ICESEE on your own AWS account (bring-your-own-AWS), through
-the same Connect AWS Account → Prepare cloud → Review & Launch flow as
-CryoLauncher, on AWS Batch (Fargate by default, with an Advanced EC2 option)
-— see the platform-wide
-[Cloud Run Guide](https://cryostack.eas.gatech.edu/docs/hpc_cloud.html)
-for the full walkthrough and current status.
-
-Today this path is verified end-to-end for exactly one configuration: the
-**Lorenz-96** example at a single process (**NP = 1**). Other examples or a
-higher process count are not yet verified and CryoStack will not let you
-launch them — the Review card explains why.
+:::{raw} html
+<p>
+  <b>Local</b> <span class="cryostack-status supported">Supported</span>
+  &nbsp;— a single process on the CryoStack server, with no scheduler or MPI.
+  For Lorenz-96 and small tests.
+</p>
+<p>
+  <b>Remote</b> <span class="cryostack-status supported">Supported</span>
+  &nbsp;— a Slurm batch job on an HPC system, under your own HPC identity,
+  using ICESEE-Spack or a container. Required for ISSM.
+</p>
+<p>
+  <b>Cloud</b> <span class="cryostack-status dev">Lorenz-96 only</span>
+  &nbsp;— AWS Batch on your own AWS account, through the same Connect AWS
+  Account &rarr; Prepare cloud &rarr; Review &amp; Launch flow as CryoLauncher.
+  Verified for exactly one configuration: Lorenz-96 at a single process.
+  Other examples, or more processes, are refused at Review.
+</p>
+:::
 
 ## Select an Example
 
-The **Example** menu lists the ICESEE applications available in the configured installation.
+The **Example** menu shows each example's status:
 
-Examples may include:
+| Example | Status | Where it runs today |
+|---|---|---|
+| Lorenz-96 | fully runnable locally | Local and Cloud (one process); Remote is available |
+| ISSM (ISMIP_Choi) | fully runnable in Remote | Remote |
+| Flowline | under development | not yet an end-to-end workflow |
+| Icepack | under development | not yet an end-to-end workflow |
 
-- Lorenz-96,
-- ISSM,
-- Icepack,
-- one-dimensional flowline models,
-- and other supported data assimilation experiments.
+See <a href="user_manual.html#examples-and-maturity">Examples and maturity</a>
+in the User Manual for details.
 
-The examples displayed in the GUI depend on the installed ICESEE repository and available scientific environments.
+## Configure the Experiment
 
-## Choose a Preset
+- **Preset** — only **Default** (the example's own configuration) is offered.
+- **Filter** — **EnKF**, **DEnKF**, **EnTKF**, or **EnRSKF**. Keep the
+  example's default for a first run.
+- **Ensemble size** — 1 to 200 members (default 30). Larger ensembles
+  represent uncertainty better and cost more.
+- **Seed** — the random seed; keep it fixed to repeat an experiment exactly.
+- **Output** — which result set the report reads: *true-wrong* (the
+  demonstration output) or *EnKF*.
+- **Generate report** — run the example's results notebook after a
+  successful Local run.
 
-A preset provides a predefined configuration for the selected example.
-
-Presets may define:
-
-- physical parameters,
-- modeling parameters,
-- ensemble settings,
-- assimilation frequency,
-- observation configuration,
-- and output behavior.
-
-Use the default preset for your first run unless the example documentation recommends another configuration.
-
-## Choose an Assimilation Method
-
-The **Filter** menu selects the ensemble-based data assimilation method.
-
-ICESEE currently supports methods such as:
-
-- **EnKF** — Ensemble Kalman Filter,
-- **DEnKF** — Deterministic Ensemble Kalman Filter,
-- **EnTKF** — Ensemble Transform Kalman Filter,
-- **EnRSKF** — Ensemble Reduced Square Root Kalman Filter.
-
-For a first experiment, use the default filter provided by the selected example.
-
-## Configure the Ensemble
-
-The ensemble size controls the number of model realizations used during the assimilation workflow.
-
-A larger ensemble may improve the representation of forecast uncertainty, but it also increases:
-
-- computational cost,
-- memory use,
-- communication requirements,
-- and runtime.
-
-For introductory examples, use the default ensemble size.
-
-## Set the Random Seed
-
-The random seed controls reproducibility for workflows that generate random perturbations, initial ensembles, or synthetic observations.
-
-Using the same seed allows the experiment to be repeated with the same stochastic initialization, provided the remaining configuration and software environment are unchanged.
-
-## Select the Output
-
-The **Output** menu determines which available result set or reporting mode is used.
-
-Depending on the example, outputs may include:
-
-- true-state comparisons,
-- wrong-model experiments,
-- ensemble diagnostics,
-- RMSE plots,
-- parameter estimates,
-- state trajectories,
-- and generated reports.
-
-## Review the Full Configuration
-
-ICESEE exposes the selected configuration through expandable parameter sections.
-
-These may include:
-
-- physical parameters,
-- modeling parameters,
-- ensemble Kalman filter parameters,
-- observation settings,
-- and output options.
-
-For a first run, review the values but avoid changing advanced settings until the default workflow runs successfully.
+The example's parameter sections (`physical-parameters`,
+`modeling-parameters`, `enkf-parameters`) hold everything else, including the
+observation settings and the parallel settings. Review them, but leave them
+unchanged for a first run.
 
 ## Run Your First ICESEE Experiment
 
-A typical first run follows these steps:
+1. Open ICESEE and select the **Local** tab.
+2. Choose **Lorenz-96** in the **Example** menu.
+3. Keep the default filter, ensemble size, and seed.
+4. Leave **Output** at *true-wrong* and **Generate report** ticked.
+5. Click **Run**.
+6. Follow the **Run Log**: configuration, ensemble initialization, forecast
+   and analysis cycles, then report generation.
+7. When the run finishes, select it in **Runs** and open **Results**.
 
-1. Open ICESEE.
-2. Select **Local** mode.
-3. Choose a runnable example, such as Lorenz-96.
-4. Select the default preset.
-5. Choose the default assimilation filter.
-6. Confirm the ensemble size.
-7. Set or retain the random seed.
-8. Select the required output configuration.
-9. Enable report generation when available.
-10. Launch the experiment.
-11. Monitor the Run Log.
-12. Inspect the Results preview after completion.
-
-## Example: Lorenz-96
-
-Lorenz-96 is a useful first ICESEE example because it is computationally lightweight and demonstrates the complete data assimilation cycle.
-
-A typical Lorenz-96 workflow includes:
-
-1. generating or loading the true state,
-2. initializing the ensemble,
-3. advancing the model forecast,
-4. creating or loading observations,
-5. applying the selected filter,
-6. updating the ensemble,
-7. evaluating diagnostics,
-8. and generating a report.
-
-The GUI may expose options for:
-
-- ensemble size,
-- random seed,
-- filter selection,
-- preset,
-- and report generation.
-
-## Example: Ice-Sheet Data Assimilation
-
-ISSM and Icepack workflows follow the same general assimilation structure but may require more computational resources.
-
-A typical ice-sheet workflow may involve:
-
-- model initialization,
-- state-vector construction,
-- ensemble generation,
-- forward model execution,
-- observation loading,
-- state updates,
-- parameter estimation,
-- and distributed ensemble execution.
-
-These workflows are usually better suited to remote or HPC execution.
-
-## Monitor the Run Log
-
-The Run Log reports the current execution status.
-
-It may display:
-
-- configuration loading,
-- parameter-file paths,
-- runner paths,
-- environment activation,
-- ensemble initialization,
-- forecast progress,
-- assimilation steps,
-- report generation,
-- warnings,
-- and errors.
-
-The log is the first place to inspect when a workflow does not complete successfully.
+Lorenz-96 is a lightweight synthetic model, so this completes quickly and
+shows the whole assimilation cycle: a true state and synthetic observations
+are generated, the ensemble is initialized and advanced, and the filter
+updates it at each observation time.
 
 ## View Results
 
-The Results preview may display:
-
-- generated reports,
-- state trajectories,
-- truth-versus-estimate plots,
-- RMSE diagnostics,
-- ensemble statistics,
-- parameter estimates,
-- and downloadable outputs.
-
-The available preview depends on the selected example and output configuration.
-
-## Report Generation
-
-When report generation is enabled, ICESEE may run a results-reading or reporting workflow after the main experiment completes.
-
-A report may include:
-
-- experiment metadata,
-- model configuration,
-- filter configuration,
-- ensemble diagnostics,
-- error metrics,
-- and scientific figures.
+**Results** shows the figures the run produced and lists its HDF5 result
+files; **Download results** downloads them. With **Generate report** ticked,
+the report notebook is executed into the run folder.
 
 ## Next Steps
 
-After completing your first experiment:
-
-- Read the [ICESEE User Manual](user_manual) for a full description of the interface and workflow.
-- Review [ICESEE Resources](resources) for repositories, publications, models, and data assimilation references.
-- Use remote or HPC execution for larger ensembles.
-- Open CryoLauncher when you need a model-only simulation without data assimilation.
+- Read the [ICESEE User Manual](user_manual) for Remote and Cloud runs, the
+  parameter sections, and the parallel settings.
+- Review [ICESEE Resources](resources) for repositories, publications, models,
+  and data assimilation references.
+- Open <a href="../icesheets/getting_started.html">CryoLauncher</a> for model
+  runs without data assimilation.
 
 :::{raw} html
   </div>

@@ -85,10 +85,41 @@ without the original modelling stack. `discover_results()` and
 `ResultPackage` present it to the gateway.
 
 **Visualization.** Rendering is deterministic and operates only on the
-neutral package: `render_field` and `render_timeseries` in
-`cryostack_src/visualization/` back the Results panel's Solution / Field /
-Timestep controls. Given the same package and selection, the output is
+neutral package. Given the same package and selection, the output is
 identical.
+
+- **Registry.** `cryostack_src/models/capabilities.py` holds
+  `MODEL_CAPABILITIES`, one `ModelCapabilities` record per model
+  (`basic_mode_config`, `structured_results`, `result_contract`,
+  `visualization`, `requires_matlab`, `execution_modes`, `cloud_supported`,
+  …). It only *describes* what the adapters implement; import-time asserts
+  keep it consistent with them (for example `cloud_supported` against
+  `cloud.runtime.SUPPORTED_CLOUD_MODELS`).
+- **Dispatch.** `results_common.resolve_visualizer(model)` returns
+  `cryostack_src.visualization.<model>` when the model's record has
+  `visualization=True`, else `None`. `WorkspaceManager.recommended_plots_for_run`
+  and `render_run_plot` call it with the run's recorded model, so ISSM and
+  Icepack share one Results panel; a model without a visualizer gets an
+  `unsupported` result with a reason, never an exception.
+- **Renderer contract.** Each module exposes `recommended_plots(pkg,
+  solution=None)`, `render_field(pkg, solution, field, timestep=None,
+  outdir=None)`, `render_timeseries(pkg, solution, field, outdir=None)`, and
+  `render_recommended(pkg, max_plots=6, outdir=None)`, returning the shared
+  `RenderResult` from `visualization/issm.py`; figures are cached inside the
+  run's owned directory under a deterministic `figure_name(...)`.
+- **ISSM** (`visualization/issm.py`) renders nodal and elemental fields on the
+  triangular mesh, resolves transient timesteps, and draws scalar transient
+  diagnostics as time series.
+- **Icepack** (`visualization/icepack.py`) is a thin `matplotlib.tri` layer
+  over the package the container-side exporter wrote
+  (`models/icepack/_export_core.py`, schema `cryostack.icepack.results`): the
+  allow-listed fields (thickness, velocity, surface, bed, accumulation,
+  log_fluidity, damage) are interpolated to CG1 and stored as plain
+  `/x /y /elements` + `/values` HDF5 in the ISSM on-disk shape, so no
+  Firedrake is needed to render. Scalars render with `tripcolor`, vectors as
+  a speed map with a light quiver overlay. Only 2-D triangular meshes are
+  supported, there is no timestep axis, and `render_timeseries` always
+  returns `unsupported` (tier 1).
 
 **Icepack Remote↔Cloud parity.** Icepack has one shared scientific entrypoint
 regardless of backend: `cryostack_icepack_runner.py <script> <run-dir>`

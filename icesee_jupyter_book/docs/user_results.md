@@ -62,5 +62,5 @@ figures are presented directly from ICESEE's own experiment/run-record
 tooling: retrieve them from the run's Remote or Cloud location, then
 inspect the file listing and any generated images through ICESEE's own Run
 Log and Results Preview. See
-<a href="../applications/icesee/user_manual.html#run-log-and-results-preview">Run Log and Results Preview</a>
+<a href="../applications/icesee/user_manual.html#results-and-reports">Results and reports</a>
 for the full walkthrough.

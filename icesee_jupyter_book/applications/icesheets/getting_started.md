@@ -48,21 +48,17 @@ guided or an advanced editing workflow, submit the run to a computing
 resource, follow it in a run log, and then explore the results — figures,
 fields, and downloadable output packages.
 
-**ISSM is the mature CryoLauncher path today.** Icepack is available in the
-interface and shares the same discovery, workspace, staging, remote-submission,
-run-history and downloads workflow; after a run its figures and output files are
-collected into the results package. Icepack does **not** yet have curated
-Basic-mode configuration or an interactive field viewer (edit the
-notebook/script in Advanced mode). Cloud execution on AWS Batch is available
-for both models, on a default Fargate compute mode; Icepack has already
-completed a real cloud run end-to-end on both Fargate and, in Advanced mode,
-EC2 On-Demand (single node, CPU). ISSM's cloud path is implemented and
-provisioned but additionally needs a cloud-reachable MATLAB license (see
-[Preparing and launching runs](https://cryostack.eas.gatech.edu/applications/icesheets/user_manual.html#preparing-and-launching-runs)).
-See the [Cloud Run Guide](https://cryostack.eas.gatech.edu/docs/hpc_cloud.html)
-for the current, honest scope before depending on Cloud for production work —
-**Remote** remains the
-best-exercised path for ISSM today.
+CryoLauncher supports two ice-sheet models — **ISSM** and **Icepack** — on
+two execution paths: **Remote** (an HPC cluster or server you have access to)
+and **Cloud** (AWS Batch on your own AWS account). Both models have guided
+Basic-mode configuration, structured results, and field visualization; ISSM
+runs MATLAB and therefore needs a MATLAB license, Icepack does not. The
+[User Manual](user_manual) lists where the two models differ and exactly which
+Cloud options have been validated.
+
+This guide walks through a first **Remote** run with ISSM. The Cloud path
+shares every step except where the run executes — see
+<a href="#running-on-cloud-instead">Running on Cloud instead</a>.
 
 ## Before you begin
 
@@ -75,7 +71,10 @@ You need:
   key to your account (directly or through your institution's portal). CryoStack
   connects *as you*; it does not provide HPC accounts. See
   <a href="#configure-access-to-your-hpc-resource-remote">Configure access to
-  your HPC resource</a> below.
+  your HPC resource</a> below;
+- for **Cloud** execution: an AWS account in which you can create a
+  CloudFormation stack (one IAM role), and for ISSM your institution's MATLAB
+  license information.
 
 Browsing the interface and preparing a run does not require a local
 installation.
@@ -132,16 +131,17 @@ Select the model from the **Model** menu:
 :::{raw} html
 <p>
   <b>ISSM</b>
-  <span class="cryostack-status supported">Supported</span>
-  &nbsp;— the Ice-sheet and Sea-level System Model. This is the mature
-  CryoLauncher path: curated configuration, structured results, and
-  deterministic visualization are all implemented.
+  <span class="cryostack-status supported">Supported — Remote and Cloud</span>
+  &nbsp;— the Ice-sheet and Sea-level System Model: solver-aware Basic-mode
+  configuration, structured results, and Solution / Field / Timestep
+  visualization. Needs a MATLAB license.
 </p>
 <p>
   <b>Icepack</b>
-  <span class="cryostack-status dev">Experimental</span>
-  &nbsp;— available in the interface, but configuration, result
-  interpretation, and visualization are not yet at ISSM parity.
+  <span class="cryostack-status supported">Supported — Remote and Cloud</span>
+  &nbsp;— the Firedrake-based glacier-flow library: Basic-mode ice
+  temperature and timestep count, structured results, and field maps of the
+  final state. No MATLAB license needed.
 </p>
 :::
 
@@ -154,7 +154,8 @@ Basic and Advanced are CryoLauncher-wide application modes.
 **Basic mode** is a *guided* scientific-configuration surface. You adjust a
 small set of curated, validated parameters (for ISSM: solver tolerances and
 iteration limits, time stepping, transient physics toggles, friction and ice
-rigidity multipliers, extra requested outputs). Example defaults are kept
+rigidity multipliers, extra requested outputs; for Icepack: ice temperature
+and the number of timesteps). Example defaults are kept
 unless you explicitly change a value, and every change is range-checked before
 the run is submitted. You never edit raw model code in Basic mode.
 
@@ -165,6 +166,12 @@ with Save / Save As / New / Delete and unsaved-change protection. Application
 Workspace** to make an editable copy.
 
 For a first run, start with **Basic mode**.
+
+Where the deployment enables it, a third option, **Auto-config · Beta**,
+prepares a configuration from a short written request such as "Run
+SquareIceShelf on PACE with 4 CPUs". It only proposes changes to the same
+controls — it never runs anything. See
+<a href="user_manual.html#auto-config-beta">Auto-config · Beta</a>.
 
 ## 4. Choose an example
 
@@ -197,22 +204,22 @@ Set the **Execution** and **Backend** menus:
 <p>
   <b>Cloud</b>
   <span class="cryostack-status supported">Supported</span>
-  &nbsp;— AWS Batch execution, on a default Fargate compute mode (an
-  Advanced EC2 option also exists). Both ISSM and Icepack have completed
-  end-to-end cloud runs on Fargate and EC2 On-Demand (single node, CPU);
-  ISSM's run includes reaching a configured institutional MATLAB license
-  through the CryoStack Connector. See the
-  <a href="../../docs/hpc_cloud.html">Cloud Run Guide</a> for the current scope.
+  &nbsp;— AWS Batch on your own AWS account. ISSM and Icepack have completed
+  end-to-end runs on the default Fargate compute and on EC2 On-Demand
+  (single node, CPU). EC2 Spot and custom networking can be selected but are
+  not yet validated; GPU and multi-node are guarded and cannot be submitted.
+  See <a href="#running-on-cloud-instead">Running on Cloud instead</a>.
 </p>
 :::
 
 For **Remote**, choose a backend:
 
-- **ICESEE-Container** — run inside a container. The **Docker / OCI** source
-  with a *tested* image is the validated container path. Local SIF and the
-  ICESEE-Containers (git) build are also available.
-- **ICESEE-Spack** — run against a Spack-managed software environment on the
-  remote resource. First-time use requires an onboarding step (below).
+- **ICESEE-Spack** (selected by default) — run against a Spack-managed
+  software environment on the remote resource. First-time use requires an
+  onboarding step (below).
+- **ICESEE-Container** — run inside a container. Its source defaults to
+  **ICESEE-Containers (git)**; choose **Docker / OCI** with a *tested* image
+  for the validated container path. **Local SIF** is also available.
 
 ## 6. Configure access to your HPC resource (Remote)
 
@@ -232,7 +239,7 @@ workstation, best for VPN/campus-network clusters):
 
 ```
 Connection method: CryoStack Connector
-      ↓  Open Connector Setup   (shows a pairing code)
+      ↓  Open Connector...   (shows a pairing code)
       ↓  download the connector for your platform, launch it
       ↓  pair  →  Connector card shows Connected
       ↓  set up your SSH key, then Check SSH Access  →  Verified
@@ -262,7 +269,9 @@ Configure access to your HPC system</a>.
 **Basic mode (ISSM):** open the *ISSM configuration (Basic)* panel. Enable only
 the parameters you want to change; leave the rest at the example defaults. The
 panel only shows parameters relevant to the solver the example actually runs,
-and validates every value before the run is allowed.
+and validates every value before the run is allowed. For Icepack, the *Icepack
+configuration (Basic)* panel offers ice temperature and the number of
+timesteps.
 
 **Advanced mode:** use the file editor to inspect and edit the run target and
 supporting files in your workspace copy. Save before submitting.
@@ -279,8 +288,8 @@ Some backends need a one-time setup on the remote resource:
 
 ## 9. Run and monitor
 
-Submit the run. The **Run log** reports staging, the submission command, the
-scheduler job id, and progress. A scheduler job keeps running if you close the
+Click **Submit job**. The **Run log** reports staging, the submission
+command, the scheduler job id, and progress. A scheduler job keeps running if you close the
 browser, as long as submission completed.
 
 Open the **Runs** panel to see run history and status; select a run to inspect
@@ -306,6 +315,9 @@ any Solution / Field / Timestep you select. Nodal, elemental, transient, and
 scalar diagnostics are each rendered appropriately; a field that cannot be
 plotted shows a clear reason instead of failing.
 
+For an **Icepack** run, the viewer shows maps of the final exported fields
+(for example thickness and velocity); there is no Timestep selector.
+
 Legacy runs (from before structured export) still show their existing figures
 and model file, with a note that the structured selector is unavailable.
 
@@ -315,6 +327,32 @@ From the Results controls:
 
 - **Download Results** — the full structured output package as an archive.
 - **Download Figures** — just the rendered figures.
+
+## Running on Cloud instead
+
+To run the same configuration on AWS, set **Execution** to **Cloud**. The
+**Cloud Environment** panel replaces the Remote connection settings:
+
+```
+Connect AWS Account  →  Open AWS Setup (CloudFormation, in your AWS console)
+      ↓  paste the role ARN  →  Verify connection  →  ● Connected
+Prepare cloud        →  Storage / Containers / Compute: Ready
+Review & Launch      →  check the estimate  →  Launch cloud run
+CLOUD RUN card       →  View log / View results
+```
+
+You connect the account once; CryoStack never asks for AWS access keys. An
+ISSM Cloud run also needs a MATLAB license configured under **Cloud
+Environment → MATLAB LICENSE**. Results are retrieved automatically when the
+run completes and appear in the same **Results** tab.
+
+The
+<a href="https://mediaspace.gatech.edu/media/Brian+Kyanjos+Zoom+Meeting/1_edvr6a1l" target="_blank" rel="noopener noreferrer">Icepack · Cloud</a>
+video tutorial shows the whole sequence, including the AWS account setup. The
+full reference — compute options, what is validated, MATLAB licensing, costs,
+and cleanup — is in
+<a href="user_manual.html#cloud-execution-aws">User Manual → Cloud execution
+(AWS)</a>.
 
 ## Next steps
 

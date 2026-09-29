@@ -279,7 +279,7 @@ but not the submission, staging, or result-sync code that follows.
   and retains a secret reference. Advanced users may supply an existing secret
   reference. Connector supports the configured institutional connectivity path;
   the live-tested environment is Georgia Tech, not every institutional topology.
-  See the [scientist-facing setup](../applications/icesheets/user_manual.html#matlab-licensing-for-issm-cloud-runs).
+  See the <a href="../applications/icesheets/user_manual.html#matlab-licensing-for-issm-cloud-runs">scientist-facing setup</a>.
   The relevant implementation is in `cryostack_src/cloud/matlab_license.py`,
   `cryostack_src/frontend/cryolauncher/cloud_environment.py`, and the Connector
   integration. Licensing is not configured by Auto-config. Cloud readiness

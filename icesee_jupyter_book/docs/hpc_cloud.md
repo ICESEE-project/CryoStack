@@ -25,7 +25,7 @@
     </p>
 
     <div class="cryostack-docs-actions">
-      <a class="cryostack-btn primary" href="../applications/icesheets/user_manual.html#execution-modes-and-backends">
+      <a class="cryostack-btn primary" href="../applications/icesheets/user_manual.html#cloud-execution-aws">
         CryoLauncher Cloud Reference
       </a>
 
@@ -339,15 +339,23 @@ In the application's own terms, this is:
 
 Every run above submits to **AWS Batch**. Batch itself needs a compute
 environment to schedule jobs onto, and CryoStack lets you choose which kind
-under **Advanced** in Cloud Environment:
+under **Advanced cloud settings** in Cloud Environment:
 
-- **Fargate** — the default. No infrastructure to choose or manage; this is
-  the compute mode every validated Cloud run to date has actually run
-  against (see
+- **Fargate** — the default. No infrastructure to choose or manage; ISSM,
+  Icepack, and ICESEE's Lorenz-96 have each completed validated runs on it
+  (see
   <a href="#worked-examples-verified-on-aws">Worked examples verified on AWS</a>).
 - **EC2 (Advanced)** — CryoStack provisions its own EC2-backed Batch compute
-  environment instead. Selecting it reveals four further choices, each
-  purpose-built rather than exposing raw AWS knobs:
+  environment instead. It scales to zero when idle; CryoStack manages the
+  AMI, the ECS instance role, and scaling. Two sizing fields apply to every
+  EC2 environment:
+
+  - **Max vCPUs** — the ceiling for the compute environment (default 16).
+  - **Instance types** — `optimal` (default; AWS chooses) or a list of
+    instance families such as `c5,m5,r5`.
+
+  Selecting EC2 also reveals four further choices, each purpose-built rather
+  than exposing raw AWS knobs:
 
   - **Capacity** — **On-Demand** (default; predictable EC2 capacity) or
     **Spot** (lower-cost, interruptible capacity that AWS can reclaim).
@@ -576,28 +584,6 @@ path is model-neutral, so other examples are expected to run, but only this
 one has actually been confirmed against the cloud container. Treat other
 Icepack examples on Cloud the same way you would treat them on Remote:
 architecturally supported, not yet individually verified.
-
-## Screenshots
-
-```{admonition} Screenshots not yet captured
-:class: note
-The repository does not yet contain screenshots for this workflow. The UI
-is stable enough to capture now; the following would materially improve
-this page and are listed in capture order:
-
-1. **AWS ACCOUNT** panel before connecting (the "Connect AWS Account" state).
-2. The CloudFormation Quick Create page, pre-filled, in the AWS console.
-3. **AWS ACCOUNT** panel showing **● Connected** with account ID.
-4. **Prepare cloud** in progress, then Account/Storage/Containers/Compute
-   all **Ready**.
-5. The **Review cloud run** card for the Lorenz-96 / Processes = 1 example,
-   showing **ICESEE runtime: Ready**.
-6. The **CLOUD RUN** status card mid-run (**Running**).
-7. The Workspace **Results** tab after a completed cloud run.
-
-Until these are captured, no screenshots are embedded on this page —
-inserting placeholders styled as real screenshots would be misleading.
-```
 
 ## Downloads and reference material
 

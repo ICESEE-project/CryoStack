@@ -121,7 +121,7 @@ workflow, distinct from CryoLauncher's:
 - **Retrieve and visualize** — ICESEE presents a run's output files and any
   generated figures directly, rather than through CryoLauncher's structured
   result-package viewer; see
-  <a href="../applications/icesee/user_manual.html#run-log-and-results-preview">Run Log and Results Preview</a>.
+  <a href="../applications/icesee/user_manual.html#results-and-reports">Results and reports</a>.
 
 For the full walkthrough, see
 <a href="../applications/icesee/user_manual.html#remote-mode">ICESEE Remote Mode</a>.

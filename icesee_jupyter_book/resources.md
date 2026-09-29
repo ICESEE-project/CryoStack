@@ -113,8 +113,8 @@
 
       <article class="cryostack-resource-card">
         <div class="cryostack-resource-tag">Ice-Sheet Model</div>
-        <h3>Icepack <span class="cryostack-status dev">Experimental</span></h3>
-        <p>A Python library on Firedrake. Selectable in CryoLauncher, not yet at ISSM parity.</p>
+        <h3>Icepack <span class="cryostack-status supported">Supported</span></h3>
+        <p>A Python library on Firedrake. Supported in CryoLauncher for Remote and Cloud workflows.</p>
         <div class="cryostack-resource-inline-links">
           <a href="https://icepack.github.io/" target="_blank" rel="noopener noreferrer">Docs</a>
           <a href="https://github.com/icepack/icepack" target="_blank" rel="noopener noreferrer">GitHub</a>
@@ -266,12 +266,12 @@
     <div class="cryostack-section-label">Tutorials</div>
     <h2>Guided walkthroughs.</h2>
     <p class="cryostack-section-intro">
-      <span class="cryostack-status planned">Planned</span>
-      &nbsp;Dedicated step-by-step tutorials are planned. The
-      <a href="applications/icesheets/getting_started.html">CryoLauncher Getting Started</a>
-      guide and the
-      <a href="applications/icesheets/user_manual.html">User Manual</a>
-      currently cover the full workflow.
+      Recorded CryoLauncher tutorials follow complete Icepack and ISSM
+      workflows on Cloud and Remote resources, from configuration through
+      execution and results:
+      <a href="applications/icesheets/resources.html#video-tutorials">CryoLauncher
+      video tutorials</a>. Each application's Getting Started guide covers a
+      first run step by step.
     </p>
 
   </section>

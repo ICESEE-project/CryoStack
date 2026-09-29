@@ -42,130 +42,105 @@
   <div class="cryostack-app-doc-content">
 :::
 
-ICESEE, the Ice Sheet State and Parameter Estimator, provides a unified framework for ensemble-based data assimilation experiments. It connects numerical models, observations, filtering methods, parallel computing resources, and scientific diagnostics through a configurable workflow.
+ICESEE, the Ice Sheet State and Parameter Estimator, is CryoStack's ensemble
+data-assimilation application. It advances an ensemble of forecast-model runs,
+assimilates observations with an ensemble Kalman filter, and estimates model
+states and, where the example is set up for it, uncertain parameters.
 
-This manual describes the ICESEE application interface and the main configuration options used to prepare, execute, and analyze an experiment.
+This manual describes the ICESEE interface as deployed in CryoStack today: its
+examples, its Local, Remote, and Cloud execution modes, the configuration
+controls, and where results appear. ICESEE has its own runners and run
+records; it does not go through CryoLauncher's execution pipeline.
 
-## ICESEE Workflow
+## ICESEE workflow
 
-A typical ICESEE experiment follows this sequence:
+1. Choose where to run: the **Local**, **Remote**, or **Cloud** tab.
+2. Select an **Example**.
+3. Choose the **Filter**, **Ensemble size**, and **Seed**.
+4. Review the example's parameter sections and, if needed, its parallel
+   settings.
+5. Choose the **Output** and whether to **Generate report**.
+6. Run: **Run** (Local), **Submit (Remote)**, or the Cloud review and launch.
+7. Follow the **Run Log**, then inspect **Results**.
 
-1. Select an execution mode.
-2. Choose an example or numerical model.
-3. Load a predefined configuration or preset.
-4. Select a data assimilation method.
-5. Configure the ensemble.
-6. Define observations and uncertain parameters.
-7. Select output and reporting options.
-8. Launch the workflow.
-9. Monitor the run log.
-10. Review the generated results.
+## Interface overview
 
-Although the details vary between applications, this structure remains consistent across Lorenz-96, ISSM, Icepack, flowline models, and other supported examples.
+**Run settings** (left):
 
-## Interface Overview
+| Control | What it does |
+|---|---|
+| **Local / Remote / Cloud** tabs | Where the experiment runs (see <a href="#execution-modes">Execution modes</a>). |
+| **Example** | The ICESEE example to run (see <a href="#examples-and-maturity">Examples and maturity</a>). |
+| **Preset** | The starting configuration. Only **Default** — the example's own `params.yaml` — is offered today. |
+| **Filter** | EnKF, DEnKF, EnTKF, or EnRSKF. Written into the example's `filter_type`. |
+| **Ensemble size** | Number of ensemble members, 1–200 (default 30). Written into `Nens`. |
+| **Seed** | Random seed. Written into `seed`. |
+| **Output** | Which result set the report reads: *true-wrong* (the demonstration output with the true and wrong-model states) or *EnKF*. |
+| **Generate report** | After a successful Local run, execute the example's `read_results.ipynb` into the run folder. |
+| **Parameter sections** | The example's `params.yaml` sections — `physical-parameters`, `modeling-parameters`, `enkf-parameters` — as editable fields. |
+| **Auto-config · Beta** | An expandable request box, where the deployment enables it (see <a href="#auto-config-beta">Auto-config</a>). |
 
-The ICESEE interface is organized into two principal areas.
+**Workspace** (right): **Runs**, **Files**, **Run Log**, and **Results**
+tabs. The Runs tab lists your ICESEE run history; you only see your own runs.
 
-### Run Settings
+## Examples and maturity
 
-The Run Settings panel contains the controls used to configure an experiment.
+The **Example** menu labels each example with its current status:
 
-Depending on the selected example, it may include:
+| Example | Forecast model | Status in the menu | Local | Remote | Cloud |
+|---|---|---|---|---|---|
+| Lorenz-96 | Lorenz-96 (synthetic) | fully runnable locally | **Supported** | Available | **Supported** — the only verified cloud configuration (one process) |
+| ISSM — ISMIP_Choi | ISSM | fully runnable in Remote | Not intended (needs MATLAB, ISSM, and MPI on the server) | **Supported** (ships a Slurm batch script) | Refused |
+| Flowline — flowline_1d | 1-D flowline | **Under development** | Under development | Under development | Refused |
+| Icepack — synthetic_ice_stream | Icepack | **Under development** | Under development | Under development | Refused |
 
-- execution mode,
-- example selection,
-- preset selection,
-- data assimilation filter,
-- ensemble size,
-- random seed,
-- physical parameters,
-- modeling parameters,
-- observation settings,
-- output selection,
-- report generation,
-- and remote execution options.
+Flowline and Icepack are visible so they can be developed and tested; they are
+not at the maturity of Lorenz-96 or ISSM, and no end-to-end workflow is claimed
+for them. ISSM needs MATLAB and ISSM on the Remote resource, which the
+ICESEE-Spack environment provides; the ISSM example is too heavy for Local.
 
-### Run Log and Results Preview
-
-The Run Log and Results preview area displays information generated during and after execution.
-
-It may include:
-
-- configuration validation,
-- environment activation,
-- model initialization,
-- ensemble generation,
-- forecast progress,
-- assimilation updates,
-- warnings,
-- errors,
-- generated figures,
-- reports,
-- and downloadable result files.
-
-## Execution Modes
-
-The execution mode determines where the ICESEE workflow runs.
+## Execution modes
 
 ### Local Mode
 
-Local mode runs the experiment on the system hosting the CryoStack application.
-
-It is suitable for:
-
-- tutorials,
-- Lorenz-96 experiments,
-- development,
-- debugging,
-- demonstrations,
-- and small ensemble workflows.
-
-Local execution avoids remote authentication and scheduler configuration, making it the recommended mode for a first experiment.
+Local runs the example as a **single process on the CryoStack server**, in a
+per-user run folder, with no scheduler, no MPI, and no remote connection. It
+is intended for Lorenz-96 and small tests. Click **Run**; the Run Log streams
+the output, and on success the report is generated if **Generate report** is
+ticked.
 
 ### Remote Mode
 
-Remote mode sends the workflow to another workstation, server, or HPC system.
+Remote runs on an HPC system you have access to, under your own HPC identity,
+through a Slurm batch job. The Remote tab contains:
 
-A remote workflow may require:
+- **Remote connection** — the same panel CryoLauncher uses: resource, your HPC
+  username and remote working directory, the **Connection method** (CryoStack
+  Connector recommended, Direct SSH from server, or Auto), **Authentication
+  method**, **Open Connector...**, and **Check SSH Access**. See CryoLauncher's
+  <a href="../icesheets/user_manual.html#configure-access-to-your-hpc-system">Configure
+  access to your HPC system</a> for the full access guide; it applies here
+  unchanged.
+- **Execution backend** — **ICESEE-Spack** (default) or **ICESEE-Container**
+  (image source **Docker Hub** or **AWS Registry**). ICESEE-Spack can check,
+  and if requested install, the ICESEE-Spack environment on the resource.
+- **Slurm resources** — job name, wall time, nodes, tasks, tasks per node,
+  partition, memory, account, email, plus ICESEE's **MPI np** (total
+  processes for the job, default 40) and **Model nprocs** (processes per
+  forecast-model run, default 4).
 
-- a hostname,
-- a username,
-- SSH authentication,
-- a remote working directory,
-- a configured Python or container environment,
-- a scheduler,
-- and access to the selected model.
-
-Remote mode is appropriate when the local CryoStack server does not have sufficient computational resources or does not contain the required scientific software.
-
-### HPC Mode
-
-HPC execution is used for workflows that require distributed-memory parallelism, larger ensembles, or computationally intensive numerical models.
-
-An HPC configuration may include:
-
-- scheduler type,
-- partition or queue,
-- account name,
-- wall-clock limit,
-- number of nodes,
-- tasks per node,
-- CPUs per task,
-- memory,
-- module commands,
-- environment activation,
-- and container execution commands.
-
-ICESEE workflows may use Slurm or another scheduler depending on the connected computing environment.
+**Submit (Remote)** submits the job. The Run Log toolbar offers **Test SSH**,
+**Check status**, **Tail log**, and **Clear**; **Terminate job** stops a
+running job; **Preview results** and **Download results** fetch the run's
+outputs.
 
 ### Cloud Mode
 
 Cloud mode runs ICESEE on your own AWS account (bring-your-own-AWS) on AWS
 Batch, using the same infrastructure CryoLauncher's Cloud Environment panel
-provides. Batch runs on a default **Fargate** compute mode; an **Advanced**
-section exposes an **EC2** alternative (On-Demand/Spot capacity, a
-custom/private network, and guarded GPU/multi-node options) — see
+provides. Batch runs on a default **Fargate** compute mode. The EC2 options in
+**Advanced cloud settings** exist for ICESEE too, but ICESEE's verified cloud
+run is on Fargate; EC2 has not been validated for ICESEE — see
 [Compute mode](https://cryostack.eas.gatech.edu/docs/hpc_cloud.html#compute-mode-fargate-default-or-ec2-advanced)
 in the Cloud Run Guide.
 
@@ -183,8 +158,8 @@ The **MATLAB license** field (Cloud Environment) only appears when ICESEE's
 own forecast model actually needs one — it follows the same capability
 resolver every ISSM-driven run uses, not the ICESEE application name or
 Basic/Advanced mode. A **Lorenz-96** or **Icepack** forecast model never
-shows the field; an **ISSM** (or coupled **ISSM+Icepack**) forecast model
-does, because that workflow uses ISSM — and Launch stays blocked until a
+shows the field; an **ISSM** forecast model does, because that workflow uses
+ISSM — and Launch stays blocked until a
 usable license is configured for it. Normally you provide the institutional
 MATLAB license information once through the dedicated license controls;
 Connector supplies supported institutional connectivity when required.
@@ -196,7 +171,8 @@ licensing for ISSM cloud runs</a> for the one-time setup — the same
 mechanism applies here.
 
 Today that verified contract covers exactly one configuration: the
-**Lorenz-96** example at a single process (**Processes = 1**). Selecting a
+**Lorenz-96** example at a single process (**Processes = 1** on the Review
+card). Selecting a
 different example, or more than one process, is refused at Review — not
 silently coerced — because it has not been run end-to-end against the
 current container image. See the
@@ -224,7 +200,7 @@ walkthrough below for the exact ICESEE steps.
      parallel_flag: "serial"
    ```
 
-3. In **Run settings**, set **Execution mode** to **Cloud**.
+3. In **Run settings**, select the **Cloud** tab.
 4. If you have not connected an AWS account yet, follow
    [Connecting your AWS account](https://cryostack.eas.gatech.edu/docs/hpc_cloud.html#connecting-your-aws-account-byo-aws)
    now. CloudFormation onboarding happens in a separate browser tab — your
@@ -233,8 +209,10 @@ walkthrough below for the exact ICESEE steps.
    shows **● Connected**.
 6. Click **Prepare cloud** and wait for **Account / Storage / Containers /
    Compute** to all read **Ready**.
-7. Set **Processes** to **1** — this is the only value CryoStack will let
-   you launch today for ICESEE (see the verified contract above).
+7. Set **MPI np** to **1**. This field is on the **Remote** tab under
+   **Slurm resources** (default 40), and the Cloud Review card shows it as
+   **Processes**. One process is the only value CryoStack will let you
+   launch today for ICESEE (see the verified contract above).
 8. Click **Review & Launch**. Confirm the card reads
    **ICESEE runtime: Ready**, **Parallel mode: Single-rank verified**,
    **Processes: 1** — this is CryoStack's own honest preflight check, not a
@@ -256,677 +234,216 @@ walkthrough below for the exact ICESEE steps.
     in the Cloud Run Guide before you consider the run finished — nothing
     about the AWS infrastructure this used is removed automatically.
 
-## Example Selection
 
-The Example menu identifies the numerical application used in the experiment.
-
-Available examples depend on the ICESEE installation and may include:
-
-- Lorenz-96,
-- ISSM,
-- Icepack,
-- one-dimensional flowline models,
-- synthetic data assimilation examples,
-- and additional user-provided applications.
-
-Selecting an example may change the remaining interface because each application defines its own parameters, observations, state variables, and output products.
-
-## Presets
-
-A preset provides a predefined starting configuration for an example.
-
-A preset may define:
-
-- model parameters,
-- physical constants,
-- time-stepping controls,
-- ensemble size,
-- assimilation interval,
-- observed variables,
-- observation covariance,
-- inflation,
-- localization,
-- initial perturbations,
-- and output behavior.
-
-Presets are intended to reduce configuration effort and provide reproducible starting points.
-
-Use the default preset before modifying advanced settings. This helps confirm that the model, environment, and data assimilation workflow are functioning correctly.
-
-## Data Assimilation Methods
-
-The Filter menu selects the ensemble-based data assimilation method.
-
-### Ensemble Kalman Filter
-
-The Ensemble Kalman Filter, or EnKF, updates an ensemble using observations and an ensemble-derived approximation of forecast uncertainty.
-
-The EnKF is useful for:
-
-- nonlinear dynamical systems,
-- state estimation,
-- parameter estimation,
-- synthetic experiments,
-- and large numerical models where explicitly storing a full covariance matrix is impractical.
-
-Depending on the implementation, stochastic observation perturbations may be used during the analysis step.
-
-### Deterministic Ensemble Kalman Filter
-
-The Deterministic Ensemble Kalman Filter, or DEnKF, applies a deterministic update to the ensemble perturbations.
-
-It avoids directly perturbing observations and may reduce sampling noise in some experiments.
-
-### Ensemble Transform Kalman Filter
-
-The Ensemble Transform Kalman Filter, or EnTKF, performs the analysis through a transformation in ensemble space.
-
-This approach can be useful when:
-
-- the model-state dimension is large,
-- the ensemble is much smaller than the state dimension,
-- and computations are more efficient in ensemble space.
-
-### Ensemble Reduced Square Root Kalman Filter
-
-The Ensemble Reduced Square Root Kalman Filter, or EnRSKF, applies a square-root update in a reduced ensemble representation.
-
-Its availability and behavior depend on the selected ICESEE example and configuration.
-
-## Ensemble Configuration
-
-The ensemble represents uncertainty in the model state, parameters, forcing, or initial conditions.
-
-### Ensemble Size
-
-The ensemble size determines the number of model realizations advanced during each forecast cycle.
-
-A larger ensemble can provide a better representation of uncertainty, but it also increases:
-
-- runtime,
-- memory consumption,
-- model evaluations,
-- inter-process communication,
-- and storage requirements.
-
-Small ensembles are useful for tutorials and debugging. Larger ensembles are generally more appropriate for high-dimensional ice-sheet experiments.
-
-### Ensemble Initialization
-
-The initial ensemble may be created by perturbing:
-
-- model states,
-- initial conditions,
-- physical parameters,
-- boundary conditions,
-- forcing fields,
-- or combinations of these quantities.
-
-The perturbation method is defined by the selected example.
-
-### Random Seed
-
-The random seed controls stochastic components of the experiment.
-
-These may include:
-
-- ensemble perturbations,
-- synthetic observation noise,
-- parameter sampling,
-- and initialization errors.
-
-Using the same random seed improves reproducibility when the software environment and configuration remain unchanged.
-
-### Inflation
-
-Inflation increases the spread of the ensemble to compensate for underestimated forecast uncertainty.
-
-Inflation may be applied:
-
-- before assimilation,
-- after assimilation,
-- multiplicatively,
-- additively,
-- or through an adaptive method.
-
-Too little inflation can produce ensemble collapse. Too much inflation can produce unstable or excessively uncertain estimates.
-
-### Localization
-
-Localization reduces the influence of spurious long-distance correlations caused by a limited ensemble size.
-
-Localization may depend on:
-
-- physical distance,
-- grid connectivity,
-- observation location,
-- state-variable type,
-- or a model-specific covariance structure.
-
-Not every ICESEE example exposes localization controls through the interface.
-
-## State and Parameter Estimation
-
-ICESEE can estimate model states, uncertain parameters, or both.
-
-### State Variables
-
-State variables describe the evolving condition of the model.
-
-For an ice-sheet application, these may include:
-
-- ice thickness,
-- surface elevation,
-- horizontal velocity,
-- temperature,
-- damage,
-- grounding-line indicators,
-- or other model-dependent fields.
-
-### Model Parameters
-
-Parameters control model behavior but may not evolve through the same governing equations as state variables.
-
-Examples include:
-
-- bed elevation,
-- basal friction,
-- rheological parameters,
-- flow-law coefficients,
-- forcing parameters,
-- and boundary-condition parameters.
-
-The selected example determines which variables and parameters are included in the ensemble vector.
-
-### State-Vector Construction
-
-ICESEE may combine multiple fields into a single ensemble state vector.
-
-The state vector can contain:
-
-- state variables,
-- estimated parameters,
-- observed quantities,
-- and unobserved quantities.
-
-The ordering and dimensions of the state vector are defined by the application interface.
-
-## Observation Configuration
-
-Observations constrain the forecast ensemble during assimilation.
-
-### Observed Variables
-
-The selected example determines which variables can be observed.
-
-Possible observations include:
-
-- surface elevation,
-- ice velocity,
-- thickness,
-- bed elevation,
-- temperature,
-- or synthetic model-state measurements.
-
-### Observation Locations
-
-Observations may be available:
-
-- at all model nodes,
-- on a regular spatial grid,
-- at selected indices,
-- along profiles,
-- within grounded regions,
-- or at externally supplied coordinates.
-
-Sparse observations reduce data volume but may require careful localization and uncertainty treatment.
-
-### Observation Schedule
-
-The observation schedule determines when data are assimilated.
-
-Observations may be available:
-
-- at every time step,
-- at fixed intervals,
-- at selected snapshots,
-- or at irregular times.
-
-The assimilation schedule should be compatible with the model time step and available observation times.
-
-### Observation Covariance
-
-The observation covariance describes uncertainty in the measurements.
-
-It may be specified using:
-
-- a scalar variance,
-- one variance per observed variable,
-- a diagonal covariance matrix,
-- or a more general covariance structure.
-
-Observation uncertainty affects how strongly the analysis follows the data relative to the forecast ensemble.
-
-### Synthetic Observations
-
-Synthetic observations are generated from a known true state and are useful for:
-
-- method development,
-- verification,
-- filter comparison,
-- parameter-identification experiments,
-- and observing-system simulation experiments.
-
-Synthetic observations may include controlled random noise.
-
-### Real Observations
-
-Real-data workflows require observation files that are compatible with the selected model and example.
-
-The workflow may need:
-
-- coordinates,
-- timestamps,
-- variable names,
-- units,
-- uncertainty estimates,
-- masks,
-- and interpolation or mapping information.
-
-## Physical Parameters
-
-Physical parameters describe the scientific system represented by the model.
-
-Depending on the selected application, they may include:
-
-- density,
-- gravity,
-- accumulation,
-- basal friction,
-- viscosity,
-- rheology,
-- ocean forcing,
-- atmospheric forcing,
-- and boundary conditions.
-
-Changing physical parameters can alter both the model forecast and the interpretation of the assimilation results.
-
-## Modeling Parameters
-
-Modeling parameters control the numerical experiment.
-
-They may include:
-
-- time step,
-- final time,
-- mesh resolution,
-- solver tolerances,
-- nonlinear iteration limits,
-- checkpoint frequency,
-- output interval,
-- and model-specific configuration files.
-
-For a first experiment, retain the values supplied by the selected preset.
-
-## Output Configuration
-
-The Output menu identifies the result configuration or reporting pathway used by the selected example.
-
-Outputs may include:
-
-- analyzed states,
-- forecast states,
-- ensemble means,
-- ensemble members,
-- parameter estimates,
-- true-state comparisons,
-- wrong-model comparisons,
-- observation residuals,
-- RMSE values,
-- ensemble spread,
-- and scientific plots.
-
-Available outputs vary between examples.
-
-## Report Generation
-
-When report generation is enabled, ICESEE may run an additional post-processing workflow after the primary experiment.
-
-A report may contain:
-
-- experiment metadata,
-- selected model,
-- selected filter,
-- ensemble size,
-- observation settings,
-- estimated variables,
-- state trajectories,
-- parameter trajectories,
-- RMSE diagnostics,
-- ensemble spread,
-- and generated figures.
-
-Report generation can increase the total runtime, particularly when large result files must be read and processed.
-
-## Running an Experiment
-
-Before launching an experiment, confirm the following:
-
-1. The selected example is installed.
-2. The required environment is available.
-3. The preset is compatible with the model.
-4. The filter is supported by the example.
-5. The ensemble size is appropriate for the selected backend.
-6. Observation files are available when required.
-7. The output directory is writable.
-8. Remote or HPC credentials are valid when applicable.
-
-After reviewing the configuration, launch the workflow using the run control in the ICESEE interface.
-
-## Monitoring Execution
-
-The Run Log provides information about the active experiment.
-
-Messages may include:
-
-- configuration-file discovery,
-- preset loading,
-- model initialization,
-- MPI initialization,
-- ensemble distribution,
-- forecast advancement,
-- observation loading,
-- analysis updates,
-- checkpoint writing,
-- output generation,
-- report generation,
-- and cleanup.
-
-A successful workflow should progress from configuration loading to model execution, assimilation, result writing, and report generation without an unrecoverable error.
-
-## Understanding Results
-
-ICESEE results should be interpreted using both estimation accuracy and ensemble behavior.
-
-### Ensemble Mean
-
-The ensemble mean represents the central state or parameter estimate.
-
-It can be compared with:
-
-- observations,
-- a known true state,
-- an independent reference dataset,
-- or a control simulation.
-
-### Ensemble Spread
-
-The ensemble spread describes uncertainty within the ensemble.
-
-A spread that is too small may indicate:
-
-- ensemble collapse,
-- insufficient inflation,
-- excessive observational influence,
-- or underestimated model uncertainty.
-
-A spread that is too large may indicate:
-
-- excessive inflation,
-- large initial perturbations,
-- weak observational constraints,
-- or model instability.
-
-### Root-Mean-Square Error
-
-Root-mean-square error, or RMSE, measures the difference between an estimate and a reference state.
-
-RMSE may be computed for:
-
-- the full state,
-- individual variables,
-- observed locations,
-- unobserved locations,
-- estimated parameters,
-- or selected time snapshots.
-
-RMSE should be interpreted together with ensemble spread and the spatial distribution of observations.
-
-### Innovation
-
-The innovation is the difference between an observation and its forecasted equivalent.
-
-Large innovations may indicate:
-
-- poor initialization,
-- model bias,
-- incorrect observation mapping,
-- underestimated uncertainty,
-- or inconsistent units.
-
-### Parameter Estimates
-
-Estimated parameters should be assessed for:
-
-- convergence,
-- physical plausibility,
-- sensitivity to observations,
-- sensitivity to the initial ensemble,
-- and consistency across repeated experiments.
-
-## Advanced Configuration
-
-Advanced controls should be modified only after the default workflow runs successfully.
-
-These controls may include:
-
-- model-specific state-vector definitions,
-- observation operators,
-- covariance models,
-- ensemble perturbation methods,
-- localization parameters,
-- inflation parameters,
-- MPI distribution,
-- checkpoint settings,
-- and post-processing scripts.
-
-Record all changes when comparing experiments.
-
-## Reproducibility
-
-For reproducible experiments, preserve:
-
-- the ICESEE version,
-- the model version,
-- the preset,
-- the full configuration,
-- the random seed,
-- the observation dataset,
-- the execution environment,
-- the number of MPI processes,
-- and the generated logs.
-
-Container images, locked software environments, and version-controlled configuration files can improve reproducibility across computing systems.
+## Filters
+
+The **Filter** menu selects the analysis scheme. All four are available for
+every example; the example's own default is a good first choice.
+
+- **EnKF** — the stochastic Ensemble Kalman Filter: updates each member with
+  perturbed observations and an ensemble-estimated forecast covariance.
+- **DEnKF** — the Deterministic EnKF: updates the ensemble mean and
+  perturbations deterministically, without perturbing observations.
+- **EnTKF** — the Ensemble Transform Kalman Filter: performs the analysis in
+  ensemble space.
+- **EnRSKF** — the Ensemble Reduced Square Root Kalman Filter: a square-root
+  update in a reduced ensemble representation.
+
+## Ensemble and experiment settings
+
+The top-level controls write into the example's `enkf-parameters`:
+**Ensemble size** → `Nens`, **Seed** → `seed`, **Filter** → `filter_type`.
+Everything else the example defines is in its parameter sections, shown as
+editable fields (lists and nested values as YAML text). For Lorenz-96, for
+example, `enkf-parameters` contains:
+
+| Setting | Meaning |
+|---|---|
+| `freq_obs`, `obs_start_time`, `obs_max_time` | when observations are assimilated |
+| `observed_vars`, `sig_obs` | which variables are observed, and their error standard deviations |
+| `vec_inputs`, `num_state_vars`, `num_param_vars` | the state (and parameter) vector |
+| `state_estimation`, `parameter_estimation`, `joint_estimation` | what is estimated |
+| `sig_Q`, `length_scale` | process-noise level and covariance length scale |
+| `inflation_factor`, `localization_flag` | ensemble inflation and localization |
+| `generate_synthetic_obs`, `generate_true_state` | synthetic truth and observations for a twin experiment |
+
+Other examples define their own settings; the names shown are the ones the
+example's `params.yaml` uses. Change one thing at a time, and keep the seed
+fixed while comparing runs.
+
+## Parallel settings
+
+Two settings in `enkf-parameters` decide how an ICESEE run uses processes.
+Each example ships a working combination; change them only for Remote runs
+where you also set **MPI np** and **Model nprocs**.
+
+**`execution_mode`** — how the data-assimilation workflow itself runs:
+
+| Value | Mode | Meaning |
+|---|---|---|
+| `0` | serial | One process does all the work. For small models and testing the filter variants. |
+| `1` | partial | Ensemble forecasts run in parallel; the analysis is computed on one process and shared. Suited to small and medium models. |
+| `2` | full | Forecasts, file I/O, and the analysis step are all parallel. Intended for large models and datasets. |
+
+**`parallel_flag`** — how the forecast model is run:
+
+| Value | Meaning |
+|---|---|
+| `serial` | The forecast model runs without MPI. Used with `execution_mode: 0`. |
+| `MPI_model` | The forecast model is itself MPI-parallel: each model run gets its own group of **Model nprocs** processes. Used with `execution_mode: 1` or `2`. |
+| `MPI` | Listed in the menu, but the current ICESEE version has no separate code path for it: serial mode rejects it and the parallel modes only parallelize with `MPI_model`. Use `serial` or `MPI_model`. |
+
+The shipped defaults are `execution_mode: 0` with `serial` for Lorenz-96 and
+Flowline, and `execution_mode: 1` with `MPI_model` for ISSM and Icepack.
+`execution_flag` (0 default, 1 sequential, 2 even distribution) controls how
+ensemble members are assigned to process groups; keep the example's value
+unless you know you need another.
+
+These settings only take effect with several processes: **Local** always runs
+one process, and **Cloud** is limited to one process today. On **Remote**,
+**MPI np** sets the total number of processes and **Model nprocs** the
+processes per model run.
+
+## Running and monitoring
+
+| Mode | Start | Monitor |
+|---|---|---|
+| Local | **Run** | The Run Log streams output until the run ends. |
+| Remote | **Submit (Remote)** | **Check status**, **Tail log**; **Terminate job** stops it. The job keeps running if you close the browser. |
+| Cloud | **Review & Launch** → **Launch cloud run** | **Check status** and **Logs hint** in the Run Log toolbar; **Terminate cloud job** stops it. ICESEE does not poll AWS in the background. |
+
+The Run Log shows the parameter file used, the runner, environment
+activation, ensemble and forecast progress, analysis steps, report
+generation, warnings, and errors — it is the first place to look when a run
+fails.
+
+## Results and reports
+
+Select a run in the **Runs** tab and open **Results**. ICESEE shows the
+figures the run produced (PNG files from its `figures/` or `results/` folder)
+and lists its HDF5 result files. For Remote runs, **Preview results** fetches
+the outputs first; **Download results** downloads them. Cloud outputs are
+synchronized from S3 when you open the run.
+
+When **Generate report** is ticked, a successful Local run executes the
+example's `read_results.ipynb` into the run folder, reading the result set
+chosen in **Output** (`results/<output>-<model>.h5`). Report generation adds
+runtime and needs the reporting packages in the environment.
+
+Each run folder keeps the `params.yaml` it ran with, and the run record stores
+the data-assimilation identity — example, forecast model, filter, ensemble
+size, seed, observation and estimation settings, and parallel settings — so a
+run can be understood and repeated later.
+
+## Auto-config · Beta
+
+Where the deployment enables it, expand **Auto-config · Beta** in Run settings
+and describe the experiment, for example:
+
+> Prepare Lorenz96 locally with 20 ensemble members and DEnKF.
+
+Auto-config uses the same deterministic, domain-constrained rules as
+CryoLauncher's — not a general-purpose language model. It recognizes the
+registered examples and their forecast models, the execution mode, filter,
+ensemble size, CPU count, and resource settings, starting from the current
+controls. Requests such as "Change the ensemble size to 60 but keep the rest
+of my configuration" or "Change only the filter to EnKF and use 8 CPUs" refine
+the current configuration. Anything it cannot interpret, including
+contradictions and requests to submit, is reported rather than guessed.
+
+**Create plan** shows **Setting | Current | Proposed | Source** (From request /
+Suggested / Retained); **Apply to configuration** updates the controls only —
+it never runs anything. A proposal is rejected if the controls changed after
+it was created. Diagnosis ("Why can't I run this?"), conservative repair
+("Fix my configuration"), and explanations ("What did you change?") work as in
+<a href="../icesheets/user_manual.html#auto-config-beta">CryoLauncher's
+Auto-config</a>. Example availability does not establish runtime readiness:
+the verified Lorenz-96 cloud contract does not qualify other forecast
+workflows.
 
 ## Troubleshooting
 
-### The selected example does not appear
+:::{raw} html
+<div class="cryostack-troubleshooting">
 
-Confirm that:
+  <details>
+    <summary>Cloud: Launch is blocked for my example</summary>
+    <p>
+      Only Lorenz-96 with one process is verified on Cloud. Select Lorenz-96,
+      and set <b>MPI np</b> to <b>1</b> on the Remote tab under
+      <b>Slurm resources</b> — the Review card shows it as <b>Processes</b>.
+    </p>
+  </details>
 
-- the example exists in the ICESEE installation,
-- its configuration files are present,
-- its run script is discoverable,
-- and the required model environment is installed.
+  <details>
+    <summary>A run fails with "Invalid parallel flag"</summary>
+    <p>
+      <code>parallel_flag: MPI</code> has no separate code path in the current
+      ICESEE version. Use <code>serial</code> with
+      <code>execution_mode: 0</code>, or <code>MPI_model</code> with
+      <code>execution_mode: 1</code> or <code>2</code>.
+    </p>
+  </details>
 
-Restart the application after adding a new example.
+  <details>
+    <summary>The workflow fails before the model runs</summary>
+    <p>
+      Read the Run Log for a missing file, an environment-activation error, a
+      missing package, or an invalid parameter value. On Remote, confirm
+      <b>Check SSH Access</b> reads <b>Verified</b> and, for ICESEE-Spack, that
+      the environment is installed.
+    </p>
+  </details>
 
-### The workflow fails before model execution
+  <details>
+    <summary>An ISSM, Flowline, or Icepack example fails in Local</summary>
+    <p>
+      Local runs one process on the CryoStack server. ISSM is a Remote
+      example, and Flowline and Icepack are under development; use Lorenz-96
+      for Local runs.
+    </p>
+  </details>
 
-Inspect the Run Log for:
+  <details>
+    <summary>The report is not generated</summary>
+    <p>
+      Reports run only after a successful Local run with <b>Generate
+      report</b> ticked, and need the result file named by <b>Output</b>
+      (<code>results/&lt;output&gt;-&lt;model&gt;.h5</code>) and the notebook
+      runner in the environment.
+    </p>
+  </details>
 
-- missing configuration files,
-- invalid paths,
-- environment activation errors,
-- missing Python packages,
-- or unsupported parameter values.
+  <details>
+    <summary>The filter diverges or the ensemble spread collapses</summary>
+    <p>
+      Try a larger <b>Ensemble size</b>, an <code>inflation_factor</code>
+      above 1, localization where the example supports it, or a larger
+      observation error (<code>sig_obs</code>). Change one setting at a time
+      with a fixed seed.
+    </p>
+  </details>
 
-### MPI initialization fails
+  <details>
+    <summary>Remote execution fails</summary>
+    <p>
+      Check network access (VPN), SSH access, the remote working directory,
+      the Slurm account and partition, and the remote environment. Use
+      <b>Tail log</b> for the job's own output.
+    </p>
+  </details>
 
-Verify:
+</div>
+:::
 
-- the MPI installation,
-- the selected launcher,
-- environment variables,
-- process counts,
-- and compatibility between the model, Python packages, and MPI implementation.
-
-Avoid mixing incompatible MPI libraries within the same environment.
-
-### Observations are not loaded
-
-Check:
-
-- the observation-file path,
-- variable names,
-- data dimensions,
-- timestamps,
-- coordinates,
-- masks,
-- and expected units.
-
-Confirm that the observation schedule overlaps the simulation period.
-
-### The filter diverges
-
-Possible remedies include:
-
-- increasing the ensemble size,
-- changing the initial perturbations,
-- applying inflation,
-- using localization,
-- increasing observation uncertainty,
-- reducing the assimilation interval,
-- or reviewing the model configuration.
-
-Filter divergence can also result from model bias or inconsistent observations.
-
-### The ensemble spread collapses
-
-Consider:
-
-- increasing inflation,
-- increasing model-error perturbations,
-- increasing the ensemble size,
-- reducing observational influence,
-- or revising the covariance configuration.
-
-### The experiment consumes too much memory
-
-Reduce:
-
-- ensemble size,
-- state-vector size,
-- output frequency,
-- number of stored ensemble members,
-- or report complexity.
-
-For larger workflows, use a distributed HPC backend.
-
-### The report is not generated
-
-Confirm that:
-
-- report generation is enabled,
-- the primary workflow completed,
-- the expected result file exists,
-- the output directory is writable,
-- and the reporting dependencies are installed.
-
-### Remote execution fails
-
-Verify:
-
-- network access,
-- SSH credentials,
-- the remote hostname,
-- the remote working directory,
-- the scheduler configuration,
-- and the remote environment.
-
-Inspect both the CryoStack log and the remote scheduler output.
-
-## Recommended Practices
-
-For reliable experiments:
-
-- Begin with a supported preset.
-- Run a small local test before using HPC resources.
-- Use a fixed random seed during debugging.
-- Increase ensemble size gradually.
-- Check observation units and dimensions.
-- Compare ensemble spread with RMSE.
-- Preserve logs and configuration files.
-- Avoid changing many parameters simultaneously.
-- Use version-controlled model and data assimilation settings.
-- Use containers or reproducible environments when moving between systems.
-
-## Related Documentation
+## Related documentation
 
 - Read [Getting Started with ICESEE](getting_started) to run a first experiment.
 - Review [ICESEE Resources](resources) for repositories, publications, software, and supporting documentation.
-- Open <a href="../../documentation.html">CryoLauncher Documentation</a> for model execution without data assimilation.
+- Open <a href="../icesheets/getting_started.html">CryoLauncher</a> for model runs without data assimilation.
 - Launch [ICESEE](https://cryostack.eas.gatech.edu/icesee-gui/) through the CryoStack platform.
 
 :::{raw} html
   </div>
 </div>
 :::
-
-### Auto-config · Beta: prepare an ICESEE experiment
-
-When enabled, expand **Auto-config · Beta** in Run settings. For example:
-
-> Prepare Lorenz96 locally with ensemble size 20 and DEnKF.
-
-The selected example identifies its forecast model through existing metadata.
-Ensemble and filter changes populate the same controls you edit manually; for
-example, “Use the same configuration with 50 ensemble members” or “Change only
-the filter to EnKF”. Inspect the normal Run settings after applying.
-Example availability does not establish runtime readiness, and the verified
-Lorenz-96 cloud contract does not qualify other forecast workflows.
-
-**Create plan** prepares a compact change preview: **Setting | Current |
-Proposed | Source**. Changed settings are primary; important unchanged values
-appear in a short retained summary. **From request** means explicitly requested,
-**Suggested** means a deterministic adjustment from existing metadata or policy,
-and **Retained** means a valid current value is intentionally unchanged.
-Omitted settings stay as configured. Ambiguity requires clarification;
-unsupported requests cannot be applied. A matching request reports **No changes
-needed**.
-
-**Apply to configuration** updates the existing controls and reports the number
-of settings changed. It never submits or launches a workflow. Review the manual
-controls and complete the ordinary validation and execution steps. A proposal
-becomes stale if the controls change; create it again before applying. Manual
-edits always remain authoritative.
-
-You can refine the current controls with requests such as “Change the CPUs to
-8” or “Keep everything but run this on PACE”. Each request uses the current
-configuration, without conversation history. If a requested change invalidates
-another setting, the preview includes a deterministic required adjustment or
-asks for clarification; it does not silently discard the setting.
-
-“Why can't I run this?” diagnoses configuration issues without changing controls.
-“Fix my configuration” proposes a repair only when existing metadata supplies a
-deterministic supported choice. It cannot repair institutional access, credentials,
-licensing, or infrastructure. “Why is this Suggested?”, “What did you change?”,
-and “Explain this configuration” provide compact read-only explanations from
-proposal provenance and existing capability information. A stale proposal is
-identified as stale rather than explained as current.
-
-This is a bounded configuration aid, not an autonomous scientist or a general
-chat service. It does not authorize execution, provision infrastructure, or
-modify licensing. Existing identity, resource, scientific-parameter, and backend
-checks remain authoritative; a prepared configuration is not proof that a run
-is ready.

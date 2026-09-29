@@ -60,8 +60,9 @@
     <div class="cryostack-resource-tag">Reference</div>
     <h3>User Manual</h3>
     <p>
-      The full operational guide: Basic and Advanced mode, My Workspace,
-      datasets, execution, runs, results, visualization, and downloads.
+      The full operational guide: Basic, Advanced, and Auto-config · Beta,
+      My Workspace, datasets, Remote and Cloud execution, runs, results,
+      visualization, and downloads.
     </p>
     <a href="user_manual.html">Open User Manual &rarr;</a>
   </article>
@@ -87,9 +88,9 @@
     <div class="cryostack-resource-tag">Ice-Sheet Model</div>
     <h3>ISSM <span class="cryostack-status supported">Supported</span></h3>
     <p>
-      The Ice-sheet and Sea-level System Model &mdash; the mature CryoLauncher
-      path, with guided configuration, structured results, and deterministic
-      visualization.
+      The Ice-sheet and Sea-level System Model &mdash; Remote and Cloud, with
+      solver-aware Basic configuration, structured results, and
+      Solution / Field / Timestep visualization. Needs a MATLAB license.
     </p>
     <div class="cryostack-resource-inline-links">
       <a href="https://issm.jpl.nasa.gov/" target="_blank" rel="noopener noreferrer">Website</a>
@@ -100,10 +101,11 @@
 
   <article class="cryostack-resource-card">
     <div class="cryostack-resource-tag">Ice-Sheet Model</div>
-    <h3>Icepack <span class="cryostack-status dev">Experimental</span></h3>
+    <h3>Icepack <span class="cryostack-status supported">Supported</span></h3>
     <p>
-      A Python library built on Firedrake. Selectable in CryoLauncher, but not
-      yet at ISSM feature parity for configuration and results.
+      A Python library built on Firedrake &mdash; Remote and Cloud, with
+      Basic-mode ice temperature and timestep count, structured results, and
+      field maps of the final state. No MATLAB license needed.
     </p>
     <div class="cryostack-resource-inline-links">
       <a href="https://icepack.github.io/" target="_blank" rel="noopener noreferrer">Documentation</a>
@@ -188,12 +190,13 @@
     <div class="cryostack-resource-tag">Execution Mode</div>
     <h3>Cloud <span class="cryostack-status supported">Supported</span></h3>
     <p>
-      AWS Batch execution, Fargate by default (EC2 Advanced also exists).
-      Both ISSM and Icepack have run end-to-end on Fargate and EC2 On-Demand
-      (single node, CPU); ISSM's runs include reaching a configured
-      institutional MATLAB license through Connector/Relay.
+      AWS Batch on your own AWS account. ISSM and Icepack are validated on
+      Fargate (default) and EC2 On-Demand (single node, CPU); EC2 Spot and
+      custom networking are available but not yet validated; GPU and
+      multi-node are guarded.
     </p>
-    <a href="../../docs/hpc_cloud.html">Cloud Run Guide &rarr;</a>
+    <a href="user_manual.html#cloud-execution-aws">Cloud guide &rarr;</a>
+    <a href="../../docs/hpc_cloud.html">Platform Cloud Run Guide &rarr;</a>
   </article>
 
   <article class="cryostack-resource-card">
