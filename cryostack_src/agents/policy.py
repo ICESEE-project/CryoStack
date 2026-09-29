@@ -52,7 +52,8 @@ _ALLOWED_USES: dict[str, frozenset[str]] = {}
 TOOL_MODULES = ("readonly_tools", "planning_tools", "planning", "approval",
                 "assistant", "execution", "trace", "trace_store", "experiment",
                 "fingerprint", "store", "llm", "llm_adapters", "inspect", "eval",
-                "registry", "context", "tools", "permissions", "intent", "diagnosis")
+                "registry", "context", "tools", "permissions", "intent", "diagnosis",
+                "proposal_validation", "workspace_context", "language")
 
 #: agents/*.py deliberately NOT scanned (pure plumbing, no capability surface)
 _UNSCANNED_OK = frozenset({"__init__", "policy"})

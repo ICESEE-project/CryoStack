@@ -1,6 +1,7 @@
 """Read-only diagnosis and conservative repairs from existing application rules."""
 from dataclasses import dataclass, field
 import re
+import copy
 
 from cryostack_src.agents.intent import Proposal
 from cryostack_src.models.workflow_capabilities import resolve_workflow_capabilities
@@ -22,6 +23,7 @@ class Diagnosis:
     issues: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     proposal: RepairProposal = field(default_factory=RepairProposal)
+    findings: list[dict[str, str]] = field(default_factory=list)
 
 
 def diagnosis_request(text):
@@ -29,6 +31,14 @@ def diagnosis_request(text):
     text = re.sub(r"[?!.,]+$", "", text.strip().lower().replace("’", "'"))
     text = re.sub(r"\s+", " ", text)
     text = re.sub(r"^please ", "", text)
+    if re.fullmatch(r"is (?:this|my|the) configuration compatible with remote execution", text):
+        return "diagnose_remote"
+    if re.fullmatch(r"make (?:this|my|the) configuration valid for remote execution", text):
+        return "repair_remote"
+    if re.fullmatch(r"fix (?:the )?resource settings but keep (?:my |the )?scientific parameters", text):
+        return "repair_resources"
+    if re.fullmatch(r"why (?:can't|cannot) (?:this|my|the) configuration run|what(?:'s| is) wrong with (?:my |the )?current configuration", text):
+        return "diagnose"
     if re.fullmatch(r"why (?:can't|can not|cannot) i run (?:this|this configuration)|what(?:'s| is) wrong with (?:my|this|the) configuration", text):
         return "diagnose"
     if re.fullmatch(r"fix (?:my|this|the) configuration|make (?:my|this|the) configuration runnable", text):
@@ -51,6 +61,7 @@ def diagnose_configuration(data, findings):
     example = next((e for e in data['examples'] if e['id'] == current.get('example')), None)
     if example is None:
         result.issues.append('Select a supported example in the existing controls.')
+        result.findings = structured_findings(result.issues)
         return result
     model = example['model']
     if current.get('model', model) != model:
@@ -87,6 +98,10 @@ def diagnose_configuration(data, findings):
             corrected = set(errors) - set(remaining)
             if corrected:
                 changes['wall_time'] = default
+    from .proposal_validation import proposal_findings
+    checked = {key: current[key] for key in ("cpus", "nodes", "tasks_per_node", "ensemble_size", "filter", "backend") if key in current}
+    checked.update(model=model, example=example['id'])
+    result.issues.extend(proposal_findings(Proposal(values=checked), data))
     result.issues = list(dict.fromkeys(result.issues))
     unresolved = [issue for issue in result.issues if issue not in corrected]
     if changes and not unresolved:
@@ -96,4 +111,38 @@ def diagnose_configuration(data, findings):
         result.proposal.reasons['wall_time'] = 'The selected resource supplies this default time limit for the missing value.'
     else:
         result.proposal.errors = list(result.issues)
+    result.findings = structured_findings(result.issues)
+    return result
+
+
+def structured_findings(issues):
+    """Classify existing validator messages for presentation, not validity rules."""
+    findings = []
+    for issue in issues:
+        lower = issue.lower()
+        setting = next((name for name in ("wall time", "memory", "tasks", "nodes", "cpus", "account", "backend", "filter", "example") if name in lower), "configuration")
+        category = ("Missing requirement" if "required" in lower or "missing" in lower else
+                    "Unsupported capability" if "not supported" in lower else
+                    "Backend restriction" if "backend" in lower else
+                    "Resource conflict" if setting in ("wall time", "memory", "tasks", "nodes", "cpus", "account") else
+                    "Invalid parameter" if "parameter" in lower or "minimum" in lower or "maximum" in lower else
+                    "Incompatible setting")
+        findings.append(dict(category=category, setting=setting, message=issue))
+    return findings
+
+
+def diagnose_request(kind, data, read_only_validate):
+    """Evaluate a requested Remote target using pure checks, never widget changes."""
+    if not kind.endswith("_remote"):
+        return diagnose_configuration(data, read_only_validate())
+    target = copy.deepcopy(data)
+    target["current"]["mode"] = "remote"
+    result = diagnose_configuration(target, [REMOTE_REVIEW_NOTE])
+    if kind == "repair_remote" and (result.proposal.applicable or (not result.issues and data["current"].get("mode") != "remote")):
+        example = next(e for e in data['examples'] if e['id'] == data['current'].get('example'))
+        result.proposal.values.update(model=example['model'], example=example['id'])
+        result.proposal.retained = ['model', 'example']
+        if data['current'].get('mode') != 'remote':
+            result.proposal.values['mode'] = 'remote'
+            result.proposal.reasons['mode'] = 'You requested a configuration for Remote execution.'
     return result

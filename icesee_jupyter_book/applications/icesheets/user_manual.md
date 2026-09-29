@@ -379,6 +379,14 @@ Running <code>aws configure</code> or setting up a CLI profile is <b>not</b>
 required for this path; that is a developer-only workflow (see the Developer
 Guide).
 
+<b>Video tutorials.</b> The
+<a href="https://mediaspace.gatech.edu/media/Brian+Kyanjos+Zoom+Meeting/1_edvr6a1l" target="_blank" rel="noopener noreferrer">Icepack · Cloud</a>
+tutorial follows this whole sequence, including connecting your AWS account
+and preparing the cloud environment. The
+<a href="https://mediaspace.gatech.edu/media/Brian+Kyanjos+Zoom+Meeting/1_7aycdfrg" target="_blank" rel="noopener noreferrer">ISSM · Cloud</a>
+tutorial starts from an already prepared CryoStack AWS environment. See
+<a href="resources.html#video-tutorials">all CryoLauncher video tutorials</a>.
+
 **Backend** (under Remote):
 
 - **ICESEE-Container** — run inside a container. The container source can be:
@@ -721,6 +729,12 @@ execution mode and backend, your HPC access (Section&nbsp;9 — **Check SSH
 Access** should read **Verified**), and any scheduler resources. Submit the
 run. CryoStack re-verifies remote access at submit time, then the Run log
 reports staging, the submission command, the scheduler job id, and progress.
+
+<b>Video tutorial.</b> The
+<a href="https://mediaspace.gatech.edu/media/Brian+Kyanjos+Zoom+Meeting/1_3iw27chs" target="_blank" rel="noopener noreferrer">ISSM · Remote</a>
+tutorial walks through a complete ISSM workflow on an existing Remote
+computing resource. See
+<a href="resources.html#video-tutorials">all CryoLauncher video tutorials</a>.
 
 ## 11. Run monitoring and history
 

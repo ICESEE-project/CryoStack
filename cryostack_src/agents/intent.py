@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import re
+from .language import contextual_request, duration_request, scientific_assignments
 
 
 def normalized(value):
@@ -25,6 +26,7 @@ class Proposal:
     explanations: list[str] = field(default_factory=list)
     refinement: bool = False
     reasons: dict[str, str] = field(default_factory=dict)
+    workspace_sources: dict[str, str] = field(default_factory=dict)
 
     @property
     def applicable(self):
@@ -42,7 +44,9 @@ def infer_request(text, catalog):
         p.unresolved.append("Describe the experiment you want to prepare.")
         return p
     original_text = text
-    p.refinement = bool(re.search(r"\b(?:change|switch|keep|same configuration)\b", text, re.I))
+    p.refinement = bool(re.search(r"\b(?:change|switch|keep|same configuration|increase|decrease|double|reset)\b", text, re.I))
+    text, constraints = contextual_request(text, catalog, p)
+    text = duration_request(text, p)
     if p.refinement:
         # Remove only understood refinement scaffolding; unknown instructions,
         # exclusions and unsupported values still reach the normal guards.
@@ -53,8 +57,13 @@ def infer_request(text, catalog):
         text = re.sub(r"\b(?:filter|backend)\s+to\b", "", text, flags=re.I)
         text = re.sub(r"\bthis to\b", "", text, flags=re.I)
         text = re.sub(r"\bkeep\b|\bbut\b", "", text, flags=re.I)
+    canonical_only = bool(re.search(r"\bcanonical\b", text, re.I))
+    text = re.sub(r"\bcanonical\b", "", text, flags=re.I)
+    workspace_only = bool(re.search(r"\b(?:my|user|workspace) example\b", text, re.I))
+    text = re.sub(r"\b(?:my|user|workspace) example\b", "example", text, flags=re.I)
     recognized = []
-    examples = catalog["examples"]
+    examples = [e for e in catalog["examples"] if (not workspace_only or e.get("origin") == "workspace")
+                and (not canonical_only or e.get("origin", "canonical") == "canonical")]
     models = sorted({e["model"] for e in examples})
     model_hits = [m for m in models if mentioned(text, m)]
     hits = [e for e in examples if any(mentioned(text, a) for a in e["aliases"])]
@@ -66,6 +75,12 @@ def infer_request(text, catalog):
         p.unresolved.append("Choose one forecast model and example; combined workflows need manual configuration.")
     if len(hits) > 1:
         p.unresolved.append("Choose an example: " + ", ".join(e["label"] for e in hits))
+    if not hits:
+        term = re.search(r"\b(?:run|use|example)\s+([a-z][\w-]*)", text, re.I)
+        if term and term[1].lower() not in {*models, "the", "my", "example", "this", "same", "configuration", "remote", "locally", "cloud", "icesee"}:
+            partial = [e["label"] for e in examples if any(normalized(term[1]) in normalized(a) for a in e["aliases"])]
+            if partial:
+                p.unresolved.append("Use an exact example name: " + ", ".join(partial))
     chosen = hits[0] if len(hits) == 1 else None
     if chosen and model_hits and chosen["model"] not in model_hits:
         p.errors.append(f"{chosen['label']} uses {chosen['model']}; it does not match the requested model.")
@@ -77,7 +92,7 @@ def infer_request(text, catalog):
             if not model_hits:
                 p.retained.append("model")
     if chosen is None and len(model_hits) == 1:
-        candidates = [e for e in examples if e["model"] == model_hits[0]]
+        candidates = [e for e in examples if e["model"] == model_hits[0] and e.get("origin") != "workspace"]
         if len(candidates) == 1:
             chosen = candidates[0]
         elif re.search(r"\bdefault\w*\b", text, re.I):
@@ -106,6 +121,8 @@ def infer_request(text, catalog):
     profiles = [name for name in catalog["profiles"] if mentioned(text, name)]
     if profiles and "remote" not in modes:
         modes.append("remote")
+        p.suggested.append("mode")
+        p.reasons["mode"] = "The selected compute resource uses Remote execution."
     if len(modes) > 1:
         p.unresolved.append("Choose one execution location: " + ", ".join(modes))
     mode = modes[0] if len(modes) == 1 else catalog["current"].get("mode")
@@ -135,7 +152,7 @@ def infer_request(text, catalog):
         "cpus": r"(?<![-\w.])(\d+)\s*(?:cpus?|cores?|processors?|processes|tasks?)\b(?!\s*per\s*node)|\b(?:cpus?|cores?)\s+to\s+(\d+)\b",
         "nodes": r"(?<![-\w.])(\d+)\s*nodes?\b",
         "tasks_per_node": r"\b(\d+)\s*(?:tasks?|processes)\s*per\s*node\b",
-        "ensemble_size": r"\b(?:ensemble(?: size)?\s*(?:of|=|:)?\s*)(\d+)\b|\b(\d+)\s*(?:ensemble members|members)\b",
+        "ensemble_size": r"\b(?:ensemble(?: size)?\s*(?:of|=|:|to)?\s*)(\d+)\b|\b(\d+)\s*(?:ensemble members|members)\b",
     }
     for key, pattern in patterns.items():
         matches = list(re.finditer(pattern, text, re.I))
@@ -162,7 +179,9 @@ def infer_request(text, catalog):
                 p.values[key] = value
     if not p.refinement and "cpus" in p.values and "tasks_per_node" not in p.values:
         nodes = p.values.get("nodes", catalog["current"].get("nodes", 1))
-        if p.values["cpus"] % nodes:
+        if not isinstance(nodes, int) or isinstance(nodes, bool) or nodes < 1:
+            p.unresolved.append("Set a positive whole node count before distributing the requested CPUs.")
+        elif p.values["cpus"] % nodes:
             p.unresolved.append("Specify tasks per node; the CPU count does not divide evenly across the selected nodes.")
         else:
             p.values["tasks_per_node"] = p.values["cpus"] // nodes
@@ -170,41 +189,24 @@ def infer_request(text, catalog):
             p.reasons["tasks_per_node"] = "The requested CPU count is divided evenly across the selected nodes."
     for key, pattern in (("account", r"\b(?:account|allocation)\s*[=:]?\s*([\w-]+)"),
                          ("wall_time", r"\b(?:wall(?:[ -]?time)?|time limit)\s*[=:]?\s*(\d+:\d{2}:\d{2})"),
-                         ("memory", r"\b(\d+(?:\.\d+)?\s*[GM]B?)\s*(?:memory|ram)\b")):
-        match = re.search(pattern, text, re.I)
-        if match:
-            recognized.append(match[0])
+                         ("memory", r"(?<![-\w.])(\d+(?:\.\d+)?\s*[GM]B?)\s*(?:of\s+)?(?:memory|ram)\b")):
+        matches = list(re.finditer(pattern, text, re.I))
+        recognized.extend(m[0] for m in matches)
+        vals = {m[1].replace(" ", "").upper().removesuffix("B") if key == "memory" else m[1] for m in matches}
+        if len(vals) > 1:
+            p.unresolved.append(f"Conflicting values for {key.replace('_', ' ')}.")
+        elif vals:
             if mode != "remote":
                 p.unresolved.append(f"Set {key.replace('_', ' ')} in the selected execution environment.")
             else:
-                p.values[key] = match[1].replace(" ", "").upper().removesuffix("B") if key == "memory" else match[1]
+                p.values[key] = vals.pop()
+                if key == "memory" and float(p.values[key][:-1]) <= 0:
+                    p.errors.append("Memory must be positive.")
     # Scientific values are accepted only through metadata supplied by the host.
     params = chosen.get("parameters", catalog.get("parameters", {}).get(p.values.get("model"), [])) if chosen else []
-    consumed = set()
-    for spec in params:
-        aliases = sorted(set([spec["key"], spec["label"], *spec.get("aliases", [])]), key=len, reverse=True)
-        for alias in aliases:
-            pattern = r"(?<![\w.])" + re.escape(alias).replace(r"\ ", r"[ _-]+") + r"\s*(?:=|:|of|to|is)?\s*([-+]?\d+(?:\.\d+)?(?:e[-+]?\d+)?|true|false|on|off)\b"
-            match = re.search(pattern, text, re.I)
-            if not match:
-                continue
-            recognized.append(match[0])
-            raw = match[1].lower()
-            try:
-                value = {"true": True, "on": True, "false": False, "off": False}[raw] if raw in ("true", "false", "on", "off") else float(raw)
-                if spec["kind"] == "int":
-                    if isinstance(value, bool) or not float(value).is_integer():
-                        raise ValueError()
-                    value = int(value)
-                if spec["kind"] == "bool" and not isinstance(value, bool):
-                    raise ValueError()
-                if spec.get("min") is not None and value < spec["min"] or spec.get("max") is not None and value > spec["max"]:
-                    raise ValueError()
-                p.values.setdefault("parameters", {})[spec["key"]] = value
-                consumed.add(normalized(alias))
-            except (ValueError, TypeError):
-                p.errors.append(f"Invalid value for {spec['label']}; use the range shown in manual configuration.")
-            break
+    fragments, consumed = scientific_assignments(text, params, catalog["current"].get("overrides", {}), p)
+    recognized.extend(fragments)
+    consumed = {normalized(alias) for alias in consumed}
     for match in re.finditer(r"\b([a-zA-Z_][\w.]*)\s*=\s*([^\s,;]+)", text):
         if normalized(match[1]) not in consumed and match[1] not in ("account", "allocation"):
             p.unresolved.append(f"Unrecognized setting {match[1]!r}. Use a supported configuration field.")
@@ -230,8 +232,22 @@ def infer_request(text, catalog):
     # drop it after successfully recognizing just the example name.
     grammar_words = set("run prepare set up configure create plan an a the experiment simulation example tutorial with using use on in at for and please default defaults configuration settings locally local remote remotely hpc slurm cluster cloud aws batch fargate ec2 spot gpu gpus cuda laptop this computer forecast model icesee cryolauncher ensemble data assimilation execution cpu cpus core cores task tasks nodes node processor processors processes memory ram k kelvin".split())
     unknown = sorted(set(normalized(remaining).split()) - grammar_words)
+    if any(word in unknown for word in ("solver", "solvers")):
+        p.unresolved.append("Auto-config has no independent solver-selection control. Keep the current example or select a supported example and its registered parameters.")
+    if any(word in unknown for word in ("observation", "observations")):
+        p.unresolved.append("Observation configuration is not exposed by this application's Auto-config controls. Use its manual configuration.")
     if unknown:
         p.unresolved.append("Could not interpret these parts of the request: " + ", ".join(unknown) + ". Use the available example and configuration labels.")
+    old_example = next((e for e in catalog["examples"] if e["id"] == catalog["current"].get("example")), None)
+    if "model" in constraints and (not old_example or p.values.get("model") != old_example["model"]):
+        p.unresolved.append("Keeping the current model conflicts with this request.")
+    if constraints & {"solver", "science"}:
+        if not old_example or p.values.get("example") != old_example["id"]:
+            p.unresolved.append("Keep the current example to preserve its solver and scientific settings.")
+        if "science" in constraints and any(catalog["current"].get("overrides", {}).get(k) != v for k, v in p.values.get("parameters", {}).items()):
+            p.unresolved.append("The parameter change conflicts with keeping scientific parameters unchanged.")
+    if "solver" in constraints:
+        p.reasons["example"] = "The current example determines the solver; no solver change was requested."
     # Never silently interpret negation, alternatives, or an arbitrary script.
     if re.search(r"\b(?:instead of|not|without|either|or)\b|[;`]|\$\(", text, re.I):
         p.unresolved.append("This description contains alternatives, exclusions, or commands. State one experiment with explicit settings.")
@@ -243,6 +259,12 @@ def infer_request(text, catalog):
         p.reasons["parallel_processes"] = "The existing ICESEE CPU mapping uses the requested CPU count for forecast processes."
     if p.refinement:
         _check_refinement(original_text, catalog, p)
+    if chosen and chosen.get("origin") == "workspace" and "model" in p.suggested:
+        p.suggested.remove("model")
+        p.workspace_sources["model"] = chosen["workspace_name"]
+        p.reasons["model"] = "Your workspace example specifies this model."
+    from .proposal_validation import proposal_findings
+    p.errors.extend(proposal_findings(p, catalog))
     p.inferred.extend(f"{k.replace('_', ' ')}: {v}" for k, v in p.values.items() if k not in ("model", "example", "mode"))
     return p
 
@@ -265,7 +287,8 @@ def _check_refinement(text, catalog, proposal):
     if catalog.get("example_switch_requires_review") and values.get("example", current.get("example")) != current.get("example"):
         proposal.unresolved.append("Changing examples can replace scientific settings. Select the intended example in the existing controls, then refine its configuration.")
     if "profile" in values and "mode" in values and not re.search(r"\b(remote\w*|hpc|slurm|cluster)\b", text, re.I):
-        proposal.suggested.append("mode")
+        if "mode" not in proposal.suggested:
+            proposal.suggested.append("mode")
         proposal.reasons["mode"] = "The selected compute resource uses Remote execution."
         if current.get("mode") != values["mode"]:
             proposal.explanations.append("The selected compute resource uses Remote execution.")

@@ -362,16 +362,52 @@
 </div>
 :::
 
-## Tutorials
+## Video tutorials
+
+Follow complete CryoLauncher workflows from model configuration through
+execution and results.
 
 :::{raw} html
+<div class="cryostack-resource-card-grid">
+
+  <article class="cryostack-resource-card" id="tutorial-icepack-cloud">
+    <div class="cryostack-resource-tag">AWS Cloud</div>
+    <h3>Icepack &middot; Cloud</h3>
+    <p>
+      Configure and run an Icepack workflow on AWS Cloud, including
+      preparation of the CryoStack AWS environment.
+    </p>
+    <a href="https://mediaspace.gatech.edu/media/Brian+Kyanjos+Zoom+Meeting/1_edvr6a1l" target="_blank" rel="noopener noreferrer">Watch tutorial &rarr;</a>
+  </article>
+
+  <article class="cryostack-resource-card" id="tutorial-issm-cloud">
+    <div class="cryostack-resource-tag">AWS Cloud</div>
+    <h3>ISSM &middot; Cloud</h3>
+    <p>
+      Configure and run ISSM using a prepared CryoStack AWS environment.
+      New to CryoStack Cloud? Start with the
+      <a href="#tutorial-icepack-cloud">Icepack &middot; Cloud</a> tutorial
+      to see how the AWS environment is prepared.
+    </p>
+    <a href="https://mediaspace.gatech.edu/media/Brian+Kyanjos+Zoom+Meeting/1_7aycdfrg" target="_blank" rel="noopener noreferrer">Watch tutorial &rarr;</a>
+  </article>
+
+  <article class="cryostack-resource-card" id="tutorial-issm-remote">
+    <div class="cryostack-resource-tag">Remote Computing</div>
+    <h3>ISSM &middot; Remote</h3>
+    <p>
+      Configure and run ISSM using an existing Remote computing resource
+      through CryoLauncher.
+    </p>
+    <a href="https://mediaspace.gatech.edu/media/Brian+Kyanjos+Zoom+Meeting/1_3iw27chs" target="_blank" rel="noopener noreferrer">Watch tutorial &rarr;</a>
+  </article>
+
+</div>
+
 <p>
-  <span class="cryostack-status planned">Planned</span>
-  &nbsp;Step-by-step CryoLauncher tutorials (a first ISSM run, editing an
-  example in My Workspace, working with datasets, and reading results) are
-  planned. Until then, the
+  For the step-by-step reference behind each workflow, see the
   <a href="getting_started.html">Getting Started</a> guide and the
-  <a href="user_manual.html">User Manual</a> cover the full workflow.
+  <a href="user_manual.html">User Manual</a>.
 </p>
 :::
 

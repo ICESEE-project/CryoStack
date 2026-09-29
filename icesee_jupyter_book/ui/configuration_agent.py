@@ -8,8 +8,9 @@ import re
 import ipywidgets as W
 
 from cryostack_src.agents.intent import infer_request
+from cryostack_src.agents.proposal_validation import proposal_findings
 from cryostack_src.agents.diagnosis import (
-    diagnosis_request, diagnose_configuration, REMOTE_REVIEW_NOTE,
+    diagnosis_request, diagnose_configuration, diagnose_request, REMOTE_REVIEW_NOTE,
 )
 
 
@@ -23,7 +24,10 @@ class ConfigurationAgent:
 def _value_label(key, value, data):
     if key == "example":
         ex = next((e for e in data["examples"] if e["id"] == value), None)
-        return ex["label"].lstrip("⧉ ").strip() if ex else "Current example"
+        if not ex:
+            return "Current example"
+        label = ex["label"].lstrip("⧉ ").strip()
+        return label + " (your workspace)" if ex.get("origin") == "workspace" else label
     if key == "model":
         return {"issm": "ISSM", "icepack": "Icepack"}.get(str(value), str(value).title())
     if key == "profile":
@@ -107,6 +111,8 @@ def _configuration_summary(data, values=None, exclude=()):
 
 
 def _proposal_source(proposal, key):
+    if key in proposal.workspace_sources:
+        return "User workspace"
     if key in proposal.suggested:
         return "Suggested"
     if key in proposal.retained or (key not in proposal.values and not key.startswith("parameter:")):
@@ -125,7 +131,13 @@ def _explanation_request(text):
         "why can't i use gpu": "gpu", "why cannot i use gpu": "gpu",
         "why can't i use multi-node": "multinode", "why can't i use multiple nodes": "multinode",
     }
-    return questions.get(text)
+    questions.update({
+        "what did auto-config change": "changes", "why was this setting retained": "retained",
+        "why is this option unsupported": "blocked", "where did this model selection come from": "model",
+        "why is gpu unavailable": "gpu", "why can't i use this solver": "solver",
+    })
+    match = re.fullmatch(r"why did (?:auto-config|you) suggest (\d+) (?:cpus?|cores?)", text)
+    return "cpus:" + match[1] if match else questions.get(text)
 
 
 def _explain_configuration(kind, data, context=None, findings=()):
@@ -154,6 +166,13 @@ def _explain_configuration(kind, data, context=None, findings=()):
             reason = ("The current cloud runtime does not support multi-node execution. This does not describe Remote Slurm support."
                       if not cap.supports_multinode else "Multi-node cloud capability is available; the existing resource checks still apply.")
         return messages("Workflow requirement", [reason])
+    if kind == "solver":
+        current = _review_values(data)
+        example = next((e for e in data["examples"] if e["id"] == current.get("example")), {})
+        solvers = example.get("solvers", ())
+        return messages("Solver configuration", [
+            "The selected example determines its solver. Auto-config has no independent solver-selection control."
+            + (" Detected solvers: " + ", ".join(solvers) + "." if solvers else "")])
     if kind == "configuration":
         diagnosis = diagnose_configuration(data, findings)
         return ("<div class='cryostack-group-title'>Current experiment</div><div style='font-size:12px'>"
@@ -163,6 +182,8 @@ def _explain_configuration(kind, data, context=None, findings=()):
     if not context:
         return messages("No current proposal", ["Create a proposal to explain its changes. The existing controls remain the current configuration."])
     proposal = context["frozen"]
+    if kind.startswith("cpus:") and proposal.values.get("cpus") != int(kind.split(":")[1]):
+        return messages("Proposal provenance", ["The current proposal does not specify that CPU value."])
     if kind == "blocked":
         blockers = proposal.errors + proposal.unresolved + context.get("issues", [])
         return messages("Why Apply is unavailable" if blockers else "Proposal status", blockers or
@@ -188,6 +209,8 @@ def _explain_configuration(kind, data, context=None, findings=()):
     lines = []
     for key, value in proposed.items():
         source = _proposal_source(proposal, key)
+        if kind == "model" and key != "model" or kind.startswith("cpus:") and key != "cpus":
+            continue
         if (kind == "suggested" and source != "Suggested") or (kind == "changes" and current.get(key) == value):
             continue
         if key not in labels:
@@ -196,6 +219,8 @@ def _explain_configuration(kind, data, context=None, findings=()):
         reason = proposal.reasons.get(key) or ("You explicitly requested this value." if source == "From request" else
                  "The existing configuration rule supplies this adjustment." if source == "Suggested" else
                  "The current value was left unchanged.")
+        if key in proposal.workspace_sources:
+            reason += " Source example: " + proposal.workspace_sources[key] + "."
         lines.append(f"{labels[key]}: {old} → {_value_label(key, value, baseline)} · {source}. {reason}")
     return messages("Applied changes" if context.get("applied") else "Proposed changes",
                     lines or ["No suggested adjustment was made." if kind == "suggested" else "No changes needed."])
@@ -234,6 +259,9 @@ def _change_preview(data, proposal):
     retained = _configuration_summary(data, dict(current, **proposed), exclude=changes)
     context = ("<div class='cryostack-help' style='margin-top:8px;overflow-wrap:anywhere'>Retained: "
                + retained + "</div>") if retained else ""
+    sources = sorted(set(proposal.workspace_sources.values()))
+    if sources:
+        context += "<div class='cryostack-help'>User workspace: " + html.escape(", ".join(sources)) + "</div>"
     return ("<div class='cryostack-group-title' style='margin:8px 0 4px'>Configuration changes</div>"
             + "<div class='cryostack-help'>" + summary + "</div>" + table + context), changes
 
@@ -284,7 +312,7 @@ def build_configuration_agent(*, catalog, apply_values, snapshot, validate, diag
                             or snapshot() != context["snapshot"]):
                 warning = _messages("Stale proposal", ["The manual configuration changed. Create a new proposal; the summary below uses the current controls."])
                 context = None
-                kind = kind if kind in ("gpu", "multinode", "matlab") else "configuration"
+                kind = kind if kind in ("gpu", "multinode", "matlab", "solver") else "configuration"
             elif context and context["proposal"] != context["frozen"]:
                 warning = _messages("Proposal changed", ["Create a new proposal before asking about its changes."])
                 context = None
@@ -307,23 +335,26 @@ def build_configuration_agent(*, catalog, apply_values, snapshot, validate, diag
         try:
             data = catalog()
             kind = diagnosis_request(text)
-            diagnosis = diagnose_configuration(data, read_only_validate()) if kind else None
+            diagnosis = diagnose_request(kind, data, read_only_validate) if kind else None
             proposal = diagnosis.proposal if diagnosis else infer_request(text, data)
+            if diagnosis and proposal.values:
+                proposal.errors.extend(proposal_findings(proposal, data))
             remember(proposal, data, issues=diagnosis.issues if diagnosis else ())
             if diagnosis:
-                result.value = (_messages("Configuration issues", diagnosis.issues)
+                result.value = (_messages("Configuration issues", [f"{f['category']}: {f['message']}" for f in diagnosis.findings] or diagnosis.issues)
                                 + _messages("Review before execution", diagnosis.notes))
-                if not diagnosis.issues:
+                has_repair = kind.startswith("repair") and proposal.applicable
+                if not diagnosis.issues and not has_repair:
                     result.value = ("<div class='cryostack-help'>No changes needed in the settings checked here. "
                                     "Use the existing Review controls to confirm execution readiness.</div>" + result.value)
-                elif kind == "repair" and proposal.applicable:
+                if kind.startswith("repair") and proposal.applicable:
                     preview, _ = _change_preview(data, proposal)
                     result.value += preview
                     state.update(kind=kind, text=text, catalog=copy.deepcopy(data),
                                  snapshot=copy.deepcopy(snapshot()), proposal=proposal)
                     apply.layout.display = ""
                     apply.disabled = False
-                elif kind == "repair":
+                elif kind.startswith("repair") and diagnosis.issues:
                     result.value += "<div class='cryostack-help'>No deterministic repair is available. Resolve these choices in the existing controls, then check again.</div>"
                 return proposal
             state.update(text=text, catalog=copy.deepcopy(data), snapshot=copy.deepcopy(snapshot()), proposal=proposal)
@@ -352,11 +383,13 @@ def build_configuration_agent(*, catalog, apply_values, snapshot, validate, diag
             data = catalog()
             if data != state["catalog"] or snapshot() != state["snapshot"]:
                 raise ValueError("Settings changed since this proposal. Create a new plan to use the current values.")
-            if state.get("kind") == "repair":
-                fresh = diagnose_configuration(data, read_only_validate()).proposal
+            if state.get("kind", "").startswith("repair"):
+                fresh = diagnose_request(state["kind"], data, read_only_validate).proposal
             else:
                 fresh = infer_request(state["text"], data)
-            if not fresh.applicable or fresh.values != proposal.values:
+            if state.get("kind", "").startswith("repair"):
+                fresh.errors.extend(proposal_findings(fresh, data))
+            if not fresh.applicable or fresh != explanation.get("frozen") or fresh != proposal:
                 raise ValueError("The proposal changed. Create a new plan before applying.")
             apply.disabled = True
             apply.layout.display = "none"
@@ -429,6 +462,17 @@ def field_values(fields):
     return {k: w.value for k, w in fields.items()}
 
 
+def resource_defaults(fields):
+    from cryostack_src.resources.profiles import get_compute_profile
+    profile = get_compute_profile(fields["profile"].value)
+    return {"wall_time": profile.scheduler_defaults.wall_time}
+
+
+def control_bounds(fields):
+    return {k: (w.min, w.max) for k, w in fields.items()
+            if hasattr(w, "min") and hasattr(w, "max")}
+
+
 def set_fields(values, fields):
     # Validate bounds first: ipywidgets otherwise silently clamps values.
     for k, v in values.items():
@@ -450,28 +494,36 @@ def build_icesheets_configuration_agent(*, manager, fields, model, example, mode
     from icesee_jupyter_book.core.icesheet_examples import merged_examples_for_model
 
     def catalog():
+        from cryostack_src.agents.workspace_context import workspace_examples, require_workspace_scope
+        scope = require_workspace_scope(manager)
         examples = []
         for name in SUPPORTED_MODELS:
             adapter = get_model_adapter(name)
-            for ex in merged_examples_for_model(name, user_examples=manager.list_user_examples(name),
+            for ex in merged_examples_for_model(name, user_examples=workspace_examples(manager, name),
                                                runnable_check=getattr(adapter, "example_runnable", None)):
                 if ex.runnable:
                     specs = parameter_metadata().get(name, [])
+                    solvers = ()
                     if name == "issm":
                         from cryostack_src.models.issm import detect_solvers, curated_parameters_for
                         from pathlib import Path
                         entry = ex.path / (ex.entrypoint or "runme.m") if ex.path.is_dir() else ex.path
                         try:
-                            allowed = {p.key for p in curated_parameters_for(detect_solvers(Path(entry).read_text()))}
+                            solvers = detect_solvers(Path(entry).read_text())
+                            allowed = {p.key for p in curated_parameters_for(solvers)}
                         except OSError:
                             allowed = set()
                         specs = [spec for spec in specs if spec["key"] in allowed]
                     examples.append(dict(id=str(ex.path), label=ex.label, model=name,
                                          modes=list(get_model_capabilities(name).execution_modes),
-                                         parameters=specs,
+                                         parameters=specs, solvers=solvers,
+                                         origin="workspace" if ex.owned else "canonical",
+                                         workspace_name=ex.path.name if ex.owned else "",
                                          aliases=[ex.path.stem, ex.label.lstrip("⧉ ").strip()]))
-        return dict(application="icesheets", examples=examples, resource_switch_requires_review=True, example_switch_requires_review=True,
+        return dict(application="icesheets", workspace_scope=scope, examples=examples, resource_switch_requires_review=True, example_switch_requires_review=True,
                     profiles=list(COMPUTE_PROFILES), modes=[v for _, v in mode.options],
+                    validate_scientific=True, validate_resources=True,
+                    control_bounds=control_bounds(fields), defaults=resource_defaults(fields),
                     backends=[v for _, v in backend.options], parameters=parameter_metadata(),
                     current=dict(field_values(fields), model=model.value, example=example.value,
                                  mode=mode.value, backend=backend.value,
@@ -547,7 +599,8 @@ def build_icesee_configuration_agent(*, fields, example, mode_tabs, filter_widge
             examples.append(dict(id=name, label=name, model=forecast,
                                  aliases=[name, canonical, cfg["base"].name]))
         return dict(application="icesee", examples=examples, resource_switch_requires_review=True, example_switch_requires_review=True, profiles=list(COMPUTE_PROFILES),
-                    modes=["local", "remote", "cloud"], parameters={},
+                    modes=["local", "remote", "cloud"], parameters={}, validate_resources=True,
+                    control_bounds=control_bounds(dict(fields, ensemble_size=ensemble)), defaults=resource_defaults(fields),
                     filters=[v for _, v in filter_widget.options],
                     current=dict(field_values(fields), example=example.value,
                                  mode=["local", "remote", "cloud"][mode_tabs.selected_index],

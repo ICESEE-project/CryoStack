@@ -318,6 +318,9 @@ From the Results controls:
 
 ## Next steps
 
+- Watch the <a href="resources.html#video-tutorials">CryoLauncher video
+  tutorials</a> — complete Icepack · Cloud, ISSM · Cloud, and ISSM · Remote
+  workflows.
 - Read the [CryoLauncher User Manual](user_manual) for the full reference.
 - Browse [CryoLauncher Resources](resources) for models, containers, examples,
   and result formats.
