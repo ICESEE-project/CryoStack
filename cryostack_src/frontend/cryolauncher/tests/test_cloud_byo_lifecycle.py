@@ -539,3 +539,23 @@ def test_diagnostics_are_restored_on_attach_from_the_persisted_snapshot():
 
     urls = " ".join(x["url"] for x in aws_console_links(ctl._handle.aws_resources))
     assert "eu-west-1" in urls and "hist-1" in urls
+
+
+def test_failed_poll_exposes_the_aws_reason_to_state_listeners():
+    """The experiment recorder reads ``last_reason`` from its state listener,
+    so the reason must be set before the state change is announced."""
+    class FailingBridge(RecordingBridge):
+        def status(self, *, job_id):
+            status = _Status(FAILED)
+            status.raw_state, status.reason = "FAILED", "Essential container in task exited"
+            return status
+
+    seen = []
+    ctl, sink = _controller(execution_provider=_byo_execution(),
+                            bridge_factory=lambda **kw: FailingBridge(**kw))
+    ctl._on_state = lambda state: seen.append((state, ctl.last_reason))
+    ctl._handle.job_id = "job-A1"
+    ctl._handle.account_id = "713938953301"
+    asyncio.run(ctl._poll_loop("job-A1"))
+    assert seen[-1] == (FAILED, "Essential container in task exited")
+    assert ctl.last_reason == "Essential container in task exited"

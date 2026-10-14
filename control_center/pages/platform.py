@@ -28,28 +28,18 @@ async def hpc_page_handler(
     request: web.Request,
 ) -> web.Response:
 
-    return _page(
-        title="HPC",
-        active="hpc",
-        description=(
-            "Clusters, Slurm jobs, queues, "
-            "connectors and HPC diagnostics."
-        ),
-    )
+    from .compute import hpc_page_handler as handler
+
+    return await handler(request)
 
 
 async def cloud_page_handler(
     request: web.Request,
 ) -> web.Response:
 
-    return _page(
-        title="Cloud",
-        active="cloud",
-        description=(
-            "AWS Batch jobs, queues, S3 outputs, "
-            "compute resources and cloud usage."
-        ),
-    )
+    from .compute import cloud_page_handler as handler
+
+    return await handler(request)
 
 
 async def authentication_page_handler(
@@ -70,14 +60,9 @@ async def analytics_page_handler(
     request: web.Request,
 ) -> web.Response:
 
-    return _page(
-        title="Analytics",
-        active="analytics",
-        description=(
-            "Platform usage, experiment throughput, "
-            "backend activity and trends."
-        ),
-    )
+    from .ops import analytics_page_handler as handler
+
+    return await handler(request)
 
 
 async def diagnostics_page_handler(
@@ -98,11 +83,6 @@ async def settings_page_handler(
     request: web.Request,
 ) -> web.Response:
 
-    return _page(
-        title="Settings",
-        active="settings",
-        description=(
-            "Control Center and platform-wide "
-            "configuration."
-        ),
-    )
+    from .ops import settings_page_handler as handler
+
+    return await handler(request)

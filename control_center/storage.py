@@ -6,6 +6,49 @@ import sqlite3
 from pathlib import Path
 
 
+_ROLE_RANK_SQL = """
+    (
+        SELECT MAX(
+            CASE r.role
+                WHEN 'owner' THEN 40
+                WHEN 'admin' THEN 30
+                WHEN 'maintainer' THEN 20
+                WHEN 'developer' THEN 10
+                ELSE 0
+            END
+        )
+        FROM user_roles r
+        WHERE r.user_id = u.id
+    )
+"""
+
+ROLE_FOR_RANK = {
+    40: "owner",
+    30: "admin",
+    20: "maintainer",
+    10: "developer",
+}
+
+RANK_FOR_ROLE = {
+    role: rank
+    for rank, role in ROLE_FOR_RANK.items()
+}
+
+
+def _like(
+    value: str,
+) -> str:
+
+    escaped = (
+        value
+        .replace("\\", "\\\\")
+        .replace("%", "\\%")
+        .replace("_", "\\_")
+    )
+
+    return f"%{escaped}%"
+
+
 class ControlStorage:
     """
     Read-only operational queries for the CryoStack
@@ -516,10 +559,10 @@ class ControlStorage:
     ) -> list[dict]:
 
         with self._connect() as connection:
+            # Session ids are bearer credentials: never selected here.
             rows = connection.execute(
                 """
                 SELECT
-                    id,
                     created_at,
                     last_seen_at,
                     expires_at,
@@ -792,3 +835,447 @@ class ControlStorage:
             dict(row)
             for row in rows
         ]
+
+    # ========================================================
+    # Account directory (search / filter / pagination)
+    # ========================================================
+
+    def search_users(
+        self,
+        *,
+        now: float,
+        query: str = "",
+        role: str = "",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+
+        where = []
+        params: list = []
+
+        query = (query or "").strip()
+
+        if query:
+            where.append(
+                """
+                (
+                    u.email LIKE ? ESCAPE '\\'
+                    OR u.display_name LIKE ? ESCAPE '\\'
+                    OR COALESCE(u.institution, '') LIKE ? ESCAPE '\\'
+                    OR u.id = ?
+                )
+                """
+            )
+            pattern = _like(query)
+            params += [pattern, pattern, pattern, query]
+
+        role = (role or "").strip().lower()
+
+        if role == "user":
+            where.append(
+                f"COALESCE({_ROLE_RANK_SQL}, 0) = 0"
+            )
+
+        elif role in RANK_FOR_ROLE:
+            where.append(
+                f"COALESCE({_ROLE_RANK_SQL}, 0) = ?"
+            )
+            params.append(RANK_FOR_ROLE[role])
+
+        clause = (
+            "WHERE " + " AND ".join(where)
+            if where
+            else ""
+        )
+
+        with self._connect() as connection:
+
+            total = connection.execute(
+                f"SELECT COUNT(*) FROM users u {clause}",
+                params,
+            ).fetchone()[0]
+
+            rows = connection.execute(
+                f"""
+                SELECT
+                    u.id,
+                    u.email,
+                    u.display_name,
+                    u.institution,
+                    u.created_at,
+
+                    COALESCE({_ROLE_RANK_SQL}, 0) AS role_rank,
+
+                    (
+                        SELECT GROUP_CONCAT(provider)
+                        FROM (
+                            SELECT DISTINCT ui.provider AS provider
+                            FROM user_identities ui
+                            WHERE ui.user_id = u.id
+                        )
+                    ) AS providers,
+
+                    (
+                        SELECT COUNT(*)
+                        FROM experiments e
+                        WHERE e.user_id = u.id
+                    ) AS experiments,
+
+                    (
+                        SELECT COUNT(*)
+                        FROM saved_configurations c
+                        WHERE c.user_id = u.id
+                    ) AS configurations,
+
+                    (
+                        SELECT COUNT(*)
+                        FROM sessions s
+                        WHERE s.user_id = u.id
+                        AND s.expires_at > ?
+                    ) AS active_sessions,
+
+                    (
+                        SELECT MAX(s.last_seen_at)
+                        FROM sessions s
+                        WHERE s.user_id = u.id
+                    ) AS last_seen_at
+
+                FROM users u
+                {clause}
+                ORDER BY u.created_at DESC, u.id
+                LIMIT ? OFFSET ?
+                """,
+                [now, *params, int(limit), int(offset)],
+            ).fetchall()
+
+        users = []
+
+        for row in rows:
+            user = dict(row)
+            user["control_role"] = ROLE_FOR_RANK.get(
+                int(user.pop("role_rank") or 0),
+                "user",
+            )
+            user["providers"] = sorted(
+                p
+                for p in (user["providers"] or "").split(",")
+                if p
+            )
+            users.append(user)
+
+        return users, int(total)
+
+    def account_index(
+        self,
+    ) -> list[dict]:
+        """Every account id with its label, for workspace mapping."""
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    id,
+                    email,
+                    display_name,
+                    created_at
+                FROM users
+                ORDER BY created_at DESC, id
+                """
+            ).fetchall()
+
+        return [
+            dict(row)
+            for row in rows
+        ]
+
+    # ========================================================
+    # Sign-in diagnostics
+    # ========================================================
+
+    def _has_table(
+        self,
+        connection,
+        name: str,
+    ) -> bool:
+
+        return connection.execute(
+            """
+            SELECT 1
+            FROM sqlite_master
+            WHERE type = 'table' AND name = ?
+            """,
+            (name,),
+        ).fetchone() is not None
+
+    def login_summary(
+        self,
+        *,
+        user_id: str,
+        now: float,
+        failure_limit: int = 8,
+    ) -> dict:
+
+        with self._connect() as connection:
+
+            sessions = connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN expires_at > ? THEN 1 ELSE 0 END)
+                        AS active,
+                    MAX(created_at) AS newest,
+                    MAX(last_seen_at) AS last_seen
+                FROM sessions
+                WHERE user_id = ?
+                """,
+                (now, user_id),
+            ).fetchone()
+
+            summary = {
+                "sessions_total": int(sessions["total"] or 0),
+                "sessions_active": int(sessions["active"] or 0),
+                "newest_session_at": sessions["newest"],
+                "last_seen_at": sessions["last_seen"],
+                "last_login_at": None,
+                "last_login_provider": None,
+                "failures_24h": 0,
+                "recent_failures": [],
+                "last_revoked_at": None,
+            }
+
+            if not self._has_table(
+                connection,
+                "access_events",
+            ):
+                return summary
+
+            row = connection.execute(
+                """
+                SELECT created_at, provider
+                FROM access_events
+                WHERE user_id = ?
+                AND event_type IN ('login_success', 'register')
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
+                """,
+                (user_id,),
+            ).fetchone()
+
+            if row is not None:
+                summary["last_login_at"] = row["created_at"]
+                summary["last_login_provider"] = row["provider"]
+
+            summary["failures_24h"] = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM access_events
+                    WHERE user_id = ?
+                    AND outcome IN ('failure', 'denied')
+                    AND created_at > ?
+                    """,
+                    (user_id, now - 86400),
+                ).fetchone()[0]
+            )
+
+            summary["recent_failures"] = [
+                dict(r)
+                for r in connection.execute(
+                    """
+                    SELECT
+                        created_at,
+                        event_type,
+                        category,
+                        provider,
+                        path
+                    FROM access_events
+                    WHERE user_id = ?
+                    AND outcome IN ('failure', 'denied')
+                    ORDER BY created_at DESC, id DESC
+                    LIMIT ?
+                    """,
+                    (user_id, int(failure_limit)),
+                ).fetchall()
+            ]
+
+            row = connection.execute(
+                """
+                SELECT MAX(created_at)
+                FROM access_events
+                WHERE user_id = ?
+                AND event_type = 'sessions_revoked'
+                AND outcome = 'success'
+                """,
+                (user_id,),
+            ).fetchone()
+
+            summary["last_revoked_at"] = row[0]
+
+        return summary
+
+    def failure_category_counts(
+        self,
+        *,
+        since: float,
+    ) -> dict[str, int]:
+
+        with self._connect() as connection:
+
+            if not self._has_table(
+                connection,
+                "access_events",
+            ):
+                return {}
+
+            rows = connection.execute(
+                """
+                SELECT
+                    COALESCE(category, event_type) AS category,
+                    COUNT(*) AS count
+                FROM access_events
+                WHERE outcome IN ('failure', 'denied')
+                AND created_at > ?
+                GROUP BY COALESCE(category, event_type)
+                ORDER BY count DESC
+                """,
+                (since,),
+            ).fetchall()
+
+        return {
+            row["category"]: int(row["count"])
+            for row in rows
+        }
+
+    # ========================================================
+    # Access events and audit trail
+    # ========================================================
+
+    def list_access_events(
+        self,
+        *,
+        event_type: str = "",
+        outcome: str = "",
+        user_id: str = "",
+        since: float | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+
+        where = []
+        params: list = []
+
+        if event_type:
+            where.append("e.event_type = ?")
+            params.append(event_type)
+
+        if outcome:
+            where.append("e.outcome = ?")
+            params.append(outcome)
+
+        if user_id:
+            where.append(
+                "(e.user_id = ? OR e.actor_user_id = ?)"
+            )
+            params += [user_id, user_id]
+
+        if since is not None:
+            where.append("e.created_at > ?")
+            params.append(since)
+
+        clause = (
+            "WHERE " + " AND ".join(where)
+            if where
+            else ""
+        )
+
+        with self._connect() as connection:
+
+            if not self._has_table(
+                connection,
+                "access_events",
+            ):
+                return [], 0
+
+            total = connection.execute(
+                f"SELECT COUNT(*) FROM access_events e {clause}",
+                params,
+            ).fetchone()[0]
+
+            rows = connection.execute(
+                f"""
+                SELECT
+                    e.created_at,
+                    e.event_type,
+                    e.outcome,
+                    e.category,
+                    e.provider,
+                    e.path,
+                    e.metadata_json,
+                    e.user_id,
+                    e.actor_user_id,
+                    tu.email AS user_email,
+                    au.email AS actor_email
+                FROM access_events e
+                LEFT JOIN users tu ON tu.id = e.user_id
+                LEFT JOIN users au ON au.id = e.actor_user_id
+                {clause}
+                ORDER BY e.created_at DESC, e.id DESC
+                LIMIT ? OFFSET ?
+                """,
+                [*params, int(limit), int(offset)],
+            ).fetchall()
+
+        return [dict(row) for row in rows], int(total)
+
+    def list_access_audit(
+        self,
+        *,
+        target_user_id: str = "",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+
+        clause = ""
+        params: list = []
+
+        if target_user_id:
+            clause = (
+                "WHERE target_user_id = ? "
+                "OR actor_user_id = ?"
+            )
+            params = [target_user_id, target_user_id]
+
+        with self._connect() as connection:
+
+            if not self._has_table(
+                connection,
+                "access_audit_log",
+            ):
+                return [], 0
+
+            total = connection.execute(
+                f"SELECT COUNT(*) FROM access_audit_log {clause}",
+                params,
+            ).fetchone()[0]
+
+            rows = connection.execute(
+                f"""
+                SELECT
+                    created_at,
+                    actor_user_id,
+                    actor_label,
+                    target_user_id,
+                    target_label,
+                    action,
+                    previous_value,
+                    new_value,
+                    reason
+                FROM access_audit_log
+                {clause}
+                ORDER BY created_at DESC, id
+                LIMIT ? OFFSET ?
+                """,
+                [*params, int(limit), int(offset)],
+            ).fetchall()
+
+        return [dict(row) for row in rows], int(total)

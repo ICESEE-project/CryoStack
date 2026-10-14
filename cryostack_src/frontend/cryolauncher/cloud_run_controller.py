@@ -400,6 +400,8 @@ class CloudRunController:
         self._sleep_fn = sleep
 
         self._handle = _RunHandle()
+        #: AWS's statusReason from the poll that set the current state
+        self._last_reason = ""
         self._task = None                       # the single active lifecycle task
 
     # -- public state ----------------------------------------------------
@@ -414,6 +416,11 @@ class CloudRunController:
     @property
     def run_id(self) -> str:
         return self._handle.run_id
+
+    @property
+    def last_reason(self) -> str:
+        """AWS's reason for the current state ("" when none was given)."""
+        return self._last_reason
 
     def _set_state(self, state: str) -> None:
         self._handle.state = state
@@ -713,6 +720,8 @@ class CloudRunController:
                 pass
 
             if state and state != self._handle.state:
+                # before the state change, so its listeners see the reason
+                self._last_reason = reason
                 self._set_state(state)
                 self._log(f"[cloud] {state}"
                           + (f" — {reason}" if reason and state == FAILED else ""))

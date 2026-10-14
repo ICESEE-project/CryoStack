@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from aiohttp import web
 
-from ..templates import (
+from ..templates_compute import (
     experiments_page,
     experiment_detail_page,
 )

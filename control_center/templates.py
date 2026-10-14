@@ -857,8 +857,36 @@ def control_layout(
         grid-template-columns: 1fr;
       }}
 
+      /* phones: the sidebar becomes a top bar whose navigation scrolls
+         sideways, so every Control Center page stays reachable */
       .control-sidebar {{
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        min-width: 0;
+        padding: 0.6rem 1rem 0.5rem;
+        border-right: 0;
+        border-bottom: 1px solid #e2e8f0;
+      }}
+
+      .control-subtitle,
+      .control-nav .nav-section {{
         display: none;
+      }}
+
+      .control-nav {{
+        display: flex;
+        gap: 0.25rem;
+        margin-top: 0.4rem;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+      }}
+
+      .control-nav-item {{
+        flex: none;
+        padding: 0.5rem 0.7rem;
+        white-space: nowrap;
       }}
 
       .control-content {{
@@ -903,6 +931,12 @@ def control_layout(
         )}
 
         {nav_item(
+            "Workspaces",
+            "/control/workspaces",
+            "workspaces",
+        )}
+
+        {nav_item(
             "Experiments",
             "/control/experiments",
             "experiments",
@@ -925,6 +959,22 @@ def control_layout(
         )}
 
         <div class="nav-section">
+          Data
+        </div>
+
+        {nav_item(
+            "Frozen Legacies",
+            "/control/frozen-legacies",
+            "frozen-legacies",
+        )}
+
+        {nav_item(
+            "LIVIST",
+            "/control/livist",
+            "livist",
+        )}
+
+        <div class="nav-section">
           Platform
         </div>
 
@@ -932,6 +982,18 @@ def control_layout(
             "Authentication",
             "/control/authentication",
             "authentication",
+        )}
+
+        {nav_item(
+            "Access events",
+            "/control/access",
+            "access",
+        )}
+
+        {nav_item(
+            "Audit log",
+            "/control/audit",
+            "audit",
         )}
 
         {nav_item(
@@ -977,6 +1039,16 @@ def control_layout(
     </main>
 
   </div>
+  <script>
+    // phones: bring the current page's entry into view in the scrolling nav
+    (function () {{
+      var nav = document.querySelector(".control-nav");
+      var active = nav && nav.querySelector(".control-nav-item.active");
+      if (active && nav.scrollWidth > nav.clientWidth) {{
+        nav.scrollLeft = active.offsetLeft - (nav.clientWidth - active.offsetWidth) / 2;
+      }}
+    }})();
+  </script>
 </body>
 </html>
 """
@@ -1151,288 +1223,21 @@ def dashboard_page(
 
 def users_page(
     *,
-    users: list[dict],
+    result: dict,
 ) -> str:
 
-    rows = []
-
-    for user in users:
-
-        identities = user.get(
-            "identities",
-            {},
-        )
-
-        github = identities.get(
-            "github"
-        )
-
-        orcid = identities.get(
-            "orcid"
-        )
-
-        identity_parts = []
-
-        if github:
-            identity_parts.append(
-                """
-                <span class="provider-pill github">
-                  GitHub
-                </span>
-                """
-            )
-
-        if orcid:
-            identity_parts.append(
-                """
-                <span class="provider-pill orcid">
-                  ORCID
-                </span>
-                """
-            )
-
-        if not identity_parts:
-            identity_parts.append(
-                """
-                <span class="provider-pill password">
-                  Password
-                </span>
-                """
-            )
-
-        is_active = (
-            user["active_sessions"] > 0
-        )
-
-        rows.append(
-            f"""
-            <tr
-              class="user-row"
-              data-user-search="
-                {escape(user["display_name"])}
-                {escape(user["email"])}
-                {escape(user["institution"] or "")}
-              "
-              onclick="
-                window.location.href=
-                '/control/users/{escape(user["id"])}'
-              "
-            >
-
-              <td>
-                <div class="user-cell">
-
-                  <div class="user-avatar">
-                    {
-                        escape(
-                            user["display_name"][0]
-                            .upper()
-                        )
-                        if user["display_name"]
-                        else "?"
-                    }
-                  </div>
-
-                  <div>
-                    <div class="user-name">
-                      {escape(user["display_name"])}
-                    </div>
-
-                    <div class="user-institution">
-                      {
-                          escape(
-                              user["institution"]
-                              or "No institution"
-                          )
-                      }
-                    </div>
-                  </div>
-
-                </div>
-              </td>
-
-              <td>
-                {escape(user["email"])}
-              </td>
-
-              <td>
-                  {role_badge(
-                      user.get("control_role")
-                  )}
-              </td>
-
-              <td>
-                  <div class="provider-list">
-                      {''.join(identity_parts)}
-                  </div>
-              </td>
-              
-              <td>
-                {user["experiments"]}
-              </td>
-
-              <td>
-                {user["configurations"]}
-              </td>
-
-              <td>
-                {
-                    f'''
-                    <span class="presence active">
-                      <span></span>
-                      Active
-                    </span>
-                    '''
-                    if is_active
-                    else '''
-                    <span class="presence">
-                      <span></span>
-                      Offline
-                    </span>
-                    '''
-                }
-              </td>
-
-              <td>
-                {
-                    _date(user["last_seen_at"])
-                    if user["last_seen_at"]
-                    else "Never"
-                }
-              </td>
-
-            </tr>
-            """
-        )
-
-    content = f"""
-    <div class="page-heading-row">
-
-      <div>
-        <h1>Users</h1>
-
-        <p class="page-subtitle">
-          Registered accounts, identities and platform activity.
-        </p>
-      </div>
-
-      <div class="page-count">
-        {len(users)} users
-      </div>
-
-    </div>
-
-    <div class="user-toolbar">
-
-      <div class="search-box">
-        <span>⌕</span>
-
-        <input
-          id="user-search"
-          type="search"
-          placeholder="
-            Search users by name, email or institution
-          "
-          autocomplete="off"
-        >
-      </div>
-
-    </div>
-
-    <div class="panel user-table-panel">
-
-      <table>
-
-        <thead>
-          <tr>
-            <th>User</th>
-            <th>Email</th>
-            <th>Role</th>
-            <th>Identity</th>
-            <th>Experiments</th>
-            <th>Configs</th>
-            <th>Status</th>
-            <th>Last Seen</th>
-          </tr>
-        </thead>
-
-        <tbody id="users-table-body">
-          {''.join(rows)}
-        </tbody>
-
-      </table>
-
-      <div
-        id="user-search-empty"
-        class="table-empty"
-        hidden
-      >
-        No users match your search.
-      </div>
-
-    </div>
-
-    <script>
-      (() => {{
-        const input =
-          document.getElementById(
-            "user-search"
-          );
-
-        const rows = [
-          ...document.querySelectorAll(
-            ".user-row"
-          )
-        ];
-
-        const empty =
-          document.getElementById(
-            "user-search-empty"
-          );
-
-        input?.addEventListener(
-          "input",
-          () => {{
-
-            const query =
-              input.value
-              .trim()
-              .toLowerCase();
-
-            let visible = 0;
-
-            for (const row of rows) {{
-
-              const haystack = (
-                row.dataset.userSearch || ""
-              ).toLowerCase();
-
-              const show =
-                !query ||
-                haystack.includes(query);
-
-              row.hidden = !show;
-
-              if (show) {{
-                visible += 1;
-              }}
-            }}
-
-            if (empty) {{
-              empty.hidden =
-                visible !== 0;
-            }}
-          }}
-        );
-      }})();
-    </script>
-    """
+    from .templates_access import (
+        users_directory_content,
+    )
 
     return control_layout(
         title="Users",
         active="users",
-        content=content,
+        content=users_directory_content(
+            result=result,
+        ),
     )
+
 
 def experiments_page(
     *,
@@ -1537,7 +1342,20 @@ def user_detail_page(
     *,
     user: dict,
     allowed_roles: list[str] | None = None,
+    can_revoke: bool = False,
+    is_self: bool = False,
+    workspace: dict | None = None,
+    message: str | None = None,
+    error: str | None = None,
 ) -> str:
+
+    from .templates_access import (
+        ACCESS_STYLE,
+        access_panel,
+        login_panel,
+        notice,
+        workspace_panel,
+    )
 
     allowed_roles = (
         allowed_roles or []
@@ -1545,11 +1363,6 @@ def user_detail_page(
 
     identities = user.get(
         "identities",
-        [],
-    )
-
-    sessions = user.get(
-        "sessions_detail",
         [],
     )
 
@@ -1562,42 +1375,6 @@ def user_detail_page(
         "recent_configurations",
         [],
     )
-
-    current_role = (
-        user.get("control_role")
-        or "user"
-    )
-
-    role_options = []
-
-    labels = {
-        "": "No Control Center access",
-        "developer": "Developer",
-        "maintainer": "Maintainer",
-        "admin": "Admin",
-        "owner": "Owner",
-    }
-
-    for role in allowed_roles:
-
-        selected = (
-            (
-                role == ""
-                and current_role == "user"
-            )
-            or role == current_role
-        )
-
-        role_options.append(
-            f"""
-            <option
-              value="{escape(role)}"
-              {"selected" if selected else ""}
-            >
-              {escape(labels[role])}
-            </option>
-            """
-        )
 
     identity_rows = []
 
@@ -1656,46 +1433,6 @@ def user_detail_page(
             """
         )
 
-    session_rows = []
-
-    for session in sessions[:8]:
-
-        session_rows.append(
-            f"""
-            <tr>
-              <td>
-                <code>
-                  {escape(session["id"][:12])}…
-                </code>
-              </td>
-
-              <td>
-                {role_badge(
-                    user.get("control_role")
-                )}
-              </td>
-
-              <td>
-                {_date(session["last_seen_at"])}
-              </td>
-
-              <td>
-                {
-                    '<span class="presence active">'
-                    '<span></span>Active</span>'
-                    if session["active"]
-                    else '<span class="presence">'
-                         '<span></span>Expired</span>'
-                }
-              </td>
-
-              <td>
-                {_date(session["expires_at"])}
-              </td>
-            </tr>
-            """
-        )
-
     experiment_rows = []
 
     for experiment in experiments:
@@ -1734,6 +1471,8 @@ def user_detail_page(
         )
 
     content = f"""
+    {ACCESS_STYLE}
+    {notice(message=message, error=error)}
     <div class="detail-breadcrumb">
       <a href="/control/users">
         ← Users
@@ -1900,35 +1639,10 @@ def user_detail_page(
           }
         </div>
 
-        <div class="panel">
-          <div class="panel-header">
-            Sessions
-          </div>
-
-          {
-              f'''
-              <table>
-                <thead>
-                  <tr>
-                    <th>Session</th>
-                    <th>Last Seen</th>
-                    <th>Status</th>
-                    <th>Expires</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {''.join(session_rows)}
-                </tbody>
-              </table>
-              '''
-              if session_rows
-              else '''
-              <div class="panel-empty">
-                No sessions recorded.
-              </div>
-              '''
-          }
-        </div>
+        {login_panel(
+            user=user,
+            can_revoke=can_revoke,
+        )}
 
       </section>
 
@@ -1952,60 +1666,18 @@ def user_detail_page(
           </div>
         </div>
 
+        {access_panel(
+            user=user,
+            allowed_roles=allowed_roles,
+            can_revoke=can_revoke,
+            is_self=is_self,
+        )}
+
+        {workspace_panel(
+            workspace=workspace,
+        )}
+
         <div class="panel">
-
-            <div class="panel-header">
-              Platform Access
-            </div>
-
-            <div class="detail-list">
-
-              <div class="detail-row">
-                <span>Current role</span>
-
-                <strong>
-                  {role_badge(current_role)}
-                </strong>
-              </div>
-
-              {
-                  f'''
-                  <form
-                    method="post"
-                    action="/control/users/{escape(user["id"])}/role"
-                    class="role-form"
-                  >
-
-                    <label>
-                      Control Center role
-
-                      <select name="control_role">
-                        {''.join(role_options)}
-                      </select>
-                    </label>
-
-                    <button
-                      type="submit"
-                      class="small-button"
-                    >
-                      Update Access
-                    </button>
-
-                  </form>
-                  '''
-                  if allowed_roles
-                  else '''
-                  <div class="panel-empty">
-                    You do not have permission
-                    to modify platform access.
-                  </div>
-                  '''
-              }
-
-            </div>
-
-          </div>
-
           <div class="mono-box">
             {escape(user["id"])}
           </div>
@@ -2079,6 +1751,10 @@ def authentication_page(
     *,
     data: dict,
 ) -> str:
+
+    from .templates_access import (
+        sign_in_health,
+    )
 
     providers = data["providers"]
     identities = data["identities"]
@@ -2203,6 +1879,10 @@ def authentication_page(
       </div>
 
     </div>
+
+    {sign_in_health(
+        data.get("sign_in"),
+    )}
 
     <div class="panel">
 

@@ -94,6 +94,20 @@ def test_deployment_token_gates_creation_when_set(client, monkeypatch):
     assert _create(client, "user-a", token="deploy-tok").status_code == 200
 
 
+def test_owner_grant_creates_only_for_its_own_owner(client, monkeypatch):
+    from icesee_jupyter_book.core.connector_relay_auth import owner_grant
+
+    monkeypatch.setenv("CRYOSTACK_RELAY_CONTROL_TOKEN", "deploy-tok")
+    grant_a = owner_grant("user-a")
+    assert grant_a and grant_a != "deploy-tok" and "deploy-tok" not in grant_a
+    assert _create(client, "user-a", token=grant_a).status_code == 200
+    # the same grant cannot open (and so supersede) another user's session
+    assert _create(client, "user-b", token=grant_a).status_code == 401
+    assert _create(client, " user-a ", token=owner_grant("user-b")).status_code == 401
+    # a grant derived from a different deployment token is worthless
+    assert _create(client, "user-a", token=owner_grant("user-a", "other-tok")).status_code == 401
+
+
 # ── pairing exchange ─────────────────────────────────────────────────────
 def test_pair_is_one_time_and_yields_the_session_secret(client):
     created = _create(client, "user-a").json()

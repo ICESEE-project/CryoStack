@@ -17,6 +17,7 @@ commit real ones:
 | `<web-root>` | nginx document root for the site (e.g. the path in `icesee.conf`) |
 | `<public-base>` | public HTTPS base URL of the deployment |
 | `<resource-id>` | a compute-resource identifier |
+| `<site-domain>` | the site's TLS hostname (the `server_name` in `icesee.conf`) |
 
 Never place a password, access key, connector control/session secret, relay
 deployment token, private SSH key, real allocation identifier, personal email
@@ -47,7 +48,7 @@ produced on one machine can never disturb an artifact built on another.
 * **Served release** — `<web-root>/downloads/connectors/`. A deployment
   target only. Regenerated wholesale from the store on every release.
 
-Build the artifact first (see the public Developer Guide → *Connector
+Build the artifact first (see the Developer Guide → *Connector
 development*), then:
 
 ### 1. Register into the canonical store
@@ -212,6 +213,102 @@ by hand.
 
 ---
 
+## TLS certificate renewal
+
+TLS terminates at **nginx** on the web host. The certificate is a Let's
+Encrypt certificate managed by **Certbot** (EL9 EPEL packages `certbot` and
+`python3-certbot-nginx`), using the nginx authenticator and installer:
+
+| Item | Location / value |
+|---|---|
+| Renewal configuration | `/etc/letsencrypt/renewal/<site-domain>.conf` (`authenticator = nginx`, `installer = nginx`) |
+| Certificate used by nginx | `/etc/letsencrypt/live/<site-domain>/fullchain.pem` and `privkey.pem` (symlinks to the newest files in `/etc/letsencrypt/archive/`) |
+| nginx TLS block | `deployment/deploy_web_nginx/nginx/icesee.conf` (the `# managed by Certbot` lines) |
+| Renewal schedule | systemd `certbot-renew.timer` → `certbot-renew.service` (twice a day, randomized delay, `Persistent=true`) |
+| Hook settings | `/etc/sysconfig/certbot` (`PRE_HOOK`, `POST_HOOK`, `DEPLOY_HOOK`; empty by default) and `/etc/letsencrypt/renewal-hooks/{pre,deploy,post}/` |
+| Logs | `journalctl -u certbot-renew.service` and `/var/log/letsencrypt/letsencrypt.log` |
+
+On EL9 the timer is named `certbot-renew.timer` (not `certbot.timer`). It is
+installed **disabled**, so it must be enabled once -- there is no cron entry
+for Certbot, so this does not create a duplicate schedule:
+
+```bash
+sudo systemctl enable --now certbot-renew.timer
+systemctl list-timers --all | grep certbot
+```
+
+`certbot renew` only replaces a certificate within 30 days of expiry (the
+default); runs at other times are no-ops.
+
+**nginx reload.** Because the certificate uses the nginx *installer*, Certbot
+reloads nginx itself after it deploys a renewed certificate; no extra deploy
+hook is needed and the CryoStack application services are not restarted. If
+the certificate is ever re-issued with a different installer (for example
+`--webroot`), add a deploy hook, which runs only after a successful renewal:
+
+```bash
+sudo install -m 0755 /dev/stdin /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh <<'HOOK'
+#!/bin/sh
+nginx -t && systemctl reload nginx
+HOOK
+```
+
+**Validate** (safe: the dry run uses the Let's Encrypt staging service and
+changes nothing):
+
+```bash
+sudo certbot renew --dry-run
+sudo nginx -t && sudo systemctl reload nginx
+systemctl status certbot-renew.timer --no-pager
+echo | openssl s_client -connect <site-domain>:443 -servername <site-domain> -verify_return_error 2>/dev/null \
+  | openssl x509 -noout -subject -issuer -dates -ext subjectAltName
+curl -sSI http://<site-domain>/ | head -n 3            # 301 to https://
+curl -sSI <public-base>/auth/login | head -n 1         # 200
+```
+
+The certificate must list `DNS:<site-domain>`, `Verify return code: 0 (ok)`,
+and a `notAfter` more than 30 days ahead.
+
+**Failure visibility.** A failed renewal is recorded in the journal of
+`certbot-renew.service` and in `letsencrypt.log`; the service unit enters the
+`failed` state (`systemctl --failed`). Let's Encrypt no longer sends
+expiration e-mails, so monitor the expiry date from outside -- for example a
+check that alerts when the served certificate expires within 14 days:
+
+```bash
+echo | openssl s_client -connect <site-domain>:443 -servername <site-domain> 2>/dev/null \
+  | openssl x509 -noout -checkend $((14*24*3600)) || echo "certificate expires within 14 days"
+```
+
+**Troubleshooting.**
+
+* *Dry run fails with an authorization/connection error* -- the nginx
+  authenticator answers the HTTP-01 challenge on port 80: port 80 must stay
+  reachable from the Internet (campus firewall) and the HTTP server block must
+  keep serving `/.well-known/acme-challenge/`; check `nginx -t` first.
+* *nginx still serves the old certificate* -- `sudo systemctl reload nginx`,
+  then re-run the `openssl` check; confirm the `ssl_certificate` paths point to
+  `live/`, not `archive/`.
+* *Timer disabled again* -- this host is also managed by campus configuration
+  management (Salt highstate runs daily); if the timer state is reverted, ask
+  the system administrators to enable `certbot-renew.timer` in the host's
+  configuration.
+* *Rate limits* -- never use `--force-renewal` routinely; test with
+  `--dry-run`.
+
+---
+
+## Frozen Legacies data backup
+
+Frozen Legacies keeps review submissions, decisions and published observations in its SQLite catalog **and** immutable review snapshots on disk; one is useless without the other. Back them up together with the module built for it, and back up the `users/` workspace root at the same time:
+
+```bash
+python -m icesee_jupyter_book.applications.frozen_legacies.radar.backup create --out /backups/frozen-legacies
+python -m icesee_jupyter_book.applications.frozen_legacies.radar.backup verify /backups/frozen-legacies/frozen-legacies-<UTC time>
+```
+
+`create` and `verify` exit non-zero when anything is missing or damaged. Restore with the GUI services stopped (`deployment/services.sh stop-gui`, then `... backup restore <backup>`, `--force` to replace existing data, which is moved aside rather than deleted). Details: Frozen Legacies Developer Guide, *Backup and recovery*.
+
 ## Service management
 
 Services are managed through `deployment/services.sh` (start / stop / status)
@@ -222,6 +319,13 @@ and re-run the release verification above.
 
 The relay reads `CRYOSTACK_RELAY_CONTROL_TOKEN` from the service environment
 (`deployment/services.sh`), never from a file in the repo.
+
+The Voilà application servers do not inherit the gateway's environment. The
+gateway starts them with an allowlist (`VOILA_ENV_ALLOWLIST` in
+`bin/icesee_app.py`): application settings, the AWS profile name and region,
+and scientific model paths. OAuth client secrets, the relay control token,
+static AWS keys and operator session variables never reach a notebook kernel.
+A new setting that kernels must read has to be added to that allowlist.
 
 ---
 

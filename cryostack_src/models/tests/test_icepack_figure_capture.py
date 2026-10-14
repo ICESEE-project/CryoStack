@@ -211,9 +211,10 @@ from cryostack_src.models.icepack import discover_results  # noqa: E402
 def _figures_meta(run: Path, ex: Path, script_text: str) -> dict:
     script = run / "run.py"
     _write(script, script_text)
+    started = time.time()          # the run's start, as the real runner records it
     r = _run_runner(run, script)
     assert r.returncode == 0, r.stderr
-    meta = _run_collector(run, ex, started=time.time())
+    meta = _run_collector(run, ex, started=started)
     return meta
 
 
@@ -415,11 +416,12 @@ _EXPECTED_00_MESHES = (
 
 def _figures_meta_with_sidecar(run: Path, script_text: str, titles) -> dict:
     _write(run / "run.py", script_text)
+    started = time.time()          # the run's start, as the real runner records it
     r = _run_runner(run, run / "run.py")
     assert r.returncode == 0, r.stderr
     (run / _SIDECAR).write_text(
         json.dumps({"example": "x", "titles": list(titles)}), encoding="utf-8")
-    return _run_collector(run, run, started=time.time())
+    return _run_collector(run, run, started=started)
 
 
 _N_NAMELESS = "import matplotlib.pyplot as plt\n" + "".join(

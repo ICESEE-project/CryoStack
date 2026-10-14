@@ -523,6 +523,18 @@ def build_catalog(
                         {},
                     ),
 
+                "capabilities":
+                    dataset.metadata.get(
+                        "capabilities",
+                        {},
+                    ),
+
+                "build":
+                    dataset.metadata.get(
+                        "build",
+                        {},
+                    ),
+
                 "metadata": {
                     key: value
                     for key, value
@@ -530,6 +542,8 @@ def build_catalog(
                     if key not in {
                         "products",
                         "downloads",
+                        "capabilities",
+                        "build",
                     }
                 },
             }

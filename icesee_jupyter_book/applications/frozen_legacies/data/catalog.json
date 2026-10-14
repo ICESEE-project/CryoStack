@@ -40,6 +40,25 @@
         }
       },
       "downloads": {},
+      "capabilities": {
+        "observations": true,
+        "flight_lines": true,
+        "imagery": false,
+        "raw_radar": false,
+        "downloads": true,
+        "citations": true,
+        "search": false
+      },
+      "build": {
+        "observations": true,
+        "flights": true,
+        "include_products": true,
+        "downloads": {
+          "observations_csv": true,
+          "observations_geojson": true,
+          "flights_geojson": true
+        }
+      },
       "metadata": {
         "project": "Frozen Legacies",
         "product_family": "LYRA",

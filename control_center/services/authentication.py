@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 
 from ..storage import ControlStorage
 
@@ -109,5 +110,45 @@ class AuthenticationService:
             "identities": (
                 self.storage
                 .list_linked_identities()
+            ),
+
+            "sign_in": self.sign_in_health(),
+        }
+
+    def sign_in_health(
+        self,
+        *,
+        now: float | None = None,
+    ) -> dict:
+
+        now = time.time() if now is None else now
+        since = now - 86400
+
+        def count(**filters) -> int:
+            return self.storage.list_access_events(
+                since=since,
+                limit=1,
+                **filters,
+            )[1]
+
+        return {
+            "logins_24h": count(
+                event_type="login_success",
+            ),
+            "failures_24h": count(
+                event_type="login_failure",
+            ),
+            "denials_24h": count(
+                event_type="control_denied",
+            ),
+            "active_sessions": (
+                self.storage
+                .active_session_count(now=now)
+            ),
+            "failure_categories": (
+                self.storage
+                .failure_category_counts(
+                    since=since,
+                )
             ),
         }

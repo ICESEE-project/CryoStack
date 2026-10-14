@@ -23,7 +23,8 @@ Identifiers vs. capabilities
 Endpoints
 ---------
 ``POST /connector/session``      (control)   create; body ``{owner_user_id}``;
-                                 ``Authorization: Bearer <deployment token>``
+                                 ``Authorization: Bearer <deployment token>`` or
+                                 ``Bearer <owner grant for owner_user_id>``
                                  required only when ``CRYOSTACK_RELAY_CONTROL_TOKEN``
                                  is set. Any earlier non-expired session owned by
                                  the same user is marked *superseded*.
@@ -134,6 +135,7 @@ from icesee_jupyter_book.core.connector_relay_auth import (
     constant_time_equal,
     deployment_token,
     new_pairing_code,
+    owner_grant,
     new_secret,
 )
 
@@ -264,13 +266,17 @@ class CreateSessionRequest(BaseModel):
 
 @app.post("/connector/session")
 async def create_session(req: CreateSessionRequest, authorization: str | None = Header(default=None)):
+    owner = (req.owner_user_id or "").strip()
     required = deployment_token()
     if required is not None:
+        # The gateway may present the deployment token; a kernel presents the
+        # grant the gateway derived for its authenticated user, which is only
+        # valid for that same owner_user_id.
         presented = authorization[7:].strip() if (authorization or "").startswith("Bearer ") else ""
-        if not constant_time_equal(presented, required):
+        if not (constant_time_equal(presented, required)
+                or constant_time_equal(presented, owner_grant(owner, required))):
             raise HTTPException(status_code=401, detail="Relay session creation requires the deployment control token.")
 
-    owner = (req.owner_user_id or "").strip()
     if not owner:
         # Missing / ambiguous identity fails closed.
         raise HTTPException(status_code=400, detail="owner_user_id is required to create a connector session.")

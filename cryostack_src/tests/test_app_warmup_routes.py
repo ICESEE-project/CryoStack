@@ -37,6 +37,11 @@ class _FakeProc:
 def _load_app_module(monkeypatch, tmp_path, *, port_ok=True, start_mode="background"):
     monkeypatch.setenv("CRYOSTACK_AUTH_DATABASE", str(tmp_path / "auth.db"))
     monkeypatch.setenv("CRYOSTACK_APP_START_MODE", start_mode)
+    # the full gateway also opens the LIVIST store, Control Center ops store
+    # and Frozen Legacies catalog: keep them out of the repository's var/
+    monkeypatch.setenv("CRYOSTACK_LIVIST_DATABASE", str(tmp_path / "livist.db"))
+    monkeypatch.setenv("CRYOSTACK_CONTROL_OPS_DATABASE", str(tmp_path / "ops.db"))
+    monkeypatch.setenv("CRYOSTACK_FROZEN_LEGACIES_CATALOG", str(tmp_path / "catalog.db"))
     _FakeProc.instances = []
 
     spec = importlib.util.spec_from_file_location("_icesee_app_warmup", _APP_PATH)

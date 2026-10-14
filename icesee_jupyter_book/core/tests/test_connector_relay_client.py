@@ -30,6 +30,7 @@ class _Resp:
 def _clean(monkeypatch):
     rc.clear_binding()
     monkeypatch.delenv("CRYOSTACK_RELAY_CONTROL_TOKEN", raising=False)
+    monkeypatch.delenv("HTTP_X_CRYOSTACK_RELAY_GRANT", raising=False)
     yield
     rc.clear_binding()
 
@@ -65,6 +66,18 @@ def test_create_session_attaches_deployment_token_when_present(monkeypatch):
         }))[1])
     rc.create_session("user-a")
     assert seen["headers"]["Authorization"] == "Bearer deploy-tok"
+
+
+def test_create_session_in_a_kernel_presents_only_the_owner_grant(monkeypatch):
+    # a gateway-launched kernel has its user's grant and no deployment token
+    monkeypatch.setenv("HTTP_X_CRYOSTACK_RELAY_GRANT", "grant-for-user-a")
+    seen = {}
+    monkeypatch.setattr(rc.requests, "post", lambda url, json=None, headers=None, timeout=None: (
+        seen.update(headers=headers), _Resp({
+            "session_id": "s", "control_secret": "c", "session_secret": "x", "pairing_code": "p",
+        }))[1])
+    rc.create_session("user-a")
+    assert seen["headers"]["Authorization"] == "Bearer grant-for-user-a"
 
 
 def test_create_session_requires_authenticated_owner(monkeypatch):

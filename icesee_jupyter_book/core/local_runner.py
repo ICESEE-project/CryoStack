@@ -38,6 +38,39 @@ def run_dir(base: "Path | str | None" = None,
     return rd
 
 
+#: never copied into a run: outputs of earlier runs and caches
+_STAGE_IGNORE = shutil.ignore_patterns("_modelrun_datasets", "results", "figures", "__pycache__",
+                                       ".ipynb_checkpoints", "*.pyc")
+
+
+def stage_example(example_cfg: dict, rd: Path) -> dict:
+    """A private copy of the example directory inside the run directory.
+
+    ICESEE example scripts change into their own directory and write
+    ``_modelrun_datasets`` there; run from the shared copy, concurrent users
+    would read and overwrite each other's data (and a read-only installation
+    could not run them at all). The copy keeps the directory name, which
+    ICESEE uses to find example-specific model modules. Returns the example
+    configuration pointing at the copy."""
+    base = Path(example_cfg["base"])
+    staged = rd / "example" / base.name
+    if staged.exists():
+        shutil.rmtree(staged)
+    run_root = rd.resolve()
+
+    def ignore(directory, names):
+        skipped = set(_STAGE_IGNORE(directory, names))
+        # never copy the run directory into itself
+        return skipped | {n for n in names if run_root.is_relative_to((Path(directory) / n).resolve())}
+
+    # files are copied without their mode: the installation may be read-only
+    shutil.copytree(base, staged, ignore=ignore, symlinks=True, copy_function=shutil.copyfile)
+    for path in [staged, *staged.rglob("*")]:
+        if path.is_dir() and not path.is_symlink():
+            path.chmod(path.stat().st_mode | 0o700)
+    return dict(example_cfg, base=staged)
+
+
 def force_external_icesee_env() -> tuple[dict, Path]:
     external_dir = (REPO / "external").resolve()
     env = os.environ.copy()
@@ -72,6 +105,16 @@ def ensure_report_h5(rd: Path, example_cfg: dict, expected_prefix: str) -> Path:
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
+
+    if not candidates:
+        # this run's own output (the example writes _modelrun_datasets in its
+        # staged copy, mirrored into the run directory)
+        own = [rd / "_modelrun_datasets", Path(example_cfg["base"]) / "_modelrun_datasets"]
+        candidates = sorted(
+            (p for d in own for p in d.glob(f"{expected_prefix}-{model_name}.h5")),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
 
     if not candidates:
         base = example_cfg["base"]
@@ -136,9 +179,10 @@ def run_local_example(
     run_dir_base: "Path | str | None" = None,
     run_dir_name: str | None = None,
 ) -> LocalRunResult:
+    rd = run_dir(run_dir_base, run_dir_name)
+    example_cfg = stage_example(example_cfg, rd)
     run_script = find_run_script(example_cfg)
     report_nb = find_report_notebook(example_cfg)
-    rd = run_dir(run_dir_base, run_dir_name)
 
     dump_yaml(config, rd / "params.yaml")
 

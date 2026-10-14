@@ -18,7 +18,7 @@ import time
 
 import requests
 
-from icesee_jupyter_book.core.connector_relay_auth import deployment_token
+from icesee_jupyter_book.core.connector_relay_auth import deployment_token, kernel_owner_grant
 
 RELAY_URL = "https://cryostack.eas.gatech.edu"
 
@@ -81,8 +81,10 @@ def create_session(owner_user_id: str) -> dict:
     if not owner:
         raise RelayAuthError("create_session requires an authenticated CryoStack owner_user_id.")
 
+    # A gateway-launched kernel holds only its user's owner grant; the
+    # deployment token is read only outside Voila (dev, tests).
     headers = {}
-    token = deployment_token()
+    token = kernel_owner_grant() or deployment_token()
     if token:
         headers["Authorization"] = f"Bearer {token}"
 

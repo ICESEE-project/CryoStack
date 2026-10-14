@@ -274,7 +274,10 @@ def test_disconnect_returns_to_the_disconnected_view(tmp_path, card):
     assert card.role_arn_input.value == ""
 
 
-def test_missing_principal_shows_a_clear_config_error(tmp_path, card):
+def test_missing_principal_shows_a_clear_config_error(tmp_path, card, monkeypatch):
+    # the precondition is an unset variable; an operator shell may export it
+    monkeypatch.delenv("CRYOSTACK_AWS_PRINCIPAL_ARN", raising=False)
+
     def make():
         return AWSOnboarding(
             user=WorkspaceUser(user_id="alice", source="cryostack-auth"),

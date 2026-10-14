@@ -7,6 +7,7 @@ from pathlib import Path
 
 from aiohttp import web
 
+from .operations import install_operations
 from .storage import ControlStorage
 
 from .services import (
@@ -25,6 +26,7 @@ from .pages import (
     dashboard_page_handler,
     users_page_handler,
     user_detail_page_handler,
+    user_role_update_handler,
     experiment_detail_page_handler,
     experiments_page_handler,
     hpc_page_handler,
@@ -42,69 +44,15 @@ from .services import (
     ExperimentService,
 )
 
+from .pages.access import install_access_admin
+from .pages.audit import install_audit
+
 from .api import (
     authentication_api,
     experiments_api,
     experiment_detail_api,
 
 )
-
-async def user_role_update_handler(
-    request: web.Request,
-) -> web.StreamResponse:
-
-    actor = request[
-        "cryostack_user"
-    ]
-
-    target_user_id = request.match_info[
-        "user_id"
-    ]
-
-    form = await request.post()
-
-    # print(
-    #     "[control][role] form:",
-    #     dict(form),
-    # )
-
-    new_role = str(
-        form.get(
-            "control_role",
-            "",
-        )
-    ).strip().lower()
-
-    # print(
-    #     "[control][role] parsed:",
-    #     repr(new_role),
-    # )
-
-    service = request.app[
-        "control_access_service"
-    ]
-
-    try:
-        service.set_control_role(
-            actor_user_id=actor.id,
-            target_user_id=target_user_id,
-            new_role=new_role,
-        )
-
-    except PermissionError as error:
-        raise web.HTTPForbidden(
-            text=str(error)
-        )
-
-    except ValueError as error:
-        raise web.HTTPBadRequest(
-            text=str(error)
-        )
-
-    raise web.HTTPFound(
-        f"/control/users/{target_user_id}"
-    )
-
 
 def install_control_center(
     app: web.Application,
@@ -191,6 +139,12 @@ def install_control_center(
     app[
         "control_user_service"
     ] = user_service
+
+    from .api.compute import install_compute_routes
+
+    install_compute_routes(app, auth=auth, storage=storage)
+
+    install_operations(app, auth=auth, storage=storage, control_access=control_access)
 
     # --------------------------------------------------------
     # Control Center pages
@@ -324,4 +278,14 @@ def install_control_center(
         control_access(
             authentication_api
         ),
+    )
+
+    install_access_admin(
+        app,
+        control_access=control_access,
+    )
+
+    install_audit(
+        app,
+        control_access=control_access,
     )

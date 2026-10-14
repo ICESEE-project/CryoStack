@@ -1,0 +1,32 @@
+# One CryoStack Voila application server under the kernel service account.
+# Instances: icesee (port 8866) and icesheets (port 8870).
+# Install as root: copy to /etc/systemd/system/, adjust the two paths marked
+# EDIT, create /etc/cryostack/voila.env (allowlisted settings only, e.g.
+# AWS_PROFILE, ISSM_DIR, ICEPACK_ROOT; never secrets) and run
+#   systemctl daemon-reload
+#   systemctl enable --now cryostack-voila@icesee cryostack-voila@icesheets
+[Unit]
+Description=CryoStack Voila application server (%i)
+After=network.target
+
+[Service]
+Type=simple
+User=cryostack-kernel
+Group=cryostack-voila
+UMask=0007
+# EDIT: repository and the conda environment's python
+WorkingDirectory=/home/OPERATOR/CryoLauncher
+ExecStart=/home/OPERATOR/.icesee_conda/envs/icesee1-dev/bin/python /home/OPERATOR/CryoLauncher/bin/icesee_app.py voila %i
+Environment=CRYOSTACK_VOILA_TOKEN_FILE=/etc/cryostack/voila_token
+EnvironmentFile=-/etc/cryostack/voila.env
+Restart=on-failure
+RestartSec=5
+# Defence in depth on top of the account boundary
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectProc=invisible
+ProtectSystem=full
+InaccessiblePaths=-/home/OPERATOR/CryoLauncher/var -/home/OPERATOR/CryoLauncher/users -/home/OPERATOR/.aws -/home/OPERATOR/.ssh -/home/OPERATOR/.cryostack -/home/OPERATOR/cryostack-backups
+
+[Install]
+WantedBy=multi-user.target

@@ -8,3 +8,4 @@ parts:
       - file: applications/frozen_legacies/getting_started
       - file: applications/frozen_legacies/user_manual
       - file: applications/frozen_legacies/developer
+      - file: applications/frozen_legacies/api_reference

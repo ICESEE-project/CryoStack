@@ -15,9 +15,16 @@ creation in the real deployment so ``owner_user_id`` on a session is trustworthy
 and anonymous session-creation spam is rejected. When the env var is unset
 (tests, single-user dev) creation is open but still requires a non-empty
 ``owner_user_id``.
+
+The deployment token itself stays with the gateway and the relay. A Voila
+kernel only ever holds an *owner grant* (:func:`owner_grant`): an HMAC of the
+token bound to one ``owner_user_id``, which the gateway forwards with the
+authenticated user's identity. It can create a session for that user only.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 import hmac
 import os
 import secrets
@@ -26,6 +33,13 @@ from pathlib import Path
 
 #: env var holding the shared deployment token (set by deployment/services.sh)
 DEPLOYMENT_TOKEN_ENV = "CRYOSTACK_RELAY_CONTROL_TOKEN"
+
+#: request header the gateway sets to the authenticated user's owner grant;
+#: Voila exposes it to the kernel as :data:`OWNER_GRANT_ENV`
+OWNER_GRANT_HEADER = "X-CryoStack-Relay-Grant"
+OWNER_GRANT_ENV = "HTTP_X_CRYOSTACK_RELAY_GRANT"
+
+_OWNER_GRANT_PURPOSE = b"cryostack-relay-session-create\x00"
 
 #: on-host file the deployment token is persisted to (mode 0600)
 DEFAULT_TOKEN_FILE = Path.home() / ".cryostack" / "relay_control_token"
@@ -59,6 +73,24 @@ def constant_time_equal(a: str | None, b: str | None) -> bool:
 def deployment_token() -> str | None:
     """The shared deployment token from the environment, or ``None``."""
     value = (os.environ.get(DEPLOYMENT_TOKEN_ENV) or "").strip()
+    return value or None
+
+
+def owner_grant(owner_user_id: str, token: str | None = None) -> str | None:
+    """The session-creation grant for one owner, derived from the deployment
+    token; ``None`` when no deployment token is configured."""
+    token = token if token is not None else deployment_token()
+    owner = (owner_user_id or "").strip()
+    if not token or not owner:
+        return None
+    digest = hmac.new(token.encode("utf-8"), _OWNER_GRANT_PURPOSE + owner.encode("utf-8"),
+                      hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+
+
+def kernel_owner_grant() -> str | None:
+    """The owner grant the gateway forwarded to this kernel, or ``None``."""
+    value = (os.environ.get(OWNER_GRANT_ENV) or "").strip()
     return value or None
 
 

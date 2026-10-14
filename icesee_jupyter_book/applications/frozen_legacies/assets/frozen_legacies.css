@@ -1236,3 +1236,1849 @@ body {
   min-width:
     130px;
 }
+
+/* ============================================================
+   Workspace modes (Map / Manual / Automatic)
+   ============================================================ */
+
+.fl-modebar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  padding:
+    10px 18px 0;
+}
+
+
+.fl-mode-button {
+  min-height: 32px;
+
+  padding:
+    0 14px;
+
+  border:
+    1px solid
+    var(--fl-border);
+
+  border-radius: 9px;
+
+  background:
+    var(--fl-card);
+
+  color:
+    #34465a;
+
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+
+  cursor: pointer;
+
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+
+.fl-mode-button:hover {
+  background:
+    #f3f6f9;
+
+  color:
+    #176fc1;
+}
+
+
+.fl-mode-button.active {
+  border-color:
+    transparent;
+
+  background:
+    #1874c8;
+
+  color:
+    #ffffff;
+}
+
+
+.fl-mode-button:focus-visible,
+.fl-radar-button:focus-visible,
+.fl-radar-frame:focus-visible {
+  outline:
+    2px solid
+    #176fc1;
+
+  outline-offset: 2px;
+}
+
+
+/* ============================================================
+   Radar workspace
+   ============================================================ */
+
+.fl-radar-workspace {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  padding: 14px;
+
+  overflow: hidden;
+
+  background:
+    var(--fl-card);
+}
+
+
+.fl-radar-workspace[hidden],
+.fl-radar-viewer[hidden],
+.fl-radar-upload[hidden],
+.fl-radar-empty[hidden] {
+  display: none;
+}
+
+
+.fl-radar-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+
+.fl-radar-toolbar label {
+  color: #536d7e;
+
+  font-size: 11px;
+  font-weight: 750;
+}
+
+
+.fl-radar-toolbar select {
+  flex: 1 1 260px;
+  min-width: 0;
+
+  padding: 7px 9px;
+
+  border:
+    1px solid
+    #d4e1e8;
+
+  border-radius: 9px;
+
+  background: white;
+  color: #18384f;
+
+  font-size: 13px;
+}
+
+
+.fl-radar-button {
+  padding: 6px 12px;
+
+  border:
+    1px solid
+    #d4e1e8;
+
+  border-radius: 8px;
+
+  background: white;
+  color: #18384f;
+
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+
+  cursor: pointer;
+}
+
+
+.fl-radar-button:hover:not(:disabled) {
+  background: #f3f6f9;
+  color: #176fc1;
+}
+
+
+.fl-radar-button.primary {
+  border-color: transparent;
+
+  background: #1874c8;
+  color: #ffffff;
+}
+
+
+.fl-radar-button.primary:hover:not(:disabled) {
+  background: #1268b7;
+  color: #ffffff;
+}
+
+
+.fl-radar-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+
+.fl-radar-upload {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+
+  padding: 10px 12px;
+
+  border-radius: 10px;
+
+  background:
+    var(--fl-soft-bg);
+}
+
+
+.fl-radar-upload label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  color: #536d7e;
+
+  font-size: 11px;
+  font-weight: 750;
+}
+
+
+.fl-radar-upload input[type="file"] {
+  font-size: 12px;
+}
+
+
+.fl-radar-status,
+.fl-radar-readout,
+.fl-radar-note {
+  color:
+    var(--fl-muted);
+
+  font-size: 12px;
+}
+
+
+.fl-radar-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+
+.fl-radar-empty {
+  margin: auto;
+  max-width: 420px;
+}
+
+
+.fl-radar-viewer {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  gap: 8px;
+
+  min-height: 0;
+}
+
+
+.fl-radar-overview {
+  position: relative;
+
+  flex: 0 0 auto;
+
+  border:
+    1px solid
+    var(--fl-border);
+
+  border-radius: 8px;
+
+  overflow: hidden;
+
+  background: #ffffff;
+
+  cursor: pointer;
+}
+
+
+.fl-radar-overview img {
+  display: block;
+
+  width: 100%;
+  height: auto;
+}
+
+
+.fl-radar-overview-window {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+
+  border:
+    2px solid
+    #1874c8;
+
+  background:
+    rgba(24, 116, 200, 0.12);
+
+  pointer-events: none;
+}
+
+
+.fl-radar-frame {
+  position: relative;
+
+  flex: 1 1 auto;
+  min-height: 0;
+
+  border:
+    1px solid
+    var(--fl-border);
+
+  border-radius: 10px;
+
+  overflow: auto;
+
+  background: #ffffff;
+}
+
+
+.fl-radar-frame img {
+  display: block;
+  max-width: none;
+}
+
+
+.fl-radar-frame.loading img {
+  opacity: 0.55;
+}
+
+
+.fl-radar-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+
+.fl-radar-nav input[type="range"] {
+  flex: 1 1 auto;
+  min-width: 80px;
+}
+
+
+.fl-radar-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  margin-left: 6px;
+
+  color: #536d7e;
+
+  font-size: 12px;
+  font-weight: 700;
+}
+
+
+/* ============================================================
+   Raw radar (Dataset Explorer panel)
+   ============================================================ */
+
+.fl-radar-panel-note {
+  margin: 0;
+
+  color:
+    var(--fl-muted);
+
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+
+.fl-radar-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+
+  padding: 9px 10px;
+
+  border-radius: 8px;
+
+  background: #f6f9fb;
+}
+
+
+.fl-radar-link strong,
+.fl-radar-link span {
+  display: block;
+}
+
+
+.fl-radar-link strong {
+  color: #294b60;
+  font-size: 12px;
+}
+
+
+.fl-radar-link span {
+  color: #8295a0;
+  font-size: 10px;
+  word-break: break-all;
+}
+
+
+/* ============================================================
+   Manual mode: ASTRA picker
+   ============================================================ */
+
+.fl-astra,
+.fl-astra-result {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  gap: 8px;
+
+  min-height: 0;
+}
+
+
+.fl-astra[hidden],
+.fl-astra-result[hidden],
+.fl-radar-note[hidden] {
+  display: none;
+}
+
+
+.fl-astra.busy {
+  cursor: progress;
+}
+
+
+.fl-astra.busy .fl-astra-controls,
+.fl-astra.busy .fl-astra-nav {
+  opacity: 0.6;
+}
+
+
+.fl-astra-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+}
+
+
+.fl-astra-head .fl-astra-title {
+  color: #102f46;
+  font-size: 15px;
+}
+
+
+.fl-astra-chip {
+  padding: 2px 9px;
+
+  border-radius: 999px;
+
+  background: #eef4f8;
+  color: #536d7e;
+
+  font-size: 11px;
+  font-weight: 700;
+}
+
+
+.fl-astra-chip.complete {
+  background: rgba(22, 163, 74, 0.12);
+  color: #15803d;
+}
+
+
+.fl-astra-hint,
+.fl-astra-position {
+  color: var(--fl-muted);
+  font-size: 12px;
+}
+
+
+.fl-astra-stage {
+  position: relative;
+
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+
+  flex: 1 1 auto;
+  min-height: 120px;
+
+  overflow: hidden;
+}
+
+
+.fl-astra-box {
+  position: relative;
+
+  /* An outline drawn outside the box, not a border: the image fills
+     the whole box, so the box rectangle used to map clicks
+     (astraDataCoordinates) is exactly the displayed window. */
+  box-shadow:
+    0 0 0 1px
+    var(--fl-border);
+
+  border-radius: 3px;
+
+  overflow: hidden;
+
+  /* sized by fitBox only; never shrunk by the stage's flex layout */
+  flex: none;
+
+  background: #ffffff;
+
+  cursor: crosshair;
+}
+
+
+.fl-astra-box img,
+.fl-astra-overlay {
+  position: absolute;
+  inset: 0;
+
+  display: block;
+
+  width: 100%;
+  height: 100%;
+}
+
+
+.fl-astra-overlay {
+  pointer-events: none;
+}
+
+
+.fl-astra-stage.loading .fl-astra-box img {
+  opacity: 0.55;
+}
+
+
+.fl-astra-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+
+.fl-astra-nav input[type="range"] {
+  flex: 1 1 auto;
+  min-width: 80px;
+}
+
+
+.fl-astra-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  flex: 0 0 auto;
+}
+
+
+/* One row per ASTRA workflow step: 1 Calibration, 2 Picks, 3 A-scope. */
+.fl-astra-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  padding: 5px 8px;
+
+  border-radius: 9px;
+
+  background:
+    var(--fl-soft-bg);
+}
+
+
+.fl-astra-step-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  flex: 0 0 104px;
+
+  margin: 0;
+
+  color: #536d7e;
+
+  font-size: 10px;
+  font-weight: 800;
+
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+
+.fl-astra-step-number {
+  display: inline-grid;
+  place-items: center;
+
+  width: 18px;
+  height: 18px;
+
+  border-radius: 50%;
+
+  background: #dbe7ef;
+  color: #34465a;
+
+  font-size: 10px;
+  letter-spacing: 0;
+}
+
+
+.fl-astra-step-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+
+.fl-astra-step .fl-radar-button {
+  padding: 4px 9px;
+  font-size: 11.5px;
+}
+
+
+.fl-astra-reset {
+  margin-left: auto;
+}
+
+
+.fl-astra-sweep {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+
+  padding: 0 4px;
+
+  color: #536d7e;
+
+  font-size: 11px;
+  font-weight: 700;
+}
+
+
+.fl-astra-step .fl-radar-button.active {
+  border-color: #1874c8;
+
+  background: #1874c8;
+  color: #ffffff;
+}
+
+
+.fl-astra-step .fl-radar-button.set:not(.active) {
+  border-color: #9cc9ea;
+  background: #eef6fd;
+}
+
+
+.fl-astra-step .fl-radar-button.set:not(.active)::after {
+  content: " ✓";
+  color: #15803d;
+}
+
+
+.fl-astra-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+
+  margin-left: 4px;
+
+  color: #536d7e;
+
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+
+  cursor: pointer;
+}
+
+
+@media (max-width: 1250px) {
+  .fl-astra-step {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .fl-astra-step-title {
+    flex-basis: auto;
+  }
+}
+
+
+.fl-radar-button.pick-surface { box-shadow: inset 3px 0 0 #16a34a; }
+.fl-radar-button.pick-bed { box-shadow: inset 3px 0 0 #c026d3; }
+.fl-radar-button.pick-noisefloor { box-shadow: inset 3px 0 0 #7f1d1d; }
+.fl-radar-button.pick-mainbang { box-shadow: inset 3px 0 0 #1d4ed8; }
+
+
+.fl-radar-button.subtle {
+  border-color: transparent;
+  background: transparent;
+  color: #8295a0;
+}
+
+
+.fl-astra-result {
+  overflow-y: auto;
+}
+
+
+.fl-astra-result-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+}
+
+
+.fl-astra-result-head strong {
+  color: #102f46;
+  font-size: 15px;
+}
+
+
+.fl-astra-result-head span:last-child {
+  color: var(--fl-muted);
+  font-size: 12px;
+}
+
+
+.fl-astra-downloads,
+.fl-astra-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+
+.fl-astra-downloads a {
+  text-decoration: none;
+}
+
+
+.fl-astra-qc-label {
+  margin-bottom: 4px;
+
+  color: #6f8695;
+
+  font-size: 10px;
+  font-weight: 800;
+
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+
+.fl-astra-qc-strip {
+  position: relative;
+
+  border:
+    1px solid
+    var(--fl-border);
+
+  border-radius: 8px;
+
+  overflow: hidden;
+}
+
+
+.fl-astra-qc-strip img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+
+.fl-astra-qc-strip svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+
+.fl-astra-table-wrap {
+  overflow-x: auto;
+}
+
+
+.fl-astra-table {
+  width: 100%;
+
+  border-collapse: collapse;
+
+  font-size: 11.5px;
+}
+
+
+.fl-astra-table th,
+.fl-astra-table td {
+  padding: 5px 8px;
+
+  border-bottom:
+    1px solid
+    #e7eef2;
+
+  text-align: left;
+  white-space: nowrap;
+}
+
+
+.fl-astra-table th {
+  color: #6f8695;
+
+  font-size: 10px;
+  font-weight: 800;
+}
+
+
+/* ============================================================
+   Products (Dataset Explorer panel)
+   ============================================================ */
+
+.fl-product-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+
+.fl-product {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  padding: 9px 10px;
+
+  border-radius: 8px;
+
+  background: #f6f9fb;
+}
+
+
+.fl-product-main strong,
+.fl-product-main span {
+  display: block;
+}
+
+
+.fl-product-main strong {
+  color: #294b60;
+  font-size: 12px;
+}
+
+
+.fl-product-origin {
+  margin-top: 2px;
+
+  color: #6f8695;
+
+  font-size: 10px;
+  font-weight: 700;
+}
+
+
+.fl-product-origin.user {
+  color: #9a5b00;
+}
+
+
+.fl-product-origin.frozen-legacies {
+  color: #15803d;
+}
+
+
+.fl-product-detail {
+  margin-top: 2px;
+
+  color: #8295a0;
+
+  font-size: 10.5px;
+}
+
+
+.fl-product-actions,
+.fl-product-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+
+.fl-product-footer {
+  margin-top: 8px;
+}
+
+
+.fl-product-actions .fl-radar-button,
+.fl-product-footer .fl-radar-button {
+  padding: 4px 9px;
+
+  font-size: 11px;
+
+  text-decoration: none;
+}
+
+
+.fl-dataset-downloads-title {
+  margin-top: 10px;
+}
+
+
+/* ============================================================
+   Automatic mode (URSA)
+   ============================================================ */
+
+.fl-automatic {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  max-height: 45%;
+
+  overflow-y: auto;
+}
+
+
+.fl-automatic[hidden] {
+  display: none;
+}
+
+
+.fl-automatic-note,
+.fl-automatic-warning {
+  margin: 0;
+
+  color: var(--fl-muted);
+
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+
+.fl-automatic-warning {
+  color: #9a5b00;
+}
+
+
+.fl-automatic-unavailable {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+
+  padding: 10px 12px;
+
+  border-radius: 10px;
+
+  background: #fdf6ec;
+  color: #7a4a00;
+
+  font-size: 12px;
+}
+
+
+.fl-automatic-actions {
+  display: flex;
+  gap: 8px;
+}
+
+
+.fl-automatic-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+
+  color: #536d7e;
+
+  font-size: 12px;
+}
+
+
+.fl-automatic-status.failed .fl-astra-chip,
+.fl-automatic-status.interrupted .fl-astra-chip {
+  background: rgba(220, 38, 38, 0.1);
+  color: #b91c1c;
+}
+
+
+.fl-automatic-log pre {
+  max-height: 160px;
+
+  margin: 6px 0 0;
+  padding: 8px;
+
+  overflow: auto;
+
+  border-radius: 8px;
+
+  background: #f6f9fb;
+
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+
+.fl-automatic-preview {
+  display: block;
+
+  max-width: 100%;
+
+  border:
+    1px solid
+    var(--fl-border);
+
+  border-radius: 8px;
+}
+
+
+/* Automatic: the workspace follows its content -- the radar viewer is only
+   as tall as the strip it shows, with status and results below it. */
+body[data-fl-mode="automatic"] .fl-radar-viewer {
+  flex: 0 1 auto;
+  order: 1;
+}
+
+
+body[data-fl-mode="automatic"] .fl-radar-frame {
+  flex: 0 1 auto;
+}
+
+
+body[data-fl-mode="automatic"] .fl-automatic {
+  flex: 1 1 auto;
+  order: 2;
+
+  max-height: none;
+  min-height: 0;
+}
+
+
+.fl-automatic-unavailable {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+
+  border: 1px solid #f1d9b5;
+}
+
+
+.fl-automatic-unavailable > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+
+.fl-automatic-unavailable-icon {
+  display: inline-grid;
+  place-items: center;
+
+  flex: 0 0 20px;
+  height: 20px;
+
+  border-radius: 50%;
+
+  background: #e8a33d;
+  color: #ffffff;
+
+  font-weight: 800;
+}
+
+
+.fl-automatic-actions .fl-radar-button:disabled {
+  border-color: #d4e1e8;
+  background: #eef2f5;
+  color: #7a8c98;
+  opacity: 1;
+}
+
+
+/* ============================================================
+   Right panel: one panel, ordered and folded by mode
+   ============================================================ */
+
+/* Map mode: the explorer looks exactly as before (no fold control). */
+.fl-explorer-summary {
+  display: none;
+}
+
+
+body[data-fl-mode="manual"] .fl-explorer-section,
+body[data-fl-mode="automatic"] .fl-explorer-section {
+  margin-top: 16px;
+  padding-top: 12px;
+
+  border-top:
+    1px solid
+    #e7eef2;
+}
+
+
+body[data-fl-mode="manual"] .fl-explorer-summary,
+body[data-fl-mode="automatic"] .fl-explorer-summary {
+  display: flex;
+}
+
+
+.fl-explorer-summary,
+.fl-panel-section > summary {
+  align-items: center;
+  justify-content: space-between;
+
+  margin-bottom: 8px;
+
+  list-style: none;
+
+  color: #6f8695;
+
+  font-size: 9px;
+  font-weight: 800;
+
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+
+  cursor: pointer;
+}
+
+
+.fl-panel-section > summary {
+  display: flex;
+}
+
+
+.fl-explorer-summary::-webkit-details-marker,
+.fl-panel-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+
+.fl-explorer-summary::after,
+.fl-panel-section > summary::after {
+  content: "▸";
+
+  color: #8295a0;
+
+  font-size: 11px;
+}
+
+
+.fl-explorer-section[open] > .fl-explorer-summary::after,
+.fl-panel-section[open] > summary::after {
+  content: "▾";
+}
+
+
+.fl-radar-panel > .fl-panel-section:first-child {
+  margin-top: 0;
+  padding-top: 0;
+
+  border-top: none;
+}
+
+
+body[data-fl-mode="map"] .fl-radar-panel > .fl-panel-section:first-child,
+body:not([data-fl-mode]) .fl-radar-panel > .fl-panel-section:first-child {
+  margin-top: 16px;
+  padding-top: 14px;
+
+  border-top:
+    1px solid
+    #e7eef2;
+}
+
+
+/* ============================================================
+   Radar catalog browser (large collections)
+   ============================================================ */
+
+.fl-catalog-browser {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  max-height: 55%;
+  padding: 10px 12px;
+
+  border-radius: 10px;
+
+  background:
+    var(--fl-soft-bg);
+
+  overflow: hidden;
+}
+
+
+.fl-catalog-browser[hidden] {
+  display: none;
+}
+
+
+.fl-catalog-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+
+.fl-catalog-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  color: #536d7e;
+
+  font-size: 11px;
+  font-weight: 750;
+}
+
+
+.fl-catalog-filters select,
+.fl-catalog-filters input {
+  min-width: 150px;
+  padding: 6px 8px;
+
+  border:
+    1px solid
+    #d4e1e8;
+
+  border-radius: 8px;
+
+  background: white;
+  color: #18384f;
+
+  font-size: 12px;
+}
+
+
+.fl-catalog-search {
+  flex: 1 1 180px;
+}
+
+
+.fl-catalog-results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  min-height: 0;
+  overflow-y: auto;
+}
+
+
+.fl-catalog-count {
+  color: var(--fl-muted);
+  font-size: 12px;
+}
+
+
+.fl-catalog-pages {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  color: #536d7e;
+
+  font-size: 12px;
+}
+
+
+.fl-catalog-flag {
+  padding: 1px 6px;
+
+  border-radius: 999px;
+
+  background: #fdf6ec;
+  color: #9a5b00;
+
+  font-size: 10px;
+  font-weight: 700;
+}
+
+
+.fl-pick-detail {
+  margin: 8px 0;
+}
+
+
+.fl-catalog-progress {
+  color: #536d7e;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+
+.fl-catalog-filters input[type="number"] {
+  min-width: 100px;
+  width: 110px;
+}
+
+
+/* ------------------------------------------------------------
+ * Georeferencing panel (Manual result view)
+ * ------------------------------------------------------------ */
+
+.fl-georef {
+  margin-top: 14px;
+  border: 1px solid var(--fl-border);
+  border-radius: 10px;
+  background: var(--fl-soft-bg);
+  padding: 8px 12px;
+  font-size: 12.5px;
+}
+
+.fl-georef summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--fl-text);
+}
+
+.fl-georef-status {
+  margin-left: 8px;
+  font-weight: 400;
+  color: var(--fl-muted);
+}
+
+.fl-georef-intro,
+.fl-georef-warning,
+.fl-georef-error {
+  margin: 8px 0;
+  color: var(--fl-muted);
+}
+
+.fl-georef-warning,
+.fl-georef-error {
+  color: #9a3412;
+}
+
+.fl-georef-table input {
+  width: 6.5em;
+}
+
+.fl-georef-table tr.fl-georef-verified td:last-child {
+  color: #166534;
+  font-weight: 600;
+}
+
+.fl-georef-frame img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+
+/* ── Scientific review (review.js, published_layer.js) ───────────── */
+.fl-review-block {
+  margin: 14px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--fl-border, #dbe3ea);
+  border-radius: 8px;
+}
+.fl-review-title { font-weight: 700; margin-bottom: 6px; }
+.fl-review-chip {
+  display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px;
+  font-weight: 600; margin-right: 6px; background: #e2e8f0; color: #1f2937;
+}
+.fl-review-chip.pending { background: #fef3c7; color: #92400e; }
+.fl-review-chip.returned { background: #e0e7ff; color: #3730a3; }
+.fl-review-chip.rejected { background: #fee2e2; color: #991b1b; }
+.fl-review-chip.published { background: #ccfbf1; color: #115e59; }
+.fl-review-note { font-size: 13px; margin: 6px 0; }
+.fl-review-submit { margin-top: 8px; }
+.fl-review-submit textarea { width: 100%; box-sizing: border-box; margin: 6px 0; font: inherit; }
+.fl-review-error { color: #991b1b; font-size: 13px; }
+.fl-catalog-shared { color: #64748b; }
+
+
+/* ============================================================
+   Phones: the top navigation wraps so every link stays reachable.
+   ============================================================ */
+
+@media (max-width: 650px) {
+
+  .fl-topbar {
+    height: auto;
+    flex: 0 0 auto;
+    padding: 8px 10px;
+  }
+
+  .fl-topnav,
+  .fl-topnav-left {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .fl-topnav-right {
+    padding-left: 0;
+  }
+
+  .fl-account-slot {
+    min-width: 0;
+  }
+}
+
+
+/* ============================================================
+   Manual result: film-CBD georeferencing status and table
+   ============================================================ */
+
+.fl-georef-callout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding: 10px 14px;
+  border: 1px solid #fde68a;
+  border-left: 4px solid #d97706;
+  border-radius: 10px;
+  background: #fffbeb;
+}
+
+.fl-georef-callout.done {
+  border-color: #bbf7d0;
+  border-left-color: #16a34a;
+  background: #f0fdf4;
+}
+
+.fl-georef-callout-title { font-weight: 750; font-size: 13px; color: #0f172a; }
+.fl-georef-callout-text { font-size: 12.5px; color: #475569; margin-top: 2px; }
+.fl-georef-callout-host:empty { display: none; }
+
+.fl-georef-table td.fl-georef-entry {
+  min-width: 220px;
+}
+
+.fl-georef-entry-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.fl-georef-entry-row + .fl-georef-entry-row {
+  margin-top: 4px;
+}
+
+.fl-georef-table td.fl-georef-entry input {
+  width: 6.5em;
+}
+
+.fl-georef-table td:last-child {
+  white-space: nowrap;
+}
+
+.fl-georef-table tr.fl-georef-differs td:nth-child(4) {
+  background: #fffbeb;
+}
+
+.fl-georef-label {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+
+/* ============================================================
+   Radar workspace layout: side panel, focus view, wide screens
+   and phones. Only the space given to the workspace changes; the
+   ASTRA window box keeps its exact aspect ratio (fitBox), so the
+   click mapping is the same at every size.
+   ============================================================ */
+
+.fl-radar-toolbar .fl-radar-button {
+  padding: 5px 10px;
+}
+
+
+.fl-radar-toolbar select {
+  flex-basis: 180px;
+}
+
+
+.fl-radar-layout {
+  display: inline-flex;
+  gap: 6px;
+
+  margin-left: auto;
+}
+
+
+.fl-radar-layout .fl-radar-button[aria-pressed="true"] {
+  border-color: #1874c8;
+  background: #eef6fd;
+  color: #1268b7;
+}
+
+
+.fl-radar-layout .fl-radar-button[hidden] {
+  display: none;
+}
+
+
+body.fl-panel-hidden .fl-main,
+body.fl-focus .fl-main {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+
+body.fl-panel-hidden .fl-panel,
+body.fl-focus .fl-panel,
+body.fl-focus .fl-topbar,
+body.fl-focus .fl-modebar,
+body.fl-focus #fl-radar-upload-toggle,
+body.fl-focus #fl-product-upload-toggle,
+body.fl-focus #fl-catalog-toggle,
+body.fl-focus .fl-radar-upload,
+body.fl-focus .fl-catalog-browser {
+  display: none;
+}
+
+
+body.fl-focus .fl-main {
+  padding: 6px;
+}
+
+
+body.fl-focus .fl-radar-workspace {
+  padding: 8px 10px;
+  gap: 6px;
+}
+
+
+/* The workspace is the size container for the picker layout. */
+.fl-radar-workspace {
+  container: fl-radar / size;
+}
+
+
+/*
+ * Wide workspaces: the working window is wider than tall (2300 x 1550),
+ * so when the workspace is clearly wider than that the three ASTRA
+ * steps move into a column beside the window and the window gets the
+ * full height.
+ */
+@container fl-radar (min-aspect-ratio: 8 / 5) and (min-width: 860px) {
+
+  .fl-astra {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(230px, 19cqw, 330px);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "head controls"
+      "stage controls"
+      "nav controls";
+    column-gap: 12px;
+    row-gap: 6px;
+  }
+
+  .fl-astra[hidden] {
+    display: none;
+  }
+
+  .fl-astra-head { grid-area: head; }
+  .fl-astra-stage { grid-area: stage; }
+  .fl-astra-nav { grid-area: nav; flex-wrap: wrap; }
+
+  .fl-astra-controls {
+    grid-area: controls;
+    gap: 6px;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .fl-astra-step {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 5px;
+    padding: 7px 8px;
+  }
+
+  .fl-astra-step-title {
+    flex-basis: auto;
+  }
+
+  .fl-astra-sweep {
+    padding: 0;
+  }
+
+  .fl-astra-reset {
+    margin-left: 0;
+  }
+}
+
+
+/*
+ * Tablets and phones: the workspace is no longer laid over a
+ * fixed-height map card; it flows with the page and the picker stage
+ * takes the working window's aspect ratio from the available width.
+ */
+@media (max-width: 1050px) {
+
+  /* the page scrolls here: the main area grows with its content */
+  .fl-main {
+    flex: 0 0 auto;
+  }
+
+  body[data-fl-mode="manual"] .fl-map-card,
+  body[data-fl-mode="automatic"] .fl-map-card {
+    height: auto;
+    min-height: 0;
+  }
+
+  body[data-fl-mode="manual"] .fl-radar-workspace,
+  body[data-fl-mode="automatic"] .fl-radar-workspace {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    justify-self: stretch;
+    align-self: start;
+    container-type: inline-size;
+    overflow: visible;
+  }
+
+  body[data-fl-mode="manual"] #frozen-legacies-map,
+  body[data-fl-mode="automatic"] #frozen-legacies-map {
+    visibility: hidden;
+  }
+
+  .fl-astra-stage {
+    flex: 0 0 auto;
+    aspect-ratio: 46 / 31;
+    min-height: 0;
+  }
+
+  .fl-radar-frame {
+    flex: 0 0 auto;
+    min-height: 220px;
+  }
+
+  body.fl-focus .fl-astra-stage {
+    aspect-ratio: auto;
+    height: calc(100vh - 150px);
+    height: calc(100dvh - 150px);
+  }
+
+  .fl-astra-nav {
+    flex-wrap: wrap;
+  }
+
+  .fl-astra-nav input[type="range"] {
+    flex-basis: 100%;
+    order: -1;
+  }
+}
+
+
+@media (max-width: 650px) {
+
+  .fl-radar-layout {
+    margin-left: 0;
+  }
+
+  .fl-radar-workspace {
+    padding: 10px;
+  }
+}
+
+
+/* Automatic (URSA) results are always labelled scientifically unvalidated. */
+.fl-astra-chip.fl-unvalidated {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.fl-automatic-unvalidated {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+
+  color: #6b4e16;
+  font-size: 12px;
+}
+
+
+/* Automatic: per-frame values, heuristic QC flags and URSA's own
+   diagnostic images (display only). */
+.fl-automatic-frames {
+  margin-top: 8px;
+
+  font-size: 12px;
+}
+
+
+.fl-automatic-frames > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+
+  color: var(--fl-text);
+
+  font-weight: 700;
+
+  cursor: pointer;
+}
+
+
+.fl-automatic-frames-scroll {
+  max-width: 100%;
+  margin: 6px 0;
+
+  overflow-x: auto;
+
+  border:
+    1px solid
+    var(--fl-border);
+
+  border-radius: 8px;
+}
+
+
+.fl-automatic-frames-table {
+  width: 100%;
+
+  border-collapse: collapse;
+
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+
+.fl-automatic-frames-table th,
+.fl-automatic-frames-table td {
+  padding: 4px 6px;
+
+  border-bottom:
+    1px solid
+    var(--fl-border);
+
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+
+.fl-automatic-frames-table th {
+  position: sticky;
+  top: 0;
+
+  background: var(--fl-soft-bg);
+  color: var(--fl-muted);
+
+  font-weight: 700;
+}
+
+
+.fl-automatic-frames-table tr.flagged td {
+  background: #fff8e6;
+}
+
+
+.fl-automatic-frames-table td.fl-automatic-flags {
+  min-width: 200px;
+  max-width: 320px;
+
+  color: #7a4a00;
+
+  white-space: normal;
+}
+
+
+.fl-automatic-frames-table td.fl-automatic-diags {
+  white-space: nowrap;
+}
+
+
+.fl-astra-chip.fl-automatic-flag {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+
+.fl-automatic-none {
+  color: var(--fl-muted);
+}
+
+
+.fl-automatic-diag-link {
+  margin: 0 4px 3px 0;
+  padding: 1px 6px;
+
+  border:
+    1px solid
+    var(--fl-border);
+
+  border-radius: 6px;
+
+  background: #ffffff;
+  color: var(--fl-accent);
+
+  font: inherit;
+
+  cursor: pointer;
+}
+
+
+.fl-automatic-diag-link.active,
+.fl-automatic-diag-link:hover {
+  border-color: var(--fl-accent);
+  background: #eaf4f8;
+}
+
+
+.fl-automatic-diag-viewer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  margin: 8px 0 0;
+}
+
+
+.fl-automatic-diag-viewer figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+
+  color: var(--fl-muted);
+}
+
+
+.fl-automatic-diag-viewer code {
+  font-size: 10px;
+  word-break: break-all;
+}
+
+
+.fl-automatic-diag-actions {
+  display: flex;
+  gap: 6px;
+}

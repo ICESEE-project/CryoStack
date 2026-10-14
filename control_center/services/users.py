@@ -6,6 +6,19 @@ from ..storage import ControlStorage
 
 from .access import AccessService
 
+PAGE_SIZE = 50
+MAX_PAGE_SIZE = 200
+
+ROLE_FILTERS = (
+    "",
+    "user",
+    "developer",
+    "maintainer",
+    "admin",
+    "owner",
+)
+
+
 class UserService:
 
     def __init__(
@@ -19,11 +32,11 @@ class UserService:
     def list_users(
         self,
         *,
-        now: float,
+        now: float | None = None,
     ) -> list[dict]:
 
         users = self.storage.list_users(
-            now=now,
+            now=time.time() if now is None else now,
         )
 
         for user in users:
@@ -35,6 +48,51 @@ class UserService:
             )
 
         return users
+
+    def search_users(
+        self,
+        *,
+        query: str = "",
+        role: str = "",
+        page: int = 1,
+        per_page: int = PAGE_SIZE,
+        now: float | None = None,
+    ) -> dict:
+
+        role = (role or "").strip().lower()
+
+        if role not in ROLE_FILTERS:
+            role = ""
+
+        per_page = min(
+            max(int(per_page), 1),
+            MAX_PAGE_SIZE,
+        )
+
+        page = max(int(page), 1)
+
+        query = (query or "").strip()[:200]
+
+        users, total = self.storage.search_users(
+            now=time.time() if now is None else now,
+            query=query,
+            role=role,
+            limit=per_page,
+            offset=(page - 1) * per_page,
+        )
+
+        return {
+            "users": users,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "pages": max(
+                (total + per_page - 1) // per_page,
+                1,
+            ),
+            "query": query,
+            "role": role,
+        }
 
     def get_user(
         self,
@@ -77,6 +135,14 @@ class UserService:
             self.storage
             .list_user_configurations(
                 user_id=user_id,
+            )
+        )
+
+        user["login"] = (
+            self.storage
+            .login_summary(
+                user_id=user_id,
+                now=now,
             )
         )
 

@@ -124,6 +124,10 @@ from cryostack_src.frontend.cryolauncher.cloud_runtime import (
 from cryostack_src.frontend.cryolauncher.cloud_connect_runtime import (
     build_aws_connect_callbacks,
 )
+from cryostack_src.frontend.cryolauncher.cloud_experiments import (
+    CloudExperimentRecorder,
+    cloud_experiment_record,
+)
 from cryostack_src.frontend.cryolauncher.cloud_run_controller import (
     CloudRunController,
     cloud_run_plan_summary,
@@ -848,6 +852,11 @@ def build_icesheets_ui():
                           type(_prov_err).__name__, _prov_err)
                 return {}, {}
 
+        _cloud_experiments = CloudExperimentRecorder(
+            experiment_bridge,
+            job_id=lambda: getattr(_cloud.get("controller"), "job_id", ""),
+            reason=lambda: getattr(_cloud.get("controller"), "last_reason", ""))
+
         def _register_cloud_run(*, handle, result):
             """Enter a submitted cloud run into the experiment/workspace system --
             the same registration the Remote path uses."""
@@ -901,6 +910,15 @@ def build_icesheets_ui():
                 container=_container,
                 software=_software,
             )
+            # Cloud runs join the shared experiment record like HPC runs, so
+            # the Control Center execution records include them.
+            try:
+                _cloud_experiments.created(cloud_experiment_record(
+                    handle, result_metadata=meta,
+                    configuration=current_experiment_configuration()))
+            except Exception as _err:  # noqa: BLE001 - never block the run
+                with log_out:
+                    print("[cloud] experiment record not created:", _err)
             # The just-submitted run is the active run (it is the subject of the
             # CLOUD RUN card). Make it the Workspace's selected run too, so the
             # result sync, Run Log and Results all target THIS run by default.
@@ -3312,7 +3330,8 @@ def build_icesheets_ui():
             bridge_factory=current_cloud_bridge,
             register_run=_register_cloud_run,
             sync_results=workspace_manager.sync_cloud_results,
-            on_state=_set_cloud_state,
+            on_state=lambda _state: (_set_cloud_state(_state),
+                                     _cloud_experiments.state(_state)),
             on_log=_cloud_log,
             on_results_ready=_cloud_results_ready,
             # every AWS op of a connected BYO run uses a fresh sts:AssumeRole

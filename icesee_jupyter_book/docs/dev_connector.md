@@ -103,7 +103,7 @@ pairing protocol, source revision) is automated by `build_connector.sh`.
 downloadable version CryoStack points users to, updating
 `/downloads/connectors/` — is a manual maintainer operation**, covered by the
 separate, role-gated Maintainer Guide (`/docs/maintainer/`), not by this
-public Developer Guide. Before replacing the deployed version, the
+Developer Guide. Before replacing the deployed version, the
 Connector's own test suite and the relay-protocol compatibility check (that
 `pairing_protocol` matches the deployed relay) must pass; this repository
 does not encode an automated release pipeline beyond the local build script

@@ -184,7 +184,9 @@ def test_internal_anchor_links_resolve_to_headings():
         assert anchor in gs_slugs, anchor
 
 
-def test_developer_guide_stays_public_and_maintainer_guide_stays_protected():
+def test_developer_guide_keeps_its_place_and_maintainer_guide_stays_protected():
+    # The Developer Guide stays in the book's TOC; access to it is restricted
+    # at the gateway (see test_developer_guide_access.py).
     toc = (_REPO / "icesee_jupyter_book" / "_toc.yml").read_text()
     assert "docs/developer_guide" in toc
     assert "maintainer_guide" not in toc

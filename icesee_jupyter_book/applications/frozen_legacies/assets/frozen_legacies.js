@@ -152,6 +152,27 @@ document.addEventListener(
 
 
       // ========================================================
+      // 6b. Radar workspace (Map / Manual / Automatic)
+      // ========================================================
+
+      if (
+        window.FrozenLegaciesRadar
+      ) {
+
+        window.FrozenLegaciesRadar.initialize({
+
+          map,
+
+          ui,
+
+          data
+
+        });
+
+      }
+
+
+      // ========================================================
       // 7. Expose useful state for development/debugging
       // ========================================================
 
