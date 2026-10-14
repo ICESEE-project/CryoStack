@@ -1000,3 +1000,63 @@ def test_cloud_waiting_state_terminology_hygiene_icesee(monkeypatch, tmp_path):
     ):
         assert forbidden not in blob, forbidden
     assert "/connector/ws" not in blob
+
+
+def test_cloud_runs_record_one_experiment_and_each_status_once(monkeypatch, tmp_path):
+    """ICESEE cloud runs enter the shared experiments table like Remote runs:
+    one create at submit, one update per new status from Check status, and
+    nothing after a terminal status. AWS's reason reaches the failure
+    summary redacted; no account id or credential is sent."""
+    import cryostack_src.cloud.legacy.aws_batch as legacy_batch
+
+    states = iter([("RUNNABLE", ""), ("RUNNING", ""), ("RUNNING", ""),
+                   ("FAILED", "Essential container exited; key AKIAABCDEFGHIJKLMNOP"),
+                   ("SUCCEEDED", "")])
+
+    class _FakeSubprocess:
+        @staticmethod
+        def run(argv, **kwargs):
+            if "get-caller-identity" in argv:
+                return _FakeCompleted('{"Account": "123456789012"}')
+            if "submit-job" in argv:
+                return _FakeCompleted(json.dumps({"jobId": "job-exp"}))
+            if "describe-jobs" in argv:
+                status, reason = next(states)
+                return _FakeCompleted(json.dumps({"jobs": [{
+                    "status": status, "statusReason": reason, "container": {}}]}))
+            return _FakeCompleted("")
+
+    monkeypatch.setattr(legacy_batch, "subprocess", _FakeSubprocess)
+    page = _build_gateway(monkeypatch, tmp_path, user="cloud-experiment-user")
+    _select_cloud_mode(page)
+    submit_click = _find_button(page, "Launch cloud run")._click_handlers.callbacks[0]
+    submit_handler = _freevar(submit_click, "run_example_cloud_submit")
+    for name, value in (("aws_region", "us-east-2"), ("cloud_bucket", "s3://bucket/runs"),
+                        ("batch_job_queue", "q"), ("batch_job_def", "jd")):
+        _freevar(submit_handler, name).value = value
+    bridge = _freevar(submit_handler, "experiment_bridge")
+    calls = []
+    monkeypatch.setattr(bridge, "create", lambda **kw: calls.append(("create", kw)))
+    monkeypatch.setattr(bridge, "update_by_job", lambda **kw: calls.append(("update", kw)))
+
+    submit_handler()
+    status_click = _find_button(page, "Check status", icon="search")._click_handlers.callbacks[0]
+    status_handler = _freevar(status_click, "run_example_cloud_status")
+    for _ in range(5):
+        status_handler()
+
+    creates = [kw for kind, kw in calls if kind == "create"]
+    updates = [kw for kind, kw in calls if kind == "update"]
+    assert len(creates) == 1
+    created = creates[0]
+    assert (created["application"], created["backend"], created["status"], created["job_id"]) \
+        == ("icesee", "aws", "queued", "job-exp")
+    assert created["metadata"]["execution_mode"] == "cloud"
+    assert created["metadata"]["cloud"] == {"region": "us-east-2", "job_queue": "q",
+                                            "job_definition": "jd"}
+    assert [u["status"] for u in updates] == ["running", "failed"]
+    assert all(u["job_id"] == "job-exp" for u in updates)
+    failed = updates[-1]
+    text = json.dumps(calls)
+    assert "AKIAABCDEFGHIJKLMNOP" not in text and "123456789012" not in text
+    assert failed["failure"] and failed["error_message"]

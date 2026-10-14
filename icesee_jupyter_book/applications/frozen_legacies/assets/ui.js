@@ -117,6 +117,33 @@ function datasetMatches(
  * Empty observation state
  * ------------------------------------------------------------ */
 
+/* ------------------------------------------------------------
+ * Selection event
+ *
+ * Other Frozen Legacies modules (the radar workspace) follow the
+ * selected observation through this event instead of reaching into
+ * the explorer's rendering.
+ * ------------------------------------------------------------ */
+
+function announceObservationSelection(
+  properties
+) {
+
+  document.dispatchEvent(
+    new CustomEvent(
+      "frozen-legacies:observation",
+      {
+        detail: {
+          properties:
+            properties || null
+        }
+      }
+    )
+  );
+
+}
+
+
 function renderEmptyObservation(
   dataset = null
 ) {
@@ -161,6 +188,11 @@ function renderEmptyObservation(
 
     </div>
   `;
+
+
+  announceObservationSelection(
+    null
+  );
 
 }
 
@@ -811,6 +843,11 @@ function renderObservation(
 
     </div>
   `;
+
+
+  announceObservationSelection(
+    properties
+  );
 
 }
 

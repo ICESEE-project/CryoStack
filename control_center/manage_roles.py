@@ -1,12 +1,36 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import os
 from pathlib import Path
 
 from icesee_auth.storage import (
     AuthStorage,
+    CONTROL_ROLE_RANK,
 )
+
+
+def _audit(
+    storage: AuthStorage,
+    *,
+    user,
+    action: str,
+    previous: list[str],
+    new: list[str],
+    reason: str,
+) -> None:
+
+    storage.record_access_audit(
+        actor_user_id=None,
+        actor_label=f"local-cli:{getpass.getuser()}",
+        target_user_id=user.id,
+        target_label=user.email,
+        action=action,
+        previous_value=",".join(previous) or "user",
+        new_value=",".join(new) or "user",
+        reason=reason,
+    )
 
 
 def main():
@@ -34,11 +58,19 @@ def main():
     parser.add_argument(
         "role",
         nargs="?",
-        choices=[
-            "developer",
-            "administrator",
-            "owner",
-        ],
+        choices=sorted(
+            CONTROL_ROLE_RANK,
+            key=CONTROL_ROLE_RANK.get,
+        ),
+    )
+
+    parser.add_argument(
+        "--reason",
+        default="",
+        help=(
+            "Why the access is changing "
+            "(recorded in the access audit trail)."
+        ),
     )
 
     args = parser.parse_args()
@@ -90,11 +122,36 @@ def main():
             "A role is required."
         )
 
+    reason = " ".join(
+        args.reason.split()
+    )
+
+    if len(reason) < 4:
+        raise SystemExit(
+            "A --reason of at least 4 "
+            "characters is required."
+        )
+
+    previous = storage.get_user_roles(
+        user_id=user.id
+    )
+
     if args.action == "add":
 
         storage.add_user_role(
             user_id=user.id,
             role=args.role,
+        )
+
+        _audit(
+            storage,
+            user=user,
+            action="role_granted",
+            previous=previous,
+            new=storage.get_user_roles(
+                user_id=user.id
+            ),
+            reason=reason,
         )
 
         print(
@@ -104,12 +161,40 @@ def main():
 
     elif args.action == "remove":
 
+        if args.role == "owner" and "owner" in previous:
+            with storage._connect() as connection:
+                owners = connection.execute(
+                    """
+                    SELECT COUNT(DISTINCT user_id)
+                    FROM user_roles
+                    WHERE role = 'owner'
+                    """
+                ).fetchone()[0]
+
+            if owners <= 1:
+                raise SystemExit(
+                    "CryoStack must retain at "
+                    "least one owner."
+                )
+
         removed = (
             storage.remove_user_role(
                 user_id=user.id,
                 role=args.role,
             )
         )
+
+        if removed:
+            _audit(
+                storage,
+                user=user,
+                action="role_revoked",
+                previous=previous,
+                new=storage.get_user_roles(
+                    user_id=user.id
+                ),
+                reason=reason,
+            )
 
         print(
             "Removed."

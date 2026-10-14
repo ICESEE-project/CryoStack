@@ -80,6 +80,26 @@
 
   </header>
 
+    <div
+      class="fl-modebar"
+      role="tablist"
+      aria-label="Workspace mode"
+    >
+
+      <button type="button" class="fl-mode-button active" data-mode="map" role="tab" aria-selected="true">
+        Map
+      </button>
+
+      <button type="button" class="fl-mode-button" data-mode="manual" role="tab" aria-selected="false">
+        Manual
+      </button>
+
+      <button type="button" class="fl-mode-button" data-mode="automatic" role="tab" aria-selected="false">
+        Automatic
+      </button>
+
+    </div>
+
     <main class="fl-main">
 
       <!-- ==========================================
@@ -93,6 +113,220 @@
           class="fl-map"
         ></div>
 
+
+        <!-- Radar workspace (Manual / Automatic). It overlays the map,
+             which stays mounted so the explorer selection is kept. -->
+
+        <section
+          id="fl-radar-workspace"
+          class="fl-radar-workspace"
+          aria-label="Radar workspace"
+          hidden
+        >
+
+          <div class="fl-radar-toolbar">
+
+            <label for="fl-radar-asset">
+              Radar asset
+            </label>
+
+            <select id="fl-radar-asset">
+              <option value="">Choose a radar asset…</option>
+            </select>
+
+            <button type="button" id="fl-radar-upload-toggle" class="fl-radar-button">
+              Upload raw radar
+            </button>
+
+            <button type="button" id="fl-product-upload-toggle" class="fl-radar-button">
+              Upload processed product
+            </button>
+
+            <button type="button" id="fl-catalog-toggle" class="fl-radar-button" hidden>
+              Browse radar catalog
+            </button>
+
+            <span class="fl-radar-layout" role="group" aria-label="Workspace layout">
+              <button type="button" id="fl-layout-panel" class="fl-radar-button" aria-pressed="false"
+                title="Hide the side panel to give the radar more room">Hide panel</button>
+              <button type="button" id="fl-layout-focus" class="fl-radar-button" aria-pressed="false"
+                title="Show only the radar workspace (Esc leaves focus)">Focus</button>
+            </span>
+
+          </div>
+
+          <!-- Large collections: server-side catalog search (catalog.js) -->
+          <div id="fl-catalog-browser" class="fl-catalog-browser" hidden></div>
+
+          <form id="fl-radar-upload" class="fl-radar-upload" hidden>
+
+            <label>
+              Radar TIFF
+              <input type="file" name="tiff" accept=".tif,.tiff" required>
+            </label>
+
+            <label>
+              Navigation CSV (optional)
+              <input type="file" name="nav" accept=".csv">
+            </label>
+
+            <button type="submit" class="fl-radar-button primary">
+              Upload
+            </button>
+
+            <span id="fl-radar-upload-status" class="fl-radar-status" role="status"></span>
+
+          </form>
+
+          <form id="fl-product-upload" class="fl-radar-upload" hidden>
+
+            <label>
+              Product type
+              <select id="fl-product-kind" name="kind"></select>
+            </label>
+
+            <label>
+              Product file
+              <input id="fl-product-file" type="file" name="file" required>
+            </label>
+
+            <button type="submit" class="fl-radar-button primary">
+              Upload
+            </button>
+
+            <span id="fl-product-target" class="fl-radar-status"></span>
+            <span id="fl-product-upload-status" class="fl-radar-status" role="status"></span>
+
+          </form>
+
+          <div id="fl-radar-mode-note" class="fl-radar-note" hidden></div>
+
+          <!-- Automatic mode: URSA automatic picking (automatic.js) -->
+          <div id="fl-automatic" class="fl-automatic" hidden></div>
+
+          <div id="fl-radar-empty" class="fl-empty-selection fl-radar-empty"></div>
+
+          <div id="fl-radar-viewer" class="fl-radar-viewer" hidden>
+
+            <div id="fl-radar-overview" class="fl-radar-overview" title="Click to move to this part of the strip">
+              <img id="fl-radar-overview-img" alt="Radar strip overview">
+              <div id="fl-radar-overview-window" class="fl-radar-overview-window"></div>
+            </div>
+
+            <div id="fl-radar-image-frame" class="fl-radar-frame" tabindex="0" aria-label="Radar image window">
+              <img id="fl-radar-image" alt="Radar image window">
+            </div>
+
+            <div class="fl-radar-nav">
+
+              <button type="button" class="fl-radar-button" data-radar-step="-1" title="Previous window">⇤</button>
+              <button type="button" class="fl-radar-button" data-radar-step="-0.1" title="Step left">←</button>
+
+              <input id="fl-radar-position" type="range" min="0" max="0" step="1" value="0" aria-label="Position along the radar strip">
+
+              <button type="button" class="fl-radar-button" data-radar-step="0.1" title="Step right">→</button>
+              <button type="button" class="fl-radar-button" data-radar-step="1" title="Next window">⇥</button>
+
+              <span class="fl-radar-zoom">
+                <button type="button" id="fl-radar-zoom-out" class="fl-radar-button" title="Zoom out">−</button>
+                <span id="fl-radar-scale">1:1</span>
+                <button type="button" id="fl-radar-zoom-in" class="fl-radar-button" title="Zoom in">+</button>
+              </span>
+
+            </div>
+
+            <div id="fl-radar-readout" class="fl-radar-readout"></div>
+
+          </div>
+
+
+          <!-- Manual mode: ASTRA A-scope picker (pickers/astra.py) -->
+
+          <div id="fl-astra" class="fl-astra" hidden>
+
+            <div class="fl-astra-head">
+              <strong id="fl-astra-title" class="fl-astra-title">A-scope</strong>
+              <span id="fl-astra-status" class="fl-astra-chip"></span>
+              <span id="fl-astra-calibration" class="fl-astra-chip"></span>
+              <span id="fl-astra-hint" class="fl-astra-hint" role="status"></span>
+            </div>
+
+            <div id="fl-astra-stage" class="fl-astra-stage">
+              <div id="fl-astra-box" class="fl-astra-box">
+                <img id="fl-astra-image" alt="ASTRA working window of the radar strip">
+                <svg id="fl-astra-overlay" class="fl-astra-overlay" aria-hidden="true"></svg>
+              </div>
+            </div>
+
+            <div class="fl-astra-nav">
+              <button type="button" class="fl-radar-button" data-astra-step="left" title="Move 10 px left">←</button>
+              <input id="fl-astra-slider" type="range" min="0" max="0" step="1" value="0" aria-label="X Position">
+              <button type="button" class="fl-radar-button" data-astra-step="right" title="Move 10 px right">→</button>
+              <button type="button" class="fl-radar-button" data-astra-step="jump">Move 1000 px</button>
+              <span id="fl-astra-position" class="fl-astra-position"></span>
+              <label class="fl-astra-toggle" title="Display only; the trace used for picking is unchanged">
+                <input type="checkbox" id="fl-astra-trace-toggle" checked>
+                Show trace
+              </label>
+            </div>
+
+            <div class="fl-astra-controls">
+
+              <section class="fl-astra-step" aria-labelledby="fl-astra-step-calibration">
+                <h3 id="fl-astra-step-calibration" class="fl-astra-step-title">
+                  <span class="fl-astra-step-number">1</span>
+                  Calibration
+                </h3>
+                <div class="fl-astra-step-buttons">
+                  <button type="button" class="fl-radar-button" data-astra-setup="x_reference">Set Up X Axis Reference Line</button>
+                  <button type="button" class="fl-radar-button" data-astra-setup="y_reference">Set Up Y Axis Reference Line</button>
+                  <button type="button" class="fl-radar-button" data-astra-setup="y_axis">Set Up Y Axis</button>
+                  <span class="fl-astra-sweep">
+                    Sweep Rate (μs/div)
+                    <button type="button" class="fl-radar-button" data-astra-sweep="1">1</button>
+                    <button type="button" class="fl-radar-button" data-astra-sweep="2">2</button>
+                    <button type="button" class="fl-radar-button" data-astra-sweep="5">5</button>
+                  </span>
+                  <button type="button" class="fl-radar-button" data-astra-setup="x_axis">Set Up X Axis</button>
+                </div>
+              </section>
+
+              <section class="fl-astra-step" aria-labelledby="fl-astra-step-picks">
+                <h3 id="fl-astra-step-picks" class="fl-astra-step-title">
+                  <span class="fl-astra-step-number">2</span>
+                  Picks
+                </h3>
+                <div class="fl-astra-step-buttons">
+                  <button type="button" class="fl-radar-button pick-surface" data-astra-feature="Surface">Surface</button>
+                  <button type="button" class="fl-radar-button" data-astra-feature="No Surface">No Surface</button>
+                  <button type="button" class="fl-radar-button pick-bed" data-astra-feature="Bed">Bed</button>
+                  <button type="button" class="fl-radar-button" data-astra-feature="No Bed">No Bed</button>
+                  <button type="button" id="fl-astra-suggest" class="fl-radar-button">Suggest Picks</button>
+                  <button type="button" class="fl-radar-button pick-noisefloor" data-astra-feature="Noise Floor">Noise Floor</button>
+                  <button type="button" class="fl-radar-button pick-mainbang" data-astra-feature="Main Bang">Main Bang</button>
+                </div>
+              </section>
+
+              <section class="fl-astra-step" aria-labelledby="fl-astra-step-ascope">
+                <h3 id="fl-astra-step-ascope" class="fl-astra-step-title">
+                  <span class="fl-astra-step-number">3</span>
+                  A-scope
+                </h3>
+                <div class="fl-astra-step-buttons">
+                  <button type="button" id="fl-astra-next" class="fl-radar-button primary">Next A-scope</button>
+                  <button type="button" id="fl-astra-done" class="fl-radar-button">Done</button>
+                  <button type="button" id="fl-astra-reset" class="fl-radar-button subtle fl-astra-reset">Reset session</button>
+                </div>
+              </section>
+
+            </div>
+
+          </div>
+
+          <div id="fl-astra-result" class="fl-astra-result" hidden></div>
+
+        </section>
+
       </section>
 
 
@@ -101,6 +335,12 @@
            ========================================== -->
 
       <aside class="fl-panel">
+
+        <!-- The explorer is one section: always open in Map mode; in Manual
+             and Automatic the radar sections come first and it can be folded. -->
+        <details id="fl-explorer-section" class="fl-explorer-section" open>
+
+        <summary class="fl-explorer-summary">Dataset Explorer</summary>
 
         <div class="fl-panel-heading">
 
@@ -178,6 +418,11 @@
 
         </div>
 
+
+        </details>
+
+        <div id="fl-radar-panel" class="fl-radar-panel"></div>
+
       </aside>
 
     </main>
@@ -224,6 +469,47 @@
 <!-- FrozenLegacies interaction/UI -->
 <script
   src="/frozen-legacies/assets/ui.js">
+</script>
+
+<!-- FrozenLegacies radar workspace -->
+<script
+  src="/frozen-legacies/assets/radar_geometry.js">
+</script>
+
+<script
+  src="/frozen-legacies/assets/astra_picker.js">
+</script>
+
+<script
+  src="/frozen-legacies/assets/georef.js">
+</script>
+
+<script
+  src="/frozen-legacies/assets/products.js">
+</script>
+
+<script
+  src="/frozen-legacies/assets/automatic.js">
+</script>
+
+<script
+  src="/frozen-legacies/assets/user_layer.js">
+</script>
+
+<script
+  src="/frozen-legacies/assets/catalog.js">
+</script>
+
+<script
+  src="/frozen-legacies/assets/review.js">
+</script>
+
+<script
+  src="/frozen-legacies/assets/published_layer.js">
+</script>
+
+<script
+  src="/frozen-legacies/assets/radar.js">
 </script>
 
 <!-- CryoStack Account -->

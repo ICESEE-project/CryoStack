@@ -1,0 +1,13 @@
+{
+ "argv": [
+  "python",
+  "{resource_dir}/../../../cryostack_kernel.py",
+  "-f",
+  "{connection_file}"
+ ],
+ "display_name": "Python 3 (CryoStack)",
+ "language": "python",
+ "interrupt_mode": "message",
+ "metadata": {"debugger": false},
+ "kernel_protocol_version": "5.5"
+}

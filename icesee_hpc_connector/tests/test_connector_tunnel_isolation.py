@@ -151,11 +151,18 @@ class _ConnectorThread(threading.Thread):
 
 
 @pytest.fixture
-def session(live_relay, monkeypatch):
+def session(live_relay, monkeypatch, tmp_path):
     """A live session + a connected real Connector, bound for
     connector_relay_client (the SAME module CryoStack's own kernel process
     uses for Remote RPC), so both send_command(...) (Remote) and the
     tunnel-grant flow (Cloud) go through the identical binding."""
+    # The Connector runs every `shell` command as a login shell (bash -lc),
+    # which would source the developer's own ~/.bash_profile (conda init etc.
+    # took ~1.2 s per command on the CI host, then ~2-3 s under load). An empty
+    # HOME keeps the timings about the Connector, not about local dotfiles.
+    home = tmp_path / "connector-home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
     # monkeypatch (not a raw attribute assignment) so this module-level
     # global is restored after the test, never leaking into any other
     # test file's use of the real production relay URL.

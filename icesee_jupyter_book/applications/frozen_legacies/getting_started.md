@@ -89,6 +89,8 @@ The Frozen Legacies interface is organized into two principal areas:
 1. **Antarctic map** — displays survey flight tracks and georeferenced radar observations.
 2. **Dataset Explorer** — provides dataset and flight controls and displays information for the selected observation.
 
+Above them, **Map**, **Manual**, and **Automatic** switch the main area between the Antarctic map and the radar workspace, where you can open raw radar imagery or upload your own radar TIFF. Returning to **Map** keeps your current selection. **Manual** is the ASTRA A-scope picker; **Automatic** runs the URSA automatic picker where the server supports it (its results are scientifically unvalidated and cannot be submitted for review).
+
 The navigation bar at the top provides access to:
 
 - Frozen Legacies,
@@ -235,18 +237,7 @@ Available products depend on the dataset manifest and storage backend.
 
 ## Downloads
 
-Frozen Legacies supports dataset-defined downloads.
-
-Depending on the collection, downloads may include:
-
-- observation records,
-- observation GeoJSON,
-- flight-track GeoJSON,
-- source CSV files,
-- radar imagery,
-- and other derived products.
-
-Not every dataset is required to provide every download type.
+Datasets that declare downloads offer them under **Dataset downloads** in the Dataset Explorer (for the LYRA collection: observations and flight tracks as GeoJSON). Products of your own radar work are downloaded from the **Products** list.
 
 ## Dataset Provenance
 
@@ -282,8 +273,28 @@ A typical Frozen Legacies session follows these steps:
 6. Review the observation status.
 7. Inspect geographic and LYRA-derived quantities.
 8. Review the source provenance.
-9. Open available radar imagery or scientific products.
-10. Download available products when required.
+9. Open raw radar in **Manual** or **Automatic**, or upload your own.
+10. Download products from the **Products** list or **Dataset downloads**.
+
+## Open or Upload Radar
+
+1. Select **Manual** (or **Automatic**).
+2. In **Radar asset**, open shared radar provided by the installation, or select **Upload raw radar** to add a radar TIFF (with its navigation CSV) to your workspace.
+3. If you already have processed results (ASTRA or URSA picks, QC images, echograms), select **Upload processed product** instead — you do not need to pick again.
+
+## Pick a Radar TIFF Manually
+
+1. Select **Manual** and choose a radar asset.
+2. Calibrate as in ASTRA: **Set Up X Axis Reference Line**, **Set Up Y Axis Reference Line**, **Set Up Y Axis** (four grid lines), the **Sweep Rate**, then **Set Up X Axis** (four grid lines).
+3. Pick **Surface**, **Bed**, **Noise Floor**, and **Main Bang** by selecting the feature and clicking the plot; picks snap to the red trace. **No Surface** / **No Bed** record absent reflections, and **Suggest Picks** proposes picks for you to check.
+4. Select **Next A-scope** to save the A-scope and continue along the strip.
+5. Select **Done** when the TIFF is finished, then download the CSV and QC image.
+
+Your session is saved as you work; you can leave and continue later.
+
+## Pick Automatically
+
+Select **Automatic** and **Run automatic picking** to run URSA on the open radar asset. If this server cannot run URSA, Automatic tells you why and nothing is run. When the job finishes, its picks and QC images appear in the **Products** list, labelled *scientifically unvalidated*.
 
 ## Map Reset
 
@@ -293,11 +304,13 @@ Selecting an individual flight automatically focuses the map on the correspondin
 
 ## Authentication
 
-Frozen Legacies is openly accessible — it does not require a CryoStack
-account to browse flights, observations, or radar products. It does not yet
-provide any account-specific features (saved views, experiments, or
-personal settings); those exist for CryoStack's execution-oriented
-applications (CryoLauncher, ICESEE), not for this archive viewer.
+Frozen Legacies requires a CryoStack account, like CryoLauncher and ICESEE.
+If you are not signed in, opening Frozen Legacies takes you to the CryoStack
+sign-in page and returns you to the application afterwards.
+
+Each signed-in user has a private Frozen Legacies workspace in their
+CryoStack workspace. Other users cannot see its contents. The shared
+Frozen Legacies datasets remain the same for every user.
 
 ## Next Steps
 

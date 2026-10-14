@@ -9,6 +9,8 @@ import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import access_log
+
 CONTROL_ROLE_RANK = {
     "developer": 10,
     "maintainer": 20,
@@ -374,6 +376,7 @@ class AuthStorage:
             )
 
             self._ensure_user_columns(connection)
+            access_log.ensure_access_schema(connection)
 
     def create_user(
         self,
@@ -713,6 +716,26 @@ class AuthStorage:
                 "DELETE FROM sessions WHERE id = ?",
                 (session_id,),
             )
+
+    def delete_user_sessions(self, user_id: str) -> int:
+        """Delete every session of one user; returns how many were removed."""
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM sessions WHERE user_id = ?",
+                (user_id,),
+            )
+
+        return cursor.rowcount
+
+    def record_access_event(self, **fields) -> None:
+        """Append one row to ``access_events`` (see :mod:`access_log`)."""
+        with self._connect() as connection:
+            access_log.record_event(connection, **fields)
+
+    def record_access_audit(self, **fields) -> str:
+        """Append one row to the append-only ``access_audit_log``."""
+        with self._connect() as connection:
+            return access_log.record_audit(connection, **fields)
 
     def delete_expired_sessions(self, now: float | None = None) -> None:
         timestamp = time.time() if now is None else now
@@ -1757,12 +1780,7 @@ class AuthStorage:
         now: float | None = None,
     ) -> None:
 
-        allowed_roles = {
-            "developer",
-            "nmaintainer",
-            "admin",
-            "owner",
-        }
+        allowed_roles = set(CONTROL_ROLE_RANK)
 
         role = role.strip().lower()
 

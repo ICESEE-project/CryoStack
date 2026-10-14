@@ -9,6 +9,14 @@ import uuid
 import ipywidgets as W
 from IPython.display import Javascript, display
 
+from icesee_jupyter_book.core.experiment_status import record_metadata
+
+
+#: commands kept in the hidden element until the browser has had a chance to
+#: send them; the browser de-duplicates by message id, so a command dispatched
+#: right after another one is never lost to a single re-render
+PENDING_COMMANDS = 8
+
 
 class ExperimentBridge:
     """Send experiment commands through the authenticated browser session.
@@ -25,6 +33,8 @@ class ExperimentBridge:
             "cryostack-experiment-"
             + uuid.uuid4().hex
         )
+
+        self._pending: list[str] = []
 
         self.output = W.HTML(
             value=self._render_payload(""),
@@ -69,7 +79,12 @@ class ExperimentBridge:
             "working_directory": working_directory,
             "output_directory": output_directory,
             "log_path": log_path,
-            "metadata": metadata or {},
+            # the scientific/execution facts in the one shape every
+            # record carries (filled from the snapshot, never overwritten)
+            "metadata": record_metadata(
+                configuration,
+                metadata,
+            ),
         }
 
         if configuration_id:
@@ -166,20 +181,27 @@ class ExperimentBridge:
             raw
         ).decode("ascii")
 
+        self._pending = (
+            self._pending + [encoded]
+        )[-PENDING_COMMANDS:]
+
         # Updating widget HTML causes a real DOM mutation.
         # The JavaScript MutationObserver installed below sees this
-        # and performs the authenticated API request.
-        self.output.value = self._render_payload(
-            encoded
+        # and performs the authenticated API request for every command
+        # it has not sent yet.
+        self.output.value = "".join(
+            self._render_payload(command, index)
+            for index, command in enumerate(self._pending)
         )
 
     def _render_payload(
         self,
         encoded: str,
+        index: int = 0,
     ) -> str:
         return f"""
 <div
-    id="{self.bridge_id}"
+    id="{self.bridge_id}-{index}"
     class="cryostack-experiment-bridge"
     data-cryostack-command="{encoded}"
 ></div>

@@ -57,6 +57,18 @@ def load_manifest(
     return payload
 
 
+#: capabilities a dataset has unless its manifest says otherwise
+DEFAULT_CAPABILITIES = {
+    "observations": True,
+    "flight_lines": True,
+    "imagery": False,
+    "raw_radar": False,
+    "downloads": False,
+    "citations": False,
+    "search": False,
+}
+
+
 def manifest_to_dataset(
     manifest: dict[str, Any],
 ) -> FrozenDataset:
@@ -92,6 +104,24 @@ def manifest_to_dataset(
     metadata["downloads"] = (
         manifest.get(
             "downloads"
+        )
+        or {}
+    )
+
+    # Declarative feature flags (what the frontend may offer for this
+    # dataset) and build options (e.g. which downloads to provide).
+    metadata["capabilities"] = dict(
+        DEFAULT_CAPABILITIES,
+        **(
+            manifest.get(
+                "capabilities"
+            )
+            or {}
+        ),
+    )
+    metadata["build"] = (
+        manifest.get(
+            "build"
         )
         or {}
     )

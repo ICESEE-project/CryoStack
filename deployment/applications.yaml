@@ -91,7 +91,15 @@ applications:
 
     health:
       target: frozen-legacies
+      # Authenticated application: anonymous requests redirect to login.
+      expected_statuses:
+        - 200
+        - 302
 
+    # The build regenerates catalog/GeoJSON files, which the gateway reads
+    # on every request, so no restart is needed. The Frozen Legacies server
+    # code (server.py, radar/, pickers/) runs inside the GUI gateway: a code
+    # update needs `deployment/services.sh restart-gui`.
     restart:
       scope: none
 

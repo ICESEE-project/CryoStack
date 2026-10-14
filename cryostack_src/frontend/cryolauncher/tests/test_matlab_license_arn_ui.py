@@ -564,7 +564,7 @@ def test_advanced_existing_secret_option_exposes_arn_only_inside_it():
     assert card.matlab_license_advanced.selected_index is None
 
 
-def test_existing_arn_path_remains_functional(tmp_path):
+def test_existing_arn_path_remains_functional(tmp_path, monkeypatch):
     """The manual "paste an existing ARN" path (Advanced) still saves onto
     the connection through the same, unchanged mechanism."""
     import matplotlib
@@ -577,41 +577,35 @@ def test_existing_arn_path_remains_functional(tmp_path):
     ).mark_connected(account_id="774888247882")
     store.save(connection)
 
-    import os
-    os.environ["CRYOSTACK_WORKSPACE_USER"] = "matlab-license-ui-user"
-    os.environ["USER"] = "matlab-license-ui-svc"
-    os.environ["CRYOSTACK_WORKSPACE_ROOT"] = str(tmp_path)
-    try:
-        from icesee_jupyter_book.ui.icesheets_gateway import build_icesheets_ui
-        page = build_icesheets_ui()
+    monkeypatch.setenv("CRYOSTACK_WORKSPACE_USER", "matlab-license-ui-user")
+    monkeypatch.setenv("USER", "matlab-license-ui-svc")
+    monkeypatch.setenv("CRYOSTACK_WORKSPACE_ROOT", str(tmp_path))
+    from icesee_jupyter_book.ui.icesheets_gateway import build_icesheets_ui
+    page = build_icesheets_ui()
 
-        save_button = None
+    save_button = None
 
-        def walk(w):
-            nonlocal save_button
-            if isinstance(w, W.Button) and getattr(w, "description", "") == "Use existing secret":
-                save_button = w
-            for c in getattr(w, "children", ()):
-                walk(c)
+    def walk(w):
+        nonlocal save_button
+        if isinstance(w, W.Button) and getattr(w, "description", "") == "Use existing secret":
+            save_button = w
+        for c in getattr(w, "children", ()):
+            walk(c)
 
-        walk(page)
-        assert save_button is not None, "Use existing secret button not found"
-        assert save_button._click_handlers.callbacks
+    walk(page)
+    assert save_button is not None, "Use existing secret button not found"
+    assert save_button._click_handlers.callbacks
 
-        handler = save_button._click_handlers.callbacks[0]
+    handler = save_button._click_handlers.callbacks[0]
 
-        def freevar(fn, name):
-            idx = fn.__code__.co_freevars.index(name)
-            return fn.__closure__[idx].cell_contents
+    def freevar(fn, name):
+        idx = fn.__code__.co_freevars.index(name)
+        return fn.__closure__[idx].cell_contents
 
-        cloud_environment = freevar(handler, "widgets")
-        arn = "arn:aws:secretsmanager:us-east-2:774888247882:secret:issm-license-abc123"
-        cloud_environment.matlab_license_arn.value = arn
-        handler(None)
-    finally:
-        del os.environ["CRYOSTACK_WORKSPACE_USER"]
-        del os.environ["USER"]
-        del os.environ["CRYOSTACK_WORKSPACE_ROOT"]
+    cloud_environment = freevar(handler, "widgets")
+    arn = "arn:aws:secretsmanager:us-east-2:774888247882:secret:issm-license-abc123"
+    cloud_environment.matlab_license_arn.value = arn
+    handler(None)
 
     reloaded = AWSConnectionStore(user=user, workspace_root=tmp_path).load()
     assert reloaded.matlab_license_secret_arn == arn
@@ -619,7 +613,7 @@ def test_existing_arn_path_remains_functional(tmp_path):
     assert reloaded.account_id == "774888247882"
 
 
-def test_existing_arn_path_rejects_a_pasted_license_value(tmp_path):
+def test_existing_arn_path_rejects_a_pasted_license_value(tmp_path, monkeypatch):
     import matplotlib
     matplotlib.use("Agg")
 
@@ -630,17 +624,11 @@ def test_existing_arn_path_rejects_a_pasted_license_value(tmp_path):
     ).mark_connected(account_id="774888247882")
     store.save(connection)
 
-    import os
-    os.environ["CRYOSTACK_WORKSPACE_USER"] = "matlab-license-reject-user"
-    os.environ["USER"] = "matlab-license-reject-svc"
-    os.environ["CRYOSTACK_WORKSPACE_ROOT"] = str(tmp_path)
-    try:
-        from icesee_jupyter_book.ui.icesheets_gateway import build_icesheets_ui
-        page = build_icesheets_ui()
-    finally:
-        del os.environ["CRYOSTACK_WORKSPACE_USER"]
-        del os.environ["USER"]
-        del os.environ["CRYOSTACK_WORKSPACE_ROOT"]
+    monkeypatch.setenv("CRYOSTACK_WORKSPACE_USER", "matlab-license-reject-user")
+    monkeypatch.setenv("USER", "matlab-license-reject-svc")
+    monkeypatch.setenv("CRYOSTACK_WORKSPACE_ROOT", str(tmp_path))
+    from icesee_jupyter_book.ui.icesheets_gateway import build_icesheets_ui
+    page = build_icesheets_ui()
 
     save_button = None
 

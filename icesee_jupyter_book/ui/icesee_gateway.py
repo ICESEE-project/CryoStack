@@ -75,6 +75,7 @@ from icesee_jupyter_book.core.remote_runner import (
 from icesee_jupyter_book.core import run_records
 from icesee_jupyter_book.core.runs_manager import IceseeRunsManager
 from icesee_jupyter_book.core.results_package import discover_result_package
+from icesee_jupyter_book.ui.icesee_run_progress import run_progress_html
 from icesee_jupyter_book.core.cloud_bridge_adapter import (
     IceseeCloudBridgeConfig,
     build_icesee_cloud_bridge,
@@ -84,6 +85,7 @@ from icesee_jupyter_book.core.cloud_bridge_adapter import (
     sync_icesee_cloud_results,
 )
 from cryostack_src.cloud.diagnostics import merge_aws_resources, resources_from_poll
+from cryostack_src.frontend.cryolauncher.cloud_experiments import cloud_status_update
 from icesee_jupyter_book.core.run_records import da_identity_from_params
 from cryostack_src.frontend.cryolauncher.panels.run_plan import build_run_plan_panel
 from cryostack_src.frontend.cryolauncher.panels.run_settings import build_run_settings_panel
@@ -812,6 +814,8 @@ def build_icesee_ui():
                         display(Image(filename=str(p)))
                 else:
                     print("No PNG figures found.")
+
+                display(HTML(run_progress_html(outputs_dir)))
 
 
         def download_results_bundle(_=None):
@@ -2250,6 +2254,31 @@ def build_icesee_ui():
                     "s3_run": result.working_directory,
                 })
 
+                # the shared experiment record (Control Center Cloud and
+                # Experiments), as Remote runs already do; no account id or
+                # credentials -- the record carries the provider and queue only
+                experiment_bridge.create(
+                    application="icesee",
+                    name=f"ICESEE {filter_alg_dd.value} run",
+                    backend="aws",
+                    status="queued",
+                    job_id=str(result.job_id),
+                    cluster="aws-batch",
+                    working_directory=result.working_directory,
+                    configuration=current_experiment_configuration(),
+                    metadata={
+                        "execution_mode": "cloud",
+                        "provider": "aws",
+                        "filter": filter_alg_dd.value,
+                        "cloud": {
+                            "region": execution.region,
+                            "job_queue": job_queue,
+                            "job_definition": job_definition,
+                        },
+                    },
+                )
+                STATUS["batch_experiment_status"] = "queued"
+
                 set_status("done")
                 with log_out:
                     for msg in result.messages:
@@ -2291,6 +2320,13 @@ def build_icesee_ui():
                     _merge_icesee_aws_resources(
                         Path(STATUS["local_run_dir"]), resources_from_poll(st.metadata),
                     )
+                # each experiment status once; nothing after a terminal one
+                update = cloud_status_update(st.raw_state or st.state, st.reason or "")
+                sent = STATUS.get("batch_experiment_status")
+                if (update and update["status"] != sent
+                        and sent not in ("completed", "failed", "cancelled")):
+                    experiment_bridge.update_by_job(job_id=str(STATUS["batch_job_id"]), **update)
+                    STATUS["batch_experiment_status"] = update["status"]
             except Exception as e:
                 with log_out:
                     print("[cloud][ERROR]", type(e).__name__, e)
@@ -2972,6 +3008,8 @@ def build_icesee_ui():
                     print("\nDA outputs (from results/*.h5):")
                     for line in lines:
                         print(" -", line)
+            with results_out:
+                display(HTML(run_progress_html(run.workspace_directory)))
 
         def _on_icesee_tail_selected_run():
             run = icesee_runs_manager.selected_run()

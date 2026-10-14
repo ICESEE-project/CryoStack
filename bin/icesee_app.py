@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+import secrets
 import signal
 import socket
 import subprocess
@@ -51,6 +53,20 @@ from control_center.services.access import (
     AccessService,
 )
 
+from icesee_jupyter_book.applications.frozen_legacies.server import (
+    frozen_legacies_root,
+    install_frozen_legacies,
+)
+from icesee_jupyter_book.applications.livist.routes import install_livist
+from icesee_jupyter_book.core.connector_relay_auth import OWNER_GRANT_HEADER, owner_grant
+from icesee_auth.kernel_access import (
+    KERNEL_WORKSPACE_STATE_PATH,
+    WORKSPACE_GRANT_HEADER,
+    grant_matches,
+    workspace_grant,
+)
+from icesee_jupyter_book.developer_docs_access import developer_docs_middleware
+
 
 HOP_BY_HOP = {
     "connection",
@@ -87,22 +103,6 @@ def livist_docs_root() -> Path:
         / "living-ice-sheet-temperature"
         / "site"
     )
-
-def frozen_legacies_root() -> Path:
-    return (
-        repo_root()
-        / "icesee_jupyter_book"
-        / "applications"
-        / "frozen_legacies"
-    )
-
-
-def frozen_legacies_data_root() -> Path:
-    return frozen_legacies_root() / "data"
-
-
-def frozen_legacies_assets_root() -> Path:
-    return frozen_legacies_root() / "assets"
 
 def maintainer_guide_source() -> Path:
     return (
@@ -358,36 +358,11 @@ async def livist_docs_page(request: web.Request) -> web.StreamResponse:
 
     return web.FileResponse(requested_path)
 
-async def frozen_legacies_redirect(
-    request: web.Request,
-) -> web.StreamResponse:
-    raise web.HTTPFound("/frozen-legacies/")
-
-
-async def frozen_legacies_index(
-    request: web.Request,
-) -> web.StreamResponse:
-
-    index_file = (
-        frozen_legacies_root()
-        / "index.html"
-    )
-
-    if not index_file.exists():
-        raise web.HTTPNotFound(
-            text=(
-                "FrozenLegacies frontend has not "
-                "been created yet. Expected:\n"
-                f"{index_file}"
-            )
-        )
-
-    return web.FileResponse(index_file)
-
 class ManagedProcess:
-    def __init__(self, command: list[str], cwd: Path):
+    def __init__(self, command: list[str], cwd: Path, env: dict[str, str] | None = None):
         self.command = command
         self.cwd = cwd
+        self.env = env
         self.proc: subprocess.Popen | None = None
 
     def start(self) -> None:
@@ -396,6 +371,7 @@ class ManagedProcess:
         self.proc = subprocess.Popen(
             self.command,
             cwd=str(self.cwd),
+            env=self.env,
             stdout=sys.stdout,
             stderr=sys.stderr,
             preexec_fn=os.setsid,
@@ -414,49 +390,179 @@ class ManagedProcess:
                 pass
 
 
+# Voila kernels inherit the Voila server's environment, so the server gets an
+# explicit allowlist rather than the gateway's environment (OAuth client
+# secrets, the relay deployment token, operator session variables). The
+# per-user identity and relay grant reach a kernel as request headers instead.
+VOILA_ENV_ALLOWLIST = frozenset({
+    # process basics
+    "PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LANGUAGE", "TZ", "TMPDIR",
+    "HOSTNAME", "XDG_RUNTIME_DIR", "XDG_DATA_HOME", "XDG_CONFIG_HOME",
+    "XDG_CACHE_HOME", "XDG_DATA_DIRS",
+    # Python, conda and Jupyter runtime
+    "PYTHONPATH", "PYTHONNOUSERSITE", "PYTHONUNBUFFERED", "LD_LIBRARY_PATH",
+    "CONDA_PREFIX", "CONDA_DEFAULT_ENV", "CONDA_EXE", "CONDA_PYTHON_EXE",
+    "MAMBA_EXE", "MAMBA_ROOT_PREFIX",
+    "JUPYTER_CONFIG_PATH", "JUPYTER_CONFIG_DIR", "JUPYTER_PATH", "JUPYTER_DATA_DIR",
+    "JUPYTER_RUNTIME_DIR", "JUPYTER_PLATFORM_DIRS", "IPYTHONDIR",
+    "MPLBACKEND", "MPLCONFIGDIR",
+    # outbound HTTPS (relay, AWS, model downloads)
+    "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE",
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
+    # CryoStack application settings (no credentials)
+    "CRYOSTACK_AGENT_PANEL", "CRYOSTACK_PERF", "CRYOSTACK_WORKSPACE_ROOT",
+    "CRYOSTACK_AUTH_DATABASE", "CRYOSTACK_AWS_PRINCIPAL_ARN", "CRYOSTACK_GATEWAY_INTERNAL_URL",
+    "CRYOSTACK_KERNEL_SANDBOX", "CRYOSTACK_KERNEL_BWRAP", "CRYOSTACK_KERNEL_RO_PATHS",
+    "CRYOSTACK_KERNEL_AWS_DIR", "CRYOSTACK_KERNEL_HIDE",
+    "CRYOSTACK_CF_TEMPLATE_URL", "CRYOSTACK_CLOUD_POLL_SECONDS",
+    # Cloud: the named AWS profile and region select the CryoStack principal
+    # for hosted runs and AssumeRole; static keys are never forwarded.
+    "AWS_PROFILE", "AWS_REGION", "AWS_DEFAULT_REGION", "AWS_CONFIG_FILE",
+    "AWS_SHARED_CREDENTIALS_FILE",
+    # scientific models
+    "ICEPACK_ROOT", "ISSM_DIR", "ICESEE_GHUB_ROOT", "OMP_NUM_THREADS",
+    "PROJ_DATA", "PROJ_LIB", "GDAL_DATA",
+    "APPTAINER_CACHEDIR", "APPTAINER_TMPDIR", "APPTAINER_BINDPATH",
+    "SINGULARITY_CACHEDIR", "SINGULARITY_TMPDIR", "SINGULARITY_BINDPATH",
+})
+VOILA_ENV_PREFIXES = ("LC_", "ICESEE_", "ICEPACK_", "ISSM_", "PETSC_", "FIREDRAKE_", "OMPI_")
+# A name that looks like a credential never passes, even under an allowed prefix.
+_VOILA_ENV_SECRET_MARKERS = ("SECRET", "TOKEN", "PASSWORD", "PASSWD", "CREDENTIAL",
+                             "PRIVATE", "ACCESS_KEY", "API_KEY")
+
+
+def _voila_env_allowed(name: str) -> bool:
+    upper = name.upper()
+    if any(marker in upper for marker in _VOILA_ENV_SECRET_MARKERS):
+        return name == "AWS_SHARED_CREDENTIALS_FILE"
+    return name in VOILA_ENV_ALLOWLIST or name.startswith(VOILA_ENV_PREFIXES)
+
+
+def voila_environment(token: str, source: dict[str, str] | None = None) -> dict[str, str]:
+    """Environment for a gateway-managed Voila server.
+
+    Only allowlisted variables are copied from the gateway (``source``,
+    default ``os.environ``). The token travels only in the child's environment
+    (never argv, which any local account can read with ps);
+    bin/voila_config/voila.py moves it into Voila's configuration and removes
+    it before kernels start.
+    """
+    source = os.environ if source is None else source
+    env = {name: value for name, value in source.items() if _voila_env_allowed(name)}
+    env["CRYOSTACK_VOILA_TOKEN"] = token
+    config_dir = str(Path(__file__).resolve().parent / "voila_config")
+    existing = env.get("JUPYTER_CONFIG_PATH")
+    env["JUPYTER_CONFIG_PATH"] = os.pathsep.join([config_dir, existing] if existing else [config_dir])
+    # kernels/python3 there starts kernels through bin/cryostack_kernel.py
+    # (per-user sandbox when CRYOSTACK_KERNEL_SANDBOX=bwrap)
+    existing = env.get("JUPYTER_PATH")
+    env["JUPYTER_PATH"] = os.pathsep.join([config_dir, existing] if existing else [config_dir])
+    return env
+
+
+#: ``managed`` (default): the gateway starts its two Voila servers as
+#: children. ``external``: they run under their own service account
+#: (``bin/icesee_app.py voila <app>``, started by the deployment) and the
+#: gateway only proxies to them; both sides read the Voila token from
+#: ``CRYOSTACK_VOILA_TOKEN_FILE``.
+VOILA_MODE_ENV = "CRYOSTACK_VOILA_MODE"
+VOILA_TOKEN_FILE_ENV = "CRYOSTACK_VOILA_TOKEN_FILE"
+
+
+def voila_mode() -> str:
+    mode = (os.environ.get(VOILA_MODE_ENV) or "managed").strip().lower()
+    if mode not in ("managed", "external"):
+        raise RuntimeError(f"{VOILA_MODE_ENV} must be 'managed' or 'external', not {mode!r}")
+    return mode
+
+
+def read_voila_token_file(path: str | None = None) -> str:
+    """The shared Voila token of an external deployment.
+
+    The file must belong to this account or be shared through a group, never
+    readable by others, and hold one non-trivial token."""
+    raw = path if path is not None else os.environ.get(VOILA_TOKEN_FILE_ENV, "")
+    if not raw.strip():
+        raise RuntimeError(f"{VOILA_TOKEN_FILE_ENV} is required when {VOILA_MODE_ENV}=external")
+    token_path = Path(raw.strip()).expanduser()
+    st = token_path.stat()
+    if st.st_mode & 0o007:
+        raise RuntimeError(f"{token_path} is readable or writable by other accounts (chmod o-rwx)")
+    token = token_path.read_text(encoding="utf-8").strip()
+    if len(token) < 32:
+        raise RuntimeError(f"{token_path} does not hold a token of at least 32 characters")
+    return token
+
+
+#: (notebook, port, base URL) of the two application servers
+VOILA_APPS = {
+    "icesee": (run_center_nb, 8866, "/icesee-gui/"),
+    "icesheets": (icesheets_nb, 8870, "/icesheets/"),
+}
+
+
+def voila_command(app_name: str, python: str | None = None) -> list[str]:
+    notebook, port, base_url = VOILA_APPS[app_name]
+    return [
+        python or sys.executable,
+        "-m",
+        "voila",
+        str(notebook()),
+        "--no-browser",
+        "--Voila.ip=127.0.0.1",
+        f"--port={port}",
+        f"--Voila.base_url={base_url}",
+        "--Voila.allow_origin=http://127.0.0.1:8080",
+        # Surface the proxy-verified CryoStack identity into the kernel
+        # environment (HTTP_X_CRYOSTACK_USER_ID) so Workspace history is
+        # isolated per authenticated user. preheat_kernel stays disabled
+        # (default) so each render's kernel sees its own request headers.
+        "--VoilaConfiguration.http_header_envs=X-CryoStack-User-Id",
+        "--VoilaConfiguration.http_header_envs=X-CryoStack-User-Name",
+        # The user's connector-relay grant (never the deployment token) and
+        # workspace grant (never the gateway key).
+        f"--VoilaConfiguration.http_header_envs={OWNER_GRANT_HEADER}",
+        f"--VoilaConfiguration.http_header_envs={WORKSPACE_GRANT_HEADER}",
+    ]
+
+
+class ExternalVoilaProcess:
+    """A Voila server another account supervises: nothing to start or stop."""
+
+    proc = None
+
+    def start(self) -> None:
+        pass
+
+    def stop(self) -> None:
+        pass
+
+
 class ICESEEState:
     def __init__(self) -> None:
-        py = sys.executable
         root = repo_root()
+        self.voila_mode = voila_mode()
 
-        self.run_center_port = 8866
-        self.icesheets_port = 8870
+        # Shared secret between the gateway and its Voila servers: Voila only
+        # serves requests that carry it, and only the proxy adds it.
+        if self.voila_mode == "external":
+            self.voila_token = read_voila_token_file()
+        else:
+            self.voila_token = secrets.token_urlsafe(32)
+        # Key of the per-user workspace grants; never leaves this process.
+        self.kernel_grant_key = secrets.token_bytes(32)
 
-        _run_center_proc = ManagedProcess(
-            [
-                py,
-                "-m",
-                "voila",
-                str(run_center_nb()),
-                "--no-browser",
-                "--Voila.ip=127.0.0.1",
-                "--port=8866",
-                "--Voila.base_url=/icesee-gui/",
-                "--Voila.allow_origin=http://127.0.0.1:8080",
-            ],
-            root,
-        )
+        self.run_center_port = VOILA_APPS["icesee"][1]
+        self.icesheets_port = VOILA_APPS["icesheets"][1]
 
-        _icesheets_proc = ManagedProcess(
-            [
-                py,
-                "-m",
-                "voila",
-                str(icesheets_nb()),
-                "--no-browser",
-                "--Voila.ip=127.0.0.1",
-                "--port=8870",
-                "--Voila.base_url=/icesheets/",
-                "--Voila.allow_origin=http://127.0.0.1:8080",
-                # Surface the proxy-verified CryoStack identity into the kernel
-                # environment (HTTP_X_CRYOSTACK_USER_ID) so Workspace history is
-                # isolated per authenticated user. preheat_kernel stays disabled
-                # (default) so each render's kernel sees its own request headers.
-                "--VoilaConfiguration.http_header_envs=X-CryoStack-User-Id",
-                "--VoilaConfiguration.http_header_envs=X-CryoStack-User-Name",
-            ],
-            root,
-        )
+        if self.voila_mode == "external":
+            _run_center_proc = ExternalVoilaProcess()
+            _icesheets_proc = ExternalVoilaProcess()
+        else:
+            _run_center_proc = ManagedProcess(voila_command("icesee"), root,
+                                              voila_environment(self.voila_token))
+            _icesheets_proc = ManagedProcess(voila_command("icesheets"), root,
+                                             voila_environment(self.voila_token))
 
         self.run_center = ManagedVoilaService(
             name="icesee", process=_run_center_proc,
@@ -513,6 +619,21 @@ class ICESEEState:
         self.icesheets.stop()
 
 
+# Voila's own login cookie (``username-127-0-0-1-<port>``) would let anyone
+# holding it talk to Voila directly without the gateway token, so it never
+# leaves the proxy in either direction.
+VOILA_LOGIN_COOKIE_PREFIX = "username-"
+
+
+def _without_voila_login_cookies(cookie_header: str) -> str:
+    kept = [
+        part.strip()
+        for part in cookie_header.split(";")
+        if part.strip() and not part.strip().startswith(VOILA_LOGIN_COOKIE_PREFIX)
+    ]
+    return "; ".join(kept)
+
+
 def build_upstream_headers(
     request: web.Request,
     upstream_port: int,
@@ -525,11 +646,26 @@ def build_upstream_headers(
         not in {
             "host",
             "origin",
+            "authorization",
+            "cookie",
             "x-cryostack-user-id",
             "x-cryostack-user-email",
             "x-cryostack-user-name",
+            OWNER_GRANT_HEADER.lower(),
+            WORKSPACE_GRANT_HEADER.lower(),
         }
     }
+
+    cookies = _without_voila_login_cookies(request.headers.get("Cookie", ""))
+    if cookies:
+        headers["Cookie"] = cookies
+
+    # Only the gateway knows the Voila token; a client-supplied Authorization
+    # header is dropped above and replaced here.
+    state = request.app.get("state") if request.app is not None else None
+    token = getattr(state, "voila_token", None)
+    if token:
+        headers["Authorization"] = f"token {token}"
 
     headers["Host"] = f"127.0.0.1:{upstream_port}"
     headers["Origin"] = f"http://127.0.0.1:{upstream_port}"
@@ -551,6 +687,13 @@ def build_upstream_headers(
         headers["X-CryoStack-User-Name"] = (
             user.display_name
         )
+        grant = owner_grant(user.id)
+        if grant:
+            headers[OWNER_GRANT_HEADER] = grant
+        key = getattr(state, "kernel_grant_key", None)
+        workspace = workspace_grant(user.id, key) if key else None
+        if workspace:
+            headers[WORKSPACE_GRANT_HEADER] = workspace
 
     return headers
 
@@ -571,8 +714,11 @@ async def proxy_http(request: web.Request, upstream_port: int) -> web.StreamResp
     ) as resp:
         out = web.StreamResponse(status=resp.status, reason=resp.reason)
         for k, v in resp.headers.items():
-            if k.lower() not in HOP_BY_HOP:
-                out.headers[k] = v
+            if k.lower() in HOP_BY_HOP:
+                continue
+            if k.lower() == "set-cookie" and v.lstrip().startswith(VOILA_LOGIN_COOKIE_PREFIX):
+                continue
+            out.headers.add(k, v)
 
         await out.prepare(request)
         async for chunk in resp.content.iter_chunked(65536):
@@ -655,6 +801,35 @@ async def proxy_icesheets(request: web.Request) -> web.StreamResponse:
     return await _proxy_application(request, state.icesheets, "CryoLauncher")
 
 
+_LOOPBACK = {"127.0.0.1", "::1"}
+
+
+async def kernel_workspace_state(request: web.Request) -> web.Response:
+    """A Voila kernel's read of its own user's saved workspace state.
+
+    Loopback only and never through nginx (which sets X-Forwarded-For /
+    X-Real-IP); the caller proves the user with the grant the proxy gave
+    that user's kernel. Unknown callers get 404, a wrong grant 403."""
+    if request.remote not in _LOOPBACK or "X-Forwarded-For" in request.headers \
+            or "X-Real-IP" in request.headers:
+        raise web.HTTPNotFound()
+    state = request.app["state"]
+    user_id = (request.headers.get("X-CryoStack-User-Id") or "").strip()
+    if not grant_matches(user_id, request.headers.get(WORKSPACE_GRANT_HEADER),
+                         state.kernel_grant_key):
+        raise web.HTTPForbidden(text="invalid workspace grant")
+    application = (request.query.get("application") or "").strip().lower()
+    if application not in ("cryolauncher", "icesee"):
+        raise web.HTTPBadRequest(text="unknown application")
+    workspace = request.app["auth"].storage.get_workspace(user_id=user_id, application=application)
+    try:
+        saved = json.loads(workspace.state_json) if workspace is not None else {}
+    except (TypeError, ValueError):
+        saved = {}
+    return web.json_response({"state": saved if isinstance(saved, dict) else {}},
+                             headers={"Cache-Control": "no-store"})
+
+
 def make_app() -> web.Application:
     app = web.Application()
     state = ICESEEState()
@@ -665,6 +840,20 @@ def make_app() -> web.Application:
 
     auth = AuthManager()
     auth.install(app)
+    app["auth"] = auth
+    app.router.add_get(KERNEL_WORKSPACE_STATE_PATH, kernel_workspace_state)
+
+    # Developer Guide pages: maintainers, admins and owners only (403 for
+    # other users); their links are removed from everyone else's pages.
+    app.middlewares.append(
+        developer_docs_middleware(
+            auth,
+            book_root(),
+            html_pages={
+                "/frozen-legacies/": lambda: frozen_legacies_root() / "index.html",
+            },
+        )
+    )
 
     #
     # Control Center access/roles
@@ -732,32 +921,17 @@ def make_app() -> web.Application:
     # FrozenLegacies application
     # ---------------------------------------------------------
 
-    app.router.add_get(
-        "/frozen-legacies",
-        frozen_legacies_redirect,
+    # Authenticated like CryoLauncher and ICESEE: the page, its assets and
+    # its data are all served behind auth.require_login.
+    install_frozen_legacies(
+        app,
+        auth=auth,
     )
 
-    app.router.add_get(
-        "/frozen-legacies/",
-        frozen_legacies_index,
-    )
+    # LIVIST generation jobs, validation and publication requests
+    # (/control/livist, /api/livist/); /livist/ itself stays static above.
+    install_livist(app, auth=auth)
 
-    app.router.add_static(
-        "/frozen-legacies/assets/",
-        path=str(
-            frozen_legacies_assets_root()
-        ),
-        show_index=False,
-    )
-
-    app.router.add_static(
-        "/frozen-legacies/data/",
-        path=str(
-            frozen_legacies_data_root()
-        ),
-        show_index=False,
-    )
-    
     # Role-protected Maintainer / Operations Guide. Restricted at the request
     # boundary by the same require_roles mechanism as the Control Center; the
     # source markdown is deliberately excluded from the public book build.
@@ -779,7 +953,22 @@ def make_app() -> web.Application:
     return app
 
 
+def run_voila(app_name: str) -> None:
+    """``icesee_app.py voila <icesee|icesheets>``: run one application Voila
+    server in the foreground, as whatever account starts it, with the same
+    command line and environment allowlist the managed mode uses and the
+    token from CRYOSTACK_VOILA_TOKEN_FILE."""
+    if app_name not in VOILA_APPS:
+        raise SystemExit(f"usage: icesee_app.py voila {{{'|'.join(VOILA_APPS)}}}")
+    env = voila_environment(read_voila_token_file())
+    os.chdir(repo_root())
+    command = voila_command(app_name)
+    os.execve(command[0], command, env)
+
+
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["voila"]:
+        run_voila(sys.argv[2] if len(sys.argv) > 2 else "")
     # Bare-metal production keeps its existing behavior (loopback-only;
     # nginx reverse-proxies to it on the same host) as the default. A
     # container needs to bind the interface Docker's -p port-publishing

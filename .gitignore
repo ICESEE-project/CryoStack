@@ -11,6 +11,21 @@ icesee_jupyter_book/_build/
 icesee_jupyter_book/icesee_jupyter_notebooks/.cryostack/
 icesee_jupyter_book/icesee_jupyter_notebooks/users/
 
+# CryoStack per-user workspaces at the repository root (runtime data;
+# Frozen Legacies and other gateway-side apps resolve <cwd>/users/<safe-id>)
+/users/
+
+# Frozen Legacies local picker test data and outputs (picker code is kept)
+icesee_jupyter_book/applications/frozen_legacies/Pickers/Ascope/tiff/
+icesee_jupyter_book/applications/frozen_legacies/Pickers/Ascope/output/
+icesee_jupyter_book/applications/frozen_legacies/Pickers/OUTPUT/
+icesee_jupyter_book/applications/frozen_legacies/Pickers/**/*.tif
+icesee_jupyter_book/applications/frozen_legacies/Pickers/**/*.tiff
+icesee_jupyter_book/applications/frozen_legacies/Pickers/**/*_QC.png
+# Local (development) shared radar source registry; deployments configure
+# $CRYOSTACK_FROZEN_LEGACIES_RADAR_SOURCES instead
+icesee_jupyter_book/applications/frozen_legacies/radar_sources.local.yaml
+
 # Local and generated test outputs
 external/ICESEE/applications/lorenz_model/examples/lorenz96/_modelrun_datasets/
 
@@ -22,6 +37,9 @@ tools/icesee1_conda_list_rhel.txt
 /var/*.db
 /var/*.db-shm
 /var/*.db-wal
+# Frozen Legacies working copies of remote radar and review snapshots
+/var/frozen_legacies_cache/
+/var/frozen_legacies_reviews/
 
 # CryoStack Connector build artifacts (see build_connector.sh)
 /build/

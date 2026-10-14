@@ -365,7 +365,7 @@
         </p>
       </div>
 
-      <div>
+      <div data-cryostack-audience="maintainers">
         <h3>Application developer docs</h3>
         <p>
           Application-specific developer documentation lives with each app — for
@@ -374,7 +374,7 @@
         </p>
       </div>
 
-      <div>
+      <div data-cryostack-audience="maintainers">
         <h3>CryoStack Developer Guide</h3>
         <p>
           The <a href="docs/developer_guide.html">Developer Guide</a> covers

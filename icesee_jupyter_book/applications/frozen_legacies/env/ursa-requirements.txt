@@ -1,0 +1,14 @@
+# URSA automatic picker -- direct dependencies, pinned.
+# Installed into a separate environment (never the gateway's), see
+# build_ursa_env.sh. The complete resolved set is ursa-requirements.lock.
+#
+# opencv-python-headless provides the same cv2 module as the opencv-python
+# named in URSA's README, without the GUI libraries a server does not have.
+# PyQt5 is not installed: URSA imports it only for its interactive viewers,
+# which the non-interactive runner never uses.
+numpy==1.26.4
+scipy==1.13.1
+pandas==2.2.3
+matplotlib==3.9.2
+opencv-python-headless==4.10.0.84
+scikit-image==0.24.0

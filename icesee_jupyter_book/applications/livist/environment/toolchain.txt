@@ -1,0 +1,10 @@
+# conda-forge toolchain of the isolated LIVIST environment (build_env.sh).
+#
+# LIVIST's scripts/generate needs the GDAL >= 3.11 command line ("gdal vector
+# convert") with the (Geo)Parquet driver, tippecanoe and uv. The Python
+# dependencies themselves come from LIVIST's own uv.lock, not from here.
+python=3.13
+gdal>=3.11
+libgdal-arrow-parquet
+tippecanoe
+uv

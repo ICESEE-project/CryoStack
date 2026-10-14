@@ -3,6 +3,17 @@ from __future__ import annotations
 from aiohttp import web
 
 
+def _int(
+    value,
+    default: int = 1,
+) -> int:
+
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 async def users_api(
     request: web.Request,
 ) -> web.Response:
@@ -11,11 +22,33 @@ async def users_api(
         "control_user_service"
     ]
 
-    return web.json_response(
-        {
-            "users": service.list_users()
-        }
+    result = service.search_users(
+        query=request.query.get(
+            "q",
+            "",
+        ),
+        role=request.query.get(
+            "role",
+            "",
+        ),
+        page=_int(
+            request.query.get("page")
+        ),
+        per_page=_int(
+            request.query.get("per_page"),
+            50,
+        ),
     )
+
+    response = web.json_response(
+        result
+    )
+
+    response.headers[
+        "Cache-Control"
+    ] = "no-store"
+
+    return response
 
 
 async def user_detail_api(
@@ -37,8 +70,14 @@ async def user_detail_api(
             text="User not found."
         )
 
-    return web.json_response(
+    response = web.json_response(
         {
             "user": user
         }
     )
+
+    response.headers[
+        "Cache-Control"
+    ] = "no-store"
+
+    return response

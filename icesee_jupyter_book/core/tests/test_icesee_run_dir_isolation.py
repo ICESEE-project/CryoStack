@@ -19,9 +19,11 @@ from icesee_jupyter_book.core import local_runner
 from icesee_jupyter_book.core.local_runner import run_dir
 
 
-def test_default_location_is_unchanged():
+def test_default_location_is_unchanged(tmp_path, monkeypatch):
+    # the default root, relocated so the test never writes into the checkout
+    monkeypatch.setattr(local_runner, "BOOK", tmp_path)
     rd = run_dir()
-    assert rd.parent == local_runner.BOOK / "icesee_runs"
+    assert rd.parent == tmp_path / "icesee_runs"
     assert (rd / "results").is_dir() and (rd / "figures").is_dir()
 
 

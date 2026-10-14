@@ -52,8 +52,10 @@ cd "${REPO_ROOT}"
 # Shared connector-relay deployment token.
 #
 # Gates relay session creation so a session's owner_user_id is trustworthy and
-# anonymous session-creation spam is rejected. The GUI/Voila kernels and the
-# relay must see the same value, so it is exported here before either starts.
+# anonymous session-creation spam is rejected. The gateway and the relay must
+# see the same value, so it is exported here before either starts. Voila
+# kernels never receive it: the gateway forwards each user only a grant derived
+# from it that can create that user's own sessions.
 # Persisted once to ~/.cryostack/relay_control_token (mode 0600).
 # ------------------------------------------------------------
 if [ -z "${CRYOSTACK_RELAY_CONTROL_TOKEN:-}" ]; then

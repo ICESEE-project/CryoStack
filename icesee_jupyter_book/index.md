@@ -177,7 +177,7 @@
         <a
           class="cryostack-card-btn green-btn"
           href="/frozen-legacies/"
-          data-requires-auth="false"
+          data-requires-auth="true"
           > 
           Open Frozen Legacies
         </a>

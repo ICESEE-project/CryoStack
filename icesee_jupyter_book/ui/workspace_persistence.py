@@ -4,7 +4,9 @@ Save still goes through the existing browser bridge (session-authenticated
 ``PUT /api/v1/workspaces/{application}``). Restore is a server-side read of the
 *same* store (the ``workspaces`` table), scoped by the proxy-verified
 ``HTTP_X_CRYOSTACK_USER_ID`` -- the Voila kernel has no browser cookie, so it
-cannot call the HTTP API, but it can read the shared auth database directly.
+cannot call the HTTP API. With the gateway's per-user workspace grant
+(``icesee_auth.kernel_access``) it asks the gateway's loopback route; without
+one (older gateway) it reads the shared auth database directly.
 
 Fail closed: any problem -> ``{}`` (blank personal fields). Never a global
 file, localStorage, the process environment, or another user's row.
@@ -40,6 +42,16 @@ def load_user_workspace_state(user_id: str | None, application: str) -> dict:
     app = _APP_ALIASES.get(application.strip().lower(), application.strip().lower())
     if not uid:
         return {}
+    from icesee_auth.kernel_access import fetch_workspace_state, kernel_workspace_grant  # noqa: PLC0415
+
+    grant = kernel_workspace_grant()
+    if grant:
+        # the gateway reads its database for us (a kernel under its own
+        # service account cannot open it)
+        try:
+            return fetch_workspace_state(uid, app, grant)
+        except Exception:
+            return {}
     try:
         db = auth_database_path()
         if not db.is_file():

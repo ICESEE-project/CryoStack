@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 import os
 import sqlite3
 import time
@@ -17,6 +19,7 @@ import secrets
 
 from aiohttp import web
 
+from . import access_log
 from .security import hash_password, safe_return_to, verify_password
 from .storage import AuthStorage, SessionRecord, User
 
@@ -35,6 +38,116 @@ from .providers import (
     GitHubProvider,
     ORCIDProvider,
 )
+
+#: failed password sign-ins allowed per email within the window
+LOGIN_FAILURE_LIMIT = 10
+#: failed password sign-ins allowed per client address within the window
+#: (higher than per email: one campus NAT address serves many people)
+LOGIN_ADDRESS_FAILURE_LIMIT = 50
+LOGIN_FAILURE_WINDOW_SECONDS = 15 * 60
+_LIMITER_MAX_KEYS = 10_000
+
+#: scrypt takes tens of milliseconds; it runs here, never on the event loop,
+#: and at most this many at once, so a flood of sign-ins cannot stall the
+#: gateway or take every core.
+_PASSWORD_WORKERS = 2
+_password_executor: concurrent.futures.ThreadPoolExecutor | None = None
+
+
+def _password_pool() -> concurrent.futures.ThreadPoolExecutor:
+    global _password_executor
+    if _password_executor is None:
+        _password_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=_PASSWORD_WORKERS, thread_name_prefix="password",
+        )
+    return _password_executor
+
+
+async def _off_loop(function, *args):
+    return await asyncio.get_running_loop().run_in_executor(_password_pool(), function, *args)
+
+
+_LOOPBACK = {"127.0.0.1", "::1"}
+
+
+def client_address(request: web.Request) -> str:
+    """The sign-in client's address.
+
+    Behind nginx every request arrives from loopback and nginx overwrites
+    X-Real-IP with the real peer, so that header is trusted only on loopback
+    connections; any other peer is used as-is.
+    """
+    remote = request.remote or ""
+    if remote in _LOOPBACK:
+        forwarded = request.headers.get("X-Real-IP", "").strip()
+        if forwarded:
+            return forwarded
+    return remote or "unknown"
+
+
+class LoginRateLimiter:
+    """In-memory throttle for password sign-in failures, keyed by email.
+
+    Keyed by the submitted address whether or not an account exists, so the
+    throttle itself does not reveal which addresses are registered.
+    """
+
+    def __init__(
+        self,
+        *,
+        limit: int = LOGIN_FAILURE_LIMIT,
+        window_seconds: float = LOGIN_FAILURE_WINDOW_SECONDS,
+    ) -> None:
+        self.limit = limit
+        self.window_seconds = window_seconds
+        self._failures: dict[str, list[float]] = {}
+
+    def _recent(self, key: str, now: float) -> list[float]:
+        cutoff = now - self.window_seconds
+        recent = [t for t in self._failures.get(key, ()) if t > cutoff]
+        if recent:
+            self._failures[key] = recent
+        else:
+            self._failures.pop(key, None)
+        return recent
+
+    def blocked(self, key: str, now: float) -> bool:
+        return len(self._recent(key, now)) >= self.limit
+
+    def failed(self, key: str, now: float) -> None:
+        if len(self._failures) >= _LIMITER_MAX_KEYS:
+            for stale in list(self._failures):
+                self._recent(stale, now)
+            if len(self._failures) >= _LIMITER_MAX_KEYS:
+                self._failures.pop(next(iter(self._failures)))
+        recent = self._recent(key, now)
+        recent.append(now)
+        self._failures[key] = recent
+
+    def succeeded(self, key: str) -> None:
+        self._failures.pop(key, None)
+
+
+_DUMMY_PASSWORD_HASH: str | None = None
+
+
+def _dummy_password_hash() -> str:
+    """A real scrypt hash, so unknown-account sign-ins cost the same time."""
+    global _DUMMY_PASSWORD_HASH
+    if _DUMMY_PASSWORD_HASH is None:
+        _DUMMY_PASSWORD_HASH = hash_password(secrets.token_urlsafe(24))
+    return _DUMMY_PASSWORD_HASH
+
+
+#: OAuth callback HTTP status -> failure category
+_OAUTH_FAILURE_CATEGORY = {
+    400: "invalid_request",
+    409: "identity_conflict",
+    500: "internal_error",
+    502: "provider_error",
+    503: "provider_not_configured",
+}
+
 
 class AuthManager:
     """Manage CryoStack users, sessions, and authentication routes."""
@@ -70,6 +183,8 @@ class AuthManager:
         self._session_ttl_seconds = session_ttl_seconds
         self._secure_cookies = secure_cookies
         self._clock = clock
+        self._login_limiter = LoginRateLimiter()
+        self._address_limiter = LoginRateLimiter(limit=LOGIN_ADDRESS_FAILURE_LIMIT)
         self._github_provider = GitHubProvider(
             client_id=os.environ.get(
                 "CRYOSTACK_GITHUB_CLIENT_ID",
@@ -230,7 +345,10 @@ class AuthManager:
 
         app.router.add_get(
             "/auth/github/callback",
-            self._github_callback,
+            self._oauth_callback_logged(
+                self._github_callback,
+                "github",
+            ),
         )
 
         app.router.add_get(
@@ -240,7 +358,10 @@ class AuthManager:
 
         app.router.add_get(
             "/auth/orcid/callback",
-            self._orcid_callback,
+            self._oauth_callback_logged(
+                self._orcid_callback,
+                "orcid",
+            ),
         )
 
 
@@ -473,16 +594,11 @@ class AuthManager:
 
             user = current_user
 
-        authenticated = (
-            self._storage.authenticate_session(
-                flow.session_id,
-                user_id=user.id,
-                ttl_seconds=(
-                    self._session_ttl_seconds
-                ),
-                now=self._clock(),
-            )
+        authenticated = self._start_authenticated_session(
+            flow.session_id,
+            user_id=user.id,
         )
+        request["cryostack_login_user_id"] = user.id
 
         if authenticated is None:
             raise web.HTTPInternalServerError(
@@ -894,19 +1010,11 @@ class AuthManager:
         # Authenticate existing browser session
         # ========================================================
 
-        authenticated = (
-            self._storage.authenticate_session(
-                flow.session_id,
-
-                user_id=user.id,
-
-                ttl_seconds=(
-                    self._session_ttl_seconds
-                ),
-
-                now=self._clock(),
-            )
+        authenticated = self._start_authenticated_session(
+            flow.session_id,
+            user_id=user.id,
         )
+        request["cryostack_login_user_id"] = user.id
 
         if authenticated is None:
 
@@ -998,6 +1106,15 @@ class AuthManager:
                 text="A valid JSON body is required."
             )
 
+        if not isinstance(payload, dict):
+            raise web.HTTPBadRequest(
+                text="A JSON object is required."
+            )
+
+        from icesee_jupyter_book.core.experiment_status import (
+            EXPERIMENT_STATUSES,
+        )
+
         status = str(
             payload.get(
                 "status",
@@ -1005,55 +1122,21 @@ class AuthManager:
             )
         ).strip().lower()
 
-        allowed_statuses = {
-            "queued",
-            "preparing",
-            "running",
-            "completed",
-            "failed",
-            "cancelled",
-        }
-
-        if status not in allowed_statuses:
+        if status not in EXPERIMENT_STATUSES:
             raise web.HTTPBadRequest(
                 text="Invalid experiment status."
             )
 
-        previous_status = experiment.status
-
-        updated = self._storage.update_experiment(
-            experiment_id=experiment.id,
+        updated = self._apply_experiment_status(
+            experiment,
             user_id=user.id,
             status=status,
-            exit_code=payload.get("exit_code"),
-            error_message=payload.get(
-                "error_message"
-            ),
-            now=self._clock(),
+            payload=payload,
         )
 
-        if (
-            updated is not None
-            and updated.status != previous_status
-        ):
-            self._storage.create_experiment_event(
-                experiment_id=updated.id,
-                user_id=user.id,
-                event_type=updated.status,
-                message=(
-                    f"Experiment status changed from "
-                    f"{previous_status} to {updated.status}."
-                ),
-                metadata_json=json.dumps(
-                    {
-                        "previous_status": previous_status,
-                        "status": updated.status,
-                        "job_id": updated.job_id,
-                        "exit_code": updated.exit_code,
-                    },
-                    sort_keys=True,
-                ),
-                now=self._clock(),
+        if updated is None:
+            raise web.HTTPNotFound(
+                text="Experiment not found."
             )
 
         response = web.json_response(
@@ -1233,12 +1316,66 @@ class AuthManager:
         )
 
         session = self._get_or_create_session(request)
+        now = self._clock()
+
+        address_key = "address:" + client_address(request)
+
+        if (
+            self._login_limiter.blocked(email, now)
+            or self._address_limiter.blocked(address_key, now)
+        ):
+            known = self._storage.get_user_by_email(email)
+            self._record_access(
+                event_type=access_log.LOGIN_RATE_LIMITED,
+                outcome="denied",
+                category="rate_limited",
+                user_id=known.id if known else None,
+                provider="password",
+            )
+            response = web.Response(
+                text=self._render_login(
+                    return_to=return_to,
+                    email=email,
+                    error=(
+                        "Too many failed sign-in attempts. "
+                        "Wait a few minutes and try again."
+                    ),
+                ),
+                content_type="text/html",
+                status=429,
+            )
+            self._prepare_no_cache(response)
+            self._set_session_cookie(
+                request,
+                response,
+                session.id,
+            )
+            return response
+
         user = self._storage.get_user_by_email(email)
 
-        if user is None or not verify_password(
+        # Same scrypt cost whether or not the account exists, so response time
+        # does not reveal which addresses are registered.
+        valid = await _off_loop(
+            verify_password,
             password,
-            user.password_hash,
-        ):
+            user.password_hash if user is not None else _dummy_password_hash(),
+        )
+
+        if user is None or not valid:
+            self._login_limiter.failed(email, now)
+            self._address_limiter.failed(address_key, now)
+            self._record_access(
+                event_type=access_log.LOGIN_FAILURE,
+                outcome="failure",
+                category=(
+                    "unknown_account"
+                    if user is None
+                    else "wrong_password"
+                ),
+                user_id=user.id if user else None,
+                provider="password",
+            )
             response = web.Response(
                 text=self._render_login(
                     return_to=return_to,
@@ -1256,17 +1393,23 @@ class AuthManager:
             )
             return response
 
-        authenticated = self._storage.authenticate_session(
+        authenticated = self._start_authenticated_session(
             session.id,
             user_id=user.id,
-            ttl_seconds=self._session_ttl_seconds,
-            now=self._clock(),
         )
 
         if authenticated is None:
             raise web.HTTPInternalServerError(
                 text="Unable to update the session."
             )
+
+        self._login_limiter.succeeded(email)
+        self._record_access(
+            event_type=access_log.LOGIN_SUCCESS,
+            outcome="success",
+            user_id=user.id,
+            provider="password",
+        )
 
         response = web.HTTPFound(return_to)
         self._set_session_cookie(
@@ -1344,7 +1487,7 @@ class AuthManager:
                 email=email,
                 display_name=display_name,
                 institution=institution or None,
-                password_hash=hash_password(password),
+                password_hash=await _off_loop(hash_password, password),
                 now=self._clock(),
             )
         except sqlite3.IntegrityError:
@@ -1360,17 +1503,22 @@ class AuthManager:
                 ),
             )
 
-        authenticated = self._storage.authenticate_session(
+        authenticated = self._start_authenticated_session(
             session.id,
             user_id=user.id,
-            ttl_seconds=self._session_ttl_seconds,
-            now=self._clock(),
         )
 
         if authenticated is None:
             raise web.HTTPInternalServerError(
                 text="Unable to update the session."
             )
+
+        self._record_access(
+            event_type=access_log.REGISTER,
+            outcome="success",
+            user_id=user.id,
+            provider="password",
+        )
 
         response = web.HTTPFound(return_to)
         self._set_session_cookie(
@@ -1384,7 +1532,18 @@ class AuthManager:
         session_id = request.cookies.get(self._cookie_name)
 
         if session_id:
+            session = self._storage.get_session(
+                session_id,
+                now=self._clock(),
+            )
             self._storage.delete_session(session_id)
+
+            if session is not None and session.user_id:
+                self._record_access(
+                    event_type=access_log.LOGOUT,
+                    outcome="success",
+                    user_id=session.user_id,
+                )
 
         response = web.json_response(
             {
@@ -1774,6 +1933,77 @@ class AuthManager:
             now=now,
         )
 
+    def _start_authenticated_session(
+        self,
+        previous_session_id: str | None,
+        *,
+        user_id: str,
+    ) -> SessionRecord | None:
+        """Issue a fresh session id at sign-in and retire the old one.
+
+        The pre-login (anonymous) session id is never promoted, so an id
+        planted in a browser before sign-in cannot become authenticated.
+        """
+        session = self._storage.create_session(
+            ttl_seconds=self._session_ttl_seconds,
+            user_id=user_id,
+            now=self._clock(),
+        )
+
+        if previous_session_id and previous_session_id != session.id:
+            self._storage.delete_session(previous_session_id)
+
+        return session
+
+    def _record_access(self, **fields) -> None:
+        """Record an access event; a logging failure never blocks sign-in."""
+        try:
+            self._storage.record_access_event(
+                now=self._clock(),
+                **fields,
+            )
+        except Exception:
+            pass
+
+    def _oauth_callback_logged(self, handler, provider: str):
+        """Record the outcome of an OAuth callback by category only."""
+
+        async def logged(request: web.Request):
+            try:
+                return await handler(request)
+            except web.HTTPException as outcome:
+                user_id = request.get("cryostack_login_user_id")
+                if outcome.status < 400 and user_id:
+                    self._record_access(
+                        event_type=access_log.LOGIN_SUCCESS,
+                        outcome="success",
+                        user_id=user_id,
+                        provider=provider,
+                    )
+                elif outcome.status >= 400:
+                    category = _OAUTH_FAILURE_CATEGORY.get(
+                        outcome.status,
+                        "invalid_request",
+                    )
+                    text = (outcome.text or "").lower()
+                    if "invalid or expired" in text:
+                        category = "expired_or_invalid_state"
+                    elif "does not match" in text:
+                        category = "session_mismatch"
+                    elif "not yet linked" in text:
+                        category = "identity_not_linked"
+                    elif "email address" in text and outcome.status == 400:
+                        category = "missing_email"
+                    self._record_access(
+                        event_type=access_log.LOGIN_FAILURE,
+                        outcome="failure",
+                        category=category,
+                        provider=provider,
+                    )
+                raise
+
+        return logged
+
     def current_user(
         self,
         request: web.Request,
@@ -2063,8 +2293,7 @@ class AuthManager:
             .replace("+00:00", "Z")
         )
 
-    # @staticmethod
-    def _experiment_to_dict(experiment) -> dict:
+    def _experiment_to_dict(self, experiment) -> dict:
         import json
 
         try:
@@ -2138,6 +2367,9 @@ class AuthManager:
 
         self._prepare_no_cache(response)
         return response
+
+    #: a create for a job that already has a record this recent is a re-send
+    EXPERIMENT_DUPLICATE_WINDOW_SECONDS = 7 * 24 * 3600
 
     async def _api_create_experiment(
         self,
@@ -2221,6 +2453,48 @@ class AuthManager:
                 text="metadata must be a JSON object."
             )
 
+        from icesee_jupyter_book.core.experiment_status import (
+            EXPERIMENT_STATUSES,
+        )
+
+        status = str(
+            payload.get("status", "queued")
+        ).strip().lower()
+
+        if status not in EXPERIMENT_STATUSES:
+            raise web.HTTPBadRequest(
+                text="Invalid experiment status."
+            )
+
+        # One record per submitted job: a repeated create for the same
+        # scheduler job (a re-sent browser command) returns the record that
+        # already exists instead of tracking the job twice.
+        job_id = str(payload.get("job_id") or "").strip()
+
+        if job_id:
+            existing = self._storage.get_experiment_by_job_id(
+                user_id=user.id,
+                job_id=job_id,
+            )
+
+            if (
+                existing is not None
+                and existing.application == application
+                and existing.backend == backend
+                and (existing.cluster or "") == str(
+                    payload.get("cluster") or ""
+                ).strip()
+                and self._clock() - existing.created_at
+                < self.EXPERIMENT_DUPLICATE_WINDOW_SECONDS
+            ):
+                response = web.json_response(
+                    self._experiment_to_dict(existing),
+                    status=200,
+                )
+
+                self._prepare_no_cache(response)
+                return response
+
         experiment = self._storage.create_experiment(
             user_id=user.id,
             configuration_id=(
@@ -2231,9 +2505,7 @@ class AuthManager:
             application=application,
             name=name,
             backend=backend,
-            status=str(
-                payload.get("status", "queued")
-            ),
+            status=status,
             configuration_snapshot_json=(
                 configuration_snapshot_json
             ),
@@ -2326,21 +2598,21 @@ class AuthManager:
                 text="A valid JSON body is required."
             )
 
-        allowed_statuses = {
-            "queued",
-            "preparing",
-            "running",
-            "completed",
-            "failed",
-            "cancelled",
-        }
+        if not isinstance(payload, dict):
+            raise web.HTTPBadRequest(
+                text="A JSON object is required."
+            )
+
+        from icesee_jupyter_book.core.experiment_status import (
+            EXPERIMENT_STATUSES,
+        )
 
         status = payload.get("status")
 
         if status is not None:
             status = str(status).strip().lower()
 
-            if status not in allowed_statuses:
+            if status not in EXPERIMENT_STATUSES:
                 raise web.HTTPBadRequest(
                     text="Invalid experiment status."
                 )
@@ -2355,57 +2627,25 @@ class AuthManager:
                 text="metadata must be a JSON object."
             )
 
-        previous_status = experiment.status
-        experiment = self._storage.update_experiment(
+        existing = self._storage.get_experiment(
             experiment_id=request.match_info[
                 "experiment_id"
             ],
             user_id=user.id,
-            status=status,
-            job_id=payload.get("job_id"),
-            cluster=payload.get("cluster"),
-            working_directory=payload.get(
-                "working_directory"
-            ),
-            output_directory=payload.get(
-                "output_directory"
-            ),
-            log_path=payload.get("log_path"),
-            exit_code=payload.get("exit_code"),
-            error_message=payload.get(
-                "error_message"
-            ),
-            metadata_json=(
-                json.dumps(metadata, sort_keys=True)
-                if metadata is not None
-                else None
-            ),
-            now=self._clock(),
         )
 
-        if (
-            updated is not None
-            and updated.status != previous_status
-        ):
-            self._storage.create_experiment_event(
-                experiment_id=updated.id,
-                user_id=user.id,
-                event_type=updated.status,
-                message=(
-                    f"Experiment status changed from "
-                    f"{previous_status} to {updated.status}."
-                ),
-                metadata_json=json.dumps(
-                    {
-                        "previous_status": previous_status,
-                        "status": updated.status,
-                        "job_id": updated.job_id,
-                        "exit_code": updated.exit_code,
-                    },
-                    sort_keys=True,
-                ),
-                now=self._clock(),
+        if existing is None:
+            raise web.HTTPNotFound(
+                text="Experiment not found."
             )
+
+        experiment = self._apply_experiment_status(
+            existing,
+            user_id=user.id,
+            status=status,
+            payload=payload,
+            metadata=metadata,
+        )
 
         if experiment is None:
             raise web.HTTPNotFound(
@@ -2418,6 +2658,138 @@ class AuthManager:
 
         self._prepare_no_cache(response)
         return response
+
+    def _apply_experiment_status(
+        self,
+        experiment,
+        *,
+        user_id: str,
+        status: str | None,
+        payload: dict,
+        metadata: dict | None = None,
+    ):
+        """
+        Apply one status/field update to an experiment the caller owns.
+
+        A record that already reached a terminal status (completed, failed,
+        cancelled) is final: later updates -- a repeated poll, a late
+        "running" -- leave it, its finish time and its events unchanged.
+        A ``failure`` summary is reduced to its bounded, redacted form and
+        kept as ``metadata["failure"]``; ``error_message`` is redacted too.
+        """
+
+        from icesee_jupyter_book.core.experiment_status import (
+            TERMINAL_STATUSES,
+            failure_message,
+            redact_secrets,
+            sanitize_failure,
+        )
+
+        if experiment.status in TERMINAL_STATUSES:
+            return experiment
+
+        previous_status = experiment.status
+
+        failure = sanitize_failure(
+            payload.get("failure")
+        )
+
+        if metadata is not None or failure is not None:
+            merged = (
+                dict(metadata)
+                if metadata is not None
+                else self._experiment_metadata(experiment)
+            )
+
+            if failure is None and "failure" in merged:
+                failure = sanitize_failure(merged.pop("failure"))
+
+            if failure is not None:
+                merged["failure"] = failure
+
+            metadata_json = json.dumps(
+                merged,
+                sort_keys=True,
+            )
+        else:
+            metadata_json = None
+
+        error_message = payload.get("error_message")
+
+        if error_message is None and failure is not None:
+            error_message = failure_message(failure)
+
+        if error_message is not None:
+            error_message = (
+                redact_secrets(error_message, limit=500)
+                or None
+            )
+
+        exit_code = payload.get("exit_code")
+
+        if isinstance(exit_code, bool) or not isinstance(exit_code, int):
+            exit_code = None
+
+        updated = self._storage.update_experiment(
+            experiment_id=experiment.id,
+            user_id=user_id,
+            status=status,
+            job_id=payload.get("job_id"),
+            cluster=payload.get("cluster"),
+            working_directory=payload.get(
+                "working_directory"
+            ),
+            output_directory=payload.get(
+                "output_directory"
+            ),
+            log_path=payload.get("log_path"),
+            exit_code=exit_code,
+            error_message=error_message,
+            metadata_json=metadata_json,
+            now=self._clock(),
+        )
+
+        if (
+            updated is not None
+            and updated.status != previous_status
+        ):
+            event_metadata = {
+                "previous_status": previous_status,
+                "status": updated.status,
+                "job_id": updated.job_id,
+                "exit_code": updated.exit_code,
+            }
+
+            if failure is not None:
+                for key in ("scheduler", "state", "signal", "reason"):
+                    if key in failure:
+                        event_metadata[key] = failure[key]
+
+            self._storage.create_experiment_event(
+                experiment_id=updated.id,
+                user_id=user_id,
+                event_type=updated.status,
+                message=(
+                    f"Experiment status changed from "
+                    f"{previous_status} to {updated.status}."
+                ),
+                metadata_json=json.dumps(
+                    event_metadata,
+                    sort_keys=True,
+                ),
+                now=self._clock(),
+            )
+
+        return updated
+
+    @staticmethod
+    def _experiment_metadata(experiment) -> dict:
+        try:
+            value = json.loads(experiment.metadata_json or "{}")
+        except (TypeError, ValueError):
+            return {}
+
+        return value if isinstance(value, dict) else {}
 
 
     async def _api_delete_experiment(
@@ -2723,6 +3095,13 @@ class AuthManager:
                 if not roles.intersection(
                     allowed
                 ):
+                    self._record_access(
+                        event_type=access_log.CONTROL_DENIED,
+                        outcome="denied",
+                        category="missing_role",
+                        user_id=user.id,
+                        path=request.path,
+                    )
                     return await unauthorized(
                         request
                     )
