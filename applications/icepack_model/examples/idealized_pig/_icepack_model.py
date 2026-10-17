@@ -401,60 +401,24 @@ def initialize_model(**icesee_kwargs):
 
 # --- Visualizing the model with a flowline profile DURING THE SIMULATION  ---
 def initial_flowline_profile(icesee_kwargs):
-
-    # -- arrays to save the ALL of the flowline profile outputs (including the initial state) throughout the simulation --
-    h_profiles=[]
-    s_profiles = []
-
-    """ define flowline in EPSG:3031 to track the profile of PIG across a seafloor ridge """
+    from ._mode3_profiles import sample_fields
     start = np.array([-1587750., -200000.])
     end = np.array([-1610250., -500000.])
-
-    num_points = 1000
-    t_values = np.linspace(0, 1, num_points)
-    profile_points = np.outer(1 - t_values, start) + np.outer(t_values, end)
-
-    """ try extracting values from the flowline and filter out points that fail """
-    valid_points = []
-    bed_values, surface_values, thickness_values = [], [], []
-
-    for p in profile_points:
-        try:
-            bed_values.append(icesee_kwargs["bed"].at(tuple(p)))
-            surface_values.append(icesee_kwargs["s"].at(tuple(p)))
-            thickness_values.append(icesee_kwargs["h"].at(tuple(p)))
-            valid_points.append(tuple(p))
-        except firedrake.PointNotInDomainError:
-            pass  # Ignore points that are outside the mesh
-
-    # Convert valid points back to NumPy array
-    valid_points = np.array(valid_points)
-    distances = np.linspace(0, np.linalg.norm(end - start), len(valid_points))
-
-    h_profiles.append(thickness_values)
-    s_profiles.append(surface_values)
-
-    return(h_profiles, s_profiles, valid_points, distances, bed_values)
+    points = start + np.linspace(0., 1., 1000)[:, None] * (end - start)
+    values = sample_fields((icesee_kwargs["h"], icesee_kwargs["s"], icesee_kwargs["bed"]), points)
+    valid = np.array([all(v[i] is not None for v in values) for i in range(len(points))])
+    valid_points = points[valid]
+    h, s, bed = [np.asarray([v[i] for i in np.flatnonzero(valid)], dtype=float).reshape(-1) for v in values]
+    distances = np.linalg.norm(valid_points - start, axis=1)
+    return [h], [s], valid_points, distances, bed
 
 
-
-
-# --- Visualizing the model with a flowline profile DURING THE SIMULATION  ---
 def flowline_profile(h, s, valid_points):
-
-    # -- arrays to save the flowline profile outputs at a particular time step --
-    surface_values, thickness_values = [], []
-
-    # -- sample values from the flowline points --
-    for p in valid_points:
-        try:
-            surface_values.append(s.at(tuple(p)))
-            thickness_values.append(h.at(tuple(p)))
-        except firedrake.PointNotInDomainError:
-            pass  # Ignore points that are outside the mesh
-
-
-    return np.array(thickness_values), np.array(surface_values)
+    from ._mode3_profiles import sample_fields
+    values = sample_fields((h, s), valid_points)
+    if any(value is None for field_values in values for value in field_values):
+        raise ValueError("A saved flowline point is outside the current model mesh")
+    return tuple(np.asarray(value, dtype=float).reshape(-1) for value in values)
 
 
 #########################################################################################
@@ -575,10 +539,7 @@ def run_model(ensemble, **icesee_kwargs):
 
     #print(f"h_vec_mean={np.mean(h_vec)}, u_vec_mean = {np.mean(u_vec)}, v_vec_mean = {np.mean(v_vec)}\n")
 
-    # basal_melt_field is always part of the packed state vector regardless
-    # of the state/parameter bookkeeping split (see config/_utility_imports.py's
-    # vec_inputs/total_state_param_vars derivation and this file's 2026-09-28
-    # reconciliation note) -- read it unconditionally.
+    # The configured state vector includes basal_melt_field independently of joint estimation.
     basal_melt_vec = ensemble[indx_map["basal_melt_field"]]
 
     h = Function(Q)
@@ -669,46 +630,22 @@ def run_model(ensemble, **icesee_kwargs):
                      'basal_melt_field': basal_melt_field.dat.data_ro}
 
 
-    # -- extract the flowline profile at particular steps --
-    # Path-isolation fix (2026-09-28): was a hardcoded, non-run-specific
-    # relative path -- two jobs sharing this working directory would
-    # collide on the same file. Now scoped under this run's own
-    # data_path, matching mode3_runner.py's existing pattern.
-    _modelrun_datasets = icesee_kwargs.get("data_path") or "_modelrun_datasets"
-    hs_ensemble_files = profile_path(_modelrun_datasets, f"hs_ensemble_profiles{ens}")
-
-    # Restored gating: this block previously ran unconditionally every
-    # timestep for every ensemble member even though its output is only
-    # ever consumed at the three save points below (t[k] in {5, 10, 20}).
-    if t[k] in (5, 10, 20):
+    # Sample only configured physical-year save points. Keep the established
+    # per-member .h5 schema and respect the run's data_path.
+    columns = [
+        index + 1 for index, year in enumerate(save_steps)
+        if np.isclose(float(step) * float(dt), float(year), rtol=0.0, atol=1e-9)
+    ]
+    if columns:
+        _modelrun_datasets = icesee_kwargs.get("data_path") or "_modelrun_datasets"
+        hs_ensemble_files = profile_path(_modelrun_datasets, f"hs_ensemble_profiles{ens}")
         with h5py.File(hs_ensemble_files, "r") as F:
             valid_points = F["valid_points"][:]
-
         h_profiles, s_profiles = flowline_profile(h, s, valid_points)
-        print(s_profiles.shape, h_profiles.shape,"\n")
-
-    print(f"t[{k}] = {t[k]}")
-
-    # -- manually saving at the time steps but need to find an efficient way to determine this --
-    if t[k] == 5:
-        print(f"t[{k}] = {t[k]}")
         with h5py.File(hs_ensemble_files, "a") as F:
-            F["h_profiles"][:,1] = h_profiles
-            F["s_profiles"][:,1] = s_profiles
-
-    if t[k] == 10:
-        print(f"t[{k}] = {t[k]}")
-        with h5py.File(hs_ensemble_files, "a") as F:
-            F["h_profiles"][:,2] = h_profiles
-            F["s_profiles"][:,2] = s_profiles
-
-    if t[k] == 20:
-        print(f"t[{k}] = {t[k]}")
-        with h5py.File(hs_ensemble_files, "a") as F:
-            F["h_profiles"][:,3] = h_profiles
-            F["s_profiles"][:,3] = s_profiles
-
-
+            for column in columns:
+                F["h_profiles"][:, column] = h_profiles
+                F["s_profiles"][:, column] = s_profiles
 
     return updated_state
 
