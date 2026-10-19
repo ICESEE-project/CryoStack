@@ -1,5 +1,8 @@
 """C7.3 -- resolve_cloud_execution: BYO vs developer credential routing.
 
+Developer mode (the host's AWS credentials) is only for users listed in
+CRYOSTACK_CLOUD_OPERATOR_USER_IDS; everyone else must connect an account.
+
 Fixtures: A = 713938953301, B = 774888247882 (never product defaults).
 """
 from __future__ import annotations
@@ -17,7 +20,9 @@ from cryostack_src.cloud.connect import AWSConnectionStore, verify_connection
 from cryostack_src.cloud.connect.execution import (
     MODE_BYO,
     MODE_DEVELOPER,
+    OPERATOR_ENV,
     CloudAccessError,
+    is_cloud_operator,
     resolve_cloud_execution,
 )
 from cryostack_src.workspace.identity import WorkspaceUser
@@ -63,8 +68,34 @@ def _connect(tmp_path, uid, role_arn, account, *, runner=None):
     return store
 
 
-# -- developer mode -----------------------------------------------
-def test_no_connection_is_developer_mode_with_profile_preserved(tmp_path):
+# -- developer mode (allow-listed operators only) ------------------
+@pytest.fixture(autouse=True)
+def _no_operators(monkeypatch):
+    monkeypatch.delenv(OPERATOR_ENV, raising=False)
+    monkeypatch.delenv("CRYOSTACK_AWS_PRINCIPAL_ARN", raising=False)   # host-account tests set it
+
+
+def test_no_connection_is_refused_for_an_ordinary_user(tmp_path):
+    with pytest.raises(CloudAccessError, match="No AWS account is connected"):
+        resolve_cloud_execution(user=_user("alice"), workspace_root=tmp_path)
+
+
+def test_profile_hint_never_grants_host_credentials(tmp_path):
+    """A profile typed into the Cloud panel must not select a server profile."""
+    with pytest.raises(CloudAccessError):
+        resolve_cloud_execution(
+            user=_user("alice"), workspace_root=tmp_path,
+            region_hint="eu-west-1", profile_hint="cryo-dev",
+        )
+
+
+def test_operator_allowlist_is_empty_by_default(tmp_path):
+    assert not is_cloud_operator(_user("dev"))
+    assert not is_cloud_operator(_user("dev"), env={OPERATOR_ENV: " , "})
+
+
+def test_listed_operator_without_connection_is_developer_mode(tmp_path, monkeypatch):
+    monkeypatch.setenv(OPERATOR_ENV, "someone-else, dev")
     ex = resolve_cloud_execution(
         user=_user("dev"), workspace_root=tmp_path,
         region_hint="eu-west-1", profile_hint="cryo-dev",
@@ -74,6 +105,28 @@ def test_no_connection_is_developer_mode_with_profile_preserved(tmp_path):
     assert ex.profile == "cryo-dev"
     assert ex.region == "eu-west-1"
     assert ex.account_id == ""
+
+
+def test_operator_list_needs_a_trusted_identity(monkeypatch):
+    env = {OPERATOR_ENV: "anonymous,dev"}
+    assert not is_cloud_operator(WorkspaceUser(user_id="anonymous", source="unauthenticated"), env=env)
+    assert not is_cloud_operator(WorkspaceUser(user_id="dev", source="unknown"), env=env)
+    assert not is_cloud_operator(None, env=env)
+    assert is_cloud_operator(WorkspaceUser(user_id="dev", source="env-override"), env=env)
+
+
+def test_operator_list_matches_whole_ids_only(monkeypatch):
+    monkeypatch.setenv(OPERATOR_ENV, "dev-admin")
+    assert not is_cloud_operator(_user("dev"))
+    assert not is_cloud_operator(_user("dev-admin2"))
+
+
+def test_unverified_connection_is_refused_even_for_an_operator(tmp_path, monkeypatch):
+    """BYO rules win once a connection exists: no fallback to host credentials."""
+    monkeypatch.setenv(OPERATOR_ENV, "dev")
+    AWSConnectionStore(user=_user("dev"), workspace_root=tmp_path).create(region="us-east-2")
+    with pytest.raises(CloudAccessError, match="not verified"):
+        resolve_cloud_execution(user=_user("dev"), workspace_root=tmp_path, profile_hint="cryo-dev")
 
 
 # -- BYO mode ---------------------------------------------------
@@ -207,3 +260,35 @@ def test_resolved_execution_repr_hides_credentials(tmp_path):
     ex = resolve_cloud_execution(user=_user("alice"), workspace_root=tmp_path,
                                  runner=FakeAWS("713938953301"))
     assert "sekret" not in repr(ex) and "tok" not in repr(ex)
+
+
+# -- the host's own account is never a user connection ---------------
+HOST_PRINCIPAL = "arn:aws:iam::713938953301:role/cryostack-service"
+
+
+def test_role_in_the_host_account_is_rejected_at_verification(tmp_path, monkeypatch):
+    monkeypatch.setenv("CRYOSTACK_AWS_PRINCIPAL_ARN", HOST_PRINCIPAL)
+    runner = FakeAWS("713938953301")
+    store = AWSConnectionStore(user=_user("alice"), workspace_root=tmp_path)
+    result = verify_connection(store.create(region="us-east-2"), role_arn=ROLE_A, runner=runner)
+    assert not result.ok
+    assert "CryoStack's own AWS account" in result.connection.status_reason
+    assert runner.calls == 0                              # no AssumeRole attempted
+
+
+def test_existing_host_account_connection_is_refused_at_use(tmp_path, monkeypatch):
+    """A connection verified before the check existed is refused on every use."""
+    _connect(tmp_path, "alice", ROLE_A, "713938953301")
+    monkeypatch.setenv("CRYOSTACK_AWS_PRINCIPAL_ARN", HOST_PRINCIPAL)
+    runner = FakeAWS("713938953301")
+    with pytest.raises(CloudAccessError, match="CryoStack's own AWS account"):
+        resolve_cloud_execution(user=_user("alice"), workspace_root=tmp_path, runner=runner)
+    assert runner.calls == 0
+
+
+def test_roles_in_other_accounts_are_unaffected_by_the_host_check(tmp_path, monkeypatch):
+    monkeypatch.setenv("CRYOSTACK_AWS_PRINCIPAL_ARN", HOST_PRINCIPAL)
+    _connect(tmp_path, "bob", ROLE_B, "774888247882")
+    ex = resolve_cloud_execution(user=_user("bob"), workspace_root=tmp_path,
+                                 runner=FakeAWS("774888247882"))
+    assert ex.is_byo and ex.account_id == "774888247882"

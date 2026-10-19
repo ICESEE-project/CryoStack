@@ -279,7 +279,7 @@ A typical Frozen Legacies session follows these steps:
 ## Open or Upload Radar
 
 1. Select **Manual** (or **Automatic**).
-2. In **Radar asset**, open shared radar provided by the installation, or select **Upload raw radar** to add a radar TIFF (with its navigation CSV) to your workspace.
+2. In **Radar asset**, open radar from **External datasets** (search by file name when the installation has data sources), or select **Upload raw radar** to add a radar TIFF (with its navigation CSV) to your workspace. Uploads count toward your workspace storage (2 GiB by default), shown beside the upload buttons.
 3. If you already have processed results (ASTRA or URSA picks, QC images, echograms), select **Upload processed product** instead — you do not need to pick again.
 
 ## Pick a Radar TIFF Manually

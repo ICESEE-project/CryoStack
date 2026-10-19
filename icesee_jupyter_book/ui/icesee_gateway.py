@@ -74,7 +74,6 @@ from icesee_jupyter_book.core.remote_runner import (
 )
 from icesee_jupyter_book.core import run_records
 from icesee_jupyter_book.core.runs_manager import IceseeRunsManager
-from icesee_jupyter_book.core.results_package import discover_result_package
 from icesee_jupyter_book.ui.icesee_run_progress import run_progress_html
 from icesee_jupyter_book.core.cloud_bridge_adapter import (
     IceseeCloudBridgeConfig,
@@ -87,14 +86,6 @@ from icesee_jupyter_book.core.cloud_bridge_adapter import (
 from cryostack_src.cloud.diagnostics import merge_aws_resources, resources_from_poll
 from cryostack_src.frontend.cryolauncher.cloud_experiments import cloud_status_update
 from icesee_jupyter_book.core.run_records import da_identity_from_params
-from cryostack_src.frontend.cryolauncher.panels.run_plan import build_run_plan_panel
-from cryostack_src.frontend.cryolauncher.panels.run_settings import build_run_settings_panel
-from cryostack_src.frontend.cryolauncher.panels.runtime_panel import build_runtime_panel
-from cryostack_src.frontend.cryolauncher.workspace.run_history import (
-    build_workspace_history_panel,
-)
-from cryostack_src.frontend.cryolauncher.workspace.run_details import build_run_details
-from cryostack_src.frontend.cryolauncher.workspace.explorer import build_workspace_explorer
 from cryostack_src.frontend.cryolauncher.workspace.toolbar import build_workspace_toolbar
 from cryostack_src.frontend.cryolauncher.cloud_environment import (
     build_cloud_environment_card,
@@ -165,6 +156,15 @@ from cryostack_src.workspace.resource_state import (
 from icesee_jupyter_book.core.experiment_status import (
     experiment_update_from_job_status,
 )
+from icesee_jupyter_book.core import provenance as run_provenance
+from icesee_jupyter_book.core import run_launcher
+from icesee_jupyter_book.core import run_lifecycle
+from icesee_jupyter_book.core.experiment_files import ExperimentFiles, Issue
+from icesee_jupyter_book.core.local_jobs import JobMonitor, LocalJob
+from icesee_jupyter_book.ui.icesee_workflow import (
+    LaunchPanel, LocalEnvironmentPanel, ModeSelector, RunWorkspace, Stepper, Ticker, card, field,
+    run_js, stylesheet,
+)
 
 # ============================================================
 # Params widgets factory
@@ -193,10 +193,19 @@ def widget_for(key: str, val):
             layout=W.Layout(width="100%", height="110px"),
         )
 
+    if val is None:
+        # YAML null: an empty field that stays null unless the user types a
+        # value (str(None) would come back as the string "None")
+        w = W.Text(value="", placeholder="null", layout=W.Layout(width="100%"))
+        w._icesee_null = True
+        return w
+
     return W.Text(value=str(val), layout=W.Layout(width="100%"))
 
 
 def read_widget(w):
+    if getattr(w, "_icesee_null", False) and (w.value or "").strip() in ("", "null", "None", "~"):
+        return None
     if isinstance(w, W.Textarea):
         try:
             return yaml.safe_load(w.value)
@@ -209,28 +218,6 @@ def read_widget(w):
 # ===========================================================
 # local reporting helpers (also used by remote when fetching results)
 # ===========================================================
-
-def refresh_results_preview(rd: Path, results_out: W.Output):
-    results_out.clear_output()
-    with results_out:
-        fig_dir = rd / "figures"
-        pngs = sorted(fig_dir.glob("*.png"))
-        if not pngs:
-            pngs = sorted((rd / "results").glob("*.png"))
-        h5s = sorted((rd / "results").glob("*.h5"))
-
-        print("Run folder:", rd)
-        print(f"Results: {len(h5s)} H5, {len(pngs)} PNG\n")
-        for p in h5s[:10]:
-            print(" -", p.name)
-
-        if pngs:
-            print("\nFigures:")
-            for p in pngs[:6]:
-                display(Image(filename=str(p)))
-        else:
-            print("\nNo figures found yet.")
-
 
 def make_zip_from_dir(src_dir: Path, zip_path: Path):
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -296,10 +283,15 @@ def build_icesee_ui():
             "ws_url": None,
         }
 
+        #: late-bound hooks into the workflow UI (built at the end of this function)
+        _WF: dict = {}
+
         def set_status(state: str):
             cls = {"idle": "icesee-idle", "running": "icesee-running", "done": "icesee-done", "fail": "icesee-fail"}[state]
             label = {"idle": "Idle", "running": "Running…", "done": "Done", "fail": "Failed"}[state]
             status_chip.value = f"<span class='icesee-status {cls}'>{label}</span>"
+            if "activity" in _WF:
+                _WF["activity"](state)
 
         # -----------------------------
         # Top controls
@@ -351,7 +343,9 @@ def build_icesee_ui():
         # Mode Tabs
         # -----------------------------
         MODE_LOCAL, MODE_REMOTE, MODE_CLOUD = "local", "cluster", "cloud"
-        mode_tabs = W.Tab()
+        # The environment panel of the selected mode (Local / Remote / Cloud);
+        # the Mode selector above Run settings drives selected_index.
+        mode_tabs = W.Stack()
         mode_tabs.layout = W.Layout(width="100%")
         mode_tabs.layout.flex = "1 1 auto"
         mode_tabs.layout.min_width = "0"
@@ -407,9 +401,13 @@ def build_icesee_ui():
         TEMPLATE = None
         REPORT_NB = None
 
-        def build_params_ui(template_path: Path):
+        _TEMPLATE = {"data": {}}     # the example's own params.yaml (validation reference)
+
+        def build_params_ui(template_path):
+            """The full-configuration form from the example's params.yaml
+            (a path) or from a configuration mapping (Editor -> Apply)."""
             nonlocal params_accordion, PARAMS0, WIDGETS, EXTRA_YAML
-            PARAMS0 = load_yaml(template_path)
+            PARAMS0 = dict(template_path) if isinstance(template_path, dict) else load_yaml(template_path)
             WIDGETS = {}
             EXTRA_YAML = {}
 
@@ -503,8 +501,11 @@ def build_icesee_ui():
             TEMPLATE = find_params_template(cfg)
             REPORT_NB = find_report_notebook(cfg)
 
+            _TEMPLATE["data"] = load_yaml(TEMPLATE)
             build_params_ui(TEMPLATE)
             params_holder.children = (params_accordion,)
+            if "example_changed" in _WF:
+                _WF["example_changed"]()
 
             with log_out:
                 print("[Loaded]")
@@ -661,6 +662,10 @@ def build_icesee_ui():
             """Write a local .cryostack-run.json manifest for this ICESEE run
             (run_records.record_run) without ever letting a manifest failure
             interrupt the real run -- a warning in the log is the worst case."""
+            state = run_lifecycle.normalize(status) or status
+            extra_metadata = {**(extra_metadata or {}), "lifecycle": [
+                {"state": state, "at": datetime.now().isoformat(timespec="seconds"), "detail": ""}]}
+            status = state
             try:
                 return run_records.record_run(
                     run_dir=run_dir, run_id=run_id,
@@ -678,9 +683,17 @@ def build_icesee_ui():
 
         def _update_icesee_run(run_dir, **kwargs):
             """Update a previously recorded ICESEE run manifest. Same
-            never-break-the-run contract as _record_icesee_run."""
+            never-break-the-run contract as _record_icesee_run. A status goes
+            through the run lifecycle (backend words normalised; stale or
+            backwards reports ignored)."""
             try:
-                return run_records.update_run(run_dir, **kwargs)
+                status = kwargs.pop("status", None)
+                info = None
+                if status is not None:
+                    info = run_lifecycle.apply_backend_status(run_dir, status)
+                if kwargs:
+                    info = run_records.update_run(run_dir, **kwargs)
+                return info
             except Exception as _e:
                 with log_out:
                     print("[history][WARN] could not update run history:", type(_e).__name__, _e)
@@ -706,7 +719,9 @@ def build_icesee_ui():
             return rd / "_remote_fetch"
 
 
-        def fetch_remote_outputs_to_local() -> Path | None:
+        def fetch_remote_outputs_to_local(target_dir: Path | None = None) -> Path | None:
+            """Copy the remote job's outputs/ to ``target_dir`` (default: a
+            fresh cache folder)."""
             rdir = STATUS.get("remote_dir")
             if not rdir:
                 with results_out:
@@ -717,8 +732,7 @@ def build_icesee_ui():
             user = cluster_user.value.strip()
             port = int(cluster_port.value)
 
-            local_cache = local_remote_cache_dir()
-            outputs_dir = local_cache / "outputs"
+            outputs_dir = Path(target_dir) if target_dir is not None else local_remote_cache_dir() / "outputs"
 
             if outputs_dir.exists():
                 shutil.rmtree(outputs_dir)
@@ -1367,70 +1381,44 @@ def build_icesee_ui():
         # Actions: Local / Remote / Cloud
         # =========================================================
         def run_example_local():
+            """Start a local run as a background job (run_launcher); the page
+            stays responsive and the workspace follows it. Returns
+            ``(ok, message, run_id)``."""
             example_cfg = EXAMPLES[example_dd.value]
-
             sync_quick_into_widgets()
             cfg = build_config_from_widgets()
-
+            local = _WF.get("local_env")
+            req = run_launcher.LaunchRequest(
+                example=example_dd.value, example_cfg=example_cfg, config=cfg,
+                environment=local.env.value if local else "native",
+                np=int(local.np.value) if local else 1,
+                model_nprocs=int(local.model_nprocs.value) if local else 0,
+                generate_report=bool(local.report.value) if local else bool(gen_report.value),
+                run_root=_icesee_run_dir_base(),
+                drafts=_WF["experiment_files"]().drafts_in_use() if "experiment_files" in _WF else {},
+                user_id=resolve_workspace_user(require_authenticated=False).user_id,
+            )
+            errors = [i for i in run_launcher.validate_launch(req) if i.level == "error"]
+            if errors:
+                return False, "; ".join(i.message for i in errors), None
             set_status("running")
-            log_out.clear_output()
-
-            _run_id = _new_icesee_run_id()
-
             try:
-                result = run_local_example(
-                    example_cfg=example_cfg,
-                    config=cfg,
-                    output_label=output_label_dd.value,
-                    generate_report=gen_report.value,
-                    run_dir_base=_icesee_run_dir_base(),
-                    run_dir_name=_run_id,
-                )
-
-                _record_icesee_run(
-                    run_dir=result.run_dir, run_id=_run_id, params=cfg,
-                    example=example_dd.value, execution_mode="local",
-                    backend="local", status="done" if result.success else "failed",
-                )
-                try:
-                    (result.run_dir / "run.log").write_text(result.log_text, encoding="utf-8")
-                except Exception:
-                    pass   # the Run Log tab falls back to "no local log captured"
-
-                with log_out:
-                    print("[local] Example :", example_dd.value)
-                    print("[local] Runner  :", RUN_SCRIPT)
-                    print("[local] Report  :", REPORT_NB if REPORT_NB else "(none)")
-                    print("[local] CWD     :", result.run_dir)
-                    print("[local] Command :", " ".join(result.command))
-                    print("[local] PYTHONPATH(prepended):", result.external_dir)
-                    print("-" * 70)
-
-                    for line in result.log_lines:
-                        print(line)
-
-                    print("-" * 70)
-                    print("Return code:", result.returncode)
-
-                    if result.report_notebook is not None:
-                        print("[local] Report done.")
-
-                if not result.success:
-                    set_status("fail")
-                    refresh_results_preview(result.run_dir, results_out)
-                    return
-
-                set_status("done")
-                refresh_results_preview(result.run_dir, results_out)
-
-                if open_latest.value:
-                    with log_out:
-                        print("\nRun folder:", result.run_dir)
-
+                prepared = run_launcher.prepare_local_run(req)
+                job = run_launcher.start_local_run(prepared)
             except Exception as e:
                 set_status("fail")
                 with log_out:
                     print("[local][ERROR]", type(e).__name__, e)
+                return False, f"The run could not start: {e}", None
+            set_status("done")
+            with log_out:
+                print(f"[local] Started run {prepared.run_id} ({prepared.backend})")
+                print("[local] Example :", example_dd.value)
+                print("[local] Command :", " ".join(prepared.command))
+                print("[local] Folder  :", prepared.run_dir)
+            if "watch" in _WF:
+                _WF["watch"](prepared.run_id, job, example_cfg.get("model_name", ""))
+            return True, f"Run {prepared.run_id} started.", prepared.run_id
 
         def run_example_remote_submit():
             log_out.clear_output()
@@ -1529,6 +1517,7 @@ def build_icesee_ui():
 
                 _run_id = _new_icesee_run_id()
                 _rd = run_dir(_icesee_run_dir_base(), _run_id)
+                dump_yaml(cfg_yaml, _rd / "params.yaml")
 
                 if exec_backend_choice.value == "spack":
                     if use_connector:
@@ -1667,7 +1656,7 @@ def build_icesee_ui():
                     backend=exec_backend_choice.value,
                     source=example_dd.value,
                     run_target=cluster_name_for_keys.value or host,
-                    status="running", jobid=result.jobid,
+                    status="submitted", jobid=result.jobid,
                     remote_directory=result.remote_dir,
                 )
 
@@ -2078,6 +2067,9 @@ def build_icesee_ui():
                     if result["ok"]:
                         print(f"✅ Job {jobid} cancelled.")
 
+                if result["ok"] and STATUS.get("local_run_dir"):
+                    _update_icesee_run(Path(STATUS["local_run_dir"]), status="cancelled")
+
                 set_status("done" if result["ok"] else "fail")
 
             except Exception as e:
@@ -2229,6 +2221,8 @@ def build_icesee_ui():
                 STATUS["batch_job_id"] = result.job_id
                 STATUS["s3_run"] = result.working_directory
                 STATUS["local_run_dir"] = str(_rd)
+                if not (_rd / "params.yaml").is_file():
+                    dump_yaml(cfg_yaml, _rd / "params.yaml")
 
                 _record_icesee_run(
                     run_dir=_rd, run_id=_run_id,
@@ -2236,7 +2230,7 @@ def build_icesee_ui():
                     execution_mode="cloud", backend="aws",
                     source=example_dd.value,
                     run_target=job_definition,
-                    status="running", jobid=result.job_id,
+                    status="submitted", jobid=result.job_id,
                     remote_directory=result.working_directory,
                     extra_metadata={
                         "cloud_account_mode": execution.mode,
@@ -2686,12 +2680,18 @@ def build_icesee_ui():
                 connect_btn.disabled = False
 
         connect_btn.on_click(_on_check_ssh)
+
+        def _after_status_check():
+            if "workspace" in _WF:
+                _WF["workspace"].reload_selected()
         submit_btn.on_click(lambda b: run_example_remote_submit())
         status_btn.on_click(lambda b: run_example_remote_status())
         tail_btn.on_click(lambda b: run_example_remote_tail())
         terminate_btn.on_click(lambda b: run_example_remote_cancel())
 
         cloud_status_btn.on_click(lambda b: run_example_cloud_status())
+        status_btn.on_click(lambda b: _after_status_check())        # the workspace shows the new state
+        cloud_status_btn.on_click(lambda b: _after_status_check())
         cloud_logs_btn.on_click(lambda b: run_example_cloud_logs_hint())
         cloud_terminate_btn.on_click(lambda b: run_example_cloud_terminate())
         
@@ -2992,81 +2992,13 @@ def build_icesee_ui():
                 with results_out:
                     print(f"[cloud] result sync skipped: {type(_e).__name__}: {_e}")
 
-        def _on_icesee_run_selected(run_id):
-            run = icesee_runs_manager.selected_run()
-            if not (run and run.workspace_directory):
-                return
-            _sync_icesee_cloud_run_results(run)
-            refresh_results_preview(run.workspace_directory, results_out)
-            try:
-                pkg = discover_result_package(run.workspace_directory)
-                lines = pkg.summary_lines()
-            except Exception:
-                lines = []
-            if lines:
-                with results_out:
-                    print("\nDA outputs (from results/*.h5):")
-                    for line in lines:
-                        print(" -", line)
-            with results_out:
-                display(HTML(run_progress_html(run.workspace_directory)))
-
-        def _on_icesee_tail_selected_run():
-            run = icesee_runs_manager.selected_run()
-            log_out.clear_output()
-            with log_out:
-                print(icesee_runs_manager.tail(run.id) if run else "No run selected.")
-
-        def _on_icesee_download_selected_results():
-            run = icesee_runs_manager.selected_run()
-            if not run:
-                return
-            zip_path = icesee_runs_manager.download_results(run.id)
-            with log_out:
-                if zip_path is not None:
-                    display(FileLink(str(zip_path)))
-                else:
-                    print("[workspace] No local results captured for this run yet.")
-
-        def _on_icesee_download_selected_figures():
-            run = icesee_runs_manager.selected_run()
-            if not run:
-                return
-            zip_path = icesee_runs_manager.download_figures(run.id)
-            with log_out:
-                if zip_path is not None:
-                    display(FileLink(str(zip_path)))
-                else:
-                    print("[workspace] No local figures captured for this run yet.")
-
-        icesee_history_panel = build_workspace_history_panel(
-            manager=icesee_runs_manager,
-            on_run_selected=_on_icesee_run_selected,
-            on_tail_log=_on_icesee_tail_selected_run,
-            on_download=_on_icesee_download_selected_results,
-            on_show_figures=_on_icesee_download_selected_figures,
-            defer_initial_load=True,
-        )
-        # The single Workspace (Runs/Files/Run Log/Results) is assembled at
-        # the end of this function via the SAME shared build_run_details/
-        # build_workspace_explorer CryoLauncher uses -- not a second,
-        # ICESEE-only Accordion presentation.
-
         # =========================================================
-        # Run Plan -- the CryoLauncher semantic separation (execution mode
-        # / compute backend / model environment / model / provenance),
-        # reusing the SAME shared composition panel (build_run_plan_panel),
-        # with ICESEE's DA identity (DAIdentity.summary_rows(), already
-        # built in run_records.py) as first-class rows, not flattened away.
+        # Run plan rows -- execution semantics (mode / compute backend /
+        # model environment) plus ICESEE's DA identity
+        # (DAIdentity.summary_rows()), shown in Review & launch. Computing
+        # them also drives the MATLAB-licence and institutional-connection
+        # visibility of the Cloud card.
         # =========================================================
-        run_plan_summary_html = W.HTML()
-        run_plan_command_html = W.HTML(
-            "<div class='icesee-subtle'>The exact command is shown in Run "
-            "log after Run -- it depends on live choices (connector vs "
-            "direct SSH, spack vs container, existing sbatch, etc.) this "
-            "preview does not simulate.</div>"
-        )
-
         def _update_icesee_run_plan_summary(_=None):
             mode = get_mode()
             mode_label = {
@@ -3133,24 +3065,10 @@ def build_icesee_ui():
             if _icesee_requires_connector:
                 _refresh_institutional_connection()
 
-            # Same row markup CryoLauncher's own Run Plan summary already
-            # uses (icesee-summary / icesee-summary-k) -- not a second,
-            # ICESEE-only convention -- so both apps share one labeled-row
-            # layout (and its spacing/alignment CSS) in shared_app_styles.py.
-            run_plan_summary_html.value = (
-                "<div class='icesee-summary'>"
-                + "".join(
-                    f"<div><span class='icesee-summary-k'>"
-                    f"{html_lib.escape(label)}:</span> {html_lib.escape(str(value))}</div>"
-                    for label, value in rows if value
-                )
-                + "</div>"
-            )
+            _WF["plan_rows"] = rows
+            if "summary" in _WF:
+                _WF["summary"](rows)
 
-        icesee_run_plan = build_run_plan_panel(
-            summary_widget=run_plan_summary_html,
-            command_widget=run_plan_command_html,
-        )
         mode_tabs.observe(_update_icesee_run_plan_summary, names="selected_index")
         exec_backend_choice.observe(_update_icesee_run_plan_summary, names="value")
         example_dd.observe(_update_icesee_run_plan_summary, names="value")
@@ -3391,16 +3309,17 @@ def build_icesee_ui():
             if review is None or not review.can_launch:
                 return
             icesee_cloud_environment.review_panel.layout.display = "none"
+            before = STATUS.get("batch_job_id")
             run_example_cloud_submit()
+            if STATUS.get("batch_job_id") and STATUS.get("batch_job_id") != before and "after_submit" in _WF:
+                _WF["after_submit"]("cloud")
 
         icesee_cloud_environment.review_button.on_click(_on_icesee_review_click)
         icesee_cloud_environment.review_back_button.on_click(_on_icesee_review_back)
         icesee_cloud_environment.launch_button.on_click(_on_icesee_launch_click)
 
         mode_tabs.children = [local_tab_card, remote_box, cloud_panel]
-        mode_tabs.set_title(0, "Local")
-        mode_tabs.set_title(1, "Remote")
-        mode_tabs.set_title(2, "Cloud")
+        mode_tabs.selected_index = 0
 
         local_tab_card.layout = W.Layout(width="100%")
         remote_box.layout   = W.Layout(width="100%")
@@ -3418,13 +3337,11 @@ def build_icesee_ui():
             is_remote = (mode == MODE_REMOTE)
             connect_btn.disabled = not is_remote
             submit_btn.disabled = not is_remote
-            status_btn.disabled = not is_remote
             tail_btn.disabled = not is_remote
             terminate_btn.disabled = not is_remote
             terminate_btn.layout.display = "" if is_remote else "none"
 
             is_cloud = (mode == MODE_CLOUD)
-            cloud_status_btn.disabled = not is_cloud
             cloud_logs_btn.disabled = not is_cloud
             cloud_terminate_btn.disabled = not is_cloud
             cloud_terminate_btn.layout.display = "" if is_cloud else "none"
@@ -3437,9 +3354,9 @@ def build_icesee_ui():
             action_btn.layout.display = "none" if is_cloud else ""
 
             if is_remote:
-                log_runtime_controls.children = (connect_btn, status_btn, tail_btn, clear_btn)
+                log_runtime_controls.children = (connect_btn, tail_btn, clear_btn)
             elif is_cloud:
-                log_runtime_controls.children = (cloud_status_btn, cloud_logs_btn, clear_btn)
+                log_runtime_controls.children = (cloud_logs_btn, clear_btn)
             else:
                 log_runtime_controls.children = (clear_btn,)
 
@@ -3455,19 +3372,502 @@ def build_icesee_ui():
         results_out.add_class("icesee-out")
 
         # =========================================================
-        # Application shell -- GENUINELY the same shell CryoLauncher uses,
-        # not an ICESEE imitation of it: build_run_settings_panel (Run
-        # settings, with Run Plan nested as its last child, exactly
-        # CryoLauncher's own composition), build_runtime_panel (Execution:
-        # state + submit/terminate), build_run_details (the one Workspace:
-        # Runs/Files/Run Log/Results), build_workspace_explorer (the
-        # top-level two-column shell). ICESEE's Remote/Cloud content already
-        # lives inside mode_tabs (a structural difference CryoLauncher does
-        # not have -- its Remote/Cloud panels are simultaneously-present,
-        # visibility-toggled VBoxes); build_run_settings_panel's own
-        # remote_panel/cloud_panel slots are therefore inert placeholders
-        # here, not a second copy of that content.
+        # Workflow UI (ui/icesee_workflow): Mode first -> experiment ->
+        # environment & resources -> scientific parameters -> Review &
+        # launch (which becomes the active run) on the left; the workspace
+        # (Run / Files / Editor / Logs / Results) on the right follows the
+        # selected run. Every Remote/Cloud widget and handler above is
+        # reused as is -- this block only arranges and connects them.
         # =========================================================
+        stepper = Stepper()
+        _MODE_INDEX = {"local": 0, "cluster": 1, "cloud": 2}
+        _MODE_TITLE = {"local": "Local", "cluster": "Remote HPC", "cloud": "Cloud"}
+        _drafts_base = _icesee_run_dir_base()
+        _drafts_root = (Path(_drafts_base).parent / "icesee_drafts") if _drafts_base else (Path(__file__).resolve().parents[1] / "icesee_drafts")
+
+        def _experiment_files() -> ExperimentFiles:
+            return ExperimentFiles(EXAMPLES[example_dd.value]["base"], _drafts_root, example_key=example_dd.value)
+
+        _WF["experiment_files"] = _experiment_files
+
+        # ── 1. Mode ────────────────────────────────────────────────────────
+        mode_selector = ModeSelector(initial=get_mode())
+        local_env = LocalEnvironmentPanel()
+        _WF["local_env"] = local_env
+        local_tab_card.children = (local_env.container,)
+        local_tab_card.remove_class("icesee-card")
+
+        def _on_mode_selected(change):
+            idx = _MODE_INDEX[change["new"]]
+            if mode_tabs.selected_index != idx:
+                mode_tabs.selected_index = idx
+
+        mode_selector.toggle.observe(_on_mode_selected, names="value")
+
+        # ── 2. Experiment ──────────────────────────────────────────────────
+        example_status = W.HTML()
+        for _w in (example_dd, preset_dd, filter_alg_dd, seed_in):
+            _w.layout = W.Layout(width="100%")
+        ens_sl.layout = W.Layout(width="100%")
+        ens_sl.tooltip = "Number of ensemble members (enkf-parameters.Nens)"
+        filter_alg_dd.tooltip = "Assimilation filter (enkf-parameters.filter_type)"
+        seed_in.tooltip = "Random seed (enkf-parameters.seed)"
+        experiment_card = card(
+            [field("Example", example_dd), example_status,
+             W.VBox([field("Filter", filter_alg_dd),
+                     field("Ensemble size", ens_sl, "members"),
+                     field("Seed", seed_in),
+                     field("Preset", preset_dd)], layout=W.Layout(gap="8px"))],
+            title="Experiment", number=2, subtitle="The ICESEE example and its data-assimilation set-up.",
+            css="icw-anchor-experiment")
+
+        # ── 3. Environment & resources ─────────────────────────────────────
+        env_subtitle = W.HTML()
+        for _child in (local_tab_card, remote_box, cloud_panel):
+            _child.add_class("icw-pane")
+        environment_card = card([env_subtitle, mode_tabs], title="Environment & resources", number=3,
+                                css="icw-anchor-environment")
+
+        # ── 4. Scientific parameters ───────────────────────────────────────
+        open_params_btn = W.Button(description="Edit params.yaml", icon="pencil",
+                                   tooltip="Open the full configuration in the Editor (validated, applied to this form)")
+        open_params_btn.add_class("icw-btn-secondary")
+        params_note = W.HTML("<div class='icw-card-sub'>Every key of the example's <code>params.yaml</code>. "
+                             "Filter, ensemble size and seed above take precedence.</div>")
+        params_disclosure = W.Accordion(children=[W.VBox([params_note, params_holder], layout=W.Layout(gap="8px"))],
+                                        selected_index=None)
+        params_disclosure.set_title(0, "All parameters")
+        parameters_card = card([params_disclosure], title="Scientific parameters", number=4,
+                               subtitle="Physical, modelling and assimilation settings.", right=open_params_btn,
+                               css="icw-anchor-parameters")
+
+        # ── workspace (right) and Review & launch (left) ───────────────────
+        _active = {"run_id": None, "monitors": {}}
+
+        def _current_config() -> dict:
+            sync_quick_into_widgets()
+            return build_config_from_widgets()
+
+        def _apply_config(data: dict) -> None:
+            if not isinstance(data, dict):
+                raise ValueError("params.yaml must be a mapping of sections")
+            enkf = data.get("enkf-parameters") or {}
+            if enkf.get("filter_type") in [v for _l, v in filter_alg_dd.options]:
+                filter_alg_dd.value = enkf["filter_type"]
+            if isinstance(enkf.get("Nens"), int) and enkf["Nens"] >= 1:
+                ens_sl.max = max(ens_sl.max, enkf["Nens"])
+                ens_sl.value = enkf["Nens"]
+            if isinstance(enkf.get("seed"), int):
+                seed_in.value = enkf["seed"]
+            build_params_ui(data)
+            params_holder.children = (params_accordion,)
+            _workflow_refresh()
+
+        def _load_run(run_id):
+            icesee_runs_manager.refresh()
+            return icesee_runs_manager.select_run(run_id) if run_id else None
+
+        def _show_active(run_id, status=None):
+            run = run_records.load_run(_icesee_run_dir_base(), run_id) if run_id else None
+            if run is None:
+                return
+            if _active["run_id"] == run_id:
+                launch_panel.show_run(run, status=status)
+                stepper.set_live(launch_panel.live_html)
+            if workspace.selected is not None and workspace.selected.id == run_id:
+                if status is None:
+                    workspace.reload_selected()
+                elif workspace.tabs.value == "Logs":
+                    workspace.refresh_log()
+            _update_stepper()
+
+        def _watch(run_id, job, model):
+            if run_id in _active["monitors"]:
+                return
+            _last = {"log": 0.0}
+
+            def on_update(status):
+                _show_active(run_id, status)
+                if (workspace.selected is not None and workspace.selected.id == run_id
+                        and workspace.tabs.value == "Logs" and _time.time() - _last["log"] > 2):
+                    _last["log"] = _time.time()
+                    workspace.refresh_log()
+
+            def on_finish(status):
+                run_launcher.finalize_local_run(job.run_dir, status)
+                _active["monitors"].pop(run_id, None)
+                with log_out:
+                    print(f"[local] Run {run_id}: {status.state}" + (f" — {status.detail}" if status.detail else ""))
+                workspace.refresh_runs(select=workspace.selected.id if workspace.selected else run_id)
+                _show_active(run_id)
+                if workspace.selected is not None and workspace.selected.id == run_id:
+                    workspace._results = None
+                    if workspace.tabs.value in ("Results", "Logs"):
+                        workspace._refresh_visible()
+
+            _active["monitors"][run_id] = JobMonitor(job, on_update=on_update, on_finish=on_finish,
+                                                     model_name=model).start()
+            _active["run_id"] = run_id
+            workspace.refresh_runs(select=run_id)
+            _show_active(run_id)
+
+        _WF["watch"] = _watch
+
+        def _after_submit(mode):
+            rd = STATUS.get("local_run_dir")
+            if not rd:
+                return None
+            run_id = Path(rd).name
+            try:
+                cfg_resources = {"mode": mode}
+                if mode == "remote":
+                    cfg_resources.update({"cluster": cluster_name_for_keys.value, "backend": exec_backend_choice.value,
+                                          "nodes": slurm_nodes.value, "tasks": slurm_ntasks.value,
+                                          "tasks_per_node": slurm_tpn.value, "partition": slurm_part.value,
+                                          "wall_time": slurm_time.value, "memory": slurm_mem.value,
+                                          "mpi_np": cluster_mpi_np.value, "model_nprocs": cluster_model_nprocs.value})
+                else:
+                    cfg_resources.update({"region": aws_region.value.strip(), "mpi_np": cluster_mpi_np.value,
+                                          "model_nprocs": cluster_model_nprocs.value})
+                record = run_provenance.collect(
+                    run_id=run_id, run_dir=Path(rd), example=example_dd.value, example_cfg=EXAMPLES[example_dd.value],
+                    mode=mode, backend=exec_backend_choice.value if mode == "remote" else "aws-batch",
+                    params_file=Path(rd) / "params.yaml",
+                    environment={"environment": exec_backend_choice.value if mode == "remote" else "aws-batch",
+                                 "image": container_image_uri.value if (mode == "remote" and exec_backend_choice.value
+                                                                        == "container") else None},
+                    resources=cfg_resources, user_id=resolve_workspace_user(require_authenticated=False).user_id)
+                _update_icesee_run(Path(rd), extra_metadata={"provenance": run_provenance.summary(record)})
+            except Exception as _e:
+                with log_out:
+                    print("[history][WARN] provenance not recorded:", type(_e).__name__, _e)
+            _active["run_id"] = run_id
+            workspace.refresh_runs(select=run_id)
+            _show_active(run_id)
+            return run_id
+
+        _WF["after_submit"] = _after_submit
+
+        class _Host:
+            runs_manager = icesee_runs_manager
+            activity_output = log_out
+
+            def example_key(self):
+                return example_dd.value
+
+            def experiment_files(self):
+                return _experiment_files()
+
+            def current_config(self):
+                return _current_config()
+
+            def apply_config(self, data):
+                _apply_config(data)
+
+            def template(self):
+                return dict(_TEMPLATE["data"])
+
+            def reconcile(self, run):
+                state, job = run_launcher.reconcile_local_run(run)
+                if job is not None:
+                    _watch(run.id, job, (run.metadata or {}).get("forecast_model", ""))
+
+            def on_run_selected(self, run):
+                remote_fetch_row.layout.display = "" if (run is not None and run.execution_mode == "remote") else "none"
+                status_btn.layout.display = "" if (run is not None and run.execution_mode == "remote") else "none"
+                cloud_status_btn.layout.display = "" if (run is not None and run.execution_mode == "cloud") else "none"
+                if run is not None and run.execution_mode == "remote":
+                    STATUS.update(jobid=run.jobid, remote_dir=str(run.remote_directory or "") or None,
+                                  local_run_dir=str(run.workspace_directory))
+                elif run is not None and run.execution_mode == "cloud":
+                    STATUS.update(batch_job_id=run.jobid, local_run_dir=str(run.workspace_directory),
+                                  s3_run=str(run.remote_directory or "") or None)
+
+                    def _sync_then_refresh(run=run):
+                        _sync_icesee_cloud_run_results(run)
+                        if workspace.selected is not None and workspace.selected.id == run.id:
+                            workspace._results = None
+                            if workspace.tabs.value == "Results":
+                                workspace.refresh_results(force=True)
+                    workspace._threaded(_sync_then_refresh)
+                _update_stepper()
+
+            def run_extra_html(self, run):
+                """ICESEE's checkpoint/progress panel for the selected run."""
+                try:
+                    return run_progress_html(run.workspace_directory)
+                except Exception:
+                    return ""
+
+            def on_workspace_tab(self, tab):
+                _update_stepper()
+
+            def cancel_run(self, run):
+                state = run_lifecycle.current_state(run)
+                if state not in run_lifecycle.ACTIVE:
+                    return False, "This run is not active."
+                if run.execution_mode == "local":
+                    job = LocalJob(run.workspace_directory)
+                    if not job.exists:
+                        run_lifecycle.transition(run.workspace_directory, run_lifecycle.CANCELLED,
+                                                 detail="cancelled before it started")
+                        return True, "Cancelled."
+                    job.cancel()
+                    return True, "Cancel requested — the run stops within a few seconds."
+                self.on_run_selected(run)
+                if run.execution_mode == "remote":
+                    run_example_remote_cancel()
+                else:
+                    run_example_cloud_terminate()
+                workspace.reload_selected()
+                ok = run_lifecycle.current_state(_load_run(run.id)) == run_lifecycle.CANCELLED
+                return ok, ("Cancelled." if ok else "The cancellation did not go through. See Logs › Launcher activity.")
+
+            def reuse_configuration(self, run):
+                if run is None:
+                    return
+                params_file = Path(run.workspace_directory) / "params.yaml"
+                example = (run.metadata or {}).get("example")
+                if example in EXAMPLES and example_dd.value != example:
+                    example_dd.value = example
+                mode = {"local": "local", "remote": "cluster", "cloud": "cloud"}.get(run.execution_mode, "local")
+                mode_selector.toggle.value = mode
+                if params_file.is_file():
+                    _apply_config(load_yaml(params_file))
+                launch_panel.show_review()
+                launch_panel.message.value = (
+                    f"<div class='icw-callout info' role='status'><span class='ico'>ℹ</span><div>Loaded the "
+                    f"configuration of run <code>{html_lib.escape(run.id)}</code>. Review it and launch.</div></div>")
+                _update_stepper()
+
+            def on_drafts_changed(self):
+                _workflow_refresh()
+
+        workspace = RunWorkspace(_Host())
+        _WF["workspace"] = workspace
+
+        # Remote runs: fetch the job's outputs into the run folder so Results
+        # can read them (Cloud runs sync from S3 when Results opens).
+        def _fetch_selected_remote(_=None):
+            run = workspace.selected
+            if run is None or run.execution_mode != "remote":
+                return
+            _host_obj = workspace.host
+            _host_obj.on_run_selected(run)
+            target = Path(run.workspace_directory) / "outputs"
+            fetched = fetch_remote_outputs_to_local(target_dir=target)
+            with log_out:
+                print("[results] fetched to", fetched if fetched else "(nothing fetched)")
+            workspace.refresh_results(force=True)
+
+        fetch_remote_btn = W.Button(description="Fetch outputs from cluster", icon="cloud-download",
+                                    tooltip="Copy this job's outputs into the run folder (rsync or the Connector)")
+        fetch_remote_btn.add_class("icw-btn-secondary")
+        fetch_remote_btn.on_click(lambda _b: workspace._threaded(_fetch_selected_remote))
+        remote_fetch_row = W.HBox([fetch_remote_btn])
+        remote_fetch_row.add_class("icw-actions")
+        remote_fetch_row.layout.display = "none"
+        # messages of the Remote fetch / Cloud S3 sync, next to the results they concern
+        results_out.layout = W.Layout(width="100%", max_height="220px", overflow="auto")
+        workspace.results_pane.children = (remote_fetch_row, results_out, *workspace.results_pane.children)
+        workspace.log_controls_extra.children = (log_runtime_controls,)
+        status_btn.tooltip = "Ask the cluster for this job's state (squeue / sacct)"
+        cloud_status_btn.tooltip = "Ask AWS Batch for this job's state"
+        workspace.backend_actions.children = (status_btn, cloud_status_btn)
+        # the gateway's Remote/Cloud log tools, in the workflow's button hierarchy;
+        # "Clear" is the workspace's own (Logs › Launcher activity)
+        for _b in (connect_btn, status_btn, tail_btn, cloud_status_btn, cloud_logs_btn,
+                   preview_results_btn, results_download_btn):
+            _b.add_class("icw-btn-secondary")
+        clear_btn.layout.display = "none"
+        open_params_btn.on_click(lambda _b: workspace.open_in_editor("params.yaml"))
+
+        # ── 5. Review & launch ─────────────────────────────────────────────
+        def _workflow_validate():
+            mode = get_mode()
+            example_cfg = EXAMPLES[example_dd.value]
+            req = run_launcher.LaunchRequest(
+                example=example_dd.value, example_cfg=example_cfg, config=_current_config(),
+                environment=local_env.env.value, np=int(local_env.np.value),
+                model_nprocs=int(local_env.model_nprocs.value),
+                drafts=_experiment_files().drafts_in_use())
+            if mode == MODE_LOCAL:
+                return run_launcher.validate_launch(req)
+            issues = run_launcher.validate_launch(req, mode="remote" if mode == MODE_REMOTE else "cloud")
+            if mode == MODE_REMOTE:
+                if not cluster_host.value.strip():
+                    issues.append(Issue("error", "Remote connection: the login host is empty"))
+                if not cluster_user.value.strip():
+                    issues.append(Issue("error", "Remote connection: enter your HPC username"))
+                if not remote_base_dir.value.strip():
+                    issues.append(Issue("error", "Remote connection: enter your remote working directory"))
+                for _m in validate_slurm_resources(
+                        nodes=slurm_nodes.value, tasks=slurm_ntasks.value, tasks_per_node=slurm_tpn.value,
+                        wall_time=slurm_time.value, memory=slurm_mem.value, account=slurm_account.value,
+                        account_required=get_compute_profile(cluster_name_for_keys.value or "pace").account_required):
+                    issues.append(Issue("error", f"Slurm resources: {_m}"))
+            else:
+                identity = da_identity_from_params(req.config)
+                if (identity.example_name or "") != "lorenz96":
+                    issues.append(Issue("warning", "Cloud execution has been verified for the Lorenz-96 example "
+                                                   "only; the cloud review will tell you if this one is refused"))
+            return issues
+
+        def _workflow_launch():
+            mode = get_mode()
+            if mode == MODE_LOCAL:
+                ok, message, run_id = run_example_local()
+                if ok:
+                    workspace.show("Run")
+                return ok, message, run_id
+            if mode == MODE_REMOTE:
+                before = STATUS.get("jobid")
+                run_example_remote_submit()
+                if STATUS.get("jobid") and STATUS.get("jobid") != before:
+                    run_id = _after_submit("remote")
+                    workspace.show("Run")
+                    return True, f"Submitted Slurm job {STATUS['jobid']}.", run_id
+                workspace.show_activity()
+                return False, "The job was not submitted. Details are in Logs › Launcher activity.", None
+            _on_icesee_review_click()
+            if icesee_cloud_environment.review_panel.layout.display == "none":
+                workspace.show_activity()
+                return False, "The cloud review could not be prepared. See Logs › Launcher activity.", None
+            run_js(_js_out, "var e=document.querySelector('.cryostack-cloud-config');"
+                            "if(e){e.scrollIntoView({behavior:'smooth',block:'center'});}")
+            return True, "Review the launch in the Cloud panel above, then press Launch there.", None
+
+        def _cancel_active(run):
+            return workspace.host.cancel_run(run)
+
+        launch_panel = LaunchPanel(
+            on_launch=_workflow_launch, on_validate=_workflow_validate, on_cancel=_cancel_active,
+            on_open_logs=lambda: (workspace.select_run(_active["run_id"], tab="Logs")),
+            on_open_results=lambda: (workspace.select_run(_active["run_id"], tab="Results")))
+        _WF["activity"] = lambda state: launch_panel.set_activity(state)
+        # Cloud submits only through the cloud card's own gated Launch; its
+        # separate "Review & Launch" opener is replaced by the panel's button.
+        icesee_cloud_environment.review_button.layout.display = "none"
+
+        def _summary_rows(rows):
+            mode = get_mode()
+            env_rows = []
+            if mode == MODE_LOCAL:
+                env_rows = [("Runs in", {v: l for l, v in local_env.env.options}.get(local_env.env.value,
+                                                                                     local_env.env.value))]
+                if local_env.env.value == "container":
+                    env_rows.append(("MPI processes", str(local_env.np.value)))
+            elif mode == MODE_REMOTE:
+                env_rows = [("Resource", cluster_name_for_keys.value or cluster_host.value),
+                            ("Slurm", f"{slurm_nodes.value} node(s) · {slurm_ntasks.value} tasks · {slurm_time.value}"),
+                            ("MPI", f"np {cluster_mpi_np.value} · model {cluster_model_nprocs.value}")]
+            else:
+                env_rows = [("Region", aws_region.value.strip() or "us-east-1"),
+                            ("Compute", getattr(icesee_cloud_environment.compute_mode, "value", "fargate"))]
+            drafts = sorted(_experiment_files().drafts_in_use())
+            out = [("Mode", html_lib.escape(_MODE_TITLE[mode])),
+                   ("Experiment", html_lib.escape(example_dd.value))]
+            out += [(k, html_lib.escape(str(v))) for k, v in rows if k not in ("Execution mode",)]
+            out += [(k, html_lib.escape(str(v))) for k, v in env_rows if v]
+            if drafts:
+                out.append(("Edited inputs", html_lib.escape(", ".join(drafts))
+                            + (" <span class='icw-badge warn'>Local only</span>" if mode != MODE_LOCAL else "")))
+            launch_panel.set_summary(out)
+
+        _WF["summary"] = _summary_rows
+
+        def _update_stepper():
+            issues = launch_panel._issues or []
+            errors = [i for i in issues if i.level == "error"]
+            env_words = ("environment", "Docker", "MPI processes", "Remote connection", "Slurm", "cannot run")
+            env_err = any(any(w in i.message for w in env_words) for i in errors)
+            param_err = any(not any(w in i.message for w in env_words) for i in errors)
+            active = _load_run(_active["run_id"]) if _active["run_id"] else None
+            if workspace.selected is not None:
+                icesee_runs_manager.select_run(workspace.selected.id)
+            active_state = run_lifecycle.current_state(active)
+            sel = workspace.selected
+            states = {"Mode": "done", "Experiment": "done",
+                      "Environment": "attention" if env_err else "done",
+                      "Parameters": "attention" if param_err else "done",
+                      "Review & launch": "attention" if errors else ("done" if active_state else "current")}
+            if active_state in run_lifecycle.ACTIVE:
+                states["Monitor"] = "current active"
+            elif active_state:
+                states["Monitor"] = "done"
+            if sel is not None and run_lifecycle.current_state(sel) == run_lifecycle.COMPLETED:
+                states["Results"] = "current" if workspace.tabs.value == "Results" else "done"
+            stepper.update(states)
+
+        def _workflow_refresh(_=None):
+            mode = get_mode()
+            env_subtitle.value = ("<div class='icw-card-sub'>" + {
+                MODE_LOCAL: "This server's resources: the launcher's Python or the ICESEE container.",
+                MODE_REMOTE: "Your cluster account, connection and Slurm request.",
+                MODE_CLOUD: "Your AWS account, its prepared infrastructure, and the run estimate."}[mode] + "</div>")
+            launch_panel.set_mode(mode)
+            model = EXAMPLES[example_dd.value].get("model_name", "")
+            local_env.set_model(model)
+            try:
+                _update_icesee_run_plan_summary()
+            except Exception:
+                pass
+            from icesee_jupyter_book.core.local_jobs import environments as _envs
+            if mode == MODE_LOCAL:
+                envs = [e for e in _envs(model) if e.available]
+                example_status.value = (
+                    f"<div class='icw-badges'><span class='icw-badge ok'><span class='dot'></span>Runs here</span>"
+                    f"<span class='icw-card-sub' style='margin:0'>{html_lib.escape(', '.join(e.label for e in envs))}</span></div>"
+                    if envs else
+                    "<div class='icw-badges'><span class='icw-badge bad'><span class='dot'></span>Not runnable on this "
+                    "server</span><span class='icw-card-sub' style='margin:0'>Choose Remote HPC or Cloud.</span></div>")
+            elif mode == MODE_REMOTE:
+                example_status.value = ("<div class='icw-badges'><span class='icw-badge info'><span class='dot'></span>"
+                                        "Submits to your cluster</span></div>")
+            else:
+                example_status.value = ("<div class='icw-badges'><span class='icw-badge info'><span class='dot'></span>"
+                                        "AWS Batch</span><span class='icw-card-sub' style='margin:0'>Verified for "
+                                        "Lorenz-96</span></div>")
+            launch_panel.revalidate()
+            _update_stepper()
+            workspace.editor_sync_from_form()
+
+        def _on_mode_index(_change=None):
+            mode = get_mode()
+            if mode_selector.toggle.value != mode:
+                mode_selector.toggle.value = mode
+            _workflow_refresh()
+
+        mode_tabs.observe(_on_mode_index, names="selected_index")
+        for _w in (filter_alg_dd, ens_sl, seed_in, exec_backend_choice, cluster_host, cluster_user,
+                   remote_base_dir, slurm_account, slurm_time, slurm_nodes, slurm_ntasks, slurm_tpn, slurm_mem):
+            _w.observe(_workflow_refresh, names="value")
+        for _w in (local_env.env, local_env.np, local_env.model_nprocs):
+            _w.observe(_workflow_refresh, names="value")
+        def _example_changed():
+            """A new example: its own filter, ensemble size and seed become the
+            form's values (the quick controls must never silently override
+            the example's defaults), then everything depending on it updates."""
+            enkf = (_TEMPLATE["data"] or {}).get("enkf-parameters") or {}
+            with ui_refresh.batch():
+                if enkf.get("filter_type") in [v for _l, v in filter_alg_dd.options]:
+                    filter_alg_dd.value = enkf["filter_type"]
+                if isinstance(enkf.get("Nens"), int) and enkf["Nens"] >= 1:
+                    ens_sl.max = max(200, enkf["Nens"])
+                    ens_sl.value = enkf["Nens"]
+                if isinstance(enkf.get("seed"), int):
+                    seed_in.value = enkf["seed"]
+            if workspace.tabs.value == "Editor":
+                workspace.editor_refresh_list()
+            _workflow_refresh()
+
+        _WF["example_changed"] = _example_changed
+
+        # ── page ───────────────────────────────────────────────────────────
+        hero = W.HTML(
+            "<div class='icw-hero'><div><h1>Ice-Sheet Modeling with Data Assimilation</h1>"
+            "<p>Configure an ICESEE ensemble data-assimilation experiment, run it locally, on your cluster or in "
+            "the cloud, and inspect its scientific results here.</p></div></div>")
         agent_rows = []
         if os.environ.get("CRYOSTACK_AGENT_PANEL", "").strip().lower() in ("1", "true", "on", "yes"):
             from icesee_jupyter_book.ui.configuration_agent import build_icesee_configuration_agent
@@ -3488,70 +3888,65 @@ def build_icesee_ui():
             agent_acc.set_title(0, "Auto-config · Beta")
             agent_rows.append(agent_acc)
 
-        icesee_run_settings = build_run_settings_panel(
-            configuration_rows=[
-                *agent_rows,
-                W.HBox([W.HTML("<div class='icesee-lbl'>Mode:</div>"), mode_tabs], layout=W.Layout(gap="8px", width="100%")),
-                W.HBox([W.HTML("<div class='icesee-lbl'>Example:</div>"), example_dd], layout=W.Layout(gap="8px", width="100%")),
-                W.HBox([W.HTML("<div class='icesee-lbl'>Preset:</div>"), preset_dd], layout=W.Layout(gap="8px", width="100%")),
-                W.HBox([W.HTML("<div class='icesee-lbl'>Filter:</div>"), filter_alg_dd], layout=W.Layout(gap="8px", width="100%")),
-                W.HBox([W.HTML("<div class='icesee-lbl'>Output:</div>"), output_label_dd], layout=W.Layout(gap="8px", width="100%")),
-                W.HBox([W.HTML("<div class='icesee-lbl'>Ens:</div>"), ens_sl], layout=W.Layout(gap="8px", width="100%")),
-                W.HBox([W.HTML("<div class='icesee-lbl'>Seed:</div>"), seed_in], layout=W.Layout(gap="8px", width="100%")),
-                W.Box([gen_report], layout=W.Layout(margin="6px 0 0 120px")),
-                W.Box([open_latest], layout=W.Layout(margin="0 0 8px 120px")),
-                W.HTML("<div class='icesee-subtle' style='margin:8px 0 8px'>Full configuration (from <code>params.yaml</code>)</div>"),
-                params_holder,
-            ],
-            remote_panel=W.HTML(""),   # Remote content already lives in mode_tabs above
-            cloud_panel=W.HTML(""),    # Cloud content already lives in mode_tabs above
-            run_plan=icesee_run_plan.container,
-        )
+        _js_out = W.Output(layout=W.Layout(height="0px", overflow="hidden"))
+        left = W.VBox([mode_selector.container, experiment_card, environment_card, parameters_card,
+                       launch_panel.container, *agent_rows], layout=W.Layout(width="100%"))
+        left.add_class("icw-col")
+        left.add_class("cryostack-left-workspace")
+        right = W.VBox([workspace.container], layout=W.Layout(width="100%"))
+        right.add_class("icw-col")
+        right.add_class("cryostack-right-workspace")
+        icesee_shell = W.HBox([left, right], layout=W.Layout(width="100%"))
+        icesee_shell.add_class("icw-shell")
 
-        icesee_runtime = build_runtime_panel(
-            status_widget=status_chip,
-            run_button=action_btn,
-            remote_terminate_button=terminate_btn,
-            cloud_terminate_button=cloud_terminate_btn,
-        )
-
-        icesee_workspace = build_run_details(
-            log_output=log_out,
-            results_output=results_out,
-            download_controls=download_buttons_row,
-            log_controls=log_runtime_controls,
-            runs_panel=icesee_history_panel.runs_panel,
-            files_panel=icesee_history_panel.files_panel,
-        )
-
-        icesee_shell = build_workspace_explorer(
-            run_settings=icesee_run_settings,
-            runtime=icesee_runtime.container,
-            run_details=icesee_workspace.container,
-        )
-
+        log_out.add_class("icesee-out")
+        results_out.add_class("icesee-out")
         page = W.VBox(
             [
                 shared_styles,
                 W.HTML(css),
+                stylesheet(),
                 W.HTML("<script>document.title = 'ICESEE';</script>"),
 
                 experiment_bridge.widget(),
                 workspace_bridge.widget(),
 
                 app_menu,
-                header,
-                icesee_shell.container,
-                icesee_shell.height_sync,
+                hero,
+                stepper.html,
+                icesee_shell,
+                _js_out,
                 back_link,
             ],
             layout=W.Layout(width="100%"),
         )
         page.add_class("icesee-page")
+        page.add_class("icw")
+
+        def _workflow_start():
+            _example_changed()
+            try:
+                workspace.refresh_runs()
+            except Exception as _e:
+                with log_out:
+                    print("[workspace] run history unavailable:", type(_e).__name__, _e)
+            if workspace.selected is not None and run_lifecycle.current_state(workspace.selected) in run_lifecycle.ACTIVE:
+                _active["run_id"] = workspace.selected.id
+                _show_active(workspace.selected.id)
+            # elapsed time of an active Remote/Cloud run ticks without polling the backend
+            def _tick():
+                run_id = _active["run_id"]
+                if run_id and run_id not in _active["monitors"]:
+                    run = run_records.load_run(_icesee_run_dir_base(), run_id)
+                    if run is not None and run_lifecycle.current_state(run) in run_lifecycle.ACTIVE:
+                        launch_panel.show_run(run)
+                        stepper.set_live(launch_panel.live_html)
+            _active["ticker"] = Ticker(_tick, interval=5.0)
 
         set_status("idle")
         rebuild_for_example()
         _update_icesee_run_plan_summary()
+        _workflow_start()
 
         # B2: restore this user's saved per-resource settings, last of all.
         try:

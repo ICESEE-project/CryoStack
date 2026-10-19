@@ -64,9 +64,15 @@ CryoStack execution
      |           CryoLauncher's own Remote and Cloud backends, and across
      |           its models (ISSM/Icepack); not shared with ICESEE.
      |
-     +-- ICESEE
-           +-- Local     (icesee_jupyter_book/core/local_runner.py --
-           |               run_local_example(); in-kernel, no scheduler)
+     +-- ICESEE   (one run lifecycle for all three: core/run_lifecycle.py --
+           |            preparing/submitted/queued/running/completed/failed/
+           |            cancelled, history in the run manifest; provenance.json
+           |            per run: core/provenance.py)
+           +-- Local     (core/run_launcher.py + core/local_jobs.py -- a
+           |               detached background job, re-attached after a
+           |               reload; launcher Python, or the ICESEE image on the
+           |               host's Docker; staging with edited inputs in
+           |               core/local_runner.py)
            |
            +-- Remote    (icesee_jupyter_book/core/remote_runner.py --
            |               submit_remote_example[_container][_via_connector]();
@@ -80,9 +86,12 @@ CryoStack execution
            |               CRYOSTACK_*)
            |
            +-- ExperimentBridge (icesee_jupyter_book/ui/experiment_bridge.py)
-                 -- its own run-record type, not WorkspaceManager/RunInfo;
-                 results are a raw file-tree listing + inline image display,
-                 not a discover_results()/ResultPackage read.
+           |     -- the web-API experiment record (Control Center)
+           |
+           +-- Results  (core/results_service.py -> ICESEE.src.postprocessing,
+                 in a child process: the example's results.yaml contract and
+                 the read_results.ipynb views; not discover_results()/
+                 ResultPackage)
 ```
 
 CryoLauncher's own result package and its reader/visualizer

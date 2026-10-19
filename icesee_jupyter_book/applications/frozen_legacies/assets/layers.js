@@ -104,6 +104,9 @@ function createFrozenLegaciesSources() {
       createVectorSource(),
 
     observations:
+      createVectorSource(),
+
+    riggs:
       createVectorSource()
 
   };
@@ -301,6 +304,15 @@ function createObservationLayer(
 
 }
 
+function createRiggsLayer(sources) {
+  return new ol.layer.Vector({
+    source: sources.riggs,
+    visible: false,
+    style: feature => FrozenLegaciesStyles.riggsStation(feature),
+    properties: { id: "riggs-reference-stations", label: "RIGGS reference stations" }
+  });
+}
+
 
 /* ------------------------------------------------------------
  * South Pole layer
@@ -427,6 +439,97 @@ function createGraticule() {
 
 }
 
+/* ------------------------------------------------------------
+ * Polar reference grid
+ *
+ * EPSG:3031 radii are derived from the projection at 60/70/80°S.
+ * They are deliberately local vector geometry so the scientific
+ * context remains available offline and never implies new data.
+ * ------------------------------------------------------------ */
+
+function createPolarReferenceLayer() {
+
+  const latitudeRings = [
+    { label: "60°S", radius: 3333134 },
+    { label: "70°S", radius: 2194494 },
+    { label: "80°S", radius: 1089179 }
+  ];
+
+  const features = [];
+
+  latitudeRings.forEach(({ label, radius }) => {
+    features.push(new ol.Feature({
+      geometry: new ol.geom.Circle([0, 0], radius),
+      kind: "latitude",
+      label
+    }));
+    features.push(new ol.Feature({
+      geometry: new ol.geom.Point([radius, 0]),
+      kind: "label",
+      label
+    }));
+  });
+
+  for (let degrees = 0; degrees < 360; degrees += 30) {
+    const radians = degrees * Math.PI / 180;
+    features.push(new ol.Feature({
+      geometry: new ol.geom.LineString([
+        [0, 0],
+        [3400000 * Math.sin(radians), 3400000 * Math.cos(radians)]
+      ]),
+      kind: "longitude"
+    }));
+  }
+
+  return new ol.layer.Vector({
+    source: new ol.source.Vector({ features }),
+    style: feature => FrozenLegaciesStyles.polarReference(feature),
+    properties: { id: "polar-reference-grid", label: "Polar reference grid" }
+  });
+}
+
+/* ------------------------------------------------------------
+ * Quantarctica geography shared with LIVIST
+ * ------------------------------------------------------------ */
+
+function createScientificGeographyLayers() {
+  const epsg3031 = new ol.format.GeoJSON({
+    dataProjection: "EPSG:3031",
+    featureProjection: "EPSG:3031"
+  });
+
+  const basemap = new ol.layer.Vector({
+    source: new ol.source.Vector({
+      url: "/livist/quantartica-simple-basemap.json",
+      format: epsg3031
+    }),
+    style: feature => FrozenLegaciesStyles.scientificBasemap(feature),
+    properties: { id: "quantarctica-basemap", label: "Quantarctica basemap" }
+  });
+
+  const basins = new ol.layer.Vector({
+    source: new ol.source.Vector({
+      url: "/livist/basins.json",
+      format: epsg3031
+    }),
+    style: feature => FrozenLegaciesStyles.drainageBasin(feature),
+    properties: { id: "antarctic-drainage-basins", label: "Drainage basins" }
+  });
+
+  const placeNames = new ol.layer.Vector({
+    source: new ol.source.Vector({
+      url: "/livist/place-names.json",
+      format: epsg3031
+    }),
+    style: (feature, resolution) =>
+      FrozenLegaciesStyles.antarcticPlaceName(feature, resolution),
+    declutter: true,
+    properties: { id: "antarctic-place-names", label: "Antarctic place names" }
+  });
+
+  return { basemap, basins, placeNames };
+}
+
 
 /* ------------------------------------------------------------
  * Complete layer bundle
@@ -453,6 +556,9 @@ function createFrozenLegaciesLayers() {
       frozenSources
     );
 
+  const riggsLayer =
+    createRiggsLayer(frozenSources);
+
 
   const southPole =
     createSouthPoleLayer();
@@ -462,6 +568,12 @@ function createFrozenLegaciesLayers() {
 
   const polarOcean =
   createPolarOceanLayer();
+
+  const polarReference =
+    createPolarReferenceLayer();
+
+  const scientificGeography =
+    createScientificGeographyLayers();
 
 
   /*
@@ -484,13 +596,21 @@ function createFrozenLegaciesLayers() {
 
     polarOcean.layer,
 
-    antarcticLand.layer,
+    polarReference,
+
+    scientificGeography.basemap,
+
+    scientificGeography.basins,
 
     flightLayers.flights,
 
     flightLayers.selectedFlight,
 
     southPole.layer,
+
+    scientificGeography.placeNames,
+
+    riggsLayer,
 
     observationLayer
 
@@ -514,6 +634,17 @@ function createFrozenLegaciesLayers() {
       polarOcean:
         polarOcean.layer,
 
+      polarReference,
+
+      scientificBasemap:
+        scientificGeography.basemap,
+
+      drainageBasins:
+        scientificGeography.basins,
+
+      placeNames:
+        scientificGeography.placeNames,
+
       antarcticLand:
         antarcticLand.layer,
 
@@ -527,7 +658,10 @@ function createFrozenLegaciesLayers() {
         southPole.layer,
 
       observations:
-        observationLayer
+        observationLayer,
+
+      riggs:
+        riggsLayer
 
     },
 

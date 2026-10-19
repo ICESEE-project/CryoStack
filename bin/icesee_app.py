@@ -10,6 +10,7 @@ import socket
 import subprocess
 import sys
 import time
+from urllib.parse import quote
 from pathlib import Path
 
 
@@ -65,7 +66,14 @@ from icesee_auth.kernel_access import (
     grant_matches,
     workspace_grant,
 )
-from icesee_jupyter_book.developer_docs_access import developer_docs_middleware
+from icesee_jupyter_book.developer_docs_access import (
+    developer_docs_middleware,
+    filter_livist_html,
+    is_privileged,
+    private_docs_response,
+    require_developer_docs,
+    restricted_livist_doc,
+)
 
 
 HOP_BY_HOP = {
@@ -338,7 +346,11 @@ async def livist_docs_index(request: web.Request) -> web.StreamResponse:
             )
         )
 
-    return web.FileResponse(index_file)
+    if is_privileged(request.app["auth"], request):
+        return private_docs_response(web.FileResponse(index_file))
+    return private_docs_response(web.Response(
+        text=filter_livist_html(index_file.read_text(encoding="utf-8")),
+        content_type="text/html"))
 
 async def livist_docs_page(request: web.Request) -> web.StreamResponse:
     tail = request.match_info.get("tail", "").strip("/")
@@ -356,7 +368,18 @@ async def livist_docs_page(request: web.Request) -> web.StreamResponse:
     if not requested_path.exists() or not requested_path.is_file():
         raise web.HTTPNotFound(text="LIVIST documentation page not found.")
 
-    return web.FileResponse(requested_path)
+    auth = request.app["auth"]
+    if restricted_livist_doc(tail) and not is_privileged(auth, request):
+        if auth.current_user(request) is None:
+            raise web.HTTPFound("/auth/login?return_to="
+                                + quote(request.path_qs, safe=""))
+        raise web.HTTPForbidden(
+            text="Developer documentation requires owner-controlled access.")
+    if requested_path.suffix.lower() in {".html", ".htm"} and not is_privileged(auth, request):
+        return private_docs_response(web.Response(
+            text=filter_livist_html(requested_path.read_text(encoding="utf-8")),
+            content_type="text/html"))
+    return private_docs_response(web.FileResponse(requested_path))
 
 class ManagedProcess:
     def __init__(self, command: list[str], cwd: Path, env: dict[str, str] | None = None):
@@ -415,6 +438,7 @@ VOILA_ENV_ALLOWLIST = frozenset({
     "CRYOSTACK_KERNEL_SANDBOX", "CRYOSTACK_KERNEL_BWRAP", "CRYOSTACK_KERNEL_RO_PATHS",
     "CRYOSTACK_KERNEL_AWS_DIR", "CRYOSTACK_KERNEL_HIDE",
     "CRYOSTACK_CF_TEMPLATE_URL", "CRYOSTACK_CLOUD_POLL_SECONDS",
+    "CRYOSTACK_CLOUD_OPERATOR_USER_IDS",
     # Cloud: the named AWS profile and region select the CryoStack principal
     # for hosted runs and AssumeRole; static keys are never forwarded.
     "AWS_PROFILE", "AWS_REGION", "AWS_DEFAULT_REGION", "AWS_CONFIG_FILE",
@@ -469,6 +493,22 @@ VOILA_MODE_ENV = "CRYOSTACK_VOILA_MODE"
 VOILA_TOKEN_FILE_ENV = "CRYOSTACK_VOILA_TOKEN_FILE"
 
 
+def configured_port(env_name: str, default: int) -> int:
+    """Return a validated TCP port from the environment.
+
+    Production keeps its historical ports by default; isolated staging
+    deployments can select a different port set on the same host.
+    """
+    raw = (os.environ.get(env_name) or str(default)).strip()
+    try:
+        port = int(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{env_name} must be an integer TCP port, not {raw!r}") from exc
+    if not 1 <= port <= 65535:
+        raise RuntimeError(f"{env_name} must be between 1 and 65535, not {port}")
+    return port
+
+
 def voila_mode() -> str:
     mode = (os.environ.get(VOILA_MODE_ENV) or "managed").strip().lower()
     if mode not in ("managed", "external"):
@@ -496,8 +536,16 @@ def read_voila_token_file(path: str | None = None) -> str:
 
 #: (notebook, port, base URL) of the two application servers
 VOILA_APPS = {
-    "icesee": (run_center_nb, 8866, "/icesee-gui/"),
-    "icesheets": (icesheets_nb, 8870, "/icesheets/"),
+    "icesee": (
+        run_center_nb,
+        configured_port("CRYOSTACK_RUN_CENTER_PORT", 8866),
+        "/icesee-gui/",
+    ),
+    "icesheets": (
+        icesheets_nb,
+        configured_port("CRYOSTACK_ICESHEETS_PORT", 8870),
+        "/icesheets/",
+    ),
 }
 
 
@@ -512,7 +560,6 @@ def voila_command(app_name: str, python: str | None = None) -> list[str]:
         "--Voila.ip=127.0.0.1",
         f"--port={port}",
         f"--Voila.base_url={base_url}",
-        "--Voila.allow_origin=http://127.0.0.1:8080",
         # Surface the proxy-verified CryoStack identity into the kernel
         # environment (HTTP_X_CRYOSTACK_USER_ID) so Workspace history is
         # isolated per authenticated user. preheat_kernel stays disabled
@@ -830,7 +877,23 @@ async def kernel_workspace_state(request: web.Request) -> web.Response:
                              headers={"Cache-Control": "no-store"})
 
 
+def check_storage_layout() -> list[dict]:
+    """Pin every persistent store's location for this process and its children
+    and refuse to start when durable storage is required but not in place
+    (``cryostack_src.storage_layout``); otherwise report what is not durable."""
+    from cryostack_src import storage_layout
+
+    storage_layout.export_environment()
+    report = storage_layout.enforce()        # raises with CRYOSTACK_REQUIRE_DURABLE_STORAGE=1
+    for entry in report:
+        for problem in entry["problems"]:
+            print(f"[storage] {entry['store']} ({entry['path']}): {problem}",
+                  file=sys.stderr, flush=True)
+    return report
+
+
 def make_app() -> web.Application:
+    check_storage_layout()
     app = web.Application()
     state = ICESEEState()
     app["state"] = state
@@ -843,7 +906,7 @@ def make_app() -> web.Application:
     app["auth"] = auth
     app.router.add_get(KERNEL_WORKSPACE_STATE_PATH, kernel_workspace_state)
 
-    # Developer Guide pages: maintainers, admins and owners only (403 for
+    # Developer Guide pages: owners only (403 for
     # other users); their links are removed from everyone else's pages.
     app.middlewares.append(
         developer_docs_middleware(
@@ -932,15 +995,10 @@ def make_app() -> web.Application:
     # (/control/livist, /api/livist/); /livist/ itself stays static above.
     install_livist(app, auth=auth)
 
-    # Role-protected Maintainer / Operations Guide. Restricted at the request
-    # boundary by the same require_roles mechanism as the Control Center; the
-    # source markdown is deliberately excluded from the public book build.
-    maintainer_access = auth.require_roles(
-        "developer",
-        "maintainer",
-        "admin",
-        "owner",
-    )
+    # Owner-controlled Maintainer / Operations Guide. Owners may delegate
+    # access to a maintainer or admin; both role and capability are checked at
+    # every request. The source is deliberately excluded from the public build.
+    maintainer_access = lambda handler: require_developer_docs(auth, handler)
     app.router.add_get("/docs/maintainer", maintainer_guide_redirect)
     app.router.add_get(
         "/docs/maintainer/",
@@ -976,4 +1034,8 @@ if __name__ == "__main__":
     # CRYOSTACK_HOST=0.0.0.0 for that case rather than changing the
     # production default.
     host = os.environ.get("CRYOSTACK_HOST", "127.0.0.1")
-    web.run_app(make_app(), host=host, port=8080)
+    web.run_app(
+        make_app(),
+        host=host,
+        port=configured_port("CRYOSTACK_PORT", 8080),
+    )

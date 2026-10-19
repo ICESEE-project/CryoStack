@@ -54,60 +54,83 @@ records; it does not go through CryoLauncher's execution pipeline.
 
 ## ICESEE workflow
 
-1. Choose where to run: the **Local**, **Remote**, or **Cloud** tab.
-2. Select an **Example**.
-3. Choose the **Filter**, **Ensemble size**, and **Seed**.
-4. Review the example's parameter sections and, if needed, its parallel
-   settings.
-5. Choose the **Output** and whether to **Generate report**.
-6. Run: **Run** (Local), **Submit (Remote)**, or the Cloud review and launch.
-7. Follow the **Run Log**, then inspect **Results**.
+The page follows the order of the decisions you make; the numbered bar at the
+top shows where you are, what needs attention, and the state of the active
+run. Click a step to jump to it.
+
+1. **Mode** — where the experiment runs: **Local**, **Remote HPC**, or
+   **Cloud**. This comes first because it decides the rest of the setup.
+2. **Experiment** — the **Example**, and its **Filter**, **Ensemble size**
+   and **Seed** (filled with the example's own values when you choose it).
+3. **Environment & resources** — the settings of the chosen mode.
+4. **Scientific parameters** — every key of the example's `params.yaml`;
+   **Edit params.yaml** opens the same configuration in the Editor.
+5. **Review & launch** — a summary of what will run and where, any problems
+   to fix, and one launch action (**Launch run**, **Submit to cluster**, or
+   **Review cloud launch**).
+6. **Monitor** — after launch the same card shows the run: its state,
+   elapsed time, stage and progress, and **Cancel run**.
+7. **Results** — the example's scientific figures for the selected run.
 
 ## Interface overview
 
-**Run settings** (left):
+**Left column** — the five numbered cards above. Problems are listed in
+Review & launch next to what causes them (for example "Remote connection:
+enter your HPC username"), and the launch action stays disabled until they
+are fixed. A double click never starts two runs.
+
+**Workspace** (right) — everything in it follows the **selected run**, shown
+in the bar at its top:
+
+| Tab | What it shows |
+|---|---|
+| **Run** | Your run history (newest first; only your runs), and for the selected run its lifecycle (preparing → submitted → queued → running → completed / failed / cancelled, with times), identifiers, mode and backend, output folder, command, and provenance. Actions: **Open results**, **View logs**, **Check status** (Remote / Cloud), **Reuse configuration**, **Reproducibility bundle**, **Cancel run** / **Delete run** (both ask for confirmation). |
+| **Files** | The run folder: filter, preview text, figures and HDF5 contents (each dataset with its data-assimilation role), download a file or all outputs. |
+| **Editor** | The experiment's files for your *next* run (see <a href="#editing-the-configuration">Editing the configuration</a>). |
+| **Logs** | **Run output** — the model's output, updated live while it runs; **Launcher activity** — connection checks, submissions and status replies. |
+| **Results** | The example's scientific figures and tables (see <a href="#results-and-reports">Results and reports</a>). |
 
 | Control | What it does |
 |---|---|
-| **Local / Remote / Cloud** tabs | Where the experiment runs (see <a href="#execution-modes">Execution modes</a>). |
-| **Example** | The ICESEE example to run (see <a href="#examples-and-maturity">Examples and maturity</a>). |
-| **Preset** | The starting configuration. Only **Default** — the example's own `params.yaml` — is offered today. |
+| **Example** | The ICESEE example to run (see <a href="#examples-and-maturity">Examples and maturity</a>). Shows whether it can run in the chosen mode. |
 | **Filter** | EnKF, DEnKF, EnTKF, or EnRSKF. Written into the example's `filter_type`. |
-| **Ensemble size** | Number of ensemble members, 1–200 (default 30). Written into `Nens`. |
+| **Ensemble size** | Number of ensemble members. Written into `Nens`. |
 | **Seed** | Random seed. Written into `seed`. |
-| **Output** | Which result set the report reads: *true-wrong* (the demonstration output with the true and wrong-model states) or *EnKF*. |
-| **Generate report** | After a successful Local run, execute the example's `read_results.ipynb` into the run folder. |
-| **Parameter sections** | The example's `params.yaml` sections — `physical-parameters`, `modeling-parameters`, `enkf-parameters` — as editable fields. |
+| **Preset** | The starting configuration. Only **Default** — the example's own `params.yaml` — is offered today. |
 | **Auto-config · Beta** | An expandable request box, where the deployment enables it (see <a href="#auto-config-beta">Auto-config</a>). |
-
-**Workspace** (right): **Runs**, **Files**, **Run Log**, and **Results**
-tabs. The Runs tab lists your ICESEE run history; you only see your own runs.
 
 ## Examples and maturity
 
-The **Example** menu labels each example with its current status:
-
-| Example | Forecast model | Status in the menu | Local | Remote | Cloud |
+| Example | Forecast model | Local | Remote | Cloud | Results views |
 |---|---|---|---|---|---|
-| Lorenz-96 | Lorenz-96 (synthetic) | fully runnable locally | **Supported** | Available | **Supported** — the only verified cloud configuration (one process) |
-| ISSM — ISMIP_Choi | ISSM | fully runnable in Remote | Not intended (needs MATLAB, ISSM, and MPI on the server) | **Supported** (ships a Slurm batch script) | Refused |
-| Flowline — flowline_1d | 1-D flowline | **Under development** | Under development | Under development | Refused |
-| Icepack — synthetic_ice_stream | Icepack | **Under development** | Under development | Under development | Refused |
+| Lorenz-96 | Lorenz-96 (synthetic) | **Supported** (launcher Python or ICESEE container) | Available | **Supported** — the only verified cloud configuration (one process) | State estimation (x, y, z), assimilation error |
+| Icepack — synthetic_ice_stream | Icepack | **Supported in the ICESEE container** (Firedrake) | Available | Refused | Ensemble profiles, error maps, thickness/velocity maps, transects, SMB along x, truth vs. wrong, error tables, assimilation error |
+| ISSM — ISMIP_Choi | ISSM | Not available (needs MATLAB, ISSM and MPI) | **Supported** (ships a Slurm batch script) | Refused | Five-field profile time series, assimilation error |
+| Flowline — flowline_1d | 1-D flowline | **Under development** — the example does not currently complete | Under development | Refused | None (declared unsupported) |
 
-Flowline and Icepack are visible so they can be developed and tested; they are
-not at the maturity of Lorenz-96 or ISSM, and no end-to-end workflow is claimed
-for them. ISSM needs MATLAB and ISSM on the Remote resource, which the
-ICESEE-Spack environment provides; the ISSM example is too heavy for Local.
+ISSM needs MATLAB and ISSM on the Remote resource, which the ICESEE-Spack
+environment provides; it is too heavy for Local.
 
 ## Execution modes
 
 ### Local Mode
 
-Local runs the example as a **single process on the CryoStack server**, in a
-per-user run folder, with no scheduler, no MPI, and no remote connection. It
-is intended for Lorenz-96 and small tests. Click **Run**; the Run Log streams
-the output, and on success the report is generated if **Generate report** is
-ticked.
+Local runs the example on the **CryoStack server**, in a per-user run folder,
+with no scheduler and no remote connection. Choose where it runs under
+**Environment & resources**:
+
+- **Launcher Python** — one process in the launcher's own Python. Enough for
+  Lorenz-96 and small tests.
+- **ICESEE container** — the ICESEE runtime image (the one Remote and Cloud
+  runs use) on the server's Docker, with **MPI processes** (`mpirun -np`) and
+  **Model processes** (`--model_nprocs`). Needed for Icepack (Firedrake). The
+  container has no network access and can only write the run folder.
+
+The card says which environments can run the selected example and switches
+to one that can. **Launch run** starts the run in the background: the page
+stays usable, the Logs tab streams the output, and closing or reloading the
+page does not stop the run — it is shown again, with its state, when you
+come back.
 
 ### Remote Mode
 
@@ -129,10 +152,12 @@ through a Slurm batch job. The Remote tab contains:
   processes for the job, default 40) and **Model nprocs** (processes per
   forecast-model run, default 4).
 
-**Submit (Remote)** submits the job. The Run Log toolbar offers **Test SSH**,
-**Check status**, **Tail log**, and **Clear**; **Terminate job** stops a
-running job; **Preview results** and **Download results** fetch the run's
-outputs.
+**Submit to cluster** submits the job (after checking the connection and
+Slurm fields). The run appears in the Workspace as *submitted*; **Check
+status** in the Run tab asks Slurm for its state, **Logs › Launcher
+activity** has **Check SSH Access** and **Tail log**, and **Cancel run**
+cancels the job. **Fetch outputs from cluster** (Results tab) copies the
+job's outputs into the run folder so its results can be drawn.
 
 ### Cloud Mode
 
@@ -149,9 +174,10 @@ in the Cloud Run Guide.
 - **Prepare cloud**, which provisions S3 storage, an ECR repository, and an
   AWS Batch job definition for ICESEE in your account, reusing what already
   exists;
-- **Review & Launch**, which shows the run's forecast model, filter, ensemble
-  size, and process count, and only enables **Launch cloud run** when the
-  configuration is inside CryoStack's verified runtime contract;
+- **Review cloud launch** (in Review & launch), which opens the cloud review
+  — the run's forecast model, filter, ensemble size, and process count — and
+  only enables **Launch cloud run** when the configuration is inside
+  CryoStack's verified runtime contract;
 - live status, log, and result retrieval once a run is submitted.
 
 The **MATLAB license** field (Cloud Environment) only appears when ICESEE's
@@ -213,19 +239,19 @@ walkthrough below for the exact ICESEE steps.
    **Slurm resources** (default 40), and the Cloud Review card shows it as
    **Processes**. One process is the only value CryoStack will let you
    launch today for ICESEE (see the verified contract above).
-8. Click **Review & Launch**. Confirm the card reads
+8. Click **Review cloud launch**. Confirm the cloud review reads
    **ICESEE runtime: Ready**, **Parallel mode: Single-rank verified**,
    **Processes: 1** — this is CryoStack's own honest preflight check, not a
    cosmetic label.
 9. Click **Launch cloud run**.
 10. ICESEE does not poll AWS in the background — click **Check status** in
-    the Run Log toolbar whenever you want to know whether the job has
-    finished. It prints the current AWS Batch state (e.g. `RUNNABLE`,
-    `RUNNING`, `SUCCEEDED`) to the Run Log.
-11. Once status reads `SUCCEEDED`, open the run from the Workspace **Runs**
-    list. Selecting it triggers a best-effort sync of its S3 outputs into
-    your local run cache, then shows Results — figures and fields render
-    the same way a local run's results do.
+    the Workspace **Run** tab whenever you want to know whether the job has
+    finished. The run's state (queued, running, completed) updates, and the
+    AWS Batch reply (e.g. `RUNNABLE`, `RUNNING`, `SUCCEEDED`) is in
+    **Logs › Launcher activity**.
+11. Once the run is completed, open **Results**. Selecting a cloud run
+    synchronizes its S3 outputs into the run folder in the background; the
+    figures are the same ones a local run of the example shows.
 12. To change anything (ensemble size, seed, observation settings), edit
     the configuration and repeat from step 8 — a new review is always
     required before a changed configuration can launch.
@@ -306,34 +332,79 @@ processes per model run.
 
 ## Running and monitoring
 
-| Mode | Start | Monitor |
-|---|---|---|
-| Local | **Run** | The Run Log streams output until the run ends. |
-| Remote | **Submit (Remote)** | **Check status**, **Tail log**; **Terminate job** stops it. The job keeps running if you close the browser. |
-| Cloud | **Review & Launch** → **Launch cloud run** | **Check status** and **Logs hint** in the Run Log toolbar; **Terminate cloud job** stops it. ICESEE does not poll AWS in the background. |
+| Mode | Start | Monitor | Stop |
+|---|---|---|---|
+| Local | **Launch run** | State, elapsed time, stage and assimilation step in Review & launch and the top bar; live output in **Logs**. | **Cancel run** |
+| Remote | **Submit to cluster** | **Check status** (Run tab) updates the state from Slurm; **Tail log** in Logs › Launcher activity. The job keeps running if you close the browser. | **Cancel run** (`scancel`) |
+| Cloud | **Review cloud launch** → **Launch** in the cloud review | **Check status** (Run tab) updates the state from AWS Batch; **Logs hint**. ICESEE does not poll AWS in the background. | **Cancel run** (terminates the Batch job) |
 
-The Run Log shows the parameter file used, the runner, environment
-activation, ensemble and forecast progress, analysis steps, report
-generation, warnings, and errors — it is the first place to look when a run
-fails.
+Every run moves through the same states — *preparing*, *submitted*,
+*queued*, *running*, then *completed*, *failed* or *cancelled* — whichever
+backend runs it; the Run tab lists each change with its time. A local run
+that printed an error is reported as failed even when the process exited
+normally, with the error line; when the outputs were written and only the
+shutdown printed an error (as MPI/Firedrake sometimes do), the run is
+completed with a note.
+
+The run output shows the parameter file used, the runner, ensemble and
+forecast progress, analysis steps, warnings and errors — it is the first
+place to look when a run fails.
+
+## Editing the configuration
+
+The **Editor** tab works on the experiment you are configuring, for your next
+run:
+
+| File | Role | What you can do |
+|---|---|---|
+| `params.yaml` | Configuration | The current run configuration — the same values as the form. **Apply to configuration** validates it and updates the form. |
+| Other YAML, JSON, CSV, TXT, EXP files | Inputs | Edit and **Save draft**; your draft replaces the shipped file in your **Local** runs of this example (Remote and Cloud runs receive `params.yaml` only — Review & launch says so). **Reset to example** discards the draft. |
+| Python, MATLAB, shell files | Code | Read-only: runs execute on shared infrastructure, so code is never taken from the browser. |
+| Notebooks, README | Reference | Read-only. |
+
+**Validate** checks YAML/JSON syntax and, for `params.yaml`, what ICESEE
+needs: the example's sections, number and true/false types, a filter ICESEE
+knows, a positive ensemble size and observation frequency, an observation
+window that starts before it ends, observed variables that are state
+variables. Problems are listed with their line; nothing is applied or saved
+while there is an error. Unsaved changes are marked, and switching files
+asks you to apply, save or discard them first. Files over 512 KB are shown
+read-only.
 
 ## Results and reports
 
-Select a run in the **Runs** tab and open **Results**. ICESEE shows the
-figures the run produced (PNG files from its `figures/` or `results/` folder)
-and lists its HDF5 result files. For Remote runs, **Preview results** fetches
-the outputs first; **Download results** downloads them. Cloud outputs are
-synchronized from S3 when you open the run.
+Select a run and open **Results**. The launcher finds the run's outputs,
+reads the example's `results.yaml` (which lists the result views the example
+supports), and draws the figures its `read_results.ipynb` draws — the same
+code: the notebooks now call the ICESEE post-processing module the launcher
+uses. Each figure says which notebook cell it reproduces; views that are not
+in the notebook are marked *supplementary*. Views with options (a grid point,
+a time step, the years to compare) have **Update figure** and **Notebook
+defaults**; click a figure to enlarge it, **Download PNG** to save it.
 
-When **Generate report** is ticked, a successful Local run executes the
-example's `read_results.ipynb` into the run folder, reading the result set
-chosen in **Output** (`results/<output>-<model>.h5`). Report generation adds
-runtime and needs the reporting packages in the environment.
+If something is missing, Results says what: *waiting for outputs* while the
+run is going, *no outputs* when it failed or nothing was fetched, *no result
+views* for an example without a contract (Flowline), or which file is
+missing or damaged. Icepack maps need the mesh coordinates the ICESEE
+container exports after the run; without them the time-series views still
+work. Figures are drawn on the server in a separate process with time and
+memory limits, and cached in the run folder.
 
-Each run folder keeps the `params.yaml` it ran with, and the run record stores
-the data-assimilation identity — example, forecast model, filter, ensemble
-size, seed, observation and estimation settings, and parallel settings — so a
-run can be understood and repeated later.
+For Lorenz-96 runs in the launcher's Python, **Also run read_results.ipynb**
+(Environment & resources) additionally executes the notebook into
+`report.ipynb` in the run folder.
+
+## Reproducibility
+
+Each run folder keeps the `params.yaml` it ran with, a copy of the example
+as staged (including your edited inputs), and `provenance.json`: the
+experiment and mode, the checksum of `params.yaml` and of every staged
+input (marking the edited ones), the CryoLauncher commit (and whether the
+installation had local changes), the ICESEE version, the Python packages or
+container image, the command, and the requested resources. No credentials
+are recorded. **Reproducibility bundle** (Run tab) downloads these files;
+**Reuse configuration** loads the run's example, mode and `params.yaml` into
+the form for a new run.
 
 ## Auto-config · Beta
 
@@ -388,7 +459,7 @@ workflows.
   <details>
     <summary>The workflow fails before the model runs</summary>
     <p>
-      Read the Run Log for a missing file, an environment-activation error, a
+      Read <b>Logs › Run output</b> for a missing file, an environment-activation error, a
       missing package, or an invalid parameter value. On Remote, confirm
       <b>Check SSH Access</b> reads <b>Verified</b> and, for ICESEE-Spack, that
       the environment is installed.
@@ -396,21 +467,23 @@ workflows.
   </details>
 
   <details>
-    <summary>An ISSM, Flowline, or Icepack example fails in Local</summary>
+    <summary>An example cannot run in Local</summary>
     <p>
-      Local runs one process on the CryoStack server. ISSM is a Remote
-      example, and Flowline and Icepack are under development; use Lorenz-96
-      for Local runs.
+      The Experiment card says where the selected example can run. Icepack
+      needs the <b>ICESEE container</b> environment; ISSM needs MATLAB and
+      ISSM, so it runs on Remote; Flowline is under development and does
+      not currently complete.
     </p>
   </details>
 
   <details>
-    <summary>The report is not generated</summary>
+    <summary>Results says outputs are missing or a view is unavailable</summary>
     <p>
-      Reports run only after a successful Local run with <b>Generate
-      report</b> ticked, and need the result file named by <b>Output</b>
-      (<code>results/&lt;output&gt;-&lt;model&gt;.h5</code>) and the notebook
-      runner in the environment.
+      Results names the missing or damaged file. A failed run usually wrote
+      nothing — read its log. For Remote runs, use <b>Fetch outputs from
+      cluster</b> first. Icepack maps need <code>dof_coordinates.h5</code>,
+      which the ICESEE container writes after a successful run; the other
+      Icepack views work without it.
     </p>
   </details>
 

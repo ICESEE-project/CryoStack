@@ -13,3 +13,9 @@ papermill>=2.5
 numpy>=1.24
 h5py>=3.8
 matplotlib>=3.7
+
+# Frozen Legacies read-only cloud storage providers
+google-api-python-client==2.201.0
+google-auth==2.62.0
+msal==1.39.0
+dropbox==12.2.3

@@ -1,0 +1,85 @@
+\section*{Data Management and Sharing Plan}
+
+\subsection*{Products and Data Types}
+
+The project will produce source code, schemas, tests, documentation,
+containers and Spack recipes, software bills of materials (SBOMs), benchmark
+results, tutorial notebooks, synthetic datasets, Frozen Legacies catalog and
+dataset manifests, observation/flight-line GeoJSON, configuration/provenance
+manifests, and de-identified service-usage aggregates. Science demonstrations
+will use model inputs/outputs and publicly available observational products.
+Individual experiment outputs may be large and remain in user-owned project or
+HPC storage; the project will preserve the smaller inputs, configurations,
+diagnostics, and metadata required to understand and reproduce published
+results. The project will not collect sensitive human-subject research data.
+
+\subsection*{Formats, Metadata, and Quality Control}
+
+Source and documentation will use Python, shell, YAML, JSON/JSON Schema,
+Markdown/MyST, Jupyter notebooks, and LaTeX. Scientific arrays will use
+NetCDF/HDF5 or Zarr with CF-style variable names, dimensions, coordinates,
+units, fill values, and attributes where applicable. Tabular aggregates will
+use CSV with a data dictionary. Each release will record semantic version,
+source commit, dependency locks, image digest, SBOM, supported platform,
+license, test results, and known limitations. Each qualified historical-data
+collection will record source, steward, license, attribution,
+spatial/temporal coverage, coordinate reference system, file inventory and
+checksums, transformations, uncertainty, and expert-reviewed quality-control
+status. Each reproducible run bundle will record application,
+dataset-adapter/model version, observation source and checksum, configuration,
+random seeds, resource request, backend, timestamps, environment reference,
+output checksums, and diagnostic definitions.
+
+Automated unit, schema, regression, numerical, restart, end-to-end, and
+portability tests will gate releases. Synthetic test data will be generated
+from documented scripts with fixed seeds. Scientific acceptance tolerances and
+reference outputs will be versioned and reviewed by the science lead.
+
+\subsection*{Access, Licensing, and Reuse}
+
+Code, schemas, documentation, tests, and nonrestricted tutorial data will be
+released no later than the associated public release through the
+ICESEE-project GitHub organization. Tagged releases will be archived in Zenodo
+or an equivalent long-term repository with DOI and CITATION.cff metadata. The
+project will harmonize currently inconsistent BSD/MIT metadata in Year 1. The
+intended default for original CryoStack/ICESEE code is the permissive BSD
+2-Clause License, subject to Georgia Tech approval, because it supports
+academic and commercial reuse while preserving attribution. Documentation and
+tutorial prose will use CC BY 4.0 where institutionally permitted. Third-party
+models, data, MATLAB components, and dependencies retain their own licenses;
+the distribution will include a machine-readable dependency/license manifest
+and will not redistribute restricted inputs.
+
+Observation bundles and Frozen Legacies records will cite the original DOI/URL
+or archive identifier and preserve source license, required attribution,
+collection lineage, and documented transformations. Data too large or restricted for redistribution will
+be represented by a fetch script, checksum, metadata record, and access
+instructions. Publications will link to the exact release and archived
+artifacts needed to support their conclusions.
+
+\subsection*{Usage, Privacy, and Security}
+
+Operational records will include a random experiment identifier, application,
+adapter/backend versions, coarse resource request, status, timestamps, and
+errors needed for reliability and metrics. Credentials, private keys,
+passwords, and access tokens will not be stored in the research dataset or
+public metrics. Account email and optional affiliation will be separated from
+run telemetry with access limited to authorized project personnel. Public
+reports will use aggregate counts, suppress small demographic cells, exclude
+automated tests, and document definitions. Raw identifiable operational logs
+will be retained only as long as required for service security and annual
+report verification, then deleted according to a written retention schedule.
+
+\subsection*{Preservation and Responsibilities}
+
+GitHub provides active version control, issue history, and review records;
+Zenodo provides archival releases and persistent identifiers. Annual metric
+extracts, analysis scripts, data dictionaries, benchmark reports, and final
+governance/operations documents will be deposited by the end of each reporting
+year. Georgia Tech systems will back up the production database and deployment
+configuration; restoration will be tested annually. The PI is responsible for
+software releases, provenance, security-sensitive access, and repository
+preservation. The Co-PI is responsible for scientific-data selection,
+scientific validation criteria, and citation completeness. Adapter maintainers
+are responsible for model-specific metadata and test fixtures. The team will
+review this plan annually and document material changes in project reports.

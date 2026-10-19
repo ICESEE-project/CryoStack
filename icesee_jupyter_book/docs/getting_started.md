@@ -122,3 +122,8 @@
 
 </div>
 :::
+
+
+## Live interface walkthrough
+
+See the [visual walkthrough](visual_walkthrough.md) for dated screenshots from the running platform, application selection, allocation administration, and the Results workspace.

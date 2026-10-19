@@ -56,8 +56,22 @@ def install(tmp_path, monkeypatch):
     voila = tmp_path / "install" / "voila-users"
     (voila / "u1").mkdir(parents=True)
     (voila / "u1" / "run.yaml").write_text("ensemble: 8\n")
+    registry = tmp_path / "install" / "radar_sources.local.yaml"
+    registry.write_text("version: 1\nsources:\n  - key: f127\n    tiff: radar/f127.tiff\n")
+    intake = tmp_path / "install" / "intakes"
+    intake_session = intake / ".upload-sessions" / ("in-" + "a" * 32)
+    (intake_session / "chunks" / "0").mkdir(parents=True)
+    (intake_session / "session.json").write_text('{"schema":"cryostack.frozen-legacies.resumable-intake","state":"open"}')
+    (intake_session / "chunks" / "0" / "0.chunk").write_bytes(b"unfinished upload")
+    (intake / ".upload-sessions" / ".intake.lock").touch(mode=0o600)
+    (intake / ".upload-sessions" / "janitor-audit.jsonl").write_text('{"action":"dry-run"}\n')
+    release = intake / "release-127"
+    release.mkdir()
+    (release / "receipt.json").write_text('{"state":"finalized"}')
     locations = {"auth": var / "auth.db", "frozen_legacies_catalog": var / "catalog.db",
                  "control_center_ops": var / "ops.db", "livist": var / "livist.db",
+                 "frozen_legacies_radar_sources": registry,
+                 "frozen_legacies_intake": intake,
                  "workspaces": {"gateway": gateway, "voila": voila}}
     return {"locations": locations, "session": session.id, "tmp": tmp_path}
 
@@ -74,6 +88,8 @@ def test_create_verify_and_drill_every_component(install):
     assert components["frozen-legacies"]["submissions"] == 0
     assert components["control-center-ops"]["integrity"] == "ok"
     assert components["livist"]["integrity"] == "ok"
+    assert components["frozen-legacies-intake"]["lock"] == "volume"
+    assert components["frozen-legacies-intake"]["files"] == 5
     assert components["workspaces/gateway"] == {"files": 2, "links": 2, "bytes": 30,
                                                  "directories": 1}
     assert components["workspaces/voila"]["files"] == 1
@@ -101,6 +117,47 @@ def test_create_verify_and_drill_every_component(install):
     assert not scratch.exists()                      # removed unless --keep
 
 
+def test_intake_backup_refuses_links(install):
+    intake = install["locations"]["frozen_legacies_intake"]
+    os.symlink(install["tmp"] / "outside", intake / "unsafe")
+    with pytest.raises(tool.BackupError, match="symbolic link"):
+        _create(install)
+    assert not list((install["tmp"] / "backups").glob(".*.partial"))
+
+
+def test_intake_backup_requires_existing_writer_lock(install):
+    intake = install["locations"]["frozen_legacies_intake"]
+    (intake / ".upload-sessions" / ".intake.lock").unlink()
+    with pytest.raises(tool.BackupError, match="no safe writer lock"):
+        _create(install)
+
+
+def test_intake_backup_does_not_follow_replaced_writer_lock(install):
+    intake = install["locations"]["frozen_legacies_intake"]
+    lock = intake / ".upload-sessions" / ".intake.lock"
+    outside = install["tmp"] / "outside-lock"
+    outside.write_text("must not be opened as the intake lock")
+    lock.unlink()
+    lock.symlink_to(outside)
+    with pytest.raises(tool.BackupError, match="no safe writer lock"):
+        _create(install)
+
+
+def test_restore_preserves_resumable_intake_state(install):
+    locations = dict(install["locations"])
+    locations["workspaces"] = {"gateway": locations["workspaces"]["gateway"]}
+    target, _manifest = tool.create(install["tmp"] / "backups", locations=locations)
+    data_root = install["tmp"] / "restored-data"
+    result = tool.restore(target, data_root, allow_unmarked=True)
+    assert result["ok"], result
+    intake = Path(result["environment"]["CRYOSTACK_FROZEN_LEGACIES_INTAKE_ROOT"])
+    session = intake / ".upload-sessions" / ("in-" + "a" * 32)
+    assert json.loads((session / "session.json").read_text())["state"] == "open"
+    assert (session / "chunks" / "0" / "0.chunk").read_bytes() == b"unfinished upload"
+    assert (intake / ".upload-sessions" / "janitor-audit.jsonl").is_file()
+    assert json.loads((intake / "release-127" / "receipt.json").read_text())["state"] == "finalized"
+
+
 def test_verify_and_drill_reject_a_damaged_backup(install):
     target, _manifest = _create(install)
     damaged = target / "workspaces" / "voila" / "u1" / "run.yaml"
@@ -114,12 +171,37 @@ def test_verify_and_drill_reject_a_damaged_backup(install):
     assert any("not listed" in p for p in tool.verify(target)["problems"])
 
 
+def test_verify_and_drill_reject_a_retargeted_workspace_symlink(install):
+    target, manifest = _create(install)
+    link = target / "workspaces" / "gateway" / "u1" / "link-to-notes"
+    recorded = manifest["symlinks"][str(link.relative_to(target))]
+    assert recorded == tool._hashed_links(target)[str(link.relative_to(target))]
+
+    link.unlink()
+    os.symlink("frozen_legacies/session.json", link)
+    check = tool.verify(target)
+    assert not check["ok"]
+    assert any("symlink target does not match" in problem for problem in check["problems"])
+    result = tool.drill(target, install["tmp"] / "drill", locations=install["locations"])
+    assert result == {"ok": False, "verified": False, "problems": check["problems"]}
+
+
+def test_verify_accepts_legacy_manifest_without_symlink_digests(install):
+    target, manifest = _create(install)
+    manifest["version"] = 1
+    manifest.pop("symlinks")
+    (target / tool.MANIFEST).write_text(json.dumps(manifest, indent=1, sort_keys=True))
+    assert tool.verify(target)["ok"]
+
+
 def test_destinations_inside_the_installation_are_refused(install, tmp_path):
     locations = install["locations"]
     with pytest.raises(tool.BackupError, match="may not be inside"):
         tool.create(_REPO / "var" / "backups", locations=locations)
     with pytest.raises(tool.BackupError, match="may not be inside"):
         tool.create(locations["workspaces"]["gateway"] / "backups", locations=locations)
+    with pytest.raises(tool.BackupError, match="may not be inside"):
+        tool.create(locations["frozen_legacies_intake"] / "backups", locations=locations)
     target, _ = _create(install)
     with pytest.raises(tool.BackupError, match="next to the installation"):
         tool.drill(target, locations["auth"].parent / "drill", locations=locations)
@@ -218,8 +300,9 @@ def test_installation_option_reads_that_checkout(tmp_path, monkeypatch, capsys):
     (other / "users" / "u9").mkdir(parents=True)
     (other / "users" / "u9" / "a.txt").write_text("x")
     AuthStorage(other / "var" / "cryostack_auth.db")
-    for name in ("CRYOSTACK_AUTH_DATABASE", "CRYOSTACK_LIVIST_DATABASE", "CRYOSTACK_WORKSPACE_ROOT",
-                 "CRYOSTACK_CONTROL_OPS_DATABASE", fl_catalog.CATALOG_ENV):
+    for name in ("CRYOSTACK_DATA_ROOT", "CRYOSTACK_AUTH_DATABASE", "CRYOSTACK_LIVIST_DATABASE",
+                 "CRYOSTACK_WORKSPACE_ROOT", "CRYOSTACK_CONTROL_OPS_DATABASE",
+                 fl_catalog.CATALOG_ENV):
         monkeypatch.delenv(name, raising=False)
     located = tool.sources(other)
     assert located["auth"] == other / "var" / "cryostack_auth.db"

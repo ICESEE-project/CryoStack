@@ -63,7 +63,7 @@ def test_panel_never_raises(monkeypatch, tmp_path):
 def test_gateway_renders_the_panel_for_selected_runs_and_remote_previews():
     src = _GW.read_text()
     assert "from icesee_jupyter_book.ui.icesee_run_progress import run_progress_html" in src
-    assert "display(HTML(run_progress_html(run.workspace_directory)))" in src
+    assert "return run_progress_html(run.workspace_directory)" in src
     assert "display(HTML(run_progress_html(outputs_dir)))" in src
 
 
@@ -95,16 +95,12 @@ def test_selecting_a_run_renders_its_progress_panel(monkeypatch, tmp_path):
     found = {}
 
     def walk(w):
-        notifiers = getattr(w, "_trait_notifiers", None)
-        if notifiers and "value" in notifiers:
-            for handlers in notifiers["value"].values():
-                for h in handlers:
-                    if getattr(h, "__name__", "") == "show_selection":
-                        found["select"] = w
+        if "icw-runlist" in getattr(w, "_dom_classes", ()):
+            found["select"] = w
         for c in getattr(w, "children", ()):
             walk(c)
 
     walk(page)
-    assert "select" in found, "Runs selector (show_selection) not found"
-    found["select"].value = "progress-check"
-    assert rendered == [run_dir.resolve()]
+    assert "select" in found, "run history list not found"
+    found["select"].value = "progress-check"   # the only run: selected as soon as the page loads
+    assert run_dir.resolve() in rendered

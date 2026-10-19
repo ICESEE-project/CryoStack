@@ -1,9 +1,10 @@
-"""Role-restricted Developer Guide pages.
+"""Owner-controlled Developer Guide pages.
 
 The CryoStack Developer Guide (``docs/developer_guide`` and its sections)
 and application developer guides (Frozen Legacies ``developer`` and
-``api_reference``) are visible only to Control Center ``maintainer``,
-``admin`` and ``owner`` roles. The documentation is a static Jupyter Book
+``api_reference``) are visible to Control Center owners and to maintainers or
+admins to whom an owner has explicitly delegated ``developer_docs`` access.
+The documentation is a static Jupyter Book
 served by the gateway, so the restriction is applied at the request
 boundary by :func:`developer_docs_middleware`:
 
@@ -32,7 +33,7 @@ from urllib.parse import quote, unquote, urljoin, urlsplit
 from aiohttp import web
 
 
-DEVELOPER_DOC_ROLES = frozenset({"maintainer", "admin", "owner"})
+DEVELOPER_DOC_ROLES = frozenset({"owner", "developer_docs"})
 
 #: restricted documents (book-relative, without suffix); the sections must
 #: match the Developer Guide's sections in ``_toc.yml`` (checked by tests)
@@ -47,6 +48,9 @@ RESTRICTED_DOCS = frozenset({
     "docs/building_agents",
     "docs/dev_testing",
     "docs/dev_deployment",
+    "docs/service_operations",
+    "docs/owner_continuity",
+    "docs/dashboard_architecture",
     "applications/frozen_legacies/developer",
     "applications/frozen_legacies/api_reference",
 })
@@ -55,6 +59,7 @@ RESTRICTED_DOCS = frozenset({
 _PRIVILEGED_FILES = frozenset({"objects.inv"})
 _DOC_SUFFIXES = (".html", ".md", ".ipynb", ".rst", ".pdf", ".tex")
 _AUDIENCE_ATTR = "data-cryostack-audience"
+LIVIST_PRIVILEGED_FILES = frozenset({"objects.inv", "search.json", "sitemap.xml"})
 
 
 def restricted_doc(path: str) -> str | None:
@@ -73,12 +78,37 @@ def restricted_doc(path: str) -> str | None:
     return rel if rel in RESTRICTED_DOCS else None
 
 
+def restricted_livist_doc(path: str) -> bool:
+    """Whether a LIVIST documentation-relative path exposes developer data."""
+    rel = posixpath.normpath("/" + unquote(path or "")).lstrip("/")
+    return rel == "api" or rel.startswith("api/") or rel in LIVIST_PRIVILEGED_FILES
+
+
 def is_privileged(auth, request: web.Request) -> bool:
     user = auth.current_user(request)
     if user is None:
         return False
     roles = {str(r).strip().lower() for r in auth.storage.get_user_roles(user_id=user.id)}
-    return bool(roles & DEVELOPER_DOC_ROLES)
+    if "owner" in roles:
+        return True
+    # Check both halves on every request.  The Control Center revokes the
+    # capability atomically on demotion, but this also fails closed if roles
+    # were changed by a recovery tool or directly in the database.
+    return "developer_docs" in roles and bool(roles & {"maintainer", "admin"})
+
+
+def require_developer_docs(auth, handler):
+    """Wrap a dynamic owner guide with the same policy as the static book."""
+    async def protected(request: web.Request):
+        if auth.current_user(request) is None:
+            raise web.HTTPFound("/auth/login?return_to="
+                                + quote(request.path_qs, safe=""))
+        if not is_privileged(auth, request):
+            raise web.HTTPForbidden(
+                text="Developer documentation requires owner-controlled access.")
+        return await handler(request)
+
+    return protected
 
 
 # ── filtering for users without the roles ────────────────────────────
@@ -121,6 +151,22 @@ def filter_html(html: str, page_path: str) -> str:
             anchor.decompose()
         else:
             anchor.unwrap()               # a mention in running text stays as text
+    return str(soup) if changed else html
+
+
+def filter_livist_html(html: str) -> str:
+    """Remove LIVIST Python-API links from owner-independent user docs."""
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    changed = False
+    for anchor in soup.find_all("a", href=True):
+        target = urlsplit(anchor["href"])
+        path = target.path.strip("/")
+        if path == "api" or path.startswith("api/") or "/docs/api" in target.path:
+            item = anchor.find_parent("li")
+            (item or anchor).decompose()
+            changed = True
     return str(soup) if changed else html
 
 
@@ -205,6 +251,11 @@ def _private(response: web.StreamResponse) -> web.StreamResponse:
     return response
 
 
+def private_docs_response(response: web.StreamResponse) -> web.StreamResponse:
+    """Mark a role-dependent documentation response as private."""
+    return _private(response)
+
+
 def developer_docs_middleware(auth, book_root: Path, *, html_pages: dict | None = None):
     """Middleware enforcing the Developer Guide restriction (module docstring).
 
@@ -226,8 +277,8 @@ def developer_docs_middleware(auth, book_root: Path, *, html_pages: dict | None 
             if auth.current_user(request) is None:
                 raise web.HTTPFound("/auth/login?return_to="
                                     + quote(request.path_qs, safe=""))
-            raise web.HTTPForbidden(text="The Developer Guide is available to CryoStack "
-                                         "maintainers, admins and owners.")
+            raise web.HTTPForbidden(
+                text="Developer documentation requires owner-controlled access.")
 
         response = await handler(request)
         if privileged or response.status != 200 or request.method != "GET":

@@ -23,5 +23,15 @@ def test_phone_layout_keeps_every_navigation_link():
     assert "display: none" not in sidebar
     nav = re.search(r"\.control-nav \{(.*?)\}", rules, re.S).group(1)
     assert "display: flex" in nav and "overflow-x: auto" in nav
+
+
+def test_storage_is_a_top_level_data_navigation_item():
+    html = control_layout(title="Storage & quotas", active="storage", content="")
+    assert re.search(r'class="control-nav-item active"\s+href="/control/storage"', html)
+    assert "Storage &amp; quotas" in html
+    data = html.index("Data")
+    storage = html.index('href="/control/storage"')
+    frozen = html.index('href="/control/frozen-legacies"')
+    assert data < storage < frozen
     for href in ("/control/users", "/control/hpc", "/control/cloud", "/control/livist"):
         assert f'href="{href}"' in html

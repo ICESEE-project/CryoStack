@@ -12,7 +12,7 @@ from .paths import EXT
 
 
 EXAMPLES = {
-    "Lorenz-96 (fully runnable locally)": dict(
+    "Lorenz-96": dict(
         enabled=True,
         base=EXT / "applications" / "lorenz_model" / "examples" / "lorenz96",
         run_script="run_da_lorenz96.py",
@@ -24,7 +24,7 @@ EXAMPLES = {
         remote_rel="ICESEE/applications/lorenz_model/examples/lorenz96",
         remote_sbatch=None,
     ),
-    "ISSM (fully runable in Remote)": dict(
+    "ISSM": dict(
         enabled=True,
         base=EXT / "applications" / "issm_model" / "examples" / "ISMIP_Choi",
         run_script="run_da_issm.py",
@@ -36,7 +36,7 @@ EXAMPLES = {
         remote_rel="ICESEE/applications/issm_model/examples/ISMIP_Choi",
         remote_sbatch="run_job_spack.sbatch",
     ),
-    "Flowline (under development)": dict(
+    "Flowline": dict(
         enabled=True,
         base=EXT / "applications" / "flowline_model" / "examples" / "flowline_1d",
         run_script="run_da_flowline.py",
@@ -48,7 +48,7 @@ EXAMPLES = {
         remote_rel="ICESEE/applications/flowline_model/examples/flowline_1d",
         remote_sbatch=None,
     ),
-    "Icepack (under development)": dict(
+    "Icepack": dict(
         enabled=True,
         base=EXT / "applications" / "icepack_model" / "examples" / "synthetic_ice_stream",
         run_script="run_da_icepack.py",

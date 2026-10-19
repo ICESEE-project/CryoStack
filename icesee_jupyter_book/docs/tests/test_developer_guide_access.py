@@ -1,4 +1,4 @@
-"""The Developer Guide is visible only to maintainers, admins and owners.
+"""The Developer Guide is visible only to owners.
 
 Covers the server-side 403 on Developer Guide pages and their sources
 (including path variants), the removal of Developer Guide navigation from
@@ -151,14 +151,19 @@ async def _get(client, url, cookies=None):
     return resp.status, await resp.text(errors="replace")
 
 
-def test_only_maintainers_admins_and_owners_can_open_developer_guide_pages(
+def test_only_owners_can_open_developer_guide_pages(
         tmp_path, monkeypatch, book):
     async def script(client, login):
         people = {"anonymous": None, "user": login("u@example.org"),
                   "developer": login("d@example.org", "developer"),
                   "maintainer": login("m@example.org", "maintainer"),
                   "admin": login("a@example.org", "admin"),
-                  "owner": login("o@example.org", "owner")}
+                  "owner": login("o@example.org", "owner"),
+                  "delegated_maintainer": login(
+                      "dm@example.org", "maintainer", "developer_docs"),
+                  "delegated_admin": login(
+                      "da@example.org", "admin", "developer_docs"),
+                  "stale_delegation": login("stale@example.org", "developer_docs")}
         out = {}
         for who, ck in people.items():
             out[who] = {url: await _get(client, url, ck)
@@ -166,7 +171,7 @@ def test_only_maintainers_admins_and_owners_can_open_developer_guide_pages(
         return out
 
     out = _client_run(tmp_path, monkeypatch, book, script)
-    for who in ("user", "developer"):
+    for who in ("user", "developer", "maintainer", "admin", "stale_delegation"):
         for url in RESTRICTED_URLS:
             assert out[who][url][0] == 403, (who, url)
         for url in VARIANT_URLS:
@@ -177,7 +182,7 @@ def test_only_maintainers_admins_and_owners_can_open_developer_guide_pages(
         status, body = out["anonymous"][url]
         assert status in (302, 403, 404) and SECRET not in body, url
     assert out["anonymous"]["/docs/developer_guide.html"][0] == 302   # sign in first
-    for who in ("maintainer", "admin", "owner"):
+    for who in ("owner", "delegated_maintainer", "delegated_admin"):
         status, body = out[who]["/docs/developer_guide.html"]
         assert status == 200 and SECRET in body, who
         assert out[who]["/_sources/docs/developer_guide.md"][0] == 200
@@ -185,9 +190,12 @@ def test_only_maintainers_admins_and_owners_can_open_developer_guide_pages(
 
 def test_ordinary_users_do_not_see_developer_guide_navigation(tmp_path, monkeypatch, book):
     async def script(client, login):
-        user, maint = login("u@example.org"), login("m@example.org", "maintainer")
+        user = login("u@example.org")
+        maint = login("m@example.org", "maintainer")
+        owner = login("o@example.org", "owner")
         out = {}
-        for who, ck in (("anonymous", None), ("user", user), ("maintainer", maint)):
+        for who, ck in (("anonymous", None), ("user", user), ("maintainer", maint),
+                        ("owner", owner)):
             out[who] = {url: await _get(client, url, ck) for url in (
                 "/documentation.html", "/docs/getting_started.html", "/docs/user_manual.html",
                 "/_sources/docs/getting_started.md", "/docs/", "/searchindex.js",
@@ -223,12 +231,13 @@ def test_ordinary_users_do_not_see_developer_guide_navigation(tmp_path, monkeypa
     assert out["anonymous"]["/frozen-legacies/"][0] == 302           # app needs sign-in
     fl = out["user"]["/frozen-legacies/"][1]
     assert "User Manual" in fl and "Developer Guide" not in fl
-    maint = out["maintainer"]
-    assert 'href="docs/developer_guide.html"' in maint["/documentation.html"][1]
-    assert 'href="developer_guide.html"' in maint["/docs/getting_started.html"][1]
-    assert "CryoStack Developer Guide" in maint["/documentation.html"][1]
-    assert "Developer Guide" in maint["/frozen-legacies/"][1]
-    assert "Developer Guide" in maint["/searchindex.js"][1]
+    assert "Developer Guide" not in out["maintainer"]["/documentation.html"][1]
+    owner = out["owner"]
+    assert 'href="docs/developer_guide.html"' in owner["/documentation.html"][1]
+    assert 'href="developer_guide.html"' in owner["/docs/getting_started.html"][1]
+    assert "CryoStack Developer Guide" in owner["/documentation.html"][1]
+    assert "Developer Guide" in owner["/frozen-legacies/"][1]
+    assert "Developer Guide" in owner["/searchindex.js"][1]
     assert out["headers"]["Cache-Control"] == "private, no-cache"
     assert "Cookie" in out["headers"]["Vary"]
 
@@ -245,6 +254,20 @@ def test_search_index_filter_remaps_and_fails_closed():
     assert out["alltitles"] == {"B": [[0, "x"]]}
     broken = access.filter_search_index("Search.setIndex({not json})")
     assert json.loads(broken[len("Search.setIndex("):-1])["docnames"] == []
+
+
+def test_livist_api_inventory_and_search_are_restricted_and_links_are_filtered():
+    assert access.restricted_livist_doc("api/")
+    assert access.restricted_livist_doc("api/index.html")
+    assert access.restricted_livist_doc("objects.inv")
+    assert access.restricted_livist_doc("search.json")
+    assert access.restricted_livist_doc("sitemap.xml")
+    assert not access.restricted_livist_doc("livist_user_manual/index.html")
+    html = ('<nav><a href="/livist/docs/livist_user_manual/">Manual</a>'
+            '<a href="/livist/docs/api/">Python API</a></nav>')
+    filtered = access.filter_livist_html(html)
+    assert "livist_user_manual" in filtered
+    assert "Python API" not in filtered and "/docs/api" not in filtered
 
 
 def test_restricted_documents_match_the_developer_guide_in_the_tocs():
@@ -269,7 +292,7 @@ def test_gateway_installs_the_restriction():
     src = (_REPO / "bin" / "icesee_app.py").read_text()
     assert "developer_docs_middleware(" in src
     assert '"/frozen-legacies/": lambda: frozen_legacies_root() / "index.html"' in src
-    assert access.DEVELOPER_DOC_ROLES == {"maintainer", "admin", "owner"}
+    assert access.DEVELOPER_DOC_ROLES == {"owner", "developer_docs"}
 
 
 def test_built_book_pages_are_filtered_for_ordinary_users():

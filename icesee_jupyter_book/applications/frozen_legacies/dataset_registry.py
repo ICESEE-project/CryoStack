@@ -274,6 +274,7 @@ def load_registered_datasets(
     """
 
     registered = []
+    dataset_manifests: dict[str, Path] = {}
 
 
     for path in discover_manifests(
@@ -309,6 +310,22 @@ def load_registered_datasets(
                 f"Missing dataset title in "
                 f"{path}"
             )
+
+
+        previous_manifest = dataset_manifests.get(
+            dataset.dataset_id
+        )
+
+
+        if previous_manifest is not None:
+            raise ValueError(
+                "Duplicate dataset id "
+                f"{dataset.dataset_id!r} in {path}; "
+                f"already declared in {previous_manifest}"
+            )
+
+
+        dataset_manifests[dataset.dataset_id] = path
 
 
         adapter = adapter_for_dataset(

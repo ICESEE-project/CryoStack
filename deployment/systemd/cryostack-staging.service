@@ -1,0 +1,29 @@
+[Unit]
+Description=CryoStack isolated staging gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cryostack-app
+Group=cryostack-app
+UMask=0077
+WorkingDirectory=/opt/cryostack/staging-current
+EnvironmentFile=/etc/cryostack/staging.env
+ExecStart=/home/bkyanjo3/.icesee_conda/envs/icesee1-dev/bin/python /opt/cryostack/staging-current/bin/icesee_app.py
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+ReadWritePaths=/srv/cryostack-staging /scratch/cryostack/staging-cache /scratch/cryostack/test-runs /scratch/cryostack/working
+
+[Install]
+WantedBy=multi-user.target

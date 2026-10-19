@@ -91,31 +91,28 @@ def test_built_icesee_page_never_renders_ghub(monkeypatch):
 def test_local_mode_tab_and_run_plan_backend_label_are_ghub_free(monkeypatch):
     page = _build_icesee(monkeypatch, user="local-label-user")
 
-    mode_tabs = None
+    mode = None
 
     def walk(w):
-        nonlocal mode_tabs
-        if isinstance(w, W.Tab) and mode_tabs is None:
-            mode_tabs = w
+        nonlocal mode
+        if isinstance(w, W.ToggleButtons) and "Cloud" in w._options_labels and mode is None:
+            mode = w
         for c in getattr(w, "children", ()):
             walk(c)
 
     walk(page)
-    assert mode_tabs is not None
-    assert mode_tabs.get_title(0) == "Local"
+    assert mode is not None
+    assert mode._options_labels[0] == "Local"
 
 
 # ── 3. shared Run Plan row layout ──────────────────────────────────────
-def test_icesee_run_plan_reuses_cryolaunchers_summary_row_markup():
+def test_icesee_run_plan_rows_have_one_presentation():
+    """The gateway computes the plan rows; the Review & launch panel alone
+    renders them (no second, hand-built row markup left in the gateway)."""
     icesee_src = _ICESEE_GW.read_text()
-    cryolauncher_src = _CRYOLAUNCHER_GW.read_text()
-    assert "class='icesee-summary'" in icesee_src
-    assert "class='icesee-summary-k'" in icesee_src
-    assert 'class="icesee-summary-k"' in cryolauncher_src
-    # no second, ICESEE-only row convention left behind for Run Plan
-    assert "cryostack-selected-run-card" not in icesee_src.split(
-        "_update_icesee_run_plan_summary"
-    )[1].split("def ")[0]
+    body = icesee_src.split("def _update_icesee_run_plan_summary")[1].split("\n        def ")[0]
+    assert '_WF["summary"](rows)' in body
+    assert "icesee-summary-k" not in body and "<div>" not in body
 
 
 def test_shared_summary_css_gives_labels_a_consistent_column_and_gap():
@@ -130,19 +127,18 @@ def test_shared_summary_css_gives_labels_a_consistent_column_and_gap():
     assert "min-width:" in key_block
 
 
-def test_run_plan_rows_render_with_the_shared_markup_and_a_colon(monkeypatch):
+def test_run_plan_rows_render_as_labelled_pairs(monkeypatch):
     page = _build_icesee(monkeypatch, user="run-plan-markup-user")
     summary = None
 
     def walk(w):
         nonlocal summary
-        if isinstance(w, W.HTML) and "Execution mode" in (w.value or "") and summary is None:
+        if isinstance(w, W.HTML) and "<dt>Compute backend</dt>" in (w.value or "") and summary is None:
             summary = w
         for c in getattr(w, "children", ()):
             walk(c)
 
     walk(page)
     assert summary is not None
-    assert "class='icesee-summary'" in summary.value
-    assert "Execution mode:</span>" in summary.value
-    assert "Compute backend:</span> Local" in summary.value
+    assert "class=\"icw-kv\"" in summary.value
+    assert "<dt>Compute backend</dt><dd>Local</dd>" in summary.value

@@ -87,11 +87,15 @@ def product_name(filename: str, product: str) -> str:
 
 # ── atomic files ─────────────────────────────────────────────────────
 def _atomic_write(path: Path, writer) -> None:
-    """Write via a temporary sibling and ``os.replace`` it into place."""
+    """Write via a temporary sibling and replace it into place durably
+    (``fsync`` before and after the rename: a crash leaves the old or the new
+    file, never an empty one)."""
+    from cryostack_src.storage_layout import durable_replace
+
     tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
         writer(tmp)
-        os.replace(tmp, path)
+        durable_replace(tmp, path)
     finally:
         if tmp.exists():
             tmp.unlink()
@@ -394,8 +398,10 @@ def write_outputs(workspace, asset_id: str, filename: str, data, tiff_path, nav_
         csv_tmp.write_text(astra_csv_text(data, filename, nav_path), encoding="utf-8")
         with _QC_WRITES:
             save_qc_image(tiff_path, data, qc_tmp)
-        os.replace(qc_tmp, qc_path)
-        os.replace(csv_tmp, csv_path)
+        from cryostack_src.storage_layout import durable_replace
+
+        durable_replace(qc_tmp, qc_path)
+        durable_replace(csv_tmp, csv_path)
     finally:
         for tmp in (csv_tmp, qc_tmp):
             if tmp.exists():

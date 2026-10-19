@@ -6,6 +6,7 @@ from .users import (
     users_page_handler,
     user_detail_page_handler,
     user_role_update_handler,
+    user_developer_docs_update_handler,
 )
 
 from .experiments import (
@@ -41,5 +42,6 @@ __all__ = [
     "cloud_page_handler",
     "analytics_page_handler",
     "user_role_update_handler",
+    "user_developer_docs_update_handler",
     "settings_page_handler",
 ]

@@ -44,6 +44,7 @@ _STATE_ENV = {
     "CRYOSTACK_FROZEN_LEGACIES_CATALOG": "var/frozen_legacies_catalog.db",
     "CRYOSTACK_FROZEN_LEGACIES_WORKING_CACHE": "var/frozen_legacies_cache",
     "CRYOSTACK_FROZEN_LEGACIES_REVIEW_ROOT": "var/frozen_legacies_reviews",
+    "CRYOSTACK_FROZEN_LEGACIES_STORAGE_DB": "var/frozen_legacies_storage.db",
 }
 
 #: gateway credentials a test must never see (tests that need one set their own)

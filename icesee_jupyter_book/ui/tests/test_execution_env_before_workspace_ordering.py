@@ -110,11 +110,16 @@ def test_cryolauncher_cloud_config_precedes_workspace(monkeypatch, tmp_path):
     assert order.index(cloud[0]) < order.index(tabs[0])
 
 
+def _find_icesee_workspace_tabs(root):
+    """ICESEE's workspace tab bar (ui/icesee_workflow, class icw-tabs)."""
+    return _widgets_with_class(root, "icw-tabs")
+
+
 def test_icesee_remote_config_precedes_workspace(monkeypatch, tmp_path):
     page = _build_icesee(monkeypatch, tmp_path, user="order-ic-remote")
     order = list(_walk(page))
     remote = _widgets_with_class(page, "cryostack-remote-config")
-    tabs = _find_workspace_tabs(page)
+    tabs = _find_icesee_workspace_tabs(page)
     assert remote and tabs
     assert order.index(remote[0]) < order.index(tabs[0])
 
@@ -123,7 +128,7 @@ def test_icesee_cloud_config_precedes_workspace(monkeypatch, tmp_path):
     page = _build_icesee(monkeypatch, tmp_path, user="order-ic-cloud")
     order = list(_walk(page))
     cloud = _widgets_with_class(page, "cryostack-cloud-config")
-    tabs = _find_workspace_tabs(page)
+    tabs = _find_icesee_workspace_tabs(page)
     assert cloud and tabs
     assert order.index(cloud[0]) < order.index(tabs[0])
 

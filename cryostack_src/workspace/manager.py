@@ -161,8 +161,9 @@ class WorkspaceManager:
         if workspace_root is not None:
             root = Path(workspace_root).resolve()
         else:
-            env_root = (os.environ.get(WORKSPACE_ROOT_ENV) or "").strip()
-            root = Path(env_root).resolve() if env_root else Path.cwd().resolve()
+            from cryostack_src.storage_layout import resolve
+
+            root = resolve("workspaces")[0].resolve()
         self._workspace_root = root
         self._owner_root = (root / "users" / self.owner.safe_id).resolve()
         self.manifest_root = (self._owner_root / ".cryostack" / "runs").resolve()
@@ -361,7 +362,12 @@ class WorkspaceManager:
             raise WorkspacePermissionError("Target is not a regular file.")
         if not rp.parent.is_dir():
             raise FileNotFoundError(f"Directory does not exist: {rp.parent}")
-        rp.write_text(text, encoding="utf-8")
+        from .storage_policy import workspace_write
+        payload = text.encode("utf-8")
+        growth = max(0, len(payload) - (rp.stat().st_size if rp.is_file() else 0))
+        with workspace_write(self._owner_root, self.owner.user_id, growth,
+                             what="saving this file"):
+            rp.write_bytes(payload)
         return rp
 
     def create_text_file(self, directory: str | Path, name: str, text: str = "") -> Path:
@@ -371,7 +377,11 @@ class WorkspaceManager:
         target = self.resolve_user_file(d / self._safe_segment(name))
         if target.exists():
             raise FileExistsError(f"Already exists: {target.name}")
-        target.write_text(text, encoding="utf-8")
+        from .storage_policy import workspace_write
+        payload = text.encode("utf-8")
+        with workspace_write(self._owner_root, self.owner.user_id, len(payload),
+                             what="creating this file"):
+            target.write_bytes(payload)
         return target
 
     def delete_user_file(self, path: str | Path) -> Path:
@@ -786,7 +796,15 @@ class WorkspaceManager:
             if target.exists() and not overwrite:
                 skipped.append(name)
                 continue
-            target.write_bytes(content)
+            from .storage_policy import QuotaExceeded, workspace_write
+            growth = max(0, len(content) - (target.stat().st_size if target.is_file() else 0))
+            try:
+                with workspace_write(self._owner_root, self.owner.user_id, growth,
+                                     what=f"uploading {name}"):
+                    target.write_bytes(content)
+            except QuotaExceeded as error:
+                errors.append(f"{name}: {error}")
+                continue
             saved.append(name)
         return {"saved": saved, "skipped": skipped, "errors": errors}
 

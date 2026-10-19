@@ -193,6 +193,7 @@ ERROR_MESSAGES = {
 NOTICE_MESSAGES = {
     "role_updated": "Access updated and recorded in the audit trail.",
     "sessions_revoked": "Sessions revoked and recorded in the audit trail.",
+    "developer_docs_updated": "Developer Guide access updated and recorded in the audit trail.",
 }
 
 EVENT_LABELS = {
@@ -369,7 +370,7 @@ ROLE_LABELS = {
 
 
 def access_panel(*, user: dict, allowed_roles: list[str], can_revoke: bool,
-                 is_self: bool) -> str:
+                 is_self: bool, can_manage_developer_docs: bool = False) -> str:
     current_role = user.get("control_role") or "user"
 
     if allowed_roles:
@@ -401,6 +402,23 @@ def access_panel(*, user: dict, allowed_roles: list[str], can_revoke: bool,
         )
         role_form = f'<div class="panel-empty">{why}</div>'
 
+    docs_form = ""
+    if can_manage_developer_docs and current_role in {"maintainer", "admin"}:
+        checked = " checked" if user.get("developer_docs_access") else ""
+        docs_form = f"""
+        <form method="post" action="/control/users/{escape(user['id'])}/developer-docs"
+              class="access-form">
+          <label class="access-check">
+            <input type="checkbox" name="enabled" value="1"{checked}>
+            Allow access to owner documentation and Developer Guides
+          </label>
+          <label>Reason (recorded in the audit trail)
+            <textarea name="reason" required minlength="4" maxlength="500"
+                      placeholder="Why is documentation access changing?"></textarea>
+          </label>
+          <button type="submit" class="access-button">Update Developer Guide access</button>
+        </form>"""
+
     return f"""
     <div class="panel">
       <div class="panel-header">Platform Access</div>
@@ -411,6 +429,7 @@ def access_panel(*, user: dict, allowed_roles: list[str], can_revoke: bool,
         </div>
       </div>
       {role_form}
+      {docs_form}
       <div class="access-form" style="padding-top:0">
         <p class="access-hint">
           Owners assign any role. Admins and maintainers assign only roles below

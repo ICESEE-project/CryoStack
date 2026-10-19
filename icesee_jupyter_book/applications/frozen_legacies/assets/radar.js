@@ -127,6 +127,10 @@
     openSections: {},      // panel section key -> open (per page)
     explorerFolded: null,  // user's choice in Manual/Automatic
     layout: { panel: "shown", focus: false },
+    // external radar files from the data-source catalog: searched on the
+    // server a page at a time, never listed in full
+    external: { sources: [], items: [], total: 0, page: 0, pages: 0, q: "", source: "",
+                loading: false, error: null, request: 0 },
     urlReady: false,      // URL state is written only after initialization
     applyingUrl: false    // true while the URL is being applied (no new entries)
   };
@@ -187,7 +191,8 @@
     const params = new URLSearchParams(window.location.hash.slice(1));
     const mode = MODES.includes(params.get("mode")) ? params.get("mode") : "map";
     const asset = ASSET_ID.test(params.get("asset") || "") ? params.get("asset") : null;
-    const dataset = SELECTION_VALUE.test(params.get("ds") || "") ? params.get("ds") : null;
+    const datasetValue = params.get("dataset") || params.get("ds") || "";
+    const dataset = SELECTION_VALUE.test(datasetValue) ? datasetValue : null;
     const flight = dataset && SELECTION_VALUE.test(params.get("flight") || "") ? params.get("flight") : null;
     const view = (params.get("view") || "").split("/").map(Number);
     const validView = view.length === 3 && view.every(Number.isFinite);
@@ -208,34 +213,40 @@
 
 
   function urlHash() {
-    const parts = [];
+    const explorer = window.FrozenLegaciesExplorerQuery;
+    const query = window.FrozenLegaciesExplorerStore?.get?.() || explorer?.parse?.(window.location) || {};
+    const params = new URLSearchParams(explorer?.serialize?.(query) || "");
+    for (const key of ["mode", "asset", "ds", "cov", "seg", "view"]) params.delete(key);
     if (state.mode !== "map") {
-      parts.push(`mode=${state.mode}`);
+      params.set("mode", state.mode);
     }
     if (state.asset && ASSET_ID.test(state.asset.asset_id)) {
-      parts.push(`asset=${state.asset.asset_id}`);
+      params.set("asset", state.asset.asset_id);
     }
     const { dataset, flight } = selectedDatasetAndFlight();
-    if (dataset) {
-      parts.push(`ds=${encodeURIComponent(dataset)}`);
+    if (dataset && !window.FrozenLegaciesExplorerStore) {
+      params.delete("dataset");
+      params.append("dataset", dataset);
     }
-    if (flight) {
-      parts.push(`flight=${encodeURIComponent(flight)}`);
+    if (flight && !window.FrozenLegaciesExplorerStore) {
+      params.delete("flight");
+      params.append("flight", flight);
     }
     const coverage = window.FrozenLegaciesCatalog?.selection?.();
     if (coverage?.coverage) {
-      parts.push("cov=1");
+      params.set("cov", "1");
       if (coverage.segment && SEGMENT_ID.test(coverage.segment)) {
-        parts.push(`seg=${coverage.segment}`);
+        params.set("seg", coverage.segment);
       }
     }
     const view = state.map?.getView?.();
     const center = view?.getCenter();
     const zoom = view?.getZoom();
     if (center && Number.isFinite(zoom)) {
-      parts.push(`view=${zoom.toFixed(2)}/${Math.round(center[0])}/${Math.round(center[1])}`);
+      params.set("view", `${zoom.toFixed(2)}/${Math.round(center[0])}/${Math.round(center[1])}`);
     }
-    return parts.length ? `#${parts.join("&")}` : "";
+    const encoded = params.toString().replaceAll("%2F", "/");
+    return encoded ? `#${encoded}` : "";
   }
 
 
@@ -510,6 +521,15 @@
   function onAutomaticChange(change) {
     if (change?.productsChanged) {
       window.FrozenLegaciesProducts?.reload();
+      window.FrozenLegaciesUserLayer?.reload();
+    }
+  }
+
+
+  function onProductsChange() {
+    renderPanel();
+    if (state.mode === "automatic" && state.asset) {
+      window.FrozenLegaciesAutomatic?.refresh?.();
     }
   }
 
@@ -530,14 +550,107 @@
    * ---------------------------------------------------------- */
 
   async function refreshLibrary() {
-    const [sources, assets] = await Promise.all([
+    const [sources, assets, external] = await Promise.all([
       api("/radar/sources"),
-      api("/assets")
+      api("/assets"),
+      api("/radar/catalog/sources").catch(() => ({ sources: [] }))
     ]);
     state.sources = sources.sources || [];
     state.assets = assets.assets || [];
+    state.external.sources = external.sources || [];
+    renderExternalControls();
     renderAssetSelect();
     renderPanel();
+    window.FrozenLegaciesStorage?.refresh?.();
+    if (state.external.sources.length) {
+      await searchExternal({ reset: true });
+    }
+  }
+
+
+  function formatBytes(bytes) {
+    let value = Number(bytes || 0);
+    const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+    let i = 0;
+    while (value >= 1024 && i < units.length - 1) {
+      value /= 1024;
+      i += 1;
+    }
+    return i ? `${value.toFixed(1)} ${units[i]}` : `${value} B`;
+  }
+
+
+  /* External datasets: search and source filter appear only when the
+   * installation has catalog sources this user may browse. */
+  function renderExternalControls() {
+    const ext = state.external;
+    const visible = ext.sources.length > 0;
+    const search = $("fl-radar-asset-search");
+    const filter = $("fl-radar-asset-source");
+    if (search) {
+      search.hidden = !visible;
+    }
+    if (filter) {
+      filter.hidden = !visible || ext.sources.length < 2;
+      filter.innerHTML = `<option value="">All sources</option>` + ext.sources.map(s =>
+        `<option value="${escapeHtml(s.source_id)}">${escapeHtml(s.name)} (${Number(s.files || 0).toLocaleString("en-US")})</option>`
+      ).join("");
+      filter.value = ext.sources.some(s => s.source_id === ext.source) ? ext.source : "";
+    }
+  }
+
+
+  async function searchExternal({ reset = false, more = false } = {}) {
+    const ext = state.external;
+    const request = ++ext.request;
+    const page = more ? ext.page + 1 : 1;
+    const params = new URLSearchParams({ page: String(page), page_size: "50" });
+    if (ext.q) {
+      params.set("q", ext.q);
+    }
+    if (ext.source) {
+      params.set("source", ext.source);
+    }
+    ext.loading = true;
+    ext.error = null;
+    if (reset) {
+      ext.items = [];
+    }
+    renderAssetSelect();
+    try {
+      const body = await api(`/radar/catalog?${params}`);
+      if (request !== ext.request) {
+        return;                       // a newer search superseded this one
+      }
+      ext.items = more ? ext.items.concat(body.items || []) : (body.items || []);
+      ext.total = body.total || 0;
+      ext.page = body.page || page;
+      ext.pages = body.pages || 1;
+    } catch (error) {
+      if (request === ext.request) {
+        ext.error = errorMessage(error);
+      }
+    } finally {
+      if (request === ext.request) {
+        ext.loading = false;
+        renderAssetSelect();
+      }
+    }
+  }
+
+
+  function externalLabel(item) {
+    const parts = [item.filename];
+    if (item.flight) {
+      parts.push(`F${item.flight}`);
+    }
+    if (item.dataset_id) {
+      parts.push(item.dataset_id);
+    }
+    if (Number.isFinite(item.bytes)) {
+      parts.push(formatBytes(item.bytes));
+    }
+    return parts.join(" · ");
   }
 
 
@@ -559,26 +672,52 @@
         .map(a => a.shared_source)
     );
     const unopened = state.sources.filter(s => !openedKeys.has(s.key));
+    const ext = state.external;
+    const external = ext.items.filter(item => !openedKeys.has(item.catalog_id));
 
+    // EXTERNAL DATASETS: the installation's shared radar and the catalog
+    // files matching the search (a page at a time); MY WORKSPACE: what the
+    // user opened, uploaded or generated
     let html = `<option value="">Choose a radar asset…</option>`;
+    if (unopened.length || external.length || ext.loading || ext.error || ext.sources.length) {
+      html += `<optgroup label="External datasets">`;
+      for (const source of unopened) {
+        html += `<option value="source:${escapeHtml(source.key)}">${escapeHtml(source.title)}${
+          source.status === "development" ? " (development)" : ""}</option>`;
+      }
+      for (const item of external) {
+        html += `<option value="source:${escapeHtml(item.catalog_id)}">${escapeHtml(externalLabel(item))}</option>`;
+      }
+      if (ext.loading) {
+        html += `<option value="" disabled>Loading radar files…</option>`;
+      } else if (ext.error) {
+        html += `<option value="" disabled>Radar files could not be loaded</option>`;
+      } else if (ext.sources.length && !ext.items.length) {
+        html += `<option value="" disabled>${ext.q ? "No radar files match" : "No radar files indexed yet"}</option>`;
+      } else if (!external.length && ext.page >= ext.pages) {
+        html += `<option value="" disabled>Matching files are already in My workspace</option>`;
+      } else if (ext.page < ext.pages) {
+        html += `<option value="more:external">Show more (${ext.items.length.toLocaleString("en-US")} of ${ext.total.toLocaleString("en-US")})…</option>`;
+      }
+      html += `</optgroup>`;
+    }
     if (state.assets.length) {
-      html += `<optgroup label="My radar assets">`;
+      html += `<optgroup label="My workspace">`;
       for (const asset of state.assets) {
         html += `<option value="asset:${escapeHtml(asset.asset_id)}"
           ${asset.available ? "" : "disabled"}>${escapeHtml(assetLabel(asset))}</option>`;
       }
       html += `</optgroup>`;
     }
-    if (unopened.length) {
-      html += `<optgroup label="Shared radar">`;
-      for (const source of unopened) {
-        html += `<option value="source:${escapeHtml(source.key)}">${escapeHtml(source.title)}${
-          source.status === "development" ? " (development)" : ""}</option>`;
-      }
-      html += `</optgroup>`;
-    }
     select.innerHTML = html;
     select.value = state.asset ? `asset:${state.asset.asset_id}` : "";
+    const status = $("fl-radar-asset-status");
+    if (status) {
+      status.textContent = ext.error
+        ? `External radar files could not be loaded: ${ext.error}`
+        : ext.loading ? "Searching radar files…"
+          : ext.sources.length && ext.q ? `${ext.total.toLocaleString("en-US")} matching file${ext.total === 1 ? "" : "s"}` : "";
+    }
   }
 
 
@@ -626,6 +765,11 @@
   async function onAssetSelected(event) {
     const value = event.target.value || "";
     try {
+      if (value === "more:external") {
+        event.target.value = state.asset ? `asset:${state.asset.asset_id}` : "";
+        await searchExternal({ more: true });
+        return;
+      }
       if (value.startsWith("asset:")) {
         await openAsset(value.slice(6));
       } else if (value.startsWith("source:")) {
@@ -821,6 +965,19 @@
   function bindViewer() {
     $("fl-radar-asset").addEventListener("change", onAssetSelected);
 
+    let searchTimer = null;
+    $("fl-radar-asset-search")?.addEventListener("input", event => {
+      window.clearTimeout(searchTimer);
+      searchTimer = window.setTimeout(() => {
+        state.external.q = event.target.value.trim().slice(0, 100);
+        searchExternal({ reset: true });
+      }, 300);
+    });
+    $("fl-radar-asset-source")?.addEventListener("change", event => {
+      state.external.source = event.target.value;
+      searchExternal({ reset: true });
+    });
+
     $("fl-radar-position").addEventListener("input", event => {
       state.x = Number(event.target.value) || 0;
       scheduleRender();
@@ -992,8 +1149,29 @@
       } else {
         const what = selection.observationId ? "this observation" : `flight ${escapeHtml(selection.flight)}`;
         const dataset = datasetFor(selection.datasetId);
-        body = dataset && dataset.capabilities && dataset.capabilities.raw_radar === false
-          ? `<p class="fl-radar-panel-note">${escapeHtml(dataset.title)} does not provide raw radar imagery.</p>`
+        body = dataset?.availability === "navigation-only"
+          ? `<p class="fl-radar-panel-note"><strong>Navigation available.</strong> Radar imagery for ${what} has not been installed yet.</p>
+            <div class="fl-data-readiness" aria-label="Planned scientific data products">
+              <div class="fl-data-slot pending">
+                <div><strong>Source radar TIFF</strong><span>Original A-scope or Z-scope film scan</span></div>
+                <em>Awaiting verified source</em>
+              </div>
+              <div class="fl-data-slot pending">
+                <div><strong>Radargram / echogram</strong><span>Derived image linked to its source digest</span></div>
+                <em>Awaiting verified product</em>
+              </div>
+              <div class="fl-data-slot pending">
+                <div><strong>Digitized radar data</strong><span>Navigation and measured trace values</span></div>
+                <em>Navigation only</em>
+              </div>
+              <div class="fl-data-slot blocked">
+                <div><strong>Automatic-picker output</strong><span>LYRA results with picker/version provenance</span></div>
+                <em>Requires source TIFF</em>
+              </div>
+            </div>
+            <p class="fl-data-placeholder-note">These are interface placeholders, not scientific observations. Real files appear only after checksum validation and catalog indexing.</p>`
+          : dataset && dataset.capabilities && dataset.capabilities.raw_radar === false
+            ? `<p class="fl-radar-panel-note">${escapeHtml(dataset.title)} does not provide raw radar imagery.</p>`
           : `<p class="fl-radar-panel-note">No raw radar imagery is available for ${what} in this installation.</p>`;
       }
       body += datasetDownloads(selection.datasetId);
@@ -1010,6 +1188,10 @@
       openAsset: async (assetId, focusSlider) => {
         setMode("manual");
         await openAsset(assetId, { focusSlider });
+      },
+      openAutomatic: async assetId => {
+        setMode("automatic");
+        await openAsset(assetId);
       }
     });
     window.FrozenLegaciesCatalog?.bindPanel(panel);
@@ -1093,7 +1275,7 @@
 
     window.FrozenLegaciesProducts?.configure({
       api,
-      onChange: renderPanel,
+      onChange: onProductsChange,
       onAssetCreated: async assetId => {
         await refreshLibrary();
         await openAsset(assetId);

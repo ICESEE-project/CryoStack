@@ -73,6 +73,41 @@ _DATASET_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 ASSET_STATUSES = ("indexed", "changed", "invalid", "unavailable", "missing", "moved")
 AVAILABLE = ("indexed", "changed")
 SOURCE_STATUSES = ("enabled", "disabled")
+#: who can find and open a source's files: every signed-in user, or only
+#: Control Center maintainers (for example while a collection is checked)
+SOURCE_VISIBILITIES = ("users", "maintainers")
+#: maintainer file listing page size bound
+MAX_FILES_PAGE = 200
+
+
+def _track_geometry(coords: list[list[float]]) -> dict:
+    """Return GeoJSON geometry without drawing across the antimeridian.
+
+    Navigation longitudes are normalized to ``[-180, 180]`` by the indexer.
+    A direct LineString between, for example, 179 E and 179 W crosses almost
+    the whole map. Split at the dateline and add the interpolated boundary
+    position to both halves instead. Scientific samples are not altered;
+    the added pair exists only in the display geometry.
+    """
+    if len(coords) == 1:
+        return {"type": "Point", "coordinates": coords[0]}
+    lines: list[list[list[float]]] = [[coords[0]]]
+    for current in coords[1:]:
+        previous = lines[-1][-1]
+        delta = current[0] - previous[0]
+        if abs(delta) <= 180:
+            lines[-1].append(current)
+            continue
+        unwrapped_lon = current[0] + (-360 if delta > 180 else 360)
+        boundary = -180.0 if delta > 180 else 180.0
+        fraction = (boundary - previous[0]) / (unwrapped_lon - previous[0])
+        latitude = previous[1] + fraction * (current[1] - previous[1])
+        lines[-1].append([boundary, latitude])
+        opposite = 180.0 if boundary == -180.0 else -180.0
+        lines.append([[opposite, latitude], current])
+    if len(lines) == 1:
+        return {"type": "LineString", "coordinates": lines[0]}
+    return {"type": "MultiLineString", "coordinates": lines}
 
 #: per-user processing states
 PROCESSING_STATES = (
@@ -92,8 +127,11 @@ class CatalogError(ValueError):
 
 
 def catalog_path() -> Path:
+    from cryostack_src.storage_layout import default_path
+
     configured = (os.environ.get(CATALOG_ENV) or "").strip()
-    return Path(configured).expanduser() if configured else DEFAULT_CATALOG
+    return Path(configured).expanduser() if configured else default_path(
+        "frozen-legacies-catalog", DEFAULT_CATALOG)
 
 
 def asset_key(source_id: str, storage_key: str) -> str:
@@ -256,6 +294,7 @@ _ADDED_COLUMNS = {
         "last_check_at": "REAL",
         "last_check_ok": "INTEGER",
         "last_check_message": "TEXT",
+        "visibility": "TEXT NOT NULL DEFAULT 'users'",
     },
     "index_runs": {
         "unavailable": "INTEGER NOT NULL DEFAULT 0",
@@ -428,6 +467,79 @@ class RadarCatalog:
                        (status, time.time(), source_id))
         self._changed()
 
+
+    def set_source_visibility(self, source_id: str, visibility: str) -> None:
+        if visibility not in SOURCE_VISIBILITIES:
+            raise CatalogError(f"visibility must be one of: {', '.join(SOURCE_VISIBILITIES)}.")
+        with self._connect() as db:
+            db.execute("UPDATE data_sources SET visibility = ?, updated_at = ?"
+                       " WHERE source_id = ?", (visibility, time.time(), source_id))
+        self._changed()
+
+    def remove_source(self, source_id: str) -> dict:
+        """Remove a source's registration and its catalog rows.
+
+        Only the catalog changes: files in the external storage are never
+        touched. Catalog IDs derive from source and storage key, so
+        registering the same source again and indexing it restores every ID;
+        until then user work that references these files shows them as
+        unavailable. Per-user state, submissions and published observations
+        are kept (they carry their own data)."""
+        with self._connect() as db:
+            active = db.execute("SELECT run_id FROM index_runs WHERE source_id = ?"
+                                " AND status IN ('queued', 'running')", (source_id,)).fetchone()
+            if active is not None:
+                raise CatalogError("Cancel the indexing run before removing the data source.")
+            files = db.execute("SELECT COUNT(*) FROM radar_assets WHERE source_id = ?",
+                               (source_id,)).fetchone()[0]
+            db.execute("DELETE FROM radar_assets WHERE source_id = ?", (source_id,))
+            db.execute("DELETE FROM index_runs WHERE source_id = ?", (source_id,))
+            removed = db.execute("DELETE FROM data_sources WHERE source_id = ?",
+                                 (source_id,)).rowcount
+        self._changed()
+        return {"removed": bool(removed), "catalog_rows": files}
+
+    def source_files(self, source_id: str, *, q=None, status=None, page: int = 1,
+                     page_size: int = 50) -> dict:
+        """One source's catalog rows for maintainers (any status), paginated.
+        Includes the storage key relative to the source; never its location."""
+        page = max(1, int(page))
+        page_size = max(1, min(MAX_FILES_PAGE, int(page_size)))
+        where, args = ["source_id = ?"], [source_id]
+        if status:
+            if status not in ASSET_STATUSES:
+                raise CatalogError("Unknown file status.")
+            where.append("status = ?")
+            args.append(status)
+        if q:
+            where.append("filename LIKE ? ESCAPE '\\'")
+            escaped = str(q).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            args.append(f"%{escaped}%")
+        clause = " AND ".join(where)
+        with self._connect() as db:
+            total = db.execute(f"SELECT COUNT(*) FROM radar_assets WHERE {clause}",
+                               args).fetchone()[0]
+            rows = db.execute(
+                "SELECT catalog_id, storage_key, filename, flight, cbd_start, cbd_end, width,"
+                " height, bytes, mtime_ns, etag, has_nav, status, error, duplicate,"
+                f" indexed_at FROM radar_assets WHERE {clause}"
+                " ORDER BY filename, storage_key LIMIT ? OFFSET ?",
+                args + [page_size, (page - 1) * page_size]).fetchall()
+        return {"items": [dict(r) for r in rows], "total": total, "page": page,
+                "page_size": page_size, "pages": max(1, -(-total // page_size))}
+
+    def visible_sources(self, *, include_restricted: bool = False) -> list[dict]:
+        """Enabled sources a user may browse: ID, name, dataset, provider and
+        available file count (no configuration)."""
+        clause = "" if include_restricted else " AND s.visibility = 'users'"
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT s.source_id, s.name, s.dataset_id, s.provider, s.visibility,"
+                " (SELECT COUNT(*) FROM radar_assets a WHERE a.source_id = s.source_id"
+                "  AND a.status IN ('indexed', 'changed')) AS files"
+                f" FROM data_sources s WHERE s.status = 'enabled'{clause}"
+                " ORDER BY s.name").fetchall()
+        return [dict(r) for r in rows]
 
     def record_check(self, source_id: str, result: dict) -> None:
         with self._connect() as db:
@@ -649,6 +761,7 @@ class RadarCatalog:
             for _ in range(8):                       # bounded move chain
                 row = db.execute(
                     "SELECT a.*, s.provider, s.config, s.status AS source_status,"
+                    " s.visibility AS source_visibility,"
                     " s.name AS source_name FROM radar_assets a JOIN data_sources s"
                     " USING (source_id) WHERE a.catalog_id = ?", (catalog_id,)).fetchone()
                 if row is None:
@@ -671,9 +784,14 @@ class RadarCatalog:
 
     # ── search ─────────────────────────────────────────────────────────
     def _filters(self, *, dataset_id=None, flight=None, status=None, q=None, cbd=None,
-                 owner=None, state=None, catalog_id=None):
-        where = ["a.source_id IN (SELECT source_id FROM data_sources WHERE status = 'enabled')"]
+                 owner=None, state=None, catalog_id=None, source_id=None,
+                 include_restricted=False):
+        where = ["a.source_id IN (SELECT source_id FROM data_sources WHERE status = 'enabled'"
+                 + ("" if include_restricted else " AND visibility = 'users'") + ")"]
         args: list = []
+        if source_id:
+            where.append("a.source_id = ?")
+            args.append(source_id)
         if catalog_id:
             where.append("a.catalog_id = ?")
             args.append(catalog_id)
@@ -756,6 +874,159 @@ class RadarCatalog:
                     item["processing"] = found or ["unprocessed"]
         return {"items": items, "total": total, "page": page, "page_size": page_size,
                 "pages": max(1, -(-total // page_size))}
+
+    def explorer_snapshot(self, query, *, owner: str, include_restricted: bool,
+                          offset: int = 0, item_limit: int = 50,
+                          feature_limit: int = 5000) -> dict:
+        """Return one authorization-trimmed V1 explorer snapshot.
+
+        Count, page, geometry and facets are evaluated on one SQLite read
+        transaction.  Only public asset columns and display geometry leave
+        this method; storage keys and ownership identifiers never do.
+        """
+        def predicate(*, omit: str | None = None):
+            where = ["a.source_id IN (SELECT source_id FROM data_sources"
+                     " WHERE status = 'enabled'" +
+                     ("" if include_restricted else " AND visibility = 'users'") + ")",
+                     "a.status IN ('indexed', 'changed')"]
+            args: list = []
+
+            def any_values(column, values, field):
+                if values and omit != field:
+                    where.append(f"{column} IN ({', '.join('?' for _ in values)})")
+                    args.extend(values)
+
+            any_values("a.dataset_id", query.datasets, "dataset")
+            any_values("a.flight", query.flights, "flight")
+            any_values("a.source_id", query.sources, "source")
+            if query.cbd_min is not None:
+                where.append("max(a.cbd_start, a.cbd_end) >= ?")
+                args.append(query.cbd_min)
+            if query.cbd_max is not None:
+                where.append("min(a.cbd_start, a.cbd_end) <= ?")
+                args.append(query.cbd_max)
+            if query.text:
+                escaped = query.text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                where.append("a.filename LIKE ? ESCAPE '\\'")
+                args.append(f"%{escaped}%")
+            if query.bbox is not None:
+                min_lon, min_lat, max_lon, max_lat = query.bbox
+                if query.spatial == "within":
+                    where += ["a.track IS NOT NULL", "a.min_lat >= ?", "a.max_lat <= ?"]
+                else:
+                    where += ["a.track IS NOT NULL", "a.max_lat >= ?", "a.min_lat <= ?"]
+                args += [min_lat, max_lat]
+                if min_lon <= max_lon:
+                    if query.spatial == "within":
+                        where += ["a.min_lon >= ?", "a.max_lon <= ?"]
+                    else:
+                        where += ["a.max_lon >= ?", "a.min_lon <= ?"]
+                    args += [min_lon, max_lon]
+                elif query.spatial == "within":
+                    where.append("(a.min_lon >= ? OR a.max_lon <= ?)")
+                    args += [min_lon, max_lon]
+                else:
+                    where.append("(a.max_lon >= ? OR a.min_lon <= ?)")
+                    args += [min_lon, max_lon]
+            if query.reviews and omit != "review":
+                options = []
+                for state in query.reviews:
+                    if state == "unprocessed":
+                        options.append("(NOT EXISTS (SELECT 1 FROM user_asset_state u WHERE"
+                                       " u.owner = ? AND u.catalog_id = a.catalog_id AND"
+                                       " (u.manual IS NOT NULL OR u.automatic IS NOT NULL)) AND"
+                                       " NOT EXISTS (SELECT 1 FROM submissions z WHERE z.owner = ?"
+                                       " AND z.catalog_id = a.catalog_id))")
+                        args += [owner, owner]
+                    elif state == "in_progress":
+                        options.append("EXISTS (SELECT 1 FROM user_asset_state u WHERE u.owner = ?"
+                                       " AND u.catalog_id = a.catalog_id AND (u.manual ="
+                                       " 'manual_in_progress' OR u.automatic IN"
+                                       " ('automatic_pending','automatic_running')))")
+                        args.append(owner)
+                    else:
+                        status = {"needs_review": "submitted", "returned": "returned",
+                                  "published": "published"}[state]
+                        options.append("EXISTS (SELECT 1 FROM submissions z WHERE z.owner = ?"
+                                       " AND z.catalog_id = a.catalog_id AND z.status = ?)")
+                        args += [owner, status]
+                where.append("(" + " OR ".join(options) + ")")
+            return " AND ".join(where), args
+
+        cols = ", ".join(f"a.{c}" for c in PUBLIC_ASSET_COLUMNS)
+        clause, args = predicate()
+        order = _ORDER if query.sort != "relevance" else "a.filename, " + _ORDER
+        with self._connect() as db:
+            # Explicit read transaction pins all statements to one WAL snapshot.
+            db.execute("BEGIN")
+            total = db.execute(f"SELECT COUNT(*) FROM radar_assets a WHERE {clause}", args).fetchone()[0]
+            rows = db.execute(f"SELECT {cols} FROM radar_assets a WHERE {clause}"
+                              f" ORDER BY {order} LIMIT ? OFFSET ?",
+                              args + [item_limit, offset]).fetchall()
+            items = [_public(dict(row)) for row in rows]
+            if items:
+                ids = [item["catalog_id"] for item in items]
+                placeholders = ", ".join("?" for _ in ids)
+                states = {row["catalog_id"]: row for row in db.execute(
+                    f"SELECT catalog_id, manual, automatic FROM user_asset_state"
+                    f" WHERE owner = ? AND catalog_id IN ({placeholders})", [owner] + ids)}
+                reviews: dict[str, set[str]] = {}
+                for row in db.execute(
+                        f"SELECT catalog_id, status FROM submissions WHERE owner = ?"
+                        f" AND status IN ('submitted', 'returned', 'published')"
+                        f" AND catalog_id IN ({placeholders})", [owner] + ids):
+                    reviews.setdefault(row["catalog_id"], set()).add(row["status"])
+                for item in items:
+                    row = states.get(item["catalog_id"])
+                    found = [value for value in
+                             ((row["manual"], row["automatic"]) if row else ()) if value]
+                    found += [state for state, status in _REVIEW_STATUS.items()
+                              if status in reviews.get(item["catalog_id"], ())]
+                    item["processing"] = found or ["unprocessed"]
+            feature_rows = db.execute(
+                f"SELECT a.catalog_id, a.dataset_id, a.flight, a.filename, a.cbd_start,"
+                f" a.cbd_end, a.track FROM radar_assets a WHERE {clause} AND a.track IS NOT NULL"
+                f" ORDER BY {order} LIMIT ?", args + [feature_limit + 1]).fetchall()
+            facets = {}
+            for field, column in (("dataset", "a.dataset_id"), ("flight", "a.flight"),
+                                  ("source", "a.source_id")):
+                facet_clause, facet_args = predicate(omit=field)
+                facets[field] = [{"value": r["value"], "count": r["n"]} for r in db.execute(
+                    f"SELECT {column} AS value, COUNT(*) AS n FROM radar_assets a"
+                    f" WHERE {facet_clause} AND {column} IS NOT NULL GROUP BY {column}"
+                    f" ORDER BY n DESC, value LIMIT 100", facet_args)]
+            review_values = []
+            for state in ("unprocessed", "in_progress", "needs_review", "returned", "published"):
+                probe = type(query)(query.datasets, query.flights, query.sources, (state,),
+                                    query.cbd_min, query.cbd_max, query.bbox, query.spatial,
+                                    query.text, query.sort, None)
+                original = query
+                query = probe
+                review_clause, review_args = predicate(omit=None)
+                query = original
+                count = db.execute(f"SELECT COUNT(*) FROM radar_assets a WHERE {review_clause}",
+                                   review_args).fetchone()[0]
+                if count:
+                    review_values.append({"value": state, "count": count})
+            facets["review"] = review_values
+            revision = db.execute(
+                "SELECT COUNT(*) AS n, COALESCE(MAX(indexed_at), 0) AS changed"
+                " FROM radar_assets").fetchone()
+            snapshot = hashlib.sha256(
+                f"{revision['n']}:{revision['changed']}:{owner}:{query.fingerprint()}".encode()
+            ).hexdigest()[:24]
+        features = []
+        for row in feature_rows[:feature_limit]:
+            features.append({"type": "Feature", "id": row["catalog_id"],
+                             "geometry": _track_geometry(json.loads(row["track"])),
+                             "properties": {"catalog_id": row["catalog_id"],
+                                            "dataset_id": row["dataset_id"],
+                                            "flight": row["flight"], "filename": row["filename"],
+                                            "cbd_start": row["cbd_start"],
+                                            "cbd_end": row["cbd_end"]}})
+        return {"snapshot": snapshot, "total": total, "items": items,
+                "features": {"type": "FeatureCollection", "features": features},
+                "facets": facets, "features_truncated": len(feature_rows) > feature_limit}
 
     def summary(self, *, dataset_id=None, owner=None) -> dict:
         """Datasets and flights with file counts and, for ``owner``, the user's
@@ -862,8 +1133,7 @@ class RadarCatalog:
         features = []
         for r in rows[:limit]:
             coords = json.loads(r["track"])
-            geometry = ({"type": "Point", "coordinates": coords[0]} if len(coords) == 1
-                        else {"type": "LineString", "coordinates": coords})
+            geometry = _track_geometry(coords)
             features.append({"type": "Feature", "id": r["catalog_id"], "geometry": geometry,
                              "properties": {"catalog_id": r["catalog_id"],
                                             "dataset_id": r["dataset_id"], "flight": r["flight"],

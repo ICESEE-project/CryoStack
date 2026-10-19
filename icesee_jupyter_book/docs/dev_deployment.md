@@ -64,7 +64,10 @@ profile.
 
 | Variable | Default | Effect |
 |---|---|---|
-| `CRYOSTACK_HOST` | `127.0.0.1` | Bind address of the single app on port 8080 (Voilà children use 8866 for ICESEE and 8870 for CryoLauncher; the relay uses 8899). |
+| `CRYOSTACK_HOST` | `127.0.0.1` | Bind address of the single app. |
+| `CRYOSTACK_PORT` | `8080` | Gateway port; assign a separate value for staging. |
+| `CRYOSTACK_RUN_CENTER_PORT` | `8866` | Run Center Voilà port. |
+| `CRYOSTACK_ICESHEETS_PORT` | `8870` | IceSheets Voilà port. |
 | `CRYOSTACK_APP_START_MODE` | `background` | `background` starts the Voilà services at boot; `lazy` starts each on first request. |
 | `CRYOSTACK_VOILA_MODE` | `managed` | `managed`: the gateway starts its two Voilà servers. `external`: they run under their own account (`bin/icesee_app.py voila <icesee\|icesheets>`, see `deployment/README.md`) and the gateway only proxies to them. |
 | `CRYOSTACK_VOILA_TOKEN_FILE` | unset | Required with `CRYOSTACK_VOILA_MODE=external`: file holding the token the gateway and the Voilà servers share (not readable by other accounts, at least 32 characters). |

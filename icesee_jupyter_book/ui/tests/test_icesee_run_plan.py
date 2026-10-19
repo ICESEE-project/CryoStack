@@ -1,8 +1,7 @@
-"""ICESEE Run Plan parity (Phase 5): the same semantic separation
-CryoLauncher uses (execution mode / compute backend / model environment),
-reusing CryoLauncher's own shared build_run_plan_panel composition -- with
-ICESEE's DA identity (DAIdentity.summary_rows()) as first-class rows
-underneath, not flattened into a generic single-model run.
+"""ICESEE run plan: Review & launch summarises the execution semantics
+(mode / compute backend / model environment) and ICESEE's DA identity
+(DAIdentity.summary_rows()) as first-class rows -- not a generic single-model
+run -- and follows the Mode selector without leftovers from another mode.
 """
 from __future__ import annotations
 
@@ -18,16 +17,12 @@ if str(_REPO) not in sys.path:
 _GW = _REPO / "icesee_jupyter_book/ui/icesee_gateway.py"
 
 
-def test_gateway_reuses_the_shared_run_plan_panel():
+def test_gateway_derives_the_plan_from_the_da_identity():
     src = _GW.read_text()
-    assert (
-        "from cryostack_src.frontend.cryolauncher.panels.run_plan import "
-        "build_run_plan_panel" in src
-    )
-    assert "build_run_plan_panel(" in src
     assert "da_identity_from_params" in src
     assert "identity.summary_rows()" in src
-    # no second, independent Run Plan implementation
+    assert "launch_panel.set_summary(" in src
+    # no second, independent run-plan implementation
     assert "class RunPlanPanel" not in src
 
 
@@ -40,55 +35,45 @@ def _build(monkeypatch, *, user):
     return build_icesee_ui()
 
 
-def _find_run_plan_summary_html(page):
-    """The Run Plan card's summary HTML is the one containing 'Execution
-    mode' -- find it by content since it has no unique CSS hook."""
-    found = []
-
-    def walk(w):
-        if isinstance(w, W.HTML) and "Execution mode" in (w.value or ""):
-            found.append(w)
-        for c in getattr(w, "children", ()):
-            walk(c)
-
-    walk(page)
-    return found[0] if found else None
+def _walk(w):
+    yield w
+    for c in getattr(w, "children", ()) or ():
+        yield from _walk(c)
 
 
-def test_run_plan_shows_execution_semantics_and_da_identity(monkeypatch):
+def _summary(page):
+    """The Review & launch summary (a key/value list in the launch card)."""
+    for w in _walk(page):
+        if "icw-anchor-launch" in getattr(w, "_dom_classes", ()):
+            for h in _walk(w):
+                if isinstance(h, W.HTML) and "icw-kv" in (h.value or ""):
+                    return h
+    return None
+
+
+def _mode(page):
+    return next(w for w in _walk(page) if isinstance(w, W.ToggleButtons) and "Cloud" in w._options_labels)
+
+
+def test_plan_shows_execution_semantics_and_da_identity(monkeypatch):
     page = _build(monkeypatch, user="run-plan-user")
-    summary = _find_run_plan_summary_html(page)
-    assert summary is not None, "Run Plan summary card not found"
-    assert "Execution mode" in summary.value
-    assert "Compute backend" in summary.value
-    assert "Model environment" in summary.value
-    # DA identity rows for the default example are present too (not a
-    # generic single-model run) -- Forecast model is always shown when
-    # DAIdentity resolves one from the loaded example.
+    summary = _summary(page)
+    assert summary is not None, "Review & launch summary not found"
+    for row in ("Mode", "Experiment", "Compute backend", "Model environment"):
+        assert f"<dt>{row}</dt>" in summary.value
     assert "Assimilation filter" in summary.value or "Forecast model" in summary.value
 
 
-def test_run_plan_updates_when_the_mode_tab_changes(monkeypatch):
+def test_plan_follows_the_mode_without_leftovers(monkeypatch):
     page = _build(monkeypatch, user="run-plan-mode-user")
-    summary = _find_run_plan_summary_html(page)
-
-    def freevar(fn, name):
-        idx = fn.__code__.co_freevars.index(name)
-        return fn.__closure__[idx].cell_contents
-
-    mode_tabs = None
-
-    def walk(w):
-        nonlocal mode_tabs
-        if isinstance(w, W.Tab) and mode_tabs is None:
-            mode_tabs = w
-        for c in getattr(w, "children", ()):
-            walk(c)
-
-    walk(page)
-    assert mode_tabs is not None
-    assert "Local" in summary.value
-
-    mode_tabs.selected_index = 2   # Cloud
-    assert "Cloud" in summary.value
-    assert "AWS Batch" in summary.value
+    summary = _summary(page)
+    assert "<dd>Local</dd>" in summary.value
+    _mode(page).value = "cloud"
+    assert "<dd>Cloud</dd>" in summary.value and "AWS Batch" in summary.value
+    assert "Slurm" not in summary.value
+    _mode(page).value = "cluster"
+    assert "Remote HPC" in summary.value and "Slurm" in summary.value
+    assert "Region" not in summary.value
+    _mode(page).value = "local"
+    assert "<dd>Local</dd>" in summary.value
+    assert "Slurm" not in summary.value and "Region" not in summary.value

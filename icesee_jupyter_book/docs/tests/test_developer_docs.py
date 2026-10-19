@@ -175,9 +175,9 @@ def test_maintainer_guide_absent_from_any_built_html():
 
 
 # ── 5. real server-side protection ──────────────────────────────────
-def test_maintainer_route_is_wrapped_in_require_roles():
+def test_maintainer_route_is_wrapped_in_owner_controlled_access():
     src = _APP.read_text()
-    assert 'auth.require_roles(' in src
+    assert "require_developer_docs(auth, handler)" in src
     assert "maintainer_access(maintainer_guide_page)" in src
     assert '"/docs/maintainer/"' in src
 
@@ -196,7 +196,7 @@ def _build_app(mod, auth):
 
     app = web.Application()
     auth.install(app)
-    access = auth.require_roles("developer", "maintainer", "admin", "owner")
+    access = lambda handler: mod.require_developer_docs(auth, handler)
     app.router.add_get("/docs/maintainer", mod.maintainer_guide_redirect)
     app.router.add_get("/docs/maintainer/", access(mod.maintainer_guide_page))
     return app
@@ -248,11 +248,107 @@ def test_authenticated_user_without_a_role_is_forbidden(tmp_path, monkeypatch):
     assert "Publishing production connector binaries" not in body
 
 
-def test_role_holder_can_read_the_maintainer_guide(tmp_path, monkeypatch):
-    status, body = _fetch_maintainer(tmp_path, monkeypatch, roles=["maintainer"])
+@pytest.mark.parametrize("role", ["developer", "maintainer", "admin"])
+def test_non_owner_roles_cannot_read_the_maintainer_guide(tmp_path, monkeypatch, role):
+    status, body = _fetch_maintainer(tmp_path, monkeypatch, roles=[role])
+    assert status == 403
+    assert "Publishing production connector binaries" not in body
+
+
+def test_owner_can_read_the_maintainer_guide(tmp_path, monkeypatch):
+    status, body = _fetch_maintainer(tmp_path, monkeypatch, roles=["owner"])
     assert status == 200
     assert "Publishing production connector binaries" in body
     assert 'href="/_static/icesee.css"' in body  # reuses the shared theme
+
+
+@pytest.mark.parametrize("control_role", ["maintainer", "admin"])
+def test_delegated_account_can_read_the_maintainer_guide(
+        tmp_path, monkeypatch, control_role):
+    status, body = _fetch_maintainer(
+        tmp_path, monkeypatch, roles=[control_role, "developer_docs"])
+    assert status == 200
+    assert "Publishing production connector binaries" in body
+
+
+def test_stale_delegation_without_eligible_role_fails_closed(tmp_path, monkeypatch):
+    status, body = _fetch_maintainer(
+        tmp_path, monkeypatch, roles=["developer_docs"])
+    assert status == 403
+    assert "Publishing production connector binaries" not in body
+
+
+def test_livist_python_api_is_owner_controlled_while_user_manual_stays_available(
+        tmp_path, monkeypatch):
+    import asyncio
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+    from icesee_auth import AuthManager
+
+    site = tmp_path / "livist-site"
+    (site / "api").mkdir(parents=True)
+    (site / "livist_user_manual").mkdir()
+    (site / "index.html").write_text(
+        '<a href="/livist/docs/livist_user_manual/">Manual</a>'
+        '<a href="/livist/docs/api/">Python API secret</a>')
+    (site / "api" / "index.html").write_text("INTERNAL_LIVIST_API")
+    (site / "livist_user_manual" / "index.html").write_text("LIVIST USER MANUAL")
+    (site / "search.json").write_text('{"text":"INTERNAL_LIVIST_API"}')
+    (site / "objects.inv").write_bytes(b"INTERNAL_LIVIST_API")
+    (site / "sitemap.xml").write_text("<loc>/livist/docs/api/</loc>")
+
+    monkeypatch.setenv("CRYOSTACK_AUTH_DATABASE", str(tmp_path / "livist-auth.db"))
+    mod = _load_app_module()
+    monkeypatch.setattr(mod, "livist_docs_root", lambda: site)
+    auth = AuthManager()
+    app = web.Application()
+    auth.install(app)
+    app["auth"] = auth
+    app.router.add_get("/livist/docs/", mod.livist_docs_index)
+    app.router.add_get("/livist/docs/{tail:.*}", mod.livist_docs_page)
+
+    def login(email, *roles):
+        user = auth.storage.create_user(
+            email=email, display_name=email, institution=None, password_hash="x")
+        for role in roles:
+            auth.storage.grant_role(user_id=user.id, role=role)
+        session = auth.storage.create_session(ttl_seconds=3600, user_id=user.id)
+        return {"icesee_session": session.id}
+
+    async def go():
+        async with TestClient(TestServer(app)) as client:
+            outputs = {}
+            people = {
+                "user": login("user@example.org"),
+                "maintainer": login("maint@example.org", "maintainer"),
+                "delegated": login(
+                    "delegated@example.org", "maintainer", "developer_docs"),
+                "owner": login("owner@example.org", "owner"),
+            }
+            for name, cookies in people.items():
+                outputs[name] = {}
+                for path in ("/livist/docs/", "/livist/docs/livist_user_manual/",
+                             "/livist/docs/api/", "/livist/docs/search.json",
+                             "/livist/docs/objects.inv", "/livist/docs/sitemap.xml"):
+                    response = await client.get(
+                        path, cookies=cookies, allow_redirects=False)
+                    outputs[name][path] = (response.status,
+                                           await response.read(), dict(response.headers))
+            anonymous = await client.get("/livist/docs/api/", allow_redirects=False)
+            outputs["anonymous"] = (anonymous.status, anonymous.headers.get("Location", ""))
+            return outputs
+
+    out = asyncio.run(go())
+    for name in ("user", "maintainer"):
+        assert out[name]["/livist/docs/livist_user_manual/"][0] == 200
+        assert out[name]["/livist/docs/api/"][0] == 403
+        assert out[name]["/livist/docs/search.json"][0] == 403
+        assert b"Python API secret" not in out[name]["/livist/docs/"][1]
+    for name in ("delegated", "owner"):
+        assert out[name]["/livist/docs/api/"][:2] == (200, b"INTERNAL_LIVIST_API")
+        assert out[name]["/livist/docs/search.json"][0] == 200
+    assert out["anonymous"][0] == 302 and out["anonymous"][1].startswith("/auth/login")
+    assert out["user"]["/livist/docs/"][2]["Cache-Control"] == "private, no-cache"
 
 
 # ── 6. mobile: shared CSS remains the only responsive implementation ──

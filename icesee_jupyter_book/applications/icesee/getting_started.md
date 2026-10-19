@@ -66,19 +66,21 @@ A first Lorenz-96 experiment needs none of the Remote or Cloud prerequisites.
 Open
 [https://cryostack.eas.gatech.edu/icesee-gui/](https://cryostack.eas.gatech.edu/icesee-gui/).
 
-The interface has two areas:
+The interface has two areas, with a step bar above them:
 
-1. **Run settings** — the **Local / Remote / Cloud** tabs, the example,
-   filter, ensemble size, seed, output, and the example's parameter sections.
-2. **Workspace** — **Runs**, **Files**, **Run Log**, and **Results**.
+1. **The workflow** (left) — **Mode**, **Experiment**, **Environment &
+   resources**, **Scientific parameters**, and **Review & launch**, in the
+   order you decide them.
+2. **Workspace** (right) — **Run**, **Files**, **Editor**, **Logs**, and
+   **Results**, all following the selected run.
 
 ## Choose Where to Run
 
 :::{raw} html
 <p>
   <b>Local</b> <span class="cryostack-status supported">Supported</span>
-  &nbsp;— a single process on the CryoStack server, with no scheduler or MPI.
-  For Lorenz-96 and small tests.
+  &nbsp;— on the CryoStack server, in the launcher's Python or the ICESEE
+  container (with MPI). For Lorenz-96, Icepack and small tests.
 </p>
 <p>
   <b>Remote</b> <span class="cryostack-status supported">Supported</span>
@@ -88,7 +90,7 @@ The interface has two areas:
 <p>
   <b>Cloud</b> <span class="cryostack-status dev">Lorenz-96 only</span>
   &nbsp;— AWS Batch on your own AWS account, through the same Connect AWS
-  Account &rarr; Prepare cloud &rarr; Review &amp; Launch flow as CryoLauncher.
+  Account &rarr; Prepare cloud &rarr; cloud review flow as CryoLauncher.
   Verified for exactly one configuration: Lorenz-96 at a single process.
   Other examples, or more processes, are refused at Review.
 </p>
@@ -102,8 +104,8 @@ The **Example** menu shows each example's status:
 |---|---|---|
 | Lorenz-96 | fully runnable locally | Local and Cloud (one process); Remote is available |
 | ISSM (ISMIP_Choi) | fully runnable in Remote | Remote |
+| Icepack | under development | Local (ICESEE container); Remote is available |
 | Flowline | under development | not yet an end-to-end workflow |
-| Icepack | under development | not yet an end-to-end workflow |
 
 See <a href="user_manual.html#examples-and-maturity">Examples and maturity</a>
 in the User Manual for details.
@@ -113,29 +115,28 @@ in the User Manual for details.
 - **Preset** — only **Default** (the example's own configuration) is offered.
 - **Filter** — **EnKF**, **DEnKF**, **EnTKF**, or **EnRSKF**. Keep the
   example's default for a first run.
-- **Ensemble size** — 1 to 200 members (default 30). Larger ensembles
-  represent uncertainty better and cost more.
+- **Ensemble size** — the number of members (the example's own value when
+  you choose it). Larger ensembles represent uncertainty better and cost
+  more.
 - **Seed** — the random seed; keep it fixed to repeat an experiment exactly.
-- **Output** — which result set the report reads: *true-wrong* (the
-  demonstration output) or *EnKF*.
-- **Generate report** — run the example's results notebook after a
-  successful Local run.
 
 The example's parameter sections (`physical-parameters`,
 `modeling-parameters`, `enkf-parameters`) hold everything else, including the
 observation settings and the parallel settings. Review them, but leave them
-unchanged for a first run.
+unchanged for a first run. **Edit params.yaml** shows the same configuration
+as a file in the Editor, with validation.
 
 ## Run Your First ICESEE Experiment
 
-1. Open ICESEE and select the **Local** tab.
+1. Open ICESEE and choose **Local** under **Mode**.
 2. Choose **Lorenz-96** in the **Example** menu.
 3. Keep the default filter, ensemble size, and seed.
-4. Leave **Output** at *true-wrong* and **Generate report** ticked.
-5. Click **Run**.
-6. Follow the **Run Log**: configuration, ensemble initialization, forecast
-   and analysis cycles, then report generation.
-7. When the run finishes, select it in **Runs** and open **Results**.
+4. Check **Review & launch**: it summarizes the run and reads **Ready**.
+5. Click **Launch run**.
+6. Watch the run: the card shows its state, elapsed time and assimilation
+   step; **Logs** shows the output (configuration, ensemble initialization,
+   forecast and analysis cycles).
+7. When it reads **Completed**, click **Open results**.
 
 Lorenz-96 is a lightweight synthetic model, so this completes quickly and
 shows the whole assimilation cycle: a true state and synthetic observations
@@ -144,9 +145,11 @@ updates it at each observation time.
 
 ## View Results
 
-**Results** shows the figures the run produced and lists its HDF5 result
-files; **Download results** downloads them. With **Generate report** ticked,
-the report notebook is executed into the run folder.
+**Results** draws the example's own scientific figures — for Lorenz-96 the
+true, background, observed and analysed x, y and z with the observation
+window shaded, as its `read_results.ipynb` does — plus a supplementary
+assimilation-error view. **Files** lists everything the run wrote, and the
+**Run** tab its configuration and provenance.
 
 ## Next Steps
 

@@ -108,6 +108,19 @@ When the application is opened or the current flight selection is reset, the map
 
 ## Dataset Selection
 
+The expandable **Scientific filters** control applies dataset, flight, CBD,
+review-state, and text criteria to the map and authenticated radar catalog as
+one explorer state. Active filters appear as individually removable chips;
+**Clear all** resets them. The live result message announces how many loaded
+map observations match without moving keyboard focus.
+
+Choose **Copy link** to copy the canonical `ExplorerQueryV1` URL. Opening the
+link restores the permitted filters, and browser Back/Forward restores the
+whole filter state rather than a partly updated map. Radar catalog rows,
+coverage geometry, exact count, facets, and pagination are authorized and
+returned together from one snapshot. The historical observation point layer
+is filtered locally from its already-loaded public records.
+
 Use the **Dataset** selector to choose the collection you want to explore.
 
 The selected dataset controls:
@@ -268,7 +281,22 @@ This information is important when matching the web visualization to the source 
 
 ## Radar Preview
 
-The Dataset Explorer contains a radar preview area for the selected observation.
+Selecting an observation opens a scientific quicklook on the map (a bottom
+sheet on small screens). It combines the radar or film preview with flight,
+CBD, coordinates, key derived quantities, lineage, and actions to open the
+radar workspace or persistent details. The right-hand Dataset Explorer remains
+available for filters and deeper product information.
+
+Use **Previous** and **Next** in the quicklook to step through the current
+flight in CBD order. The address bar records the dataset, flight, and stable
+observation identifier, so copying the URL or reloading the page returns to
+the same observation. Closing the quicklook removes only the observation from
+the URL; the dataset and flight context remain available.
+
+Keyboard users can use the Left and Right Arrow keys as well as the visible
+buttons to move between observations. Press **Escape** to close the quicklook
+and return focus to the map control that opened it. Scrolling to full details
+honors the browser's reduced-motion preference.
 
 When an image product is associated with the record, it can be displayed here.
 
@@ -404,12 +432,18 @@ Observation metadata and radar imagery are managed separately.
 
 An observation can therefore be available in Frozen Legacies even when its corresponding image product has not yet been added to the active storage backend.
 
+A flight may also appear from an operator-installed navigation collection
+before any matching radar TIFF is available. The map and flight selector show
+its verified track, while the right panel states **Navigation available** and
+that imagery has not been installed. Navigation-only coverage cannot be opened
+in Manual or Automatic mode and is not counted as a radar asset.
+
 ## Feature Status
 
 What is validated in this release, and what is not yet:
 
 - **Validated:** signing in and per-user workspaces; the Antarctic map, datasets, flights and observations; the radar viewer; **Manual** (ASTRA) picking, whose CSV and QC image are byte-identical to the ASTRA reference script on synthetic strips and on a real A-scope strip; product downloads.
-- **Implemented, not yet validated with real URSA runs:** **Automatic** (URSA). The integration runs URSA unmodified, but URSA has not yet been run and checked on a CryoStack server. Even where URSA's software is installed, review its results before using them.
+- **Implemented, scientifically unvalidated:** **Automatic** (LYRA, with URSA available as a fallback). LYRA's frame detection and CBD reading have run on real F127 film in CryoStack; its calibration and echo extraction have not yet run on real data, because they need human calibration picks that do not exist yet. Review every automatic result before using it.
 - **Depends on the installation:** which shared radar and radar catalog are offered. Each CryoStack installation configures its own shared radar sources; an installation may offer none.
 
 ## Signing In
@@ -422,7 +456,7 @@ The controls above the map switch the main area:
 
 - **Map** — the Antarctic explorer. Your dataset, flight, and observation selection is kept while you use the other modes.
 - **Manual** — the ASTRA A-scope picker for the open radar asset.
-- **Automatic** — automatic picking (URSA) for the open radar asset, with the radar viewer.
+- **Automatic** — automatic picking (LYRA; URSA where the installation selects it) for the open radar asset, with the radar viewer.
 
 All three work on the same open radar asset, chosen from **Radar asset** at the top of the workspace.
 
@@ -432,10 +466,12 @@ All three work on the same open radar asset, chosen from **Radar asset** at the 
 
 ## Radar Assets
 
-A radar asset is one radar image (or one set of processed products) in your workspace. The **Radar asset** list groups:
+A radar asset is one radar image (or one set of processed products) in your workspace. The **Radar asset** list, shared by Manual and Automatic, groups:
 
-- **My radar assets** — assets in your workspace, labelled **Shared**, **Uploaded**, or **Products**;
-- **Shared radar** — radar provided by this Frozen Legacies installation that you have not opened yet. Opening it adds a reference to your workspace; the radar itself is not copied, and your picks stay private.
+- **External datasets** — radar provided by this Frozen Legacies installation that you have not opened yet: its shared radar and the files of its registered data sources (for example an S3 archive or Georgia Tech CEDAR storage). Each file shows its name, flight, dataset and size. Opening one adds a reference to your workspace; the radar itself is not copied, does not count toward your storage, and your picks stay private.
+- **My workspace** — assets in your workspace, labelled **Shared**, **Uploaded**, or **Products**.
+
+When the installation has data sources, **Search radar files** (by file name) and a source filter appear beside the list. Results come from the server a page at a time; **Show more** loads the next page. Flight and CBD range shown for a file are read from its name and are not verified against the film.
 
 When an explorer observation has raw radar declared by the installation, the Dataset Explorer shows **Open radar** for it. Otherwise it states that no raw radar is available. Radar is only linked to observations through explicit dataset metadata.
 
@@ -444,6 +480,10 @@ When an explorer observation has raw radar declared by the installation, the Dat
 Select **Upload raw radar**, choose the radar TIFF (`.tif`/`.tiff`) and, optionally, its navigation CSV (`CBD,LAT,LON`, with optional `THK,SRF`; `9999` marks an unavailable value). Files are checked before they are kept: the TIFF must be a single-page 8- or 16-bit grayscale image that decodes completely, and is limited to 200 MB. The flight and CBD range are read from names such as `F127-C0471_C0483.tiff`.
 
 If you upload a TIFF without navigation, you can add its navigation CSV later as a processed product (before you start picking).
+
+### Storage quota
+
+Your workspace has a storage quota — 2 GiB unless an administrator set another — shown beside the upload buttons as **Storage: used / quota**. It counts the files you keep: uploaded radar and products, and the results you generate. Radar opened from **External datasets** does not count. An upload that would not fit is refused before it is sent, with how much space remains; the server applies the same check. When your workspace is over its quota (for example after the quota was lowered), your files stay available to open, download and remove, but new uploads, picking results and automatic runs are refused until you remove files or an administrator raises your quota. Nothing is ever deleted to enforce a quota.
 
 ## Uploading Processed Products
 
@@ -483,15 +523,28 @@ The QC image is ASTRA's: the full-resolution TIFF with every pick marked, which 
 
 Your picking session is saved in your workspace after every step, so you can reload the page or return later. **Reset session** discards the picks and generated files for that radar asset; the radar TIFF itself is kept.
 
-## Automatic Picking (URSA)
+## Automatic Picking (LYRA)
 
-**Automatic** runs URSA, the automatic A-scope processor of the Frozen Legacies tools, on the open radar asset. URSA detects the A-scope frames on the film, calibrates the time and power grids, and picks the transmitter pulse, surface, and bed of each frame.
+**Automatic** runs LYRA (Layered-echo Yield from Radiometric Archives) on the open radar asset. LYRA runs unmodified, phase by phase as its guide describes:
 
-- URSA needs its own software environment (OpenCV, scikit-image and others). The server checks that environment before offering Automatic; when the check fails, Automatic says so and gives the reason; nothing is run and no results are shown. When it passes, Automatic shows the checked software versions.
-- **URSA's results are scientifically unvalidated.** They are labelled so wherever they appear, and they cannot be submitted for review or publication; only Manual (ASTRA) results can.
-- Select **Run automatic picking**. The job runs on the server; you can leave the page and come back. **Cancel** stops it.
-- URSA reads CBDs from names such as `F103-C0467_C0479.tiff` and positions from the navigation file; Automatic warns when either is missing.
-- When the job finishes, its products appear: URSA picks (CSV and NPZ), the frame verification image, and the per-frame plots (ZIP). Running it again replaces the previous automatic results. A full strip such as F127 takes about two and a half minutes. Review URSA's picks before using them: on F127, for example, URSA assigns CBDs in frame order across the file-name range, the same limitation as ASTRA's, which does not match the CBDs printed on the film.
+1. **Frames and CBDs** (always). LYRA separates the complete and partial A-scope frames and reads each frame's CBD label with its 7-segment character recognition. Its results: the frame index (CSV), a contact sheet of the strip, and an OCR diagnostic showing what was read on every frame.
+2. **Calibration and echoes** (only with your calibration picks). LYRA calibrates each frame's time and power axes and then extracts the surface and bed echoes, two-way travel times and ice thickness. LYRA refuses to calibrate without a human pick of the −60 dB reference line for the TIFF, and CryoStack never supplies one in its place.
+
+To run step 2, make LYRA's calibration picks with LYRA's own desktop picker (`pick_calibration.py`; see the LYRA guide), then upload its `F<flight>_cal_picks.json` (and optionally `F<flight>_cal_derived.json`) with **Upload processed product** as **LYRA calibration picks (JSON)** and run again. Uploads are checked against LYRA's format, and a file that does not match is rejected with the reason.
+
+- **LYRA's results are scientifically unvalidated.** They are labelled so wherever they appear, and they cannot be submitted for review or publication; only Manual (ASTRA) results can. LYRA's status labels (good, weak_bed, no_bed, no_surface) are its own heuristics.
+- **Check the CBDs.** Where its OCR is unsure, LYRA infers CBDs from its neighbours assuming no CBD numbers are skipped. On F127, CBDs 476–477 are not on the film, so LYRA's CBDs for the first five frames of `F127-C0471_C0483` are 2 too high. The frame table flags every frame whose CBD was inferred rather than read; compare it with the OCR diagnostic.
+- LYRA reads the TIFF under its original reel name (`<reel>_<start>_<end>-reel_begin_end.tiff`). A renamed file such as `F127-C0471_C0483.tiff` is mapped back through LYRA's rename logs when a log agrees with the asset's flight; otherwise Automatic explains why LYRA cannot process it.
+- LYRA assigns no latitude or longitude: its navigation alignment is not part of this installation.
+- Select **Run automatic picking**. The job runs on the server; you can leave the page and come back. **Cancel** stops it. A full F127 strip takes about one minute for step 1.
+- **Frame diagnostics** lists LYRA's values per frame exactly as written, the frames flagged for inspection and why, and LYRA's figures: the contact sheet and OCR diagnostic for the whole strip, and per-frame calibration and echo figures after step 2.
+- **Map integration:** completed LYRA frames appear in **My picks** on the map when their CBD has an exact record in the radar asset's navigation CSV. They use a distinct purple marker, remain private to you and are labelled scientifically unvalidated. Frames with no exact navigation match are counted but not placed; CryoStack never invents a coordinate from frame order.
+
+Results of an earlier URSA run stay readable: Automatic shows the results of the picker that produced the asset's latest job, and every automatic result remains listed under **Products**. An installation can select URSA instead of LYRA; Automatic then names URSA throughout and behaves as described in [URSA](#ursa-fallback).
+
+### URSA (fallback)
+
+URSA, the earlier automatic A-scope processor of the Frozen Legacies tools, detects the frames, calibrates the time and power grids, and picks the transmitter pulse, surface and bed. It needs its own software environment (OpenCV, scikit-image), reads CBDs from names such as `F103-C0467_C0479.tiff`, and positions from the navigation file. Its products are URSA picks (CSV and NPZ), the frame verification image and the per-frame plots (ZIP). On F127, URSA assigns CBDs in frame order across the file-name range, which does not match the CBDs printed on the film.
 
 ## Radar Catalog
 
@@ -527,15 +580,37 @@ When a result on shared radar is finished (**Done**), the result view shows **Sc
 
 A reviewer (an installation maintainer, not yourself) then **approves** it, **returns it for correction** with a note, or **rejects** it with a reason. Returned results can be corrected and submitted again. Approved results are **published**: they appear on the map for every user under **Reviewed results** and can be downloaded with their provenance. Published observations whose CBD was not confirmed against the film are labelled *unverified*. A newer approved version replaces the older one, and a reviewer can withdraw a published result. Published results never include your account details.
 
-On the **Map**, **My results** lists what is awaiting review, returned to you, or published. Results on your own uploaded radar and automatic (URSA) results cannot be submitted.
+On the **Map**, **My results** lists what is awaiting review, returned to you, or published. Results on your own uploaded radar and automatic (LYRA or URSA) results cannot be submitted.
 
 ## Products and Downloads
 
+When a radar asset is open, the right panel begins with four bounded preview
+slots: source radar, radargram/echogram, QC image, and picker diagnostics. A
+slot is populated only when the authenticated product listing reports an
+available preview URL. Otherwise it is explicitly a placeholder and not
+scientific data. Each populated card states its provenance/scientific status
+and offers **Open full preview** for detailed inspection. A preview is a
+display derivative; the original file and recorded provenance remain
+authoritative. Automatic-picker diagnostics remain scientifically unvalidated.
+
+For navigation-only flights, the right panel shows the scientific products the
+platform is prepared to receive. **Awaiting verified source** and **Requires
+source TIFF** cards are interface placeholders only; they contain no radar
+image, digitized measurement, or automatic result. They are replaced by real
+preview and download controls only after the installation validates and indexes
+the corresponding file.
+
 The **Products** list in the Dataset Explorer shows everything belonging to the open asset, with its origin:
 
-- **Generated · ASTRA manual picking** / **Generated · URSA automatic picking** — produced by Frozen Legacies;
+- **ASTRA manual result** / **LYRA automatic result** / **URSA automatic result** — produced by Frozen Legacies (automatic results are marked *scientifically unvalidated*);
 - **User-provided** — your uploads (raw radar, navigation, processed products);
 - **Shared installation radar** — shown for reference; it is not downloadable here.
+
+Open **Provenance** on a product to inspect the source identifiers that the
+server recorded for it, such as its picker, source or original file name,
+shared-source ID, and SHA-256 checksum. Only recorded fields are shown; Frozen
+Legacies does not infer missing provenance. Image products also offer an
+inline preview whose expanded state is announced to assistive technology.
 
 Each product shows a short summary (for picks: rows, CBD range, positions, thickness values) and **Download**; images also have **Preview**. **Download products (ZIP)** downloads the asset's products together (without the raw TIFF), with a `PRODUCTS.json` index.
 
@@ -576,7 +651,11 @@ The selected observation may not have raw radar in this installation. Open radar
 
 ### Automatic picking is unavailable
 
-The server does not have URSA's software installed. Use **Manual**, or upload results you already have as processed products.
+The server cannot run the automatic picker it is configured with (LYRA or URSA); Automatic gives the reason. Use **Manual**, or upload results you already have as processed products.
+
+### LYRA stops after reading the CBDs
+
+Calibration and echo extraction need LYRA's calibration picks for the TIFF. Make them with LYRA's desktop picker, upload them as **LYRA calibration picks (JSON)**, and run again.
 
 ### Dataset metadata look incomplete
 

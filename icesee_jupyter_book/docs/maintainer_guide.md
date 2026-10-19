@@ -1,11 +1,16 @@
 # Maintainer / Operations Guide
 
 **Restricted.** This guide is for people **operating a CryoStack deployment**.
-It is served only to authenticated accounts holding a `developer`,
-`maintainer`, `admin`, or `owner` role (enforced at the request boundary in
-`bin/icesee_app.py`, the same `require_roles` mechanism that gates the Control
-Center). It is deliberately **excluded from the public book build**
+It is served to owners and to maintainers or admins whom an owner has
+explicitly granted Developer Guide access in **Control Center → Users**. A
+Control Center role alone is not sufficient. The capability is audited,
+owner-revocable, and automatically removed when the recipient is demoted to
+developer or user. It is deliberately **excluded from the public book build**
 (`_toc.yml`).
+
+Start with the owner-only [Service operations and release runbook](service_operations.md)
+for the platform topology, durable-store map, staging rules, release gates,
+rollback sequence, and return-from-leave checklist.
 
 Placeholders used throughout — substitute your deployment's values, never
 commit real ones:

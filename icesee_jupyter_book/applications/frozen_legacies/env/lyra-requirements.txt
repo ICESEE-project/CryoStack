@@ -1,0 +1,31 @@
+# LYRA automatic picker -- what CryoStack runs it with.
+#
+# LYRA's handoff (Pickers/Automatic_picker/LYRA.zip, guide of 13 October 2026)
+# refers to a requirements.txt that the archive does not contain, so these are
+# NOT LYRA's own pins. They are the direct dependencies of the scripts the
+# runner executes (detect_frames.py, calibrate.py, echoes.py and the modules
+# they import), with the versions CryoStack validated them at.
+#
+# By default LYRA runs in the gateway's Python (tools/icesee1_environment.yml);
+# set CRYOSTACK_FROZEN_LEGACIES_LYRA_PYTHON to use a separate environment.
+#
+# Validated on Linux (RHEL 9, x86_64), 2026-10-14, phase 1 (frame detection
+# and CBD OCR) on F127 reel 47_0004650_0004674: the frame index is byte-identical
+# under both sets below. Phases 3-4 (calibration, echoes) have not run on real
+# data: no human calibration picks exist yet.
+#
+#   gateway environment:   python 3.11.15  numpy 2.4.6   pandas 3.0.3
+#                          matplotlib 3.11.0  pillow 12.3.0
+#   URSA environment:      python 3.11.17  numpy 1.26.4  pandas 2.2.3
+#                          matplotlib 3.9.2   pillow 12.3.0
+#
+# Not needed by CryoStack's runner:
+#   PyQt6 -- only pick_calibration.py (LYRA's interactive desktop picker) and
+#            echoes.py --review, which CryoStack never runs.
+#   scipy -- only LYRA's navigation and validation helpers (lyra.py nav
+#            routines, validate_flight.py), which need reference files that are
+#            not part of the handoff.
+numpy>=1.26
+pandas>=2.2
+matplotlib>=3.9
+Pillow>=10

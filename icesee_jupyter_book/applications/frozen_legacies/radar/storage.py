@@ -38,6 +38,9 @@ Implemented:
 
 * ``local`` -- a directory on the server or a mounted archive, inside an
   operator-approved storage root (``$CRYOSTACK_FROZEN_LEGACIES_STORAGE_ROOTS``);
+* ``cedar`` -- Georgia Tech CEDAR research storage mounted on the server
+  (NFS); read like ``local`` inside an approved storage root, and refused
+  unless the directory is on a mounted network filesystem;
 * ``s3`` -- read-only Amazon S3 (or an approved S3-compatible endpoint),
   inside an operator-approved bucket/prefix
   (``$CRYOSTACK_FROZEN_LEGACIES_S3_ALLOWED``). Credentials come only from the
@@ -45,16 +48,15 @@ Implemented:
   environment / shared configuration of the service account); a data source
   never carries credentials.
 
-Cloud drives (Google Drive, OneDrive/SharePoint) are **not implemented**.
-:data:`PLANNED_PROVIDERS` names them, and :func:`validate_drive_config`
-defines the configuration and approval rules a future provider will follow
-(an operator allow-list, no credentials in a data source), but they are not
-in :data:`PROVIDERS`: a data source cannot be registered with them and
-:func:`provider_for` refuses them.
+Google Drive, OneDrive/SharePoint and Dropbox are implemented as read-only
+providers. They are enabled only when their SDK, server-held workload
+credentials and operator allow-list are all present. Data-source records never
+contain credentials.
 """
 from __future__ import annotations
 
 import io
+import importlib.util
 import os
 import re
 from abc import ABC, abstractmethod
@@ -66,11 +68,30 @@ from typing import BinaryIO, Iterator
 STORAGE_ROOTS_ENV = "CRYOSTACK_FROZEN_LEGACIES_STORAGE_ROOTS"
 S3_ALLOWED_ENV = "CRYOSTACK_FROZEN_LEGACIES_S3_ALLOWED"
 S3_ENDPOINTS_ENV = "CRYOSTACK_FROZEN_LEGACIES_S3_ENDPOINTS"
-PROVIDERS = ("local", "s3")
-#: provider names reserved for cloud drives; NOT available (see validate_drive_config)
-PLANNED_PROVIDERS = ("gdrive", "onedrive")
+PROVIDERS = ("local", "s3", "cedar", "gdrive", "onedrive", "dropbox")
+CLOUD_PROVIDERS = ("gdrive", "onedrive", "dropbox")
+PLANNED_PROVIDERS = CLOUD_PROVIDERS
+#: what each planned provider still needs before it can be implemented
+#: (reported to maintainers; nothing here is a working connector)
+PLANNED_REQUIREMENTS = {
+    "gdrive": ["a Google Cloud service account (workload identity) with read access to the "
+               "shared drive", "the google-api-python-client package on the server",
+               "a fake or recorded Drive API for automated tests",
+               "operator allow-list CRYOSTACK_FROZEN_LEGACIES_GDRIVE_ALLOWED"],
+    "onedrive": ["a Microsoft Entra application with Sites.Selected/Files.Read.All granted "
+                 "for the SharePoint site", "the msal package on the server",
+                 "a fake or recorded Microsoft Graph API for automated tests",
+                 "operator allow-list CRYOSTACK_FROZEN_LEGACIES_ONEDRIVE_ALLOWED"],
+    "dropbox": ["a Dropbox team app with files.content.read and a server-held refresh token "
+                "(never in a data source)", "the dropbox package on the server",
+                "a fake or recorded Dropbox API for automated tests",
+                "an operator allow-list of team folders"],
+}
+#: filesystem types accepted as network-attached research storage (CEDAR)
+NETWORK_FSTYPES = frozenset({"nfs", "nfs4", "cifs", "smb3", "smbfs"})
 DRIVE_ALLOWED_ENV = {"gdrive": "CRYOSTACK_FROZEN_LEGACIES_GDRIVE_ALLOWED",
-                     "onedrive": "CRYOSTACK_FROZEN_LEGACIES_ONEDRIVE_ALLOWED"}
+                     "onedrive": "CRYOSTACK_FROZEN_LEGACIES_ONEDRIVE_ALLOWED",
+                     "dropbox": "CRYOSTACK_FROZEN_LEGACIES_DROPBOX_ALLOWED"}
 CAPABILITIES = ("list", "stat", "stream", "range_read", "local_files", "change_tracking")
 
 _KEY_SEGMENT = re.compile(r"[^\x00-\x1f\x7f/\\]{1,255}")
@@ -594,6 +615,37 @@ def _drive_allowed(provider: str) -> set[str]:
     return {item.strip() for item in re.split(r"[,\s]+", raw) if item.strip()}
 
 
+def cloud_provider_status() -> list[dict]:
+    """Return non-secret SDK, credential, and allow-list readiness."""
+    modules = {"gdrive": "googleapiclient", "onedrive": "msal", "dropbox": "dropbox"}
+    credentials = {
+        "gdrive": ("GOOGLE_APPLICATION_CREDENTIALS",),
+        "onedrive": ("CRYOSTACK_FROZEN_LEGACIES_ONEDRIVE_TENANT_ID",
+                     "CRYOSTACK_FROZEN_LEGACIES_ONEDRIVE_CLIENT_ID",
+                     "CRYOSTACK_FROZEN_LEGACIES_ONEDRIVE_CLIENT_SECRET"),
+        "dropbox": ("CRYOSTACK_FROZEN_LEGACIES_DROPBOX_REFRESH_TOKEN",
+                    "CRYOSTACK_FROZEN_LEGACIES_DROPBOX_APP_KEY",
+                    "CRYOSTACK_FROZEN_LEGACIES_DROPBOX_APP_SECRET"),
+    }
+    out = []
+    for provider in CLOUD_PROVIDERS:
+        try:
+            sdk = importlib.util.find_spec(modules[provider]) is not None
+        except (ImportError, ModuleNotFoundError):
+            sdk = False
+        approved = sorted(_drive_allowed(provider))
+        credential_ready = all(bool((os.environ.get(name) or "").strip())
+                               for name in credentials[provider])
+        missing = []
+        if not sdk: missing.append("provider SDK")
+        if not credential_ready: missing.append("server workload credentials")
+        if not approved: missing.append(f"operator allow-list {DRIVE_ALLOWED_ENV[provider]}")
+        out.append({"provider": provider, "configured": not missing, "sdk": sdk,
+                    "credentials": credential_ready, "approved": approved,
+                    "missing": missing})
+    return out
+
+
 def validate_drive_config(provider: str, config: dict) -> dict:
     """The configuration rules a Google Drive / OneDrive provider must follow.
 
@@ -629,41 +681,77 @@ def validate_drive_config(provider: str, config: dict) -> dict:
     return location
 
 
-class _CloudDriveProvider(RadarStorageProvider):
-    """Placeholder for a cloud-drive provider: same contract, not available.
-    Constructing one always fails, so nothing can read through it."""
-
-    def __init__(self, config: dict):
-        raise StorageError(f"The {self.provider} storage provider is not available on "
-                           "this server.")
-
-    def list(self, prefix: str = "", *, suffixes: tuple[str, ...] = ()):  # pragma: no cover
-        raise StorageError("not available")
-
-    def stat(self, key: str):  # pragma: no cover
-        raise StorageError("not available")
-
-    def check(self) -> dict:  # pragma: no cover
-        return {"ok": False, "message": f"The {self.provider} provider is not available."}
-
-    def describe(self) -> dict:  # pragma: no cover
-        return {"provider": self.provider, "location": "—", "capabilities": []}
-
-
-class GoogleDriveProvider(_CloudDriveProvider):
-    provider = "gdrive"
+def mount_of(path: Path) -> dict | None:
+    """The mount holding ``path`` (``{"fstype", "mountpoint"}``) from
+    ``/proc/self/mountinfo``; ``None`` where that is unavailable."""
+    try:
+        lines = Path("/proc/self/mountinfo").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    best = None
+    resolved = Path(path).resolve()
+    for line in lines:
+        left, _sep, right = line.partition(" - ")
+        fields, tail = left.split(), right.split()
+        if len(fields) < 5 or not tail:
+            continue
+        mountpoint = Path(fields[4].replace("\\040", " "))
+        if resolved == mountpoint or resolved.is_relative_to(mountpoint):
+            if best is None or len(str(mountpoint)) > len(str(best["mountpoint"])):
+                best = {"mountpoint": mountpoint, "fstype": tail[0]}
+    return best
 
 
-class OneDriveProvider(_CloudDriveProvider):
-    provider = "onedrive"
+class CedarProvider(LocalProvider):
+    """Georgia Tech CEDAR research storage, mounted on this server.
+
+    CEDAR ("Cost-Effective Data Access for Research") is campus network
+    storage mounted over NFS (here ``cedar-cos.nas.gatech.edu`` at
+    ``/projects/<lab>``); there is no CEDAR cloud API. It is therefore read
+    like a local directory -- inside an operator-approved storage root -- with
+    one extra rule: the directory must be on a network filesystem, so a local
+    folder cannot pose as CEDAR and an unmounted CEDAR path (an empty local
+    directory) is reported instead of indexed as empty."""
+
+    provider = "cedar"
+
+    def _mount(self) -> dict | None:
+        return mount_of(self._root)
+
+    def _require_mount(self) -> dict:
+        mount = self._mount()
+        if mount is None or mount["fstype"] not in NETWORK_FSTYPES:
+            raise StorageError("The CEDAR directory is not on a mounted network filesystem "
+                               "(is CEDAR mounted on this server?).")
+        return mount
+
+    def list(self, prefix: str = "", *, suffixes: tuple[str, ...] = ()):
+        self._require_mount()
+        yield from super().list(prefix, suffixes=suffixes)
+
+    def check(self) -> dict:
+        try:
+            mount = self._require_mount()
+        except StorageError as error:
+            return {"ok": False, "message": str(error)}
+        result = super().check()
+        if result.get("ok"):
+            result["message"] = (f"{result.get('message') or 'Readable.'} "
+                                 f"CEDAR network filesystem ({mount['fstype']}).").strip()
+        return result
 
 
 def provider_for(provider: str, config: dict) -> RadarStorageProvider:
     """Build the provider of a data source from its (non-secret) configuration."""
     if provider == "local":
         return LocalProvider(config.get("root") or "")
+    if provider == "cedar":
+        return CedarProvider(config.get("root") or "")
     if provider == "s3":
         return S3Provider(config)
-    if provider in PLANNED_PROVIDERS:
-        raise StorageError(f"The {provider} storage provider is not available on this server.")
+    if provider in CLOUD_PROVIDERS:
+        config = validate_drive_config(provider, config)
+        from .cloud_storage import DropboxProvider, GoogleDriveProvider, OneDriveProvider
+        return {"gdrive": GoogleDriveProvider, "onedrive": OneDriveProvider,
+                "dropbox": DropboxProvider}[provider](config)
     raise StorageError(f"Storage provider {provider!r} is not supported on this server.")

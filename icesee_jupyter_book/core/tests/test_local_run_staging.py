@@ -84,3 +84,14 @@ def test_report_finds_the_output_before_it_is_mirrored(tmp_path):
     staged = dict(cfg, base=result.run_dir / "example" / "lorenz96", model_name="demo")
     report_h5 = local_runner.ensure_report_h5(result.run_dir, staged, "true-wrong")
     assert report_h5.read_text().endswith("params.yaml")       # written by this run's script
+
+
+def test_local_runs_do_not_inherit_the_servers_aws_settings(monkeypatch):
+    from icesee_jupyter_book.core.local_runner import force_external_icesee_env
+
+    monkeypatch.setenv("AWS_PROFILE", "cryostack-service")
+    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", "/srv/.aws/credentials")
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "sentinel")
+    env, _ = force_external_icesee_env()
+    assert not [k for k in env if k.startswith("AWS_")]
+    assert env["PYTHONNOUSERSITE"] == "1"

@@ -290,6 +290,23 @@ def test_identity_is_source_and_key_not_file_name():
     assert "F127" not in a
 
 
+def test_catalog_track_geometry_splits_at_antimeridian():
+    geometry = catalog_mod._track_geometry([
+        [178.0, -80.0], [179.0, -81.0], [-179.0, -82.0], [-178.0, -83.0]])
+    assert geometry["type"] == "MultiLineString"
+    west, east = geometry["coordinates"]
+    assert west == [[178.0, -80.0], [179.0, -81.0], [180.0, -81.5]]
+    assert east == [[-180.0, -81.5], [-179.0, -82.0], [-178.0, -83.0]]
+
+
+def test_catalog_track_geometry_preserves_ordinary_lines_and_points():
+    assert catalog_mod._track_geometry([[10.0, -80.0]]) == {
+        "type": "Point", "coordinates": [10.0, -80.0]}
+    coords = [[10.0, -80.0], [11.0, -81.0]]
+    assert catalog_mod._track_geometry(coords) == {
+        "type": "LineString", "coordinates": coords}
+
+
 def test_indexing_reads_metadata_tracks_and_flags_invalid_files(archive):
     catalog = RadarCatalog(catalog_mod.catalog_path())
     result = index_source(catalog, _source(catalog, archive), LocalProvider(archive))
@@ -417,6 +434,38 @@ def test_mass_missing_needs_confirmation(tmp_path):
     assert catalog.search(status="missing")["total"] == 0
     confirmed = index_source(catalog, source, remote, allow_mass_missing=True)
     assert confirmed["status"] == "completed" and confirmed["counts"]["missing"] == 30
+
+
+def test_index_bounds_keep_partial_progress_without_marking_missing(tmp_path, monkeypatch):
+    objects = {f"tiff/F9-C{i}_C{i + 1}.tiff": b"header" for i in range(6)}
+    remote = RemoteLike(objects)
+    catalog = RadarCatalog(tmp_path / "bounded.db")
+    source = catalog.add_source(source_id="bounded", name="Bounded", provider="remote",
+                                dataset_id="ds",
+                                config={"tiff_prefix": "tiff", "max_index_objects": 3})
+    monkeypatch.setattr(indexer, "read_header",
+                        lambda provider, obj: {"width": 10, "height": 10, "mode": "L"})
+    result = index_source(catalog, source, remote)
+    assert result["status"] == "needs_confirmation"
+    assert result["counts"]["discovered"] == 4
+    assert result["counts"]["added"] == 3
+    assert catalog.search(status="missing")["total"] == 0
+
+
+def test_cancellation_is_checked_for_each_listed_object(tmp_path, monkeypatch):
+    objects = {f"tiff/F9-C{i}_C{i + 1}.tiff": b"header" for i in range(6)}
+    remote = RemoteLike(objects)
+    catalog = RadarCatalog(tmp_path / "cancel.db")
+    source = catalog.add_source(source_id="cancel", name="Cancel", provider="remote",
+                                dataset_id="ds", config={"tiff_prefix": "tiff"})
+    monkeypatch.setattr(indexer, "read_header",
+                        lambda provider, obj: {"width": 10, "height": 10, "mode": "L"})
+    result = index_source(catalog, source, remote,
+                          should_stop=lambda: True)
+    assert result["status"] == "cancelled"
+    assert result["counts"]["discovered"] == 1
+    assert result["counts"]["added"] == 1
+    assert catalog.search(status="missing")["total"] == 0
 
 
 def test_duplicate_names_stay_distinct_assets(archive):
@@ -817,6 +866,56 @@ def test_users_cannot_alter_shared_catalog_data(web_env):
     statuses, total = _run(web_env, script)
     assert statuses[:3] == [403, 403, 403] and all(s in (404, 405) for s in statuses[3:])
     assert total == 4
+
+
+def test_explorer_returns_one_consistent_authorized_snapshot(web_env):
+    _m, maint = _login(web_env, "maint@example.org", "maintainer")
+    _a, user = _login(web_env, "a@example.org")
+
+    async def script(client, app):
+        await _setup_source(client, app, maint)
+        anonymous = await client.get(f"{API}/radar/explorer")
+        response = await client.get(
+            f"{API}/radar/explorer?dataset=frozen-legacies-ascope&flight=127"
+            "&cbd_min=471&cbd_max=483", cookies=user)
+        body = await response.json()
+        invalid = await client.get(f"{API}/radar/explorer?qv=2", cookies=user)
+        return anonymous.status, response.status, body, invalid.status, response.headers
+
+    anonymous, status, body, invalid, headers = _run(web_env, script)
+    assert anonymous == 401 and status == 200 and invalid == 422
+    assert body["total"] == len(body["items"]) == 1
+    assert {item["catalog_id"] for item in body["items"]} == {
+        feature["id"] for feature in body["features"]["features"]}
+    assert body["query"]["dataset"] == ["frozen-legacies-ascope"]
+    assert body["facets"]["dataset"] and body["snapshot"]
+    assert body["items"][0]["processing"] == ["unprocessed"]
+    assert body["page"]["next_cursor"] is None
+    assert headers["Cache-Control"] == "no-store"
+    assert "storage_key" not in str(body)
+
+
+def test_explorer_never_discloses_restricted_sources_or_cursor_results(web_env):
+    _m, maint = _login(web_env, "maint@example.org", "maintainer")
+    _a, user = _login(web_env, "a@example.org")
+
+    async def script(client, app):
+        await _setup_source(client, app, maint)
+        catalog_mod.open_catalog().set_source_visibility("archive", "maintainers")
+        ordinary = await (await client.get(
+            f"{API}/radar/explorer?source=archive", cookies=user)).json()
+        elevated = await (await client.get(
+            f"{API}/radar/explorer?source=archive", cookies=maint)).json()
+        bad_cursor = await client.get(
+            f"{API}/radar/explorer?source=archive&cursor=not-a-cursor", cookies=user)
+        return ordinary, elevated, bad_cursor.status
+
+    ordinary, elevated, bad_cursor = _run(web_env, script)
+    assert ordinary["total"] == 0 and ordinary["items"] == []
+    assert ordinary["features"]["features"] == []
+    assert ordinary["facets"]["source"] == []
+    assert elevated["total"] == 4
+    assert bad_cursor == 400
 
 
 def test_registry_keys_cannot_claim_the_catalog_prefix(tmp_path):

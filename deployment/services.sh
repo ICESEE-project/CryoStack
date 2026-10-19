@@ -84,6 +84,39 @@ export CRYOSTACK_AWS_PRINCIPAL_ARN="${CRYOSTACK_AWS_PRINCIPAL_ARN:-arn:aws:iam::
 
 export CRYOSTACK_CF_TEMPLATE_URL="${CRYOSTACK_CF_TEMPLATE_URL:-https://cryostack-cloudformation-713938953301.s3.us-east-2.amazonaws.com/cryostack-execution-role.json}"
 
+# Frozen Legacies automatic picker. Keep this explicit in production so a
+# launcher or inherited shell cannot silently select the historical backend.
+# URSA remains available as the rollback value.
+export CRYOSTACK_FROZEN_LEGACIES_AUTOMATIC_PICKER="${CRYOSTACK_FROZEN_LEGACIES_AUTOMATIC_PICKER:-lyra}"
+export CRYOSTACK_FROZEN_LEGACIES_URSA_CONCURRENCY="${CRYOSTACK_FROZEN_LEGACIES_URSA_CONCURRENCY:-1}"
+
+# Read-only Georgia Tech CEDAR research storage approved for Frozen Legacies
+# catalog sources. Source registrations may select this mount or a child path;
+# the gateway never writes to it.
+# Scratch is an explicitly labelled, maintainer-only transitional source for
+# verified A-/Z-scope intake. It is never an authoritative publication target;
+# CEDAR promotion must re-index the same source from durable storage.
+export CRYOSTACK_FROZEN_LEGACIES_STORAGE_ROOTS="${CRYOSTACK_FROZEN_LEGACIES_STORAGE_ROOTS:-/projects/cos-lab-nuiaq:/home/bkyanjo3/cryostack-data/datasets:/scratch/cryostack-development/incoming}"
+
+# Verified SPRI navigation is published as an immutable, versioned data release
+# under the durable application data root.  Keep these defaults in the runtime
+# launcher so an operator restart cannot silently remove the map coverage.
+export CRYOSTACK_FROZEN_LEGACIES_NAVIGATION_ROOT="${CRYOSTACK_FROZEN_LEGACIES_NAVIGATION_ROOT:-/home/bkyanjo3/cryostack-data/datasets/spri/navigation-current}"
+export CRYOSTACK_FROZEN_LEGACIES_NAVIGATION_FLIGHTS="${CRYOSTACK_FROZEN_LEGACIES_NAVIGATION_FLIGHTS:-125,126,127,128,137,138,139,141,143,149}"
+export CRYOSTACK_FROZEN_LEGACIES_NAVIGATION_DATASET="${CRYOSTACK_FROZEN_LEGACIES_NAVIGATION_DATASET:-frozen-legacies-spri-navigation}"
+export CRYOSTACK_FROZEN_LEGACIES_NAVIGATION_TITLE="${CRYOSTACK_FROZEN_LEGACIES_NAVIGATION_TITLE:-SPRI archival radar navigation}"
+
+# Optional, independently versioned RIGGS scientific context. A manifest may
+# explicitly carry citation_pending=true; the API and UI then keep every point
+# provisional and publication-ineligible until complete provenance is supplied.
+export CRYOSTACK_FROZEN_LEGACIES_RIGGS_CSV="${CRYOSTACK_FROZEN_LEGACIES_RIGGS_CSV:-/home/bkyanjo3/cryostack-data/datasets/riggs/current/riggs_stations.csv}"
+export CRYOSTACK_FROZEN_LEGACIES_RIGGS_MANIFEST="${CRYOSTACK_FROZEN_LEGACIES_RIGGS_MANIFEST:-/home/bkyanjo3/cryostack-data/datasets/riggs/current/manifest.json}"
+
+# All authoritative state lives outside the source checkout. The gateway's
+# storage-layout gate verifies the marked volume before accepting traffic.
+export CRYOSTACK_DATA_ROOT="${CRYOSTACK_DATA_ROOT:-/home/bkyanjo3/cryostack-data}"
+export CRYOSTACK_REQUIRE_DURABLE_STORAGE="${CRYOSTACK_REQUIRE_DURABLE_STORAGE:-1}"
+
 
 # ============================================================
 # Helpers
@@ -132,6 +165,43 @@ connector_processes() {
 }
 
 
+terminate_matching() {
+    pattern="$1"
+    pids="$(pgrep -f -- "${pattern}" 2>/dev/null || true)"
+    [ -z "${pids}" ] && return 0
+    # A remote shell's command line can contain the same absolute path passed
+    # as the search pattern.  Never terminate this manager or any of its
+    # ancestors while selecting the actual service processes.
+    protected=" $$"
+    ancestor="${PPID}"
+    while [ -n "${ancestor}" ] && [ "${ancestor}" -gt 1 ] 2>/dev/null; do
+        protected="${protected} ${ancestor}"
+        ancestor="$(ps -o ppid= -p "${ancestor}" 2>/dev/null | tr -d ' ' || true)"
+    done
+    targets=""
+    for pid in ${pids}; do
+        case " ${protected} " in
+            *" ${pid} "*) ;;
+            *) targets="${targets} ${pid}" ;;
+        esac
+    done
+    [ -z "${targets}" ] && return 0
+    kill ${targets} 2>/dev/null || true
+    attempts=0
+    while [ "${attempts}" -lt 20 ]; do
+        alive=""
+        for pid in ${targets}; do
+            kill -0 "${pid}" 2>/dev/null && alive="${alive} ${pid}"
+        done
+        [ -z "${alive}" ] && return 0
+        sleep 0.25
+        attempts=$((attempts + 1))
+    done
+    # A wedged gateway must not coexist with its replacement.
+    kill -KILL ${alive} 2>/dev/null || true
+}
+
+
 # ============================================================
 # GUI lifecycle
 # ============================================================
@@ -141,13 +211,8 @@ stop_gui() {
     section \
         "Stopping CryoStack GUI runtime..."
 
-    pkill -f \
-        "icesee_app.py" \
-        || true
-
-    pkill -f \
-        "python.*-m voila" \
-        || true
+    terminate_matching "${REPO_ROOT}/bin/icesee_app.py"
+    terminate_matching "python.*-m voila"
 
 
     sleep 2
@@ -166,8 +231,13 @@ start_gui() {
     section \
         "Starting CryoStack GUI services..."
 
-    nohup bash \
+    # Detach the gateway from the invoking terminal as well as ignoring HUP.
+    # Remote deployment shells may close immediately after this command; a
+    # separate session prevents that teardown from killing only the gateway
+    # while leaving its Voilà children orphaned.
+    nohup setsid bash \
         "${REPO_ROOT}/bin/start_icesee_services.sh" \
+        < /dev/null \
         > "${GUI_LOG}" \
         2>&1 &
 
@@ -248,7 +318,7 @@ start_connector() {
     section \
         "Starting connector relay server..."
 
-    nohup python \
+    nohup setsid python \
         -m uvicorn \
         icesee_jupyter_book.core.connector_relay_server:app \
         --host 127.0.0.1 \

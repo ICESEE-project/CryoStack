@@ -164,11 +164,13 @@ class AuthManager:
         if session_ttl_seconds <= 0:
             raise ValueError("session_ttl_seconds must be positive")
 
-        default_database = (
+        from cryostack_src.storage_layout import default_path
+
+        default_database = default_path("auth", (
             Path(__file__).resolve().parent.parent
             / "var"
             / "cryostack_auth.db"
-        )
+        ))
 
         self._storage = AuthStorage(
             database_path

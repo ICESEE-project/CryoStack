@@ -23,7 +23,7 @@
   >
   <link
     rel="stylesheet"
-    href="/frozen-legacies/assets/frozen_legacies.css"
+    href="/frozen-legacies/assets/frozen_legacies.css?v=regions1015-1"
   >
 </head>
 
@@ -111,7 +111,46 @@
         <div
           id="frozen-legacies-map"
           class="fl-map"
+          tabindex="0"
+          aria-label="Frozen Legacies observation map"
         ></div>
+
+        <section
+          id="fl-observation-popup"
+          class="fl-observation-popup"
+          role="dialog"
+          aria-modal="false"
+          aria-label="Radar observation quicklook"
+          hidden
+        ></section>
+
+        <div class="fl-map-context" aria-hidden="true">
+          <span class="fl-map-eyebrow">ANTARCTIC RADAR ARCHIVE</span>
+          <strong>Polar coverage explorer</strong>
+          <span>WGS 84 / Antarctic Polar Stereographic · EPSG:3031</span>
+        </div>
+
+        <div class="fl-map-readout" aria-live="polite">
+          <span id="fl-map-coordinate">Move across the map for coordinates</span>
+          <span id="fl-map-summary">Loading archive coverage…</span>
+        </div>
+
+        <aside class="fl-map-legend" aria-label="Map legend">
+          <div class="fl-map-legend-title"><span>Map layers</span><small>Scientific context</small></div>
+          <div class="fl-map-legend-item"><i class="fl-key fl-key-basin"></i><span>Drainage basin</span></div>
+          <div class="fl-map-legend-item"><i class="fl-key fl-key-shelf"></i><span>Ice shelf / tongue</span></div>
+          <div class="fl-map-legend-item"><i class="fl-key fl-key-flight"></i><span>Flight track</span></div>
+          <div class="fl-map-legend-item"><i class="fl-key fl-key-selected"></i><span>Selected flight</span></div>
+          <div class="fl-map-legend-item"><i class="fl-key fl-key-good"></i><span>Good bed echo</span></div>
+          <div class="fl-map-legend-item"><i class="fl-key fl-key-weak"></i><span>Weak bed echo</span></div>
+          <div class="fl-map-legend-item"><i class="fl-key fl-key-none"></i><span>No bed echo</span></div>
+          <label class="fl-map-legend-item fl-map-layer-toggle" id="fl-riggs-toggle-row" hidden>
+            <input type="checkbox" id="fl-riggs-toggle">
+            <i class="fl-key fl-key-riggs"></i><span>RIGGS reference stations</span>
+          </label>
+          <div class="fl-map-legend-note" id="fl-riggs-provenance" hidden></div>
+          <div class="fl-map-legend-note">Quantarctica geography · Reference rings: 60°S · 70°S · 80°S</div>
+        </aside>
 
 
         <!-- Radar workspace (Manual / Automatic). It overlays the map,
@@ -134,6 +173,17 @@
               <option value="">Choose a radar asset…</option>
             </select>
 
+            <!-- external datasets are searched on the server, a page at a time -->
+            <input type="search" id="fl-radar-asset-search" class="fl-radar-asset-search"
+              placeholder="Search radar files" aria-label="Search external radar files by file name"
+              autocomplete="off" hidden>
+
+            <select id="fl-radar-asset-source" aria-label="Filter external radar files by data source" hidden>
+              <option value="">All sources</option>
+            </select>
+
+            <span id="fl-radar-asset-status" class="fl-radar-status" role="status"></span>
+
             <button type="button" id="fl-radar-upload-toggle" class="fl-radar-button">
               Upload raw radar
             </button>
@@ -141,6 +191,8 @@
             <button type="button" id="fl-product-upload-toggle" class="fl-radar-button">
               Upload processed product
             </button>
+
+            <span id="fl-storage-usage" class="fl-storage-usage" role="status" hidden></span>
 
             <button type="button" id="fl-catalog-toggle" class="fl-radar-button" hidden>
               Browse radar catalog
@@ -201,7 +253,7 @@
 
           <div id="fl-radar-mode-note" class="fl-radar-note" hidden></div>
 
-          <!-- Automatic mode: URSA automatic picking (automatic.js) -->
+          <!-- Automatic mode: LYRA (or URSA) automatic picking (automatic.js) -->
           <div id="fl-automatic" class="fl-automatic" hidden></div>
 
           <div id="fl-radar-empty" class="fl-empty-selection fl-radar-empty"></div>
@@ -371,6 +423,31 @@
           </select>
 
         </div>
+
+        <details id="fl-scientific-filters" class="fl-scientific-filters">
+          <summary>Scientific filters</summary>
+          <div class="fl-filter-grid">
+            <label>CBD from <input id="fl-filter-cbd-min" type="number" min="0" step="1" inputmode="numeric"></label>
+            <label>CBD to <input id="fl-filter-cbd-max" type="number" min="0" step="1" inputmode="numeric"></label>
+            <label>Review state
+              <select id="fl-filter-review">
+                <option value="">All review states</option>
+                <option value="unprocessed">Unprocessed</option>
+                <option value="in_progress">In progress</option>
+                <option value="needs_review">Needs review</option>
+                <option value="returned">Returned</option>
+                <option value="published">Published</option>
+              </select>
+            </label>
+            <label>Search <input id="fl-filter-query" type="search" maxlength="100" placeholder="Flight or file name"></label>
+          </div>
+          <div class="fl-filter-actions">
+            <button type="button" id="fl-filter-copy" class="fl-radar-button">Copy link</button>
+            <button type="button" id="fl-filter-clear" class="fl-radar-button subtle">Clear all</button>
+          </div>
+        </details>
+        <div id="fl-active-filters" class="fl-active-filters" aria-label="Active filters"></div>
+        <div id="fl-filter-status" class="fl-filter-status" role="status" aria-live="polite"></div>
                 
 
         <div class="fl-control">
@@ -444,29 +521,34 @@
 
 <!-- FrozenLegacies map core -->
 <script
-  src="/frozen-legacies/assets/map.js">
+  src="/frozen-legacies/assets/map.js?v=polar1015-1">
 </script>
 
 
 <!-- FrozenLegacies cartographic styles -->
 <script
-  src="/frozen-legacies/assets/styles.js">
+  src="/frozen-legacies/assets/styles.js?v=regions1015-2">
 </script>
 
 
 <!-- FrozenLegacies sources and layers -->
 <script
-  src="/frozen-legacies/assets/layers.js">
+  src="/frozen-legacies/assets/layers.js?v=regions1015-1">
 </script>
 
 
 <!-- FrozenLegacies data -->
 <script
-  src="/frozen-legacies/assets/data.js">
+  src="/frozen-legacies/assets/ross_focus.js?v=ross1019-1">
+</script>
+
+<script
+  src="/frozen-legacies/assets/data.js?v=ross1019-1">
 </script>
 
 
 <!-- FrozenLegacies interaction/UI -->
+<script src="/frozen-legacies/assets/explorer_query.js"></script>
 <script
   src="/frozen-legacies/assets/ui.js">
 </script>
@@ -485,15 +567,15 @@
 </script>
 
 <script
-  src="/frozen-legacies/assets/products.js">
+  src="/frozen-legacies/assets/products.js?v=lyra1015-2">
 </script>
 
 <script
-  src="/frozen-legacies/assets/automatic.js">
+  src="/frozen-legacies/assets/automatic.js?v=lyra1015-6">
 </script>
 
 <script
-  src="/frozen-legacies/assets/user_layer.js">
+  src="/frozen-legacies/assets/user_layer.js?v=points1015-1">
 </script>
 
 <script
@@ -509,7 +591,11 @@
 </script>
 
 <script
-  src="/frozen-legacies/assets/radar.js">
+  src="/frozen-legacies/assets/storage.js?v=lyra1014-1">
+</script>
+
+<script
+  src="/frozen-legacies/assets/radar.js?v=lyra1015-5">
 </script>
 
 <!-- CryoStack Account -->

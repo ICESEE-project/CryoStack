@@ -342,7 +342,7 @@ def update_run(
         info.status = status
     if finished is not None:
         info.finished = finished
-    elif status in ("done", "completed", "succeeded", "failed", "error") and info.finished is None:
+    elif status in ("done", "completed", "succeeded", "failed", "error", "cancelled") and info.finished is None:
         info.finished = datetime.now()
     if jobid is not None:
         info.jobid = str(jobid)

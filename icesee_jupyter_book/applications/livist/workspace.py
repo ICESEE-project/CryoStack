@@ -55,6 +55,10 @@ class LivistWorkspace:
         if not self.jobs_root.is_relative_to(self._owner_root):
             raise WorkspacePermissionError("LIVIST workspace escaped its user root.")
 
+    @property
+    def owner_root(self) -> Path:
+        return self._owner_root
+
     def contain(self, path: str | Path) -> Path:
         resolved = Path(path).resolve()
         if not resolved.is_relative_to(self.root):

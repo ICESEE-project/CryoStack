@@ -1,0 +1,65 @@
+% PROJECT SUMMARY -- upload as a separate one-page document.
+\section*{Project Summary}
+
+\subsection*{Overview}
+Ice-sheet science increasingly combines numerical models, ensemble data
+assimilation, observational archives, and scalable computing, but researchers
+still spend substantial effort installing software, translating data,
+rewriting scheduler workflows, and reconstructing computational context. This
+three-year CSSI Elements project will advance \textbf{CryoStack} from a
+promising developer-operated stack into secure, reusable, and measurable
+cyberinfrastructure for reproducible cryosphere computing. Existing code
+establishes feasibility: password/GitHub/ORCID identity, role-based
+administration and a Control Center, persistent workspaces and experiment
+histories, a modularized CryoLauncher interface, ICESEE data assimilation,
+LIVIST radar/borehole temperature exploration, a connector/relay path to
+Slurm and (for CryoLauncher's ISSM workflow on AWS) to an institutional MATLAB
+license, a manifest-driven Frozen Legacies historical-radar catalog,
+and a bring-your-own-account AWS path on which CryoLauncher's ISSM and Icepack
+workflows and a single-process ICESEE Lorenz-96 example have run end to end. It is not yet a finished community
+service: extension contracts, production-safe remote execution, scientifically
+qualified cloud and HPC runs, archival provenance, operations, governance, and
+adoption evidence remain incomplete.
+
+The project has three objectives. \textbf{O1} will deliver versioned
+application/model/dataset extension kits, automated CryoBench qualification, a
+production PISM coupling, and a second Frozen Legacies collection.
+\textbf{O2} will harden an authentication-bound, allow-listed execution plane
+for local systems, Georgia Tech PACE, and project- or user-managed AWS
+accounts, with administrator-controlled computing allocations. \textbf{O3} will create durable experiment/provenance services, a
+connected historical-data-to-model workflow, measurable operations, user
+evaluation, training, and contributor governance. Each extension will reuse
+shared identity, validation, execution, provenance, and deployment services.
+
+\subsection*{Intellectual Merit}
+CryoStack will enable reproducible experiments in which common observation
+bundles and assimilation configurations can be evaluated across PISM, ISSM,
+Icepack, and idealized models, supporting studies of ice-sheet state,
+uncertain basal and rheological parameters, and structural uncertainty. The CI
+innovation is a clean, versioned separation of scientific and dataset
+adapters, execution backends, and gateway/operations services, validated by
+PISM and a second historical-data collection, neither of which shaped the
+interfaces. CryoBench
+will gate every extension on schema, numerical, scientific, security, and
+data-quality tests, including \textbf{cross-backend scientific equivalence}:
+whether a workflow remains scientifically consistent, within stated
+tolerances, across local, institutional-HPC, and cloud execution. A hardened, allow-listed control plane will
+replace the current broad-shell connector for securely bridging the gateway
+to protected institutional resources, and every run will produce a versioned
+experiment/result/provenance record spanning configuration, execution,
+backend, and application-specific diagnostics. PISM and one additional
+historical collection are the committed new integrations; the same contracts
+create a bounded path for future community models, data, and analysis tools
+without rebuilding the surrounding infrastructure.
+
+\subsection*{Broader Impacts}
+Browser-first, containerized workflows will lower infrastructure barriers for
+students and researchers without dedicated research-software support. Three
+annual workshops, reusable tutorials, office hours, and paired contribution
+reviews will train participants in data assimilation, reproducibility, HPC,
+and scientific software engineering, prioritizing early-career researchers and
+under-resourced institutions. Open releases and archival DOIs, accessible
+documentation, transparent governance, privacy-preserving metrics, and a
+five-year operations plan will establish a credible path from working
+prototypes to community-maintained cyberinfrastructure. The primary alignment
+is CISE/OAC; the domain alignment is GEO/OPP.

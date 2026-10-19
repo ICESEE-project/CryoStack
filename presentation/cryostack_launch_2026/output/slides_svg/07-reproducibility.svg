@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080"><style>
+text{font-family:'DejaVu Sans',Arial,sans-serif}
+.pill{font-size:19px;font-weight:700;fill:#082B59}
+.flowlabel{font-size:19px;font-weight:700;fill:#082B59}
+.arrow{font-size:28px;fill:#087EEB}
+.boxlabel{font-size:24px;font-weight:700;fill:#FFFFFF}
+.boxlabelink{font-size:24px;font-weight:700;fill:#082B59}
+.boxsub{font-size:18px;fill:#5E7187}
+.boxsubw{font-size:17px;fill:#EEF7FC}
+.tag{font-size:18px;fill:#5E7187}
+.cardhead{font-size:29px;font-weight:700;fill:#FFFFFF}
+.cardtitle{font-size:31px;font-weight:700;fill:#082B59}
+.cardsub{font-size:19px;font-weight:600;fill:#FFFFFF}
+.cardbody{font-size:19px;fill:#5E7187}
+.caption{font-size:19px;fill:#5E7187}
+.small{font-size:16px;fill:#5E7187}
+</style><rect width="1920" height="1080" fill="#F8FBFD"/><rect width="1920" height="14" fill="#087EEB"/><rect x="105" y="440" width="310" height="170" rx="16" fill="#FFFFFF" stroke="#24B8E8" stroke-width="2"/><text x="260.0" y="516.04" text-anchor="middle" class="boxlabelink"><tspan x="260.0" dy="0">Scientific</tspan><tspan x="260.0" dy="32">configuration</tspan></text><text x="435" y="535" text-anchor="middle" class="arrow" font-size="34">&#8594;</text><rect x="455" y="440" width="310" height="170" rx="16" fill="#FFFFFF" stroke="#24B8E8" stroke-width="2"/><text x="610.0" y="516.04" text-anchor="middle" class="boxlabelink"><tspan x="610.0" dy="0">Computational</tspan><tspan x="610.0" dy="32">environment</tspan></text><text x="785" y="535" text-anchor="middle" class="arrow" font-size="34">&#8594;</text><rect x="805" y="440" width="310" height="170" rx="16" fill="#FFFFFF" stroke="#24B8E8" stroke-width="2"/><text x="960.0" y="532.04" text-anchor="middle" class="boxlabelink"><tspan x="960.0" dy="0">Execution + metadata</tspan></text><text x="1135" y="535" text-anchor="middle" class="arrow" font-size="34">&#8594;</text><rect x="1155" y="440" width="310" height="170" rx="16" fill="#FFFFFF" stroke="#24B8E8" stroke-width="2"/><text x="1310.0" y="532.04" text-anchor="middle" class="boxlabelink"><tspan x="1310.0" dy="0">Results + provenance</tspan></text><text x="1485" y="535" text-anchor="middle" class="arrow" font-size="34">&#8594;</text><rect x="1505" y="440" width="310" height="170" rx="16" fill="#082B59" stroke="#082B59" stroke-width="2"/><text x="1660.0" y="516.04" text-anchor="middle" class="boxlabel"><tspan x="1660.0" dy="0">Reproduce · Compare ·</tspan><tspan x="1660.0" dy="32">Share</tspan></text><line x1="105" y1="670" x2="1815" y2="670" stroke="#D6E5F0" stroke-width="1"/></svg>

@@ -774,6 +774,34 @@ def check_writable_locations(
 
     return errors
 
+def check_persistent_storage() -> list[str]:
+    """Where persistent state lives (cryostack_src.storage_layout): an error
+    when CRYOSTACK_REQUIRE_DURABLE_STORAGE=1 and a store is not durable,
+    otherwise a warning."""
+    import sys as _sys
+
+    if str(ROOT) not in _sys.path:
+        _sys.path.insert(0, str(ROOT))
+    from cryostack_src import storage_layout
+
+    print()
+    print("Persistent storage")
+    print("------------------")
+    errors: list[str] = []
+    for entry in storage_layout.check():
+        label = f"{entry['store']}: {entry['path']} ({entry['resolved_by']})"
+        if not entry["problems"]:
+            ok(label)
+            continue
+        message = f"{label} -- " + "; ".join(entry["problems"])
+        if storage_layout.required():
+            fail(message)
+            errors.append(message)
+        else:
+            warn(message)
+    return errors
+
+
 def check_known_external_sources(
     names: list[str],
 ) -> list[str]:
@@ -853,6 +881,29 @@ def check_known_external_sources(
 
 
     return errors
+
+
+def check_frozen_legacies_automatic(names: list[str]) -> list[str]:
+    """Run the same isolated picker health check used by the service."""
+    if "frozen-legacies" not in names:
+        return []
+    import sys as _sys
+    if str(ROOT) not in _sys.path:
+        _sys.path.insert(0, str(ROOT))
+    from icesee_jupyter_book.applications.frozen_legacies.radar import automatic
+
+    print()
+    print("Frozen Legacies automatic picker")
+    print("--------------------------------")
+    state = automatic.availability(refresh=True)
+    label = str(state.get("picker") or automatic.configured_picker()).upper()
+    if state.get("available"):
+        environment = state.get("environment") or {}
+        ok(f"{label}: available (Python {environment.get('python') or 'unknown'})")
+        return []
+    message = f"{label}: {state.get('reason') or 'automatic picker is unavailable'}"
+    fail(message)
+    return [message]
 
 def main() -> int:
 
@@ -954,6 +1005,13 @@ def main() -> int:
 
 
         errors.extend(
+            check_frozen_legacies_automatic(
+                names
+            )
+        )
+
+
+        errors.extend(
             check_commands(
                 applications,
                 names,
@@ -966,6 +1024,11 @@ def main() -> int:
                 applications,
                 names,
             )
+        )
+
+
+        errors.extend(
+            check_persistent_storage()
         )
 
 

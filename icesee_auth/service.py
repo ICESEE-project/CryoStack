@@ -33,11 +33,13 @@ class ExperimentService:
         self,
         database_path: Path | None = None,
     ) -> None:
-        default_database = (
+        from cryostack_src.storage_layout import resolve
+
+        default_database = resolve("auth", (
             Path(__file__).resolve().parent.parent
             / "var"
             / "cryostack_auth.db"
-        )
+        ))[0]
 
         self._storage = AuthStorage(
             database_path or default_database

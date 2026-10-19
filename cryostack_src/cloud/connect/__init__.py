@@ -63,6 +63,7 @@ from .execution import (
     MODE_DEVELOPER,
     CloudAccessError,
     CloudExecution,
+    is_cloud_operator,
     resolve_cloud_execution,
 )
 from .external_id import generate_external_id
@@ -85,6 +86,7 @@ __all__ = [
     "MODE_BYO",
     "MODE_DEVELOPER",
     "resolve_cloud_execution",
+    "is_cloud_operator",
     "DEFAULT_SESSION_SECONDS",
     "EXECUTION_ROLE_NAME",
     "OnboardingConfigError",

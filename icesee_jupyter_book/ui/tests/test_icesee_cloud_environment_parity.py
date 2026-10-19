@@ -25,6 +25,7 @@ _GW = _REPO / "icesee_jupyter_book/ui/icesee_gateway.py"
 
 def _build_gateway(monkeypatch, tmp_path, *, user):
     monkeypatch.setenv("CRYOSTACK_WORKSPACE_USER", user)
+    monkeypatch.setenv("CRYOSTACK_CLOUD_OPERATOR_USER_IDS", user)  # developer mode is opt-in
     monkeypatch.setenv("USER", f"{user}-svc")
     monkeypatch.setenv("CRYOSTACK_WORKSPACE_ROOT", str(tmp_path))
     import matplotlib
@@ -34,16 +35,22 @@ def _build_gateway(monkeypatch, tmp_path, *, user):
 
 
 def _select_cloud_mode(page):
-    mode_tabs = None
+    """Choose Cloud with the page's Mode selector (the top-level Mode card);
+    returns the environment stack it drives (selected_index 2 = Cloud)."""
+    mode_selector = mode_tabs = None
 
     def walk(w):
-        nonlocal mode_tabs
-        if isinstance(w, W.Tab) and mode_tabs is None:
+        nonlocal mode_selector, mode_tabs
+        if isinstance(w, W.ToggleButtons) and mode_selector is None and "Cloud" in w._options_labels:
+            mode_selector = w
+        if isinstance(w, W.Stack) and mode_tabs is None and len(w.children) == 3:
             mode_tabs = w
         for c in getattr(w, "children", ()):
             walk(c)
 
     walk(page)
+    mode_selector.value = "cloud"
+    assert mode_tabs.selected_index == 2
     mode_tabs.selected_index = 2
     return mode_tabs
 

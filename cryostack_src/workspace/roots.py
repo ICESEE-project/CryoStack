@@ -24,8 +24,10 @@ def resolve_workspace_root(workspace_root: str | Path | None = None) -> Path:
     process cwd. Same precedence as :class:`WorkspaceManager`."""
     if workspace_root is not None:
         return Path(workspace_root).resolve()
-    env_root = (os.environ.get(WORKSPACE_ROOT_ENV) or "").strip()
-    return Path(env_root).resolve() if env_root else Path.cwd().resolve()
+    from cryostack_src.storage_layout import resolve
+
+    # $CRYOSTACK_WORKSPACE_ROOT → $CRYOSTACK_DATA_ROOT/workspace → process cwd
+    return resolve("workspaces")[0].resolve()
 
 
 def owner_root(user: WorkspaceUser, *, workspace_root: str | Path | None = None) -> Path:

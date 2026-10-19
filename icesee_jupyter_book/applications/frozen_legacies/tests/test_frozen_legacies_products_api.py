@@ -177,6 +177,10 @@ def test_shared_radar_is_listed_but_not_downloadable(env):
     status, body = jcall(env, ck, "GET", f"{API}/assets/{asset_id}/products")
     raw = {p["product_id"]: p for p in body["products"]}["raw-radar"]
     assert raw["workflow"] == "radar-source" and raw["downloadable"] is False
+    assert raw["previewable"] and raw["preview_url"]
+    status, headers, preview = call(env, ck, "GET", raw["preview_url"])
+    assert status == 200 and headers["Content-Type"] == "image/png"
+    assert Image.open(io.BytesIO(preview)).width <= server.PREVIEW_MAX_WIDTH
     assert call(env, ck, "GET", f"{API}/assets/{asset_id}/products/raw-radar")[0] == 403
 
 
@@ -580,3 +584,81 @@ def test_uploaded_qc_png_is_labelled_as_declared_not_verified():
     assert qc["title"] == "QC image (declared ASTRA, not verified)"
     assert qc["producer"] == "user" and qc["workflow"] == "upload"
     assert record("astra-csv")["title"] == products.KINDS["astra-csv"]["title"]
+
+
+def test_preview_derivative_records_parent_checksum_and_preserves_source(env):
+    user, cookies = _login(env, "preview@example.org")
+    asset_id = _upload_radar(env, cookies)
+    source = _asset_dir(env, user, asset_id) / "source.tiff"
+    original = source.read_bytes()
+
+    status, headers, png = call(
+        env, cookies, "GET", f"{API}/assets/{asset_id}/products/raw-radar/preview")
+    assert status == 200 and headers["X-Scientific-Status"] == "preview-only"
+    assert len(headers["X-Preview-SHA256"]) == 64
+    assert len(headers["X-Preview-Source-SHA256"]) == 64
+    assert source.read_bytes() == original
+
+    cache = _asset_dir(env, user, asset_id) / ".preview-cache"
+    sidecar = json.loads(next(cache.glob("*.png.json")).read_text(encoding="utf-8"))
+    assert sidecar["source"]["asset_id"] == asset_id
+    assert sidecar["source"]["product_id"] == "raw-radar"
+    assert sidecar["source"]["sha256"] == headers["X-Preview-Source-SHA256"]
+    assert sidecar["derivative"]["sha256"] == headers["X-Preview-SHA256"]
+    assert sidecar["scientific_status"] == "preview-only"
+    assert png.startswith(b"\x89PNG\r\n\x1a\n")
+
+
+def test_preview_pdf_is_labelled_private_and_owner_isolated(env):
+    _owner, owner_cookies = _login(env, "owner@example.org")
+    _other, other_cookies = _login(env, "other@example.org")
+    asset_id = _upload_radar(env, owner_cookies)
+    url = f"{API}/assets/{asset_id}/products/raw-radar/preview.pdf"
+
+    assert call(env, other_cookies, "GET", url)[0] == 404
+    status, headers, data = call(env, owner_cookies, "GET", url)
+    assert status == 200 and headers["Content-Type"] == "application/pdf"
+    assert headers["Cache-Control"] == "private, no-store"
+    assert headers["X-Scientific-Status"] == "preview-only"
+    assert data.startswith(b"%PDF")
+
+
+def test_preview_cache_follows_current_source_bytes_not_declared_hash(tmp_path):
+    from icesee_jupyter_book.applications.frozen_legacies.radar import preview_derivatives
+
+    asset_dir = tmp_path / "asset"
+    asset_dir.mkdir()
+    source = asset_dir / "source.bin"
+    source.write_bytes(b"first")
+    record = {
+        "asset_id": "asset-1", "kind": "raw-radar",
+        "provenance": {"sha256": "0" * 64},
+    }
+
+    first, first_doc = preview_derivatives.get_or_create(
+        asset_dir=asset_dir, product_id="raw-radar", source=source,
+        source_record=record, extension="bin", media_type="application/octet-stream",
+        generator="test", render=lambda path: b"preview:" + path.read_bytes())
+    source.write_bytes(b"second")
+    second, second_doc = preview_derivatives.get_or_create(
+        asset_dir=asset_dir, product_id="raw-radar", source=source,
+        source_record=record, extension="bin", media_type="application/octet-stream",
+        generator="test", render=lambda path: b"preview:" + path.read_bytes())
+
+    assert first == b"preview:first" and second == b"preview:second"
+    assert first_doc["source"]["sha256"] != second_doc["source"]["sha256"]
+    assert second_doc["source"]["sha256"] != record["provenance"]["sha256"]
+
+
+def test_preview_rejects_image_over_pixel_bound(tmp_path):
+    from icesee_jupyter_book.applications.frozen_legacies.server import _render_preview
+
+    path = tmp_path / "oversize.png"
+    Image.new("L", (10, 10)).save(path)
+    original_limit = products.MAX_IMAGE_PIXELS
+    try:
+        products.MAX_IMAGE_PIXELS = 50
+        with pytest.raises(products.ProductValidationError, match="dimensions"):
+            _render_preview(path)
+    finally:
+        products.MAX_IMAGE_PIXELS = original_limit
