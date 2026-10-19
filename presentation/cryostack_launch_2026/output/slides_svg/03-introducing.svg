@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080"><style>
+text{font-family:'DejaVu Sans',Arial,sans-serif}
+.pill{font-size:19px;font-weight:700;fill:#082B59}
+.flowlabel{font-size:19px;font-weight:700;fill:#082B59}
+.arrow{font-size:28px;fill:#087EEB}
+.boxlabel{font-size:24px;font-weight:700;fill:#FFFFFF}
+.boxlabelink{font-size:24px;font-weight:700;fill:#082B59}
+.boxsub{font-size:18px;fill:#5E7187}
+.boxsubw{font-size:17px;fill:#EEF7FC}
+.tag{font-size:18px;fill:#5E7187}
+.cardhead{font-size:29px;font-weight:700;fill:#FFFFFF}
+.cardtitle{font-size:31px;font-weight:700;fill:#082B59}
+.cardsub{font-size:19px;font-weight:600;fill:#FFFFFF}
+.cardbody{font-size:19px;fill:#5E7187}
+.caption{font-size:19px;fill:#5E7187}
+.small{font-size:16px;fill:#5E7187}
+</style><rect width="1920" height="1080" fill="#F8FBFD"/><rect width="1920" height="14" fill="#087EEB"/><rect x="410" y="380" width="1100" height="92" rx="20" fill="#082B59" stroke="#082B59" stroke-width="2"/><text x="960.0" y="434.0" text-anchor="middle" class="cardsub"><tspan x="960.0" dy="0">Configure · Launch · Monitor · Visualize · Reproduce</tspan></text><rect x="260" y="560" width="1000" height="400" rx="18" fill="#FFFFFF" stroke="#D6E5F0" stroke-width="2"/><rect x="260" y="560" width="1000" height="52" rx="18" fill="#EEF7FC"/><rect x="260" y="594" width="1000" height="18" fill="#EEF7FC"/><circle cx="286" cy="586" r="7" fill="#177A55"/><circle cx="310" cy="586" r="7" fill="#D99516"/><circle cx="334" cy="586" r="7" fill="#D64242"/><rect x="380" y="574" width="840" height="26" rx="13" fill="#FFFFFF" stroke="#D6E5F0"/><text x="400" y="593" text-anchor="start" class="small"><tspan x="400" dy="0">cryostack.eas.gatech.edu</tspan></text><rect x="280" y="650" width="225" height="130" rx="12" fill="#EEF7FC" stroke="#24B8E8" stroke-width="2"/><text x="392.5" y="722.04" text-anchor="middle" class="boxlabelink"><tspan x="392.5" dy="0">CryoLauncher</tspan></text><rect x="525" y="650" width="225" height="130" rx="12" fill="#EEF7FC" stroke="#24B8E8" stroke-width="2"/><text x="637.5" y="722.04" text-anchor="middle" class="boxlabelink"><tspan x="637.5" dy="0">ICESEE</tspan></text><rect x="770" y="650" width="225" height="130" rx="12" fill="#EEF7FC" stroke="#24B8E8" stroke-width="2"/><text x="882.5" y="722.04" text-anchor="middle" class="boxlabelink"><tspan x="882.5" dy="0">Frozen Legacies</tspan></text><rect x="1015" y="650" width="225" height="130" rx="12" fill="#EEF7FC" stroke="#24B8E8" stroke-width="2"/><text x="1127.5" y="722.04" text-anchor="middle" class="boxlabelink"><tspan x="1127.5" dy="0">LIVIST</tspan></text><rect x="280" y="810" width="960" height="110" rx="12" fill="#F8FBFD" stroke="#D6E5F0"/><text x="760.0" y="872" text-anchor="middle" class="tag"><tspan x="760.0" dy="0">Shared identity  ·  compute access  ·  job status  ·  results</tspan></text><text x="1330" y="778.0" text-anchor="middle" class="arrow" font-size="46">&#8594;</text><rect x="1430" y="670" width="300" height="180" rx="16" fill="#082B59" stroke="#082B59" stroke-width="2"/><text x="1580.0" y="749.54" text-anchor="middle" class="boxlabel"><tspan x="1580.0" dy="0">HPC / Cloud</tspan></text><text x="1580.0" y="791.3399999999999" text-anchor="middle" class="boxsubw"><tspan x="1580.0" dy="0">Your compute</tspan></text></svg>

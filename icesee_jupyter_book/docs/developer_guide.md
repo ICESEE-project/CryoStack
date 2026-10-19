@@ -116,6 +116,13 @@
            actual maintainer-only procedures live.</p>
       </div>
 
+      <div class="cryostack-docs-summary-card">
+        <div class="cryostack-docs-summary-icon">OC</div>
+        <h3><a href="owner_continuity.html">Owner Continuity</a></h3>
+        <p>The November delivery program, absence-readiness backlog, release
+           gates, and return checklist.</p>
+      </div>
+
     </div>
 
   </section>

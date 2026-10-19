@@ -73,7 +73,9 @@ def source_dir() -> Path:
 
 
 def database_path() -> Path:
-    return _path("CRYOSTACK_LIVIST_DATABASE", DEFAULT_DATABASE)
+    from cryostack_src.storage_layout import default_path
+
+    return _path("CRYOSTACK_LIVIST_DATABASE", default_path("livist", DEFAULT_DATABASE))
 
 
 def input_roots() -> list[Path]:

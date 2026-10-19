@@ -1,0 +1,11 @@
+[Unit]
+Description=Start CryoStack overnight autonomous work every night
+
+[Timer]
+OnCalendar=*-*-* 21:00:00 America/New_York
+Persistent=true
+AccuracySec=1min
+Unit=cryostack-autonomy-night.service
+
+[Install]
+WantedBy=timers.target

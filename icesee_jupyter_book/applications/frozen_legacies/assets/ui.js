@@ -113,6 +113,198 @@ function datasetMatches(
 }
 
 
+/* Stable, shareable observation selection. */
+function observationSelectionId(feature) {
+  if (!feature) return "";
+  const properties = feature.getProperties?.() || {};
+  const id = properties.asset_id || properties.observation_id ||
+    properties.file_id || feature.getId?.();
+  return id === null || id === undefined ? "" : String(id);
+}
+
+
+function orderedFlightObservations(data, datasetId, flightNumber) {
+  const observations = FrozenLegaciesData.getFlightObservations(data, flightNumber, datasetId);
+  return [...observations].sort((left, right) => {
+    const aCbd = Number(left.get("cbd"));
+    const bCbd = Number(right.get("cbd"));
+    if (Number.isFinite(aCbd) && Number.isFinite(bCbd) && aCbd !== bCbd) return aCbd - bCbd;
+    if (Number.isFinite(aCbd) !== Number.isFinite(bCbd)) return Number.isFinite(aCbd) ? -1 : 1;
+    return observationSelectionId(left).localeCompare(
+      observationSelectionId(right), "en", {numeric: true, sensitivity: "base"}
+    );
+  });
+}
+
+
+function orderedDatasetFlights(data, datasetId) {
+  const seen = new Map();
+  for (const feature of data.flightFeatures || []) {
+    const flight = FrozenLegaciesData.normalizeFlightValue(feature.get("flight"));
+    if (flight && datasetForFeature(feature) === datasetId && !seen.has(flight)) {
+      seen.set(flight, feature);
+    }
+  }
+  return [...seen.entries()].sort(([left], [right]) =>
+    String(left).localeCompare(String(right), "en", {numeric: true, sensitivity: "base"}));
+}
+
+
+function writeObservationSelectionUrl(feature) {
+  if (!window.history?.replaceState || !window.location) return;
+  const properties = feature?.getProperties?.() || {};
+  const datasetId = normalizeDatasetValue(properties.dataset_id);
+  const flight = FrozenLegaciesData.normalizeFlightValue(properties.flight);
+  const observation = observationSelectionId(feature);
+  if (!datasetId || !flight || !observation) return;
+  const url = new URL(window.location.href);
+  url.searchParams.set("dataset", datasetId);
+  url.searchParams.set("flight", flight);
+  url.searchParams.set("observation", observation);
+  window.history.replaceState(window.history.state, "", url);
+}
+
+
+function clearObservationSelectionUrl() {
+  if (!window.history?.replaceState || !window.location) return;
+  const url = new URL(window.location.href);
+  url.searchParams.delete("observation");
+  window.history.replaceState(window.history.state, "", url);
+}
+
+
+function writeExplorerContextUrl(datasetId, flightNumber = "all") {
+  if (window.FrozenLegaciesExplorerStore) {
+    window.FrozenLegaciesExplorerStore.set({
+      dataset: datasetId && datasetId !== "all" ? [datasetId] : [],
+      flight: flightNumber && flightNumber !== "all" ? [String(flightNumber)] : []
+    });
+    return;
+  }
+  if (!window.history?.replaceState || !window.location) return;
+  const url = new URL(window.location.href);
+  const dataset = normalizeDatasetValue(datasetId);
+  const flight = FrozenLegaciesData.normalizeFlightValue(flightNumber);
+  if (dataset && dataset !== "all") url.searchParams.set("dataset", dataset);
+  else url.searchParams.delete("dataset");
+  if (flight && flight !== "all") url.searchParams.set("flight", flight);
+  else url.searchParams.delete("flight");
+  url.searchParams.delete("observation");
+  window.history.replaceState(window.history.state, "", url);
+}
+
+
+function bindScientificExplorer({map, data, layers, state}) {
+  const queryApi = window.FrozenLegaciesExplorerQuery;
+  if (!queryApi) return null;
+  const store = queryApi.createStore(queryApi.parse(window.location));
+  window.FrozenLegaciesExplorerStore = store;
+  const byId = id => document.getElementById(id);
+  const controls = {
+    cbd_min: byId("fl-filter-cbd-min"), cbd_max: byId("fl-filter-cbd-max"),
+    review: byId("fl-filter-review"), q: byId("fl-filter-query")
+  };
+  const queryKeys = ["qv", "audience", "dataset", "ds", "flight", "source", "product", "review",
+    "cbd_min", "cbd_max", "q", "sort"];
+
+  function writeUrl(query, push = false) {
+    const current = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    queryKeys.forEach(key => current.delete(key));
+    const canonical = new URLSearchParams(queryApi.serialize(query));
+    canonical.forEach((value, key) => current.append(key, value));
+    const url = new URL(window.location.href);
+    url.hash = current.toString();
+    window.history[push ? "pushState" : "replaceState"](window.history.state, "", url);
+  }
+
+  function matches(feature, query) {
+    const dataset = datasetForFeature(feature);
+    const flight = FrozenLegaciesData.normalizeFlightValue(feature.get("flight"));
+    const cbd = Number(feature.get("cbd"));
+    if (query.dataset?.length && !query.dataset.includes(dataset)) return false;
+    if (query.flight?.length && !query.flight.includes(flight)) return false;
+    if (query.cbd_min && (!Number.isFinite(cbd) || cbd < Number(query.cbd_min))) return false;
+    if (query.cbd_max && (!Number.isFinite(cbd) || cbd > Number(query.cbd_max))) return false;
+    if (query.q) {
+      const haystack = Object.values(feature.getProperties?.() || {}).join(" ").toLowerCase();
+      if (!haystack.includes(query.q.toLowerCase())) return false;
+    }
+    return true;
+  }
+
+  function identityMatches(feature, query) {
+    const dataset = datasetForFeature(feature);
+    const flight = FrozenLegaciesData.normalizeFlightValue(feature.get("flight"));
+    return (!query.dataset?.length || query.dataset.includes(dataset)) &&
+      (!query.flight?.length || query.flight.includes(flight));
+  }
+
+  function render(query, {write = true, push = false} = {}) {
+    const selectedDataset = query.dataset?.[0] || "all";
+    const selectedFlight = query.flight?.[0] || "all";
+    state.datasetId = selectedDataset;
+    state.flightNumber = selectedFlight;
+    const datasetSelect = getDatasetSelectElement();
+    if (datasetSelect) datasetSelect.value = selectedDataset;
+    refreshFlightSelectorForDataset({data, datasetId: selectedDataset});
+    const flightSelect = getFlightSelectElement();
+    if (flightSelect) flightSelect.value = selectedFlight;
+    for (const [key, control] of Object.entries(controls)) {
+      if (control) control.value = key === "review" ? (query.review?.[0] || "") : (query[key] || "");
+    }
+    const chips = [];
+    const labels = {dataset: "Dataset", flight: "Flight", review: "Review", cbd_min: "CBD from", cbd_max: "CBD to", q: "Search"};
+    for (const key of Object.keys(labels)) {
+      const raw = query[key];
+      for (const value of (Array.isArray(raw) ? raw : (raw ? [raw] : []))) {
+        chips.push(`<button type="button" data-remove-filter="${escapeHtmlUI(key)}" aria-label="Remove ${escapeHtmlUI(labels[key])} ${escapeHtmlUI(value)}">${escapeHtmlUI(labels[key])}: ${escapeHtmlUI(value)} ×</button>`);
+      }
+    }
+    const chipRoot = byId("fl-active-filters");
+    if (chipRoot) chipRoot.innerHTML = chips.join("");
+    chipRoot?.querySelectorAll("[data-remove-filter]").forEach(button => button.addEventListener("click", () => {
+      const key = button.dataset.removeFilter;
+      store.set({[key]: Array.isArray(store.get()[key]) ? [] : ""});
+    }));
+
+    const observations = layers.layers.observations.getSource().getFeatures();
+    const visible = observations.filter(feature => matches(feature, query));
+    layers.sources.frozen.selectedFlight.clear(true);
+    layers.layers.flights.setStyle(feature => identityMatches(feature, query)
+      ? FrozenLegaciesStyles.defaultFlight() : null);
+    layers.layers.observations.setStyle(feature => matches(feature, query)
+      ? FrozenLegaciesStyles.observation(feature) : null);
+    const status = byId("fl-filter-status");
+    if (status) status.textContent = `${visible.length.toLocaleString("en-US")} observation${visible.length === 1 ? "" : "s"} match the active map filters.`;
+    window.FrozenLegaciesCatalog?.applyExplorerQuery?.(query);
+    if (write) writeUrl(query, push);
+  }
+
+  let pushNext = false;
+  store.subscribe(query => { render(query, {push: pushNext}); pushNext = false; });
+  for (const [key, control] of Object.entries(controls)) {
+    control?.addEventListener(key === "q" ? "input" : "change", () => {
+      pushNext = key !== "q";
+      store.set({[key]: key === "review" ? (control.value ? [control.value] : []) : control.value});
+    });
+  }
+  byId("fl-filter-clear")?.addEventListener("click", () => { pushNext = true; store.clear(); });
+  byId("fl-filter-copy")?.addEventListener("click", async event => {
+    writeUrl(store.get());
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      event.currentTarget.textContent = "Link copied";
+      window.setTimeout(() => { event.currentTarget.textContent = "Copy link"; }, 1500);
+    } catch (_error) {
+      event.currentTarget.textContent = "Copy unavailable";
+    }
+  });
+  window.addEventListener("popstate", () => store.replace(queryApi.parse(window.location)));
+  render(store.get(), {write: false});
+  return store;
+}
+
+
 /* ------------------------------------------------------------
  * Empty observation state
  * ------------------------------------------------------------ */
@@ -376,63 +568,238 @@ function observationImageUrl(
 }
 
 
+function observationMediaUrls(properties) {
+  const first = values => values.find(value =>
+    value !== null && value !== undefined && String(value).trim());
+  const flight = FrozenLegaciesData.normalizeFlightValue(properties.flight);
+  const cbd = Number(properties.cbd);
+  const temporaryPreview = scope => (flight && Number.isFinite(cbd))
+    ? `/frozen-legacies/api/radar/catalog/observation-preview?v=2&scope=${encodeURIComponent(scope)}&flight=${encodeURIComponent(flight)}&cbd=${encodeURIComponent(cbd)}`
+    : null;
+  return {
+    film: first([properties.image_url, properties.image_path,
+      properties.radar_image, properties.film_image]) || temporaryPreview("ascope"),
+    radargram: first([properties.echogram, properties.radargram,
+      properties.processed_image_url]) || temporaryPreview("zscope")
+  };
+}
+
+
+function bindPreviewFallbacks(container) {
+  container?.querySelectorAll("img[data-fl-preview]").forEach(image => image.addEventListener("error", () => {
+    const fallback = document.createElement("div");
+    fallback.className = image.classList.contains("fl-popup-preview")
+      ? "fl-popup-preview fl-popup-preview-empty"
+      : "fl-radar-preview-empty";
+    fallback.textContent = image.dataset.empty || "Preview is not available.";
+    image.replaceWith(fallback);
+  }, {once: true}));
+}
+
+
 function renderObservationMedia(
   properties
 ) {
+  const media = observationMediaUrls(properties);
+  const card = (label, value, absent) => `
+    <figure class="fl-radar-preview">
+      <figcaption>${escapeHtmlUI(label)}</figcaption>
+      ${value ? `<img src="${escapeHtmlUI(value)}" alt="${escapeHtmlUI(label)}" class="fl-radar-image" data-fl-preview data-empty="${escapeHtmlUI(absent)}" loading="lazy">`
+        : `<div class="fl-radar-preview-empty"><div class="fl-radar-preview-icon">◫</div><div><strong>${escapeHtmlUI(label)}</strong><span>${escapeHtmlUI(absent)}</span></div></div>`}
+    </figure>`;
+  return `<div class="fl-radar-preview-grid">
+    ${card("A-scope film scan", media.film, "A-scope film scan not indexed yet.")}
+    ${card("Z-scope radar image", media.radargram, "Z-scope radar image not indexed yet.")}
+  </div>`;
 
-  const imageUrl =
-    observationImageUrl(
-      properties
-    );
+}
 
 
-  if (!imageUrl) {
-
-    return `
-
-      <div class="fl-radar-preview fl-radar-preview-empty">
-
-        <div class="fl-radar-preview-icon">
-          ◫
-        </div>
-
-        <div>
-
-          <strong>
-            Radar preview
-          </strong>
-
-          <span>
-            Radar imagery for this observation
-            will appear here.
-          </span>
-
-        </div>
-
-      </div>
-    `;
-
-  }
-
+function observationPopupHtml(feature, data = null, navigation = null) {
+  const properties = feature.getProperties();
+  const datasetId = normalizeDatasetValue(properties.dataset_id);
+  const dataset = data?.datasetIndex?.get(datasetId) || null;
+  const datasetTitle = dataset?.title || dataset?.name || datasetId || "Frozen Legacies";
+  const echo = properties.echo_status || "unknown";
+  const media = observationMediaUrls(properties);
+  const title = properties.file_id || `Flight ${properties.flight ?? "—"}`;
+  const preview = (label, value, absent) => `<figure class="fl-popup-media-card">
+    <figcaption>${escapeHtmlUI(label)}</figcaption>
+    ${value ? `<img class="fl-popup-preview" src="${escapeHtmlUI(value)}" data-fl-preview data-empty="${escapeHtmlUI(absent)}"
+      alt="${escapeHtmlUI(label)} quicklook for ${escapeHtmlUI(title)}" loading="lazy">`
+      : `<div class="fl-popup-preview fl-popup-preview-empty"><span>${escapeHtmlUI(absent)}</span></div>`}
+  </figure>`;
 
   return `
-
-    <div class="fl-radar-preview">
-
-      <img
-        src="${escapeHtmlUI(imageUrl)}"
-        alt="Radar observation"
-        class="fl-radar-image"
-        loading="lazy"
-      >
-
-      <div class="fl-radar-image-caption">
-        Radar observation
-      </div>
-
+    <button type="button" class="fl-popup-close" aria-label="Close observation quicklook">×</button>
+    <div class="fl-popup-drag-handle" data-fl-popup-drag tabindex="0"
+      aria-label="Move quicklook panel. Use arrow keys to reposition.">
+      <span class="fl-popup-kicker">SCIENTIFIC QUICKLOOK · Quicklook only</span><span aria-hidden="true">⠿</span>
     </div>
-  `;
+    <div class="fl-popup-title-row">
+      <div>
+        <strong>${escapeHtmlUI(title)}</strong>
+        <span>Flight ${escapeHtmlUI(properties.flight ?? "—")} · CBD ${escapeHtmlUI(properties.cbd ?? "—")} · ${escapeHtmlUI(datasetTitle)}</span>
+      </div>
+      <span class="fl-popup-status">${escapeHtmlUI(echo)}</span>
+    </div>
+    <div class="fl-popup-media-grid">
+    ${preview("A-scope film scan", media.film, "A-scope film scan not indexed yet.")}
+    ${preview("Z-scope radar image", media.radargram, "Z-scope radar image not indexed yet.")}
+    </div>
+    <div class="fl-popup-actions">
+      <span class="fl-popup-workspace-actions">
+        <button type="button" class="fl-radar-button primary" data-fl-popup-action="manual">Open radar workspace</button>
+        <button type="button" class="fl-radar-button" data-fl-popup-action="details">Full details</button>
+      </span>
+      <span class="fl-popup-navigation" role="group" aria-label="Flights in this dataset">
+        <button type="button" class="fl-radar-button" data-fl-popup-action="previous-flight"
+          ${navigation?.hasPreviousFlight ? "" : "disabled"} aria-label="Previous flight">← Flight</button>
+        <span aria-live="polite">${escapeHtmlUI(navigation?.flightPosition || "")}</span>
+        <button type="button" class="fl-radar-button" data-fl-popup-action="next-flight"
+          ${navigation?.hasNextFlight ? "" : "disabled"} aria-label="Next flight">Flight →</button>
+      </span>
+      <span class="fl-popup-navigation fl-popup-observation-navigation" role="group" aria-label="Observations in this flight">
+        <button type="button" class="fl-radar-button quiet" data-fl-popup-action="previous-observation"
+          ${navigation?.hasPreviousObservation ? "" : "disabled"} aria-label="Previous observation">← Obs</button>
+        <span aria-live="polite">${escapeHtmlUI(navigation?.observationPosition || "")}</span>
+        <button type="button" class="fl-radar-button quiet" data-fl-popup-action="next-observation"
+          ${navigation?.hasNextObservation ? "" : "disabled"} aria-label="Next observation">Obs →</button>
+      </span>
+    </div>`;
+}
 
+
+function quicklookScrollBehavior() {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches
+    ? "auto"
+    : "smooth";
+}
+
+
+function closeObservationPopup(element, {restoreFocus = true} = {}) {
+  if (!element) return;
+  element._flOverlay?.setPosition(undefined);
+  element.hidden = true;
+  clearObservationSelectionUrl();
+  if (restoreFocus) {
+    const target = element._flReturnFocus;
+    if (target?.isConnected && typeof target.focus === "function") {
+      target.focus({preventScroll: true});
+    } else {
+      element._flMapTarget?.focus?.({preventScroll: true});
+    }
+  }
+}
+
+
+function popupInteractiveTarget(target) {
+  return target.closest("button, a, input, select, textarea, label, summary, [role='button'], [contenteditable='true']");
+}
+
+
+function ensureObservationPopup(map) {
+  const element = document.getElementById("fl-observation-popup");
+  if (!element) return null;
+  if (!element._flOverlay) {
+    element._flOverlay = new ol.Overlay({
+      element,
+      positioning: "bottom-center",
+      offset: [0, -14],
+      stopEvent: true,
+      autoPan: { animation: { duration: 180 }, margin: 24 }
+    });
+    map.addOverlay(element._flOverlay);
+    element._flDragOffset = [0, -14];
+    element._flMapTarget = map.getTargetElement?.() || null;
+    element.addEventListener("click", event => {
+      if (event.target.closest(".fl-popup-close")) {
+        closeObservationPopup(element);
+      }
+      if (event.target.closest('[data-fl-popup-action="previous-flight"]')) element._flNavigateFlight?.(-1);
+      if (event.target.closest('[data-fl-popup-action="next-flight"]')) element._flNavigateFlight?.(1);
+      if (event.target.closest('[data-fl-popup-action="previous-observation"]')) element._flNavigateObservation?.(-1);
+      if (event.target.closest('[data-fl-popup-action="next-observation"]')) element._flNavigateObservation?.(1);
+      if (event.target.closest('[data-fl-popup-action="manual"]')) {
+        document.querySelector('[data-mode="manual"]')?.click();
+      }
+      if (event.target.closest('[data-fl-popup-action="details"]')) {
+        document.getElementById("selected-record")?.scrollIntoView({
+          behavior: quicklookScrollBehavior(), block: "nearest"
+        });
+      }
+    });
+    element.addEventListener("keydown", event => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeObservationPopup(element);
+      } else if (event.target.closest("[data-fl-popup-drag]") && event.key.startsWith("Arrow")) {
+        event.preventDefault();
+        const step = event.shiftKey ? 40 : 12;
+        const delta = {ArrowLeft: [-step, 0], ArrowRight: [step, 0],
+          ArrowUp: [0, -step], ArrowDown: [0, step]}[event.key];
+        if (delta) {
+          element._flDragOffset = [element._flDragOffset[0] + delta[0],
+            element._flDragOffset[1] + delta[1]];
+          element._flOverlay.setOffset(element._flDragOffset);
+        }
+      } else if (event.key === "ArrowLeft" && !event.target.closest("input, select, textarea")) {
+        event.preventDefault();
+        element._flNavigateFlight?.(-1);
+      } else if (event.key === "ArrowRight" && !event.target.closest("input, select, textarea")) {
+        event.preventDefault();
+        element._flNavigateFlight?.(1);
+      }
+    });
+    element.addEventListener("pointerdown", event => {
+      if (event.button !== 0 || popupInteractiveTarget(event.target) ||
+          window.matchMedia("(max-width: 680px)").matches) return;
+      event.preventDefault();
+      const start = [event.clientX, event.clientY];
+      const original = [...element._flDragOffset];
+      element.setPointerCapture(event.pointerId);
+      const move = moveEvent => {
+        if (moveEvent.pointerId !== event.pointerId) return;
+        element._flDragOffset = [original[0] + moveEvent.clientX - start[0],
+          original[1] + moveEvent.clientY - start[1]];
+        element._flOverlay.setOffset(element._flDragOffset);
+      };
+      const finish = finishEvent => {
+        if (finishEvent.pointerId !== event.pointerId) return;
+        element.removeEventListener("pointermove", move);
+        element.removeEventListener("pointerup", finish);
+        element.removeEventListener("pointercancel", finish);
+      };
+      element.addEventListener("pointermove", move);
+      element.addEventListener("pointerup", finish);
+      element.addEventListener("pointercancel", finish);
+    });
+  }
+  return element;
+}
+
+
+function showObservationPopup(map, feature, data, coordinate, navigation = null) {
+  const element = ensureObservationPopup(map);
+  if (!element) return;
+  const wasHidden = element.hidden;
+  if (wasHidden) {
+    const active = document.activeElement;
+    element._flReturnFocus = active && active !== document.body && active !== document.documentElement
+      ? active
+      : element._flMapTarget;
+    element._flDragOffset = [0, -14];
+    element._flOverlay.setOffset(element._flDragOffset);
+  }
+  element.innerHTML = observationPopupHtml(feature, data, navigation);
+  bindPreviewFallbacks(element);
+  element._flNavigateFlight = navigation?.navigateFlight || null;
+  element._flNavigateObservation = navigation?.navigateObservation || null;
+  element.hidden = false;
+  element._flOverlay.setPosition(coordinate || feature.getGeometry()?.getCoordinates());
+  if (wasHidden) {
+    element.querySelector(".fl-popup-close")?.focus({preventScroll: true});
+  }
 }
 
 
@@ -844,6 +1211,8 @@ function renderObservation(
     </div>
   `;
 
+  bindPreviewFallbacks(container);
+
 
   announceObservationSelection(
     properties
@@ -987,7 +1356,9 @@ function refreshFlightSelectorForDataset({
 
         normalizedDataset === "all"
           ? null
-          : normalizedDataset
+          : normalizedDataset,
+
+        data.raw.flights
       );
 
 
@@ -1087,6 +1458,10 @@ function showAllFlights({
 
   state.flightNumber =
     "all";
+
+  state.selectedObservation = "";
+
+  writeExplorerContextUrl(datasetId, "all");
 
 
   const flightSelect =
@@ -1351,6 +1726,8 @@ function selectFlight({
     state.flightNumber =
       normalizedFlight;
 
+    state.selectedObservation = "";
+
   }
 
 
@@ -1389,6 +1766,11 @@ function selectFlight({
       );
 
   }
+
+
+  // Map selection and camera movement must complete even if a secondary
+  // explorer consumer fails while reacting to the URL/filter update.
+  writeExplorerContextUrl(normalizedDataset, normalizedFlight);
 
 }
 
@@ -1500,6 +1882,45 @@ function observationAtPixel(
 
   return selectedFeature;
 
+}
+
+function riggsAtPixel(map, riggsLayer, pixel) {
+  if (!riggsLayer?.getVisible()) return null;
+  let selectedFeature = null;
+  map.forEachFeatureAtPixel(pixel, (feature, layer) => {
+    if (layer === riggsLayer) {
+      selectedFeature = feature;
+      return true;
+    }
+    return false;
+  }, { hitTolerance: 6 });
+  return selectedFeature;
+}
+
+function renderRiggsStation(feature, metadata) {
+  const panel = getSelectedRecordElement();
+  if (!panel) return;
+  const properties = feature.getProperties();
+  const method = properties.measurement_method === "seismic" ? "Seismic" : "Radar";
+  panel.innerHTML = `
+    <div class="fl-record-card">
+      <div class="fl-record-eyebrow">Independent scientific context</div>
+      <h3>RIGGS station ${escapeHtmlUI(properties.station || "—")}</h3>
+      <p class="fl-record-description">
+        This is a historical reference observation, not a Frozen Legacies manual or automatic pick.
+      </p>
+      <div class="fl-record-metrics">
+        <div class="fl-record-metric"><span>Measurement</span><strong>${method}</strong></div>
+        <div class="fl-record-metric"><span>Ice thickness</span><strong>${formatNumber(properties.ice_thickness_m, { digits: 1, suffix: " m" })}</strong></div>
+        <div class="fl-record-metric"><span>Seismic value</span><strong>${formatNumber(properties.seismic_ice_thickness_m, { digits: 1, suffix: " m" })}</strong></div>
+        <div class="fl-record-metric"><span>Radar value</span><strong>${formatNumber(properties.radar_ice_thickness_m, { digits: 1, suffix: " m" })}</strong></div>
+      </div>
+      <div class="fl-record-section">
+        <div class="fl-record-section-title">Source and scientific status</div>
+        <p class="fl-record-description">${escapeHtmlUI(metadata?.citation || "Citation unavailable")}</p>
+        ${metadata?.source_url ? `<a class="fl-radar-button" href="${escapeHtmlUI(metadata.source_url)}" target="_blank" rel="noopener">Authoritative dataset record</a>` : ""}
+      </div>
+    </div>`;
 }
 
 
@@ -1622,6 +2043,10 @@ function bindFlightSelector({
         select.value;
 
 
+      closeObservationPopup(document.getElementById("fl-observation-popup"));
+      renderEmptyObservation(data.datasetIndex?.get(state.datasetId) || null);
+
+
       if (
         value === "all"
       ) {
@@ -1637,6 +2062,9 @@ function bindFlightSelector({
 
       else {
 
+        // A flight choice is a map-navigation action, not an implicit
+        // observation choice.  Dismiss any old quicklook and fit the map to
+        // the newly selected track; the user can then choose its observation.
         selectFlight({
           map,
           data,
@@ -1675,6 +2103,14 @@ function bindMapClick({
   map.on(
     "singleclick",
     event => {
+
+      const riggs =
+        riggsAtPixel(map, layers.layers.riggs, event.pixel);
+
+      if (riggs) {
+        renderRiggsStation(riggs, data.riggs?.metadata);
+        return;
+      }
 
       const observation =
         observationAtPixel(
@@ -1740,30 +2176,15 @@ function bindMapClick({
         }
 
 
-        renderObservation(
-          observation,
-          data
-        );
-
-
-        if (flight) {
-
-          selectFlight({
-            map,
-            data,
-            layers,
-            state,
-
-            datasetId,
-
-            flightNumber:
-              flight,
-
-            zoom:
-              false
-          });
-
-        }
+        selectObservation({
+          map,
+          data,
+          layers,
+          state,
+          feature: observation,
+          coordinate: event.coordinate,
+          zoomFlight: false
+        });
 
 
         return;
@@ -1859,6 +2280,63 @@ function bindMapClick({
 }
 
 
+function selectObservation({map, data, layers, state, feature, coordinate = null, zoomFlight = false}) {
+  if (!feature) return false;
+  const properties = feature.getProperties();
+  const datasetId = datasetForFeature(feature);
+  const flight = FrozenLegaciesData.normalizeFlightValue(properties.flight);
+  if (!datasetId || !flight) return false;
+
+  state.datasetId = datasetId;
+  const datasetSelect = getDatasetSelectElement();
+  if (datasetSelect) datasetSelect.value = datasetId;
+  refreshFlightSelectorForDataset({data, datasetId});
+  selectFlight({map, data, layers, state, datasetId, flightNumber: flight, zoom: zoomFlight});
+  state.selectedObservation = observationSelectionId(feature);
+
+  const ordered = orderedFlightObservations(data, datasetId, flight);
+  const index = ordered.findIndex(item => observationSelectionId(item) === state.selectedObservation);
+  const navigateObservation = delta => {
+    const target = ordered[index + delta];
+    if (target) selectObservation({map, data, layers, state, feature: target, zoomFlight: false});
+  };
+  const flights = orderedDatasetFlights(data, datasetId);
+  const flightIndex = flights.findIndex(([value]) => value === flight);
+  const navigateFlight = delta => {
+    const targetFlight = flights[flightIndex + delta]?.[0];
+    const target = targetFlight && orderedFlightObservations(data, datasetId, targetFlight)[0];
+    if (target) selectObservation({map, data, layers, state, feature: target, zoomFlight: true});
+  };
+  const navigation = {
+    hasPreviousFlight: flightIndex > 0,
+    hasNextFlight: flightIndex >= 0 && flightIndex < flights.length - 1,
+    flightPosition: flightIndex >= 0 ? `Flight ${flight} · ${flightIndex + 1} of ${flights.length}` : "",
+    hasPreviousObservation: index > 0,
+    hasNextObservation: index >= 0 && index < ordered.length - 1,
+    observationPosition: index >= 0 ? `Observation ${index + 1} of ${ordered.length}` : "",
+    navigateFlight,
+    navigateObservation
+  };
+  renderObservation(feature, data);
+  showObservationPopup(map, feature, data, coordinate, navigation);
+  writeObservationSelectionUrl(feature);
+  return true;
+}
+
+
+function restoreObservationSelection({map, data, layers, state}) {
+  const params = new URLSearchParams(window.location.search);
+  const datasetId = normalizeDatasetValue(params.get("dataset"));
+  const flight = FrozenLegaciesData.normalizeFlightValue(params.get("flight"));
+  const observation = params.get("observation") || "";
+  if (!datasetId || !flight || !observation) return false;
+  const feature = orderedFlightObservations(data, datasetId, flight)
+    .find(item => observationSelectionId(item) === observation);
+  if (!feature) return false;
+  return selectObservation({map, data, layers, state, feature, zoomFlight: true});
+}
+
+
 /* ------------------------------------------------------------
  * Bind pointer cursor
  * ------------------------------------------------------------ */
@@ -1890,6 +2368,8 @@ function bindPointerCursor({
               layer =>
                 layer ===
                   layers.layers.observations ||
+                layer ===
+                  layers.layers.riggs ||
                 layer ===
                   layers.layers.flights ||
                 layer ===
@@ -1941,7 +2421,10 @@ function initializeFrozenLegaciesUI({
       "all",
 
     flightNumber:
-      "all"
+      "all",
+
+    selectedObservation:
+      ""
 
   };
 
@@ -1990,6 +2473,8 @@ function initializeFrozenLegaciesUI({
     map,
     layers
   });
+
+  bindScientificExplorer({map, data, layers, state});
 
 
   return {
@@ -2042,10 +2527,11 @@ function initializeFrozenLegaciesUI({
 
     showObservation:
       feature =>
-        renderObservation(
-          feature,
-          data
-        )
+        selectObservation({map, data, layers, state, feature}),
+
+
+    restoreObservationSelection:
+      () => restoreObservationSelection({map, data, layers, state})
 
   };
 

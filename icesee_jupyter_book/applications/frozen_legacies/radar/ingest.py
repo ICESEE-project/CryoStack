@@ -175,10 +175,17 @@ def validate_tiff(path: str | Path) -> dict:
     image = _open_tiff(path)
     try:
         info = _header_info(image, path.stat().st_size)
-        try:
-            image.load()
-        except (OSError, ValueError, SyntaxError) as error:
-            raise RadarValidationError(f"The TIFF image data is incomplete or corrupt: {error}")
+        with warnings.catch_warnings():
+            # _header_info applies the application's explicit, stricter pixel
+            # bound before decoding; Pillow may emit its generic warning only
+            # when load() reads the first strip.
+            warnings.simplefilter("ignore", Image.DecompressionBombWarning)
+            try:
+                image.load()
+            except (OSError, ValueError, SyntaxError) as error:
+                raise RadarValidationError(
+                    f"The TIFF image data is incomplete or corrupt: {error}"
+                )
         return info
     finally:
         image.close()

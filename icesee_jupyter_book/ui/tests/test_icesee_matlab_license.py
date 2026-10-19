@@ -118,27 +118,32 @@ def test_coupled_issm_icepack_forecast_model_shows_matlab_license(monkeypatch, t
 
 def test_visibility_is_independent_of_basic_or_advanced_infra_mode(monkeypatch, tmp_path):
     """ICESEE has no Basic/Advanced infra toggle of its own, but the switch
-    that DOES exist for it -- the mode Tab (Local/Remote/Cloud) -- must
+    that DOES exist for it -- the Mode selector (Local/Remote/Cloud) -- must
     never affect MATLAB visibility either; only the workflow does."""
     state = _gateway_state(monkeypatch, tmp_path, user="icesee-mode-indep-user")
     state["example_dd"].value = ISSM_EXAMPLE
     ce = state["icesee_cloud_environment"]
     assert ce.matlab_license_box.layout.display == ""
 
-    mode_tabs = None
+    mode = _mode_selector(state["page"])
+    assert mode is not None
+    for value in ("local", "cluster", "cloud", "local"):
+        mode.value = value
+        assert ce.matlab_license_box.layout.display == ""
+
+
+def _mode_selector(page):
+    """The top-level Mode selector (Local / Remote HPC / Cloud)."""
+    found = []
 
     def walk(w):
-        nonlocal mode_tabs
-        if isinstance(w, W.Tab) and mode_tabs is None:
-            mode_tabs = w
+        if isinstance(w, W.ToggleButtons) and "Cloud" in w._options_labels:
+            found.append(w)
         for c in getattr(w, "children", ()):
             walk(c)
 
-    walk(state["page"])
-    assert mode_tabs is not None
-    for idx in (0, 1, 2, 0):
-        mode_tabs.selected_index = idx
-        assert ce.matlab_license_box.layout.display == ""
+    walk(page)
+    return found[0] if found else None
 
 
 # ── persistence across workflow changes ───────────────────────────────────

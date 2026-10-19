@@ -37,6 +37,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -63,6 +64,7 @@ from .storage import (
 TIFF_SUFFIXES = (".tif", ".tiff")
 BATCH = 500
 MAX_MISSING_FRACTION = 0.5
+MAX_NAV_CACHE_ITEMS = 128
 _TEMPLATE = re.compile(r"\{flight\}")
 
 
@@ -122,6 +124,8 @@ def _row(source_id, dataset_id, obj, nav_template, provider, nav_cache, now):
                               if provider.exists(nav) else None)
         except (StorageError, RadarValidationError, OSError):
             nav_cache[nav] = None
+        while len(nav_cache) > MAX_NAV_CACHE_ITEMS:
+            nav_cache.popitem(last=False)
     nav_rows = nav_cache.get(nav) if nav else None
     row = {
         "catalog_id": asset_key(source_id, obj.key), "source_id": source_id,
@@ -168,6 +172,11 @@ def index_source(catalog: RadarCatalog, source: dict, provider: RadarStorageProv
     config = source.get("config") or {}
     prefix = config.get("tiff_prefix") or ""
     nav_template = config.get("nav_template") or None
+    max_objects = config.get("max_index_objects")
+    max_bytes = config.get("max_index_bytes")
+    for name, value in (("max_index_objects", max_objects), ("max_index_bytes", max_bytes)):
+        if value is not None and (not isinstance(value, int) or isinstance(value, bool) or value < 1):
+            raise ValueError(f"{name} must be a positive integer")
     if run_id is None:
         run_id = catalog.start_run(source_id)
     counts = {"discovered": 0, "added": 0, "changed": 0, "unchanged": 0,
@@ -183,7 +192,8 @@ def index_source(catalog: RadarCatalog, source: dict, provider: RadarStorageProv
     known = {}
     new_rows: dict[str, dict] = {}
     pending: list[tuple] = []          # (obj, previous) awaiting header reads
-    nav_cache: dict[str, list | None] = {}
+    nav_cache: OrderedDict[str, list | None] = OrderedDict()
+    listed_bytes = 0
     now = time.time()
 
     def flush():
@@ -218,6 +228,15 @@ def index_source(catalog: RadarCatalog, source: dict, provider: RadarStorageProv
         seen: set[str] = set()
         for obj in provider.list(prefix, suffixes=TIFF_SUFFIXES):
             counts["discovered"] += 1
+            listed_bytes += obj.size
+            if ((max_objects is not None and counts["discovered"] > max_objects)
+                    or (max_bytes is not None and listed_bytes > max_bytes)):
+                flush()
+                return finish(
+                    "needs_confirmation",
+                    "The source exceeded its configured indexing bound; files indexed so far "
+                    "are kept and nothing was marked missing. Raise the source bound only after "
+                    "confirming the collection size.")
             seen.add(obj.key)
             previous = known.get(obj.key)
             if (not full and previous is not None
@@ -231,7 +250,7 @@ def index_source(catalog: RadarCatalog, source: dict, provider: RadarStorageProv
                 pending.append((obj, previous))
                 if len(pending) >= BATCH:
                     flush()
-            if should_stop is not None and counts["discovered"] % 100 == 0 and should_stop():
+            if should_stop is not None and should_stop():
                 flush()
                 return finish("cancelled", "Indexing was cancelled; files indexed so far are "
                                            "kept and nothing was marked missing.")

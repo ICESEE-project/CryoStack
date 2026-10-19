@@ -72,8 +72,10 @@ class SnapshotUnavailable(ReviewError):
 def review_root(catalog_path: Path) -> Path:
     """Where snapshots are kept: configured, or beside the catalog database
     (snapshots and the submissions table belong together)."""
-    configured = (os.environ.get(REVIEW_ROOT_ENV) or "").strip()
-    return Path(configured) if configured else Path(catalog_path).parent / "frozen_legacies_reviews"
+    from cryostack_src.storage_layout import resolve
+
+    path, how = resolve("frozen-legacies-reviews")
+    return path if how != "legacy" else Path(catalog_path).parent / "frozen_legacies_reviews"
 
 
 def _sha256(path: Path) -> str:
@@ -330,10 +332,17 @@ class ReviewStore:
             (tmp / SNAPSHOT_MANIFEST).write_text(json.dumps(
                 {"submission_id": submission_id, "files": files}, indent=1, sort_keys=True),
                 encoding="utf-8")
+            from cryostack_src.storage_layout import fsync_directory, fsync_file
+
             for path in tmp.rglob("*"):
                 if path.is_file():
                     path.chmod(0o440)
+                    fsync_file(path)
+            for directory in sorted({p.parent for p in tmp.rglob("*")} | {tmp}, key=str,
+                                    reverse=True):
+                fsync_directory(directory)
             os.replace(tmp, target)
+            fsync_directory(target.parent)
         except BaseException:
             shutil.rmtree(tmp, ignore_errors=True)
             raise

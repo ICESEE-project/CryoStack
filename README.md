@@ -74,6 +74,9 @@ limits.
 
 Useful workflow guides:
 
+- **[Resource Allocations](icesee_jupyter_book/docs/resource_allocations.md)** — Control Center budgets, user credits, onboarding policies, and billing boundaries
+- **[Dashboard Architecture](icesee_jupyter_book/docs/dashboard_architecture.md)** — Allocation data flows and the next dashboard revision
+
 - **[Quickstart Guide](icesee_jupyter_book/applications/icesee/getting_started.md)** — Fastest way to get started
 - **[User Manual](icesee_jupyter_book/applications/icesee/user_manual.md)** — Practical usage notes
 - **[ICESEE Workflow](icesee_jupyter_book/applications/icesee/user_manual.md)** — Conceptual overview of the DA cycle

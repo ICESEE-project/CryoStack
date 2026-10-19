@@ -1,0 +1,372 @@
+=== SPRI File Renaming Script ===
+CSV Path: C:\Users\dtarzona3\OneDrive - Georgia Institute of Technology\Desktop\film_segment_version.csv
+Folder Path: C:\Users\dtarzona3\OneDrive - Georgia Institute of Technology\Desktop\F127
+Log File: c:\Users\dtarzona3\OneDrive - Georgia Institute of Technology\Desktop\rename_log_20260307_160033.txt
+--------------------------------------------------
+
+=== Scope Type Filter ===
+Which scope type would you like to process?
+  a) scope_type = 'a'
+  z) scope_type = 'z'
+User selected scope_type: 'a'
+Filtered to 7698 entries with scope_type = 'a'
+
+=== Processing Files ===
+Old: 47_0004250_0004274-reel_begin_end.csv
+New: F127-C0778_C0789.csv
+CBD Range: 778 - 789
+Status: SUCCESS
+
+Old: 47_0004250_0004274-reel_begin_end_QC.png
+New: F127-C0778_C0789.png
+CBD Range: 778 - 789
+Status: SUCCESS
+
+Old: 47_0004275_0004299-reel_begin_end.csv
+New: F127-C0764_C0776.csv
+CBD Range: 764 - 776
+Status: SUCCESS
+
+Old: 47_0004275_0004299-reel_begin_end_QC.png
+New: F127-C0764_C0776.png
+CBD Range: 764 - 776
+Status: SUCCESS
+
+Old: 47_0004300_0004324-reel_begin_end.csv
+Suggested: F127-C0744_C0762.csv
+CBD Range: 744 - 762
+⚠️  CBD DIFFERENCE OUT OF STANDARD RANGE (Expected: 11-13, Found: 18)
+Old: 47_0004300_0004324-reel_begin_end.csv
+New: F127-C0744_C0762.csv
+CBD Range: 744 - 762
+Status: SUCCESS
+
+Old: 47_0004300_0004324-reel_begin_end_QC.png
+Suggested: F127-C0744_C0762.png
+CBD Range: 744 - 762
+⚠️  CBD DIFFERENCE OUT OF STANDARD RANGE (Expected: 11-13, Found: 18)
+Old: 47_0004300_0004324-reel_begin_end_QC.png
+New: F127-C0744_C0762.png
+CBD Range: 744 - 762
+Status: SUCCESS
+
+Old: 47_0004325_0004349-reel_begin_end.csv
+New: F127-C0730_C0743.csv
+CBD Range: 730 - 743
+Status: SUCCESS
+
+Old: 47_0004325_0004349-reel_begin_end_QC.png
+New: F127-C0730_C0743.png
+CBD Range: 730 - 743
+Status: SUCCESS
+
+Old: 47_0004350_0004374-reel_begin_end.csv
+Suggested: F127-C0729_C0738.csv
+CBD Range: 738 - 729
+⚠️  CBD DIFFERENCE OUT OF STANDARD RANGE (Expected: 11-13, Found: -9)
+Old: 47_0004350_0004374-reel_begin_end.csv
+New: F127-C0729_C0738.csv
+CBD Range: 738 - 729
+Status: SUCCESS
+
+Old: 47_0004350_0004374-reel_begin_end_QC.png
+Suggested: F127-C0729_C0738.png
+CBD Range: 738 - 729
+⚠️  CBD DIFFERENCE OUT OF STANDARD RANGE (Expected: 11-13, Found: -9)
+Old: 47_0004350_0004374-reel_begin_end_QC.png
+New: F127-C0729_C0738.png
+CBD Range: 738 - 729
+Status: SUCCESS
+
+Old: 47_0004375_0004399-reel_begin_end.csv
+Suggested: F127-C0702_C0717.csv
+CBD Range: 702 - 717
+⚠️  CBD DIFFERENCE OUT OF STANDARD RANGE (Expected: 11-13, Found: 15)
+Old: 47_0004375_0004399-reel_begin_end.csv
+New: F127-C0702_C0717.csv
+CBD Range: 702 - 717
+Status: SUCCESS
+
+Old: 47_0004375_0004399-reel_begin_end_QC.png
+Suggested: F127-C0702_C0717.png
+CBD Range: 702 - 717
+⚠️  CBD DIFFERENCE OUT OF STANDARD RANGE (Expected: 11-13, Found: 15)
+Old: 47_0004375_0004399-reel_begin_end_QC.png
+New: F127-C0702_C0717.png
+CBD Range: 702 - 717
+Status: SUCCESS
+
+Old: 47_0004400_0004424-reel_begin_end.csv
+New: F127-C0689_C0701.csv
+CBD Range: 689 - 701
+Status: SUCCESS
+
+Old: 47_0004400_0004424-reel_begin_end_QC.png
+New: F127-C0689_C0701.png
+CBD Range: 689 - 701
+Status: SUCCESS
+
+Old: 47_0004425_0004449-reel_begin_end.csv
+New: F127-C0676_C0688.csv
+CBD Range: 676 - 688
+Status: SUCCESS
+
+Old: 47_0004425_0004449-reel_begin_end_QC.png
+New: F127-C0676_C0688.png
+CBD Range: 676 - 688
+Status: SUCCESS
+
+Old: 47_0004450_0004474-reel_begin_end.csv
+Suggested: F127-C0659_C0675.csv
+CBD Range: 659 - 675
+⚠️  CBD DIFFERENCE OUT OF STANDARD RANGE (Expected: 11-13, Found: 16)
+Old: 47_0004450_0004474-reel_begin_end.csv
+New: F127-C0659_C0675.csv
+CBD Range: 659 - 675
+Status: SUCCESS
+
+Old: 47_0004450_0004474-reel_begin_end_QC.png
+Suggested: F127-C0659_C0675.png
+CBD Range: 659 - 675
+⚠️  CBD DIFFERENCE OUT OF STANDARD RANGE (Expected: 11-13, Found: 16)
+Old: 47_0004450_0004474-reel_begin_end_QC.png
+New: F127-C0659_C0675.png
+CBD Range: 659 - 675
+Status: SUCCESS
+
+Old: 47_0004475_0004499-reel_begin_end.csv
+Suggested: F127-C0642_C0657.csv
+CBD Range: 642 - 657
+⚠️  CBD DIFFERENCE OUT OF STANDARD RANGE (Expected: 11-13, Found: 15)
+Old: 47_0004475_0004499-reel_begin_end.csv
+New: F127-C0642_C0657.csv
+CBD Range: 642 - 657
+Status: SUCCESS
+
+Old: 47_0004475_0004499-reel_begin_end_QC.png
+Suggested: F127-C0642_C0657.png
+CBD Range: 642 - 657
+⚠️  CBD DIFFERENCE OUT OF STANDARD RANGE (Expected: 11-13, Found: 15)
+Old: 47_0004475_0004499-reel_begin_end_QC.png
+New: F127-C0642_C0657.png
+CBD Range: 642 - 657
+Status: SUCCESS
+
+Old: 47_0004500_0004524-reel_begin_end.csv
+Suggested: F127-C0627_C0641.csv
+CBD Range: 627 - 641
+⚠️  CBD DIFFERENCE OUT OF STANDARD RANGE (Expected: 11-13, Found: 14)
+Old: 47_0004500_0004524-reel_begin_end.csv
+New: F127-C0627_C0641.csv
+CBD Range: 627 - 641
+Status: SUCCESS
+
+Old: 47_0004500_0004524-reel_begin_end_QC.png
+Suggested: F127-C0627_C0641.png
+CBD Range: 627 - 641
+⚠️  CBD DIFFERENCE OUT OF STANDARD RANGE (Expected: 11-13, Found: 14)
+Old: 47_0004500_0004524-reel_begin_end_QC.png
+New: F127-C0627_C0641.png
+CBD Range: 627 - 641
+Status: SUCCESS
+
+Old: 47_0004525_0004549-reel_begin_end.csv
+New: F127-C0613_C0626.csv
+CBD Range: 613 - 626
+Status: SUCCESS
+
+Old: 47_0004525_0004549-reel_begin_end_QC.png
+New: F127-C0613_C0626.png
+CBD Range: 613 - 626
+Status: SUCCESS
+
+Old: 47_0004550_0004574-reel_begin_end.csv
+New: F127-C0601_C0612.csv
+CBD Range: 601 - 612
+Status: SUCCESS
+
+Old: 47_0004550_0004574-reel_begin_end_QC.png
+New: F127-C0601_C0612.png
+CBD Range: 601 - 612
+Status: SUCCESS
+
+Old: 47_0004575_0004599-reel_begin_end.csv
+New: F127-C0588_C0600.csv
+CBD Range: 588 - 600
+Status: SUCCESS
+
+Old: 47_0004575_0004599-reel_begin_end_QC.png
+New: F127-C0588_C0600.png
+CBD Range: 588 - 600
+Status: SUCCESS
+
+Old: 47_0004600_0004624-reel_begin_end.csv
+New: F127-C0576_C0587.csv
+CBD Range: 576 - 587
+Status: SUCCESS
+
+Old: 47_0004600_0004624-reel_begin_end_QC.png
+New: F127-C0576_C0587.png
+CBD Range: 576 - 587
+Status: SUCCESS
+
+Old: 47_0004625_0004649-reel_begin_end.csv
+New: F127-C0563_C0575.csv
+CBD Range: 563 - 575
+Status: SUCCESS
+
+Old: 47_0004625_0004649-reel_begin_end_QC.png
+New: F127-C0563_C0575.png
+CBD Range: 563 - 575
+Status: SUCCESS
+
+Old: 47_0004650_0004674-reel_begin_end.csv
+New: F327-C0551_C0562.csv
+CBD Range: 551 - 562
+Status: SUCCESS
+
+Old: 47_0004650_0004674-reel_begin_end_QC.png
+New: F327-C0551_C0562.png
+CBD Range: 551 - 562
+Status: SUCCESS
+
+Old: 47_0004675_0004699-reel_begin_end.csv
+Suggested: F127-C0542_C0550.csv
+CBD Range: 542 - 550
+⚠️  CBD DIFFERENCE OUT OF STANDARD RANGE (Expected: 11-13, Found: 8)
+Old: 47_0004675_0004699-reel_begin_end.csv
+New: F127-C0538_C0550.csv
+CBD Range: 542 - 550
+Status: SUCCESS
+
+Old: 47_0004675_0004699-reel_begin_end_QC.png
+Suggested: F127-C0542_C0550.png
+CBD Range: 542 - 550
+⚠️  CBD DIFFERENCE OUT OF STANDARD RANGE (Expected: 11-13, Found: 8)
+Old: 47_0004675_0004699-reel_begin_end_QC.png
+New: F127-C0538_C0550.png
+CBD Range: 542 - 550
+Status: SUCCESS
+
+Old: 47_0004725_0004749-reel_begin_end.csv
+New: F327-C0517_C0528.csv
+CBD Range: 517 - 528
+Status: SUCCESS
+
+Old: 47_0004725_0004749-reel_begin_end_QC.png
+New: F327-C0517_C0528.png
+CBD Range: 517 - 528
+Status: SUCCESS
+
+Old: 47_0004750_0004774-reel_begin_end.csv
+New: F727-C0504_C0516.csv
+CBD Range: 504 - 516
+Status: SUCCESS
+
+Old: 47_0004750_0004774-reel_begin_end_QC.png
+New: F727-C0504_C0516.png
+CBD Range: 504 - 516
+Status: SUCCESS
+
+Old: 47_0004775_0004799-reel_begin_end.csv
+New: F127-C0488_C0501.csv
+CBD Range: 488 - 501
+Status: SUCCESS
+
+Old: 47_0004775_0004799-reel_begin_end_QC.png
+New: F127-C0488_C0501.png
+CBD Range: 488 - 501
+Status: SUCCESS
+
+Old: 47_0004800_0004824-reel_begin_end.csv
+New: F127-C0471_C0483.csv
+CBD Range: 471 - 483
+Status: SUCCESS
+
+Old: 47_0004800_0004824-reel_begin_end_QC.png
+New: F127-C0471_C0483.png
+CBD Range: 471 - 483
+Status: SUCCESS
+
+Old: 47_0004825_0004849-reel_begin_end.csv
+Suggested: F127-C0447_C0470.csv
+CBD Range: 447 - 470
+⚠️  CBD DIFFERENCE OUT OF STANDARD RANGE (Expected: 11-13, Found: 23)
+Old: 47_0004825_0004849-reel_begin_end.csv
+New: F127-C0447_C0470.csv
+CBD Range: 447 - 470
+Status: SUCCESS
+
+Old: 47_0004825_0004849-reel_begin_end_QC.png
+Suggested: F127-C0447_C0470.png
+CBD Range: 447 - 470
+⚠️  CBD DIFFERENCE OUT OF STANDARD RANGE (Expected: 11-13, Found: 23)
+Old: 47_0004825_0004849-reel_begin_end_QC.png
+New: F127-C0447_C0470.png
+CBD Range: 447 - 470
+Status: SUCCESS
+
+Old: 47_0004850_0004874-reel_begin_end.csv
+Suggested: F127-C0432_C0446.csv
+CBD Range: 432 - 446
+⚠️  CBD DIFFERENCE OUT OF STANDARD RANGE (Expected: 11-13, Found: 14)
+Old: 47_0004850_0004874-reel_begin_end.csv
+New: F127-C0432_C0446.csv
+CBD Range: 432 - 446
+Status: SUCCESS
+
+Old: 47_0004850_0004874-reel_begin_end_QC.png
+Suggested: F127-C0432_C0446.png
+CBD Range: 432 - 446
+⚠️  CBD DIFFERENCE OUT OF STANDARD RANGE (Expected: 11-13, Found: 14)
+Old: 47_0004850_0004874-reel_begin_end_QC.png
+New: F127-C0432_C0446.png
+CBD Range: 432 - 446
+Status: SUCCESS
+
+Old: 47_0004875_0004899-reel_begin_end.csv
+Suggested: F127-C0414_C0431.csv
+CBD Range: 414 - 431
+⚠️  CBD DIFFERENCE OUT OF STANDARD RANGE (Expected: 11-13, Found: 17)
+Old: 47_0004875_0004899-reel_begin_end.csv
+New: F127-C0414_C0431.csv
+CBD Range: 414 - 431
+Status: SUCCESS
+
+Old: 47_0004875_0004899-reel_begin_end_QC.png
+Suggested: F127-C0414_C0431.png
+CBD Range: 414 - 431
+⚠️  CBD DIFFERENCE OUT OF STANDARD RANGE (Expected: 11-13, Found: 17)
+Old: 47_0004875_0004899-reel_begin_end_QC.png
+New: F127-C0414_C0431.png
+CBD Range: 414 - 431
+Status: SUCCESS
+
+Old: 47_0004925_0004949-reel_begin_end.csv
+Suggested: F127-C0381_C0396.csv
+CBD Range: 381 - 396
+⚠️  CBD DIFFERENCE OUT OF STANDARD RANGE (Expected: 11-13, Found: 15)
+Old: 47_0004925_0004949-reel_begin_end.csv
+New: F127-C0381_C0396.csv
+CBD Range: 381 - 396
+Status: SUCCESS
+
+Old: 47_0004925_0004949-reel_begin_end_QC.png
+Suggested: F127-C0381_C0396.png
+CBD Range: 381 - 396
+⚠️  CBD DIFFERENCE OUT OF STANDARD RANGE (Expected: 11-13, Found: 15)
+Old: 47_0004925_0004949-reel_begin_end_QC.png
+New: F127-C0381_C0396.png
+CBD Range: 381 - 396
+Status: SUCCESS
+
+
+==================================================
+=== RENAMING SUMMARY ===
+Total files processed: 52
+Successfully renamed: 52
+Not found in CSV: 0
+Errors encountered: 0
+==================================================
+
+Log saved to: c:\Users\dtarzona3\OneDrive - Georgia Institute of Technology\Desktop\rename_log_20260307_160033.txt

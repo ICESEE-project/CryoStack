@@ -42,6 +42,7 @@ class _FakeCompleted:
 
 def _build_gateway(monkeypatch, tmp_path, *, user):
     monkeypatch.setenv("CRYOSTACK_WORKSPACE_USER", user)
+    monkeypatch.setenv("CRYOSTACK_CLOUD_OPERATOR_USER_IDS", user)  # developer mode is opt-in
     monkeypatch.setenv("USER", f"{user}-svc")
     monkeypatch.setenv("CRYOSTACK_WORKSPACE_ROOT", str(tmp_path))
     import matplotlib
@@ -70,16 +71,22 @@ def _freevar(fn, name):
 
 
 def _select_cloud_mode(page):
-    mode_tabs = None
+    """Choose Cloud with the page's Mode selector (the top-level Mode card);
+    returns the environment stack it drives (selected_index 2 = Cloud)."""
+    mode_selector = mode_tabs = None
 
     def walk(w):
-        nonlocal mode_tabs
-        if isinstance(w, W.Tab) and mode_tabs is None:
+        nonlocal mode_selector, mode_tabs
+        if isinstance(w, W.ToggleButtons) and mode_selector is None and "Cloud" in w._options_labels:
+            mode_selector = w
+        if isinstance(w, W.Stack) and mode_tabs is None and len(w.children) == 3:
             mode_tabs = w
         for c in getattr(w, "children", ()):
             walk(c)
 
     walk(page)
+    mode_selector.value = "cloud"
+    assert mode_tabs.selected_index == 2
     mode_tabs.selected_index = 2   # Cloud
     return mode_tabs
 
@@ -170,10 +177,7 @@ def test_cloud_status_and_terminate_flow_through_the_hardened_driver(
     assert "RUNNING" in printed
     assert any("describe-jobs" in c for c in calls)
 
-    terminate_btn = _find_button(page, "Terminate cloud job")
-    assert terminate_btn is not None
-    terminate_click = terminate_btn._click_handlers.callbacks[0]
-    terminate_handler = _freevar(terminate_click, "run_example_cloud_terminate")
+    terminate_handler = _cloud_terminate_handler(page)
     capsys.readouterr()
     terminate_handler()
     printed = capsys.readouterr().out
@@ -181,12 +185,32 @@ def test_cloud_status_and_terminate_flow_through_the_hardened_driver(
     assert any("cancel-job" in c or "terminate-job" in c for c in calls)
 
 
+def _cloud_terminate_handler(page):
+    """run_example_cloud_terminate as the workspace's "Cancel run" action
+    reaches it (Cancel run -> confirmation -> host.cancel_run -> the cloud
+    terminate path); there is no separate, unconfirmed Terminate button."""
+    buttons = []
+
+    def walk(w):
+        if isinstance(w, W.Button) and w.description == "Cancel run":
+            buttons.append(w)
+        for c in getattr(w, "children", ()):
+            walk(c)
+
+    walk(page)
+    for b in buttons:
+        confirm = b._click_handlers.callbacks[0].__self__
+        owner = _freevar(confirm.action, "self")
+        host = getattr(owner, "host", None)
+        if host is not None:
+            return _freevar(type(host).cancel_run, "run_example_cloud_terminate")
+    raise AssertionError("no workspace Cancel run action found")
+
+
 def test_cloud_terminate_with_no_job_id_yet_is_a_clean_noop(monkeypatch, tmp_path, capsys):
     page = _build_gateway(monkeypatch, tmp_path, user="cloud-terminate-noop-user")
     _select_cloud_mode(page)
-    terminate_btn = _find_button(page, "Terminate cloud job")
-    click_handler = terminate_btn._click_handlers.callbacks[0]
-    handler = _freevar(click_handler, "run_example_cloud_terminate")
+    handler = _cloud_terminate_handler(page)
 
     capsys.readouterr()
     handler()
@@ -1060,3 +1084,39 @@ def test_cloud_runs_record_one_experiment_and_each_status_once(monkeypatch, tmp_
     text = json.dumps(calls)
     assert "AKIAABCDEFGHIJKLMNOP" not in text and "123456789012" not in text
     assert failed["failure"] and failed["error_message"]
+
+
+def test_cloud_submit_without_a_connected_account_is_refused_before_any_aws_call(
+    monkeypatch, tmp_path, capsys,
+):
+    """An ordinary user with no AWS connection never runs on the host's
+    credentials, whatever profile is typed into the Cloud panel."""
+    import cryostack_src.cloud.legacy.aws_batch as legacy_batch
+
+    calls = []
+
+    class _FakeSubprocess:
+        @staticmethod
+        def run(argv, **kwargs):
+            calls.append(argv)
+            return _FakeCompleted("{}")
+
+    monkeypatch.setattr(legacy_batch, "subprocess", _FakeSubprocess)
+
+    page = _build_gateway(monkeypatch, tmp_path, user="cloud-plain-user")
+    monkeypatch.delenv("CRYOSTACK_CLOUD_OPERATOR_USER_IDS")
+    _select_cloud_mode(page)
+    handler = _freevar(_find_button(page, "Launch cloud run")._click_handlers.callbacks[0],
+                       "run_example_cloud_submit")
+    _freevar(handler, "aws_region").value = "us-east-2"
+    _freevar(handler, "aws_profile").value = "default"
+    _freevar(handler, "cloud_bucket").value = "s3://bucket/runs"
+    _freevar(handler, "batch_job_queue").value = "q"
+    _freevar(handler, "batch_job_def").value = "jd"
+
+    capsys.readouterr()
+    handler()
+    printed = capsys.readouterr().out
+    assert calls == []
+    assert "No AWS account is connected" in printed
+    assert _freevar(handler, "STATUS").get("batch_job_id") is None

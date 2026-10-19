@@ -152,6 +152,9 @@ async def _render_user_detail(
         "cryostack_user"
     ]
 
+    user["developer_docs_access"] = access.can_read_developer_docs(user_id=user_id)
+    user["can_manage_developer_docs"] = access.effective_role(user_id=actor.id) == "owner"
+
     inspector = WorkspaceInspector.for_app(
         request.app
     )
@@ -305,6 +308,28 @@ async def user_role_update_handler(
         f"/control/users/{target_user_id}"
         "?notice=role_updated"
     )
+
+
+async def user_developer_docs_update_handler(request: web.Request) -> web.StreamResponse:
+    require_same_origin(request)
+    actor = request.get("cryostack_user")
+    if actor is None:
+        raise web.HTTPUnauthorized(text="Authentication required.")
+    form = await request.post()
+    try:
+        request.app["control_access_service"].set_developer_docs_access(
+            actor_user_id=actor.id, target_user_id=request.match_info["user_id"],
+            enabled=str(form.get("enabled", "")).lower() in {"1", "true", "on", "yes"},
+            reason=str(form.get("reason", "")))
+    except LookupError:
+        raise web.HTTPNotFound(text="User not found.")
+    except PermissionError as error:
+        return await _render_user_detail(request, user_id=request.match_info["user_id"],
+                                         error=str(error), status=403)
+    except ValueError as error:
+        return await _render_user_detail(request, user_id=request.match_info["user_id"],
+                                         error=str(error), status=400)
+    raise web.HTTPSeeOther(f"/control/users/{request.match_info['user_id']}?notice=developer_docs_updated")
 
 
 async def user_sessions_revoke_handler(

@@ -112,13 +112,14 @@ def test_voila_environment_is_an_allowlist(monkeypatch, tmp_path):
               "CRYOSTACK_AUTH_DATABASE": "/srv/auth.db",
               "APPTAINER_DOCKER_PASSWORD": "sentinel-registry-password",
               "AWS_SHARED_CREDENTIALS_FILE": "/home/svc/.aws/credentials",
+              "CRYOSTACK_CLOUD_OPERATOR_USER_IDS": "operator-id",
               "JUPYTER_CONFIG_PATH": "/etc/jupyter"}
     env = mod.voila_environment("tok", source)
 
     for name in (*_GATEWAY_SECRETS, *_GATEWAY_ONLY, "APPTAINER_DOCKER_PASSWORD"):
         assert name not in env, name
     for name in (*_KERNEL_SETTINGS, "PATH", "HOME", "LC_ALL", "CRYOSTACK_AUTH_DATABASE",
-                 "AWS_SHARED_CREDENTIALS_FILE"):
+                 "AWS_SHARED_CREDENTIALS_FILE", "CRYOSTACK_CLOUD_OPERATOR_USER_IDS"):
         assert env[name] == source[name], name
     assert env["CRYOSTACK_VOILA_TOKEN"] == "tok"
     config_path = env["JUPYTER_CONFIG_PATH"].split(os.pathsep)

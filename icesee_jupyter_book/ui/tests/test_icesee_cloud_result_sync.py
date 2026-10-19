@@ -1,8 +1,7 @@
 """ICESEE Cloud result synchronization (item 4 of the ICESEE cloud
 execution-parity checkpoint): selecting a finished/running CLOUD run in the
-Workspace Runs panel syncs s3://<s3_run>/outputs/ into that run's own
-workspace_directory BEFORE the existing Results preview / DA-aware
-ResultPackage summary runs -- resolved from the run's OWN persisted
+Workspace run history syncs s3://<s3_run>/outputs/ into that run's own
+workspace_directory (on a worker thread, then Results re-reads it) -- resolved from the run's OWN persisted
 metadata['aws_resources'], never the live Cloud panel widgets. A LOCAL run
 never triggers any AWS call. No real AWS CLI is ever invoked.
 """
@@ -29,6 +28,7 @@ def test_gateway_wires_the_sync_step_into_run_selection():
 
 def _build_gateway(monkeypatch, tmp_path, *, user):
     monkeypatch.setenv("CRYOSTACK_WORKSPACE_USER", user)
+    monkeypatch.setenv("CRYOSTACK_CLOUD_OPERATOR_USER_IDS", user)  # developer mode is opt-in
     monkeypatch.setenv("USER", f"{user}-svc")
     monkeypatch.setenv("CRYOSTACK_WORKSPACE_ROOT", str(tmp_path))
     import matplotlib
@@ -38,21 +38,28 @@ def _build_gateway(monkeypatch, tmp_path, *, user):
 
 
 def _find_runs_select(page):
-    found = {}
+    """The workspace's run history list; selecting a run is what the user does."""
+    found = []
 
     def walk(w):
-        if "runs" not in found:
-            notifiers = getattr(w, "_trait_notifiers", None)
-            if notifiers and "value" in notifiers:
-                for handlers in notifiers["value"].values():
-                    for h in handlers:
-                        if getattr(h, "__name__", "") == "show_selection":
-                            found["runs"] = (w, h)
+        if "icw-runlist" in getattr(w, "_dom_classes", ()):
+            found.append(w)
         for c in getattr(w, "children", ()):
             walk(c)
 
     walk(page)
-    return found.get("runs")
+    return (found[0], None) if found else None
+
+
+def _wait_for(predicate, timeout=10.0):
+    import time
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.05)
+    return predicate()
 
 
 def _freevar(fn, name):
@@ -101,7 +108,8 @@ def test_selecting_a_cloud_run_syncs_from_its_own_persisted_s3_identity(
     runs_select, show_selection = _find_runs_select(page)
     assert runs_select is not None
 
-    runs_select.value = "cloud-run-1"   # triggers show_selection -> on_run_selected
+    runs_select.value = "cloud-run-1"   # the sync runs on a worker thread
+    _wait_for(lambda: calls)
 
     assert calls, "no S3 sync was attempted for a cloud run"
     sync_call = calls[0]
@@ -140,4 +148,5 @@ def test_selecting_a_local_run_never_triggers_an_aws_call(monkeypatch, tmp_path)
     runs_select, _ = _find_runs_select(page)
     runs_select.value = "local-run-1"
 
+    assert not _wait_for(lambda: calls, timeout=1.5)
     assert calls == []

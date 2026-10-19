@@ -912,6 +912,11 @@ def cloud_page(
             "Approved AWS Batch execution configuration, cloud runs, "
             "failures and cloud-related service logs.",
         )
+        + '<p><a href="/control/allocations">Resource Allocations</a> · <a href="/compute/allocations">My simulated reservations</a>. Allocation credits apply only to simulations; BYO execution is billed to your connected AWS account.</p>'
+        + _heading(
+            "Allocation simulation",
+            "Live project-funded AWS execution is disabled.",
+        )
         + _metrics(
             executions["summary"],
             first_label="Cloud models",

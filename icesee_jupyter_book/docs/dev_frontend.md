@@ -58,8 +58,9 @@ user-owned working copy and never mutates a canonical example. Advanced mode
 exposes a generic, model-neutral file editor over the same workspace, with
 canonical material read-only and a **Clone to My Workspace** action. Both
 modes converge on the same submission contract. This Basic/Advanced/
-Auto-config · Beta organization is CryoLauncher's own — ICESEE deliberately
-organizes its interface as Local/Remote/Cloud plus Auto-config · Beta instead;
+Auto-config · Beta organization is CryoLauncher's own — ICESEE organizes its
+interface as a workflow (Mode → Experiment → Environment & resources →
+Scientific parameters → Review & launch → Monitor → Results) instead;
 neither application imposes its shape on the other, and a new application is
 free to choose its own configuration-experience shape (see
 [Extending CryoStack](dev_extending.md)).
@@ -89,9 +90,15 @@ CryoStack does not impose one UI structure on every application:
 
 - **CryoLauncher** — Basic / Advanced / Auto-config · Beta over one ISSM/
   Icepack run configuration; Remote and Cloud execution, no Local mode.
-- **ICESEE** — Local / Remote / Cloud, plus Auto-config · Beta, over its
-  ensemble data-assimilation configuration; Local runs a selected workflow
-  in the hosting notebook.
+- **ICESEE** — `icesee_jupyter_book/ui/icesee_workflow/`: a Mode card first,
+  then the experiment, environment, parameters and Review & launch (which
+  becomes the active run), and a workspace (Run / Files / Editor / Logs /
+  Results) that follows the selected run. The gateway
+  (`icesee_gateway.py`) keeps every Remote/Cloud widget and handler; the
+  workflow package arranges them and adds the local job lifecycle, the
+  editor (`core/experiment_files.py`) and the results views. Its stylesheet
+  (`icesee_workflow/styles.py`) is scoped to `.icw` and honours
+  `prefers-reduced-motion`.
 - **Frozen Legacies** — dataset manifests, ingestion adapters, and radar
   interpretation tools; no Remote/Cloud/Auto-config execution-mode concepts.
 - **LIVIST** — its own frontend and documentation, built and served through

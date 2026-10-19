@@ -227,14 +227,28 @@ def split_flight_segments(
     directly to the preceding point.
     """
 
-    ordered = sorted(
-        observations,
-        key=lambda observation: (
-            observation.frame_idx
-            if observation.frame_idx is not None
-            else 0
-        ),
-    )
+    def survey_order(observation):
+        """Order a flight by its continuous film counter, not frame index.
+
+        ``frame_idx`` restarts at every TIFF.  Sorting an entire flight by that
+        field interleaves all TIFFs (every frame 1, then every frame 2, ...),
+        producing the false fan-shaped connectors seen on the map.  CBD is the
+        flight-wide film sequence.  TIFF/frame values are deterministic
+        tie-breakers only.
+        """
+        try:
+            cbd = float(observation.cbd)
+        except (TypeError, ValueError):
+            cbd = float("inf")
+        try:
+            tiff_id = int(observation.metadata.get("tiff_id"))
+        except (AttributeError, TypeError, ValueError):
+            tiff_id = 0
+        return (cbd, tiff_id,
+                observation.frame_idx if observation.frame_idx is not None else 0,
+                observation.observation_id)
+
+    ordered = sorted(observations, key=survey_order)
 
     valid = [
         observation

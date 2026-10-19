@@ -52,7 +52,7 @@
   <div class="cryostack-app-doc-content">
 :::
 
-This page documents the **internal application API** used by the Frozen Legacies browser modules. It is developer documentation, not a stable public interface: endpoints may change with the application. Integrations that need a stable contract should use the downloadable products and dataset files instead. The automatic-picking endpoints are implemented and tested, and URSA has been run end to end on the F127 reference strip in a separate environment; its results remain scientifically unvalidated (see the Developer Guide).
+This page documents the **internal application API** used by the Frozen Legacies browser modules. It is developer documentation, not a stable public interface: endpoints may change with the application. Integrations that need a stable contract should use the downloadable products and dataset files instead. The automatic-picking endpoints are implemented and tested; LYRA (the default picker) and URSA (the fallback) have both been run end to end on F127 film, and their results remain scientifically unvalidated (see the Developer Guide).
 
 ## Conventions
 
@@ -84,6 +84,16 @@ Response: `{"sources": [{"key", "title", "status", "flight", "cbd_start", "cbd_e
 | DELETE | `assets/<asset_id>` | Remove the asset from the user's workspace (`409` while automatic picking runs). Shared radar itself is never touched. |
 | GET | `assets/<asset_id>/view?x=&width=&scale=` | PNG of source columns `[x, x+width)` at integer `scale` ∈ {1,2,4,8,16,32,64}, full height, ≤ 6 Mpx. |
 
+Image products (source TIFF, radargram/echogram, ASTRA QC, and automatic-picker
+diagnostics) expose `products/<product_id>/preview` as a bounded PNG and
+`products/<product_id>/preview.pdf` as an optional, visibly labelled
+preview-only report. Both routes enforce normal asset ownership. Derivatives
+are held in a rebuildable, per-asset cache separate from originals and carry
+`X-Preview-SHA256`, `X-Preview-Source-SHA256`, and
+`X-Scientific-Status: preview-only` response headers. Generation rejects
+images over 160 million pixels or 200,000 pixels on either side; each asset's
+cache is capped at 32 MiB and 64 derivatives. Source objects are never changed.
+
 An asset object: `{"asset_id", "origin" ("upload" | "shared" | "products"), "title", "filename", "flight", "cbd_start", "cbd_end", "image" ({"format", "mode", "width", "height", "compression", "bytes"} or null), "nav" ({"present", "rows", "cbd_min", "cbd_max", "positions", ...}), "created_at", "available", "shared_source"?, "status"?}`.
 
 ## Manual picking (ASTRA)
@@ -110,12 +120,12 @@ Action bodies (all include `"revision": <current revision>`; a stale revision an
 
 An unreadable or tampered `session.json` answers `409 {"error", "session_invalid": true}`; `reset` recovers it.
 
-## Automatic picking (URSA)
+## Automatic picking (LYRA, or URSA)
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `assets/<asset_id>/automatic` | `{"availability": {"available", "picker", "reason", "environment"}, "has_radar", "job", "warnings", "products", "scientific_status", "scientific_note", "publication_eligible"}`. `availability.environment` (when available) is `{"python", "packages": {"numpy", "scipy", "pandas", "matplotlib", "cv2", "skimage"}}` -- versions from the health check, never paths. `scientific_status` is always `"unvalidated"` and `publication_eligible` always `false`; `job.scientific_status` is `"unvalidated"`. A completed job has `job.provenance` (URSA commit if determinable, source/config SHA-256, parameters, input/output and diagnostic-image hashes; no paths). `products` lists the results; `ursa-diagnostic` images are not in it but in `frames`: `{"columns", "rows": [{"frame", "values", "flags", "images": [{"product_id", "title", "label", "bytes", "sha256", "preview_url", "download_url"}]}], "flagged", "diagnostic_images", "label", "note", "scientific_status", "truncated"}` (or `null` without an automatic result). `values` are URSA's CSV text as written; `flags` are heuristic and correct nothing. |
-| POST | `assets/<asset_id>/automatic` | `{"action": "start"}` (`409` if unavailable, already running, or no raw radar) or `{"action": "cancel"}`. |
+| GET | `assets/<asset_id>/automatic` | `{"picker" ("lyra" \| "ursa": the configured picker new jobs use), "picker_label", "availability": {"available", "picker", "reason", "environment"}, "has_radar", "job", "warnings", "products", "scientific_status", "scientific_note", "publication_eligible"}`. `availability.environment` (when available) is `{"python", "packages": {...}}` -- versions from the health check, never paths (LYRA: `numpy`, `pandas`, `matplotlib`, `PIL`; URSA: `numpy`, `scipy`, `pandas`, `matplotlib`, `cv2`, `skimage`). `job.picker` / `job.picker_label` name the picker the job ran with, and `job.picker_version` (`{"picker", "source_sha256", "source_files", "commit"}`) the code it ran, recorded when the job is created. `products`, `frames` and `scientific_note` belong to the picker of the asset's latest job, so an earlier URSA result stays readable when LYRA is configured. With LYRA configured, `lyra` is `{"canonical_name", "canonical_name_from" ("file name" \| "rename log"), "runnable", "reason", "guidance": {"picks"?, "derived"?: {"product_id", "name", "summary"}}}`. `scientific_status` is always `"unvalidated"` and `publication_eligible` always `false`; `job.scientific_status` is `"unvalidated"`. A completed LYRA job has `job.provenance` with LYRA's code digest, the phases run (`exit`, `seconds`), where it `stopped` (`null`, `"calibration-guidance-required"`, `"phase3-refused"`, `"phase4-failed"`), the canonical name and its source, input/guidance/output hashes and LYRA's own review files; `frames` then also has `strip_images` (contact sheet, OCR diagnostic) and `picker_label`. A completed URSA job has `job.provenance` (URSA commit if determinable, source/config SHA-256, parameters, input/output and diagnostic-image hashes; no paths). `products` lists the results; `ursa-diagnostic` images are not in it but in `frames`: `{"columns", "rows": [{"frame", "values", "flags", "images": [{"product_id", "title", "label", "bytes", "sha256", "preview_url", "download_url"}]}], "flagged", "diagnostic_images", "label", "note", "scientific_status", "truncated"}` (or `null` without an automatic result). `values` are URSA's CSV text as written; `flags` are heuristic and correct nothing. |
+| POST | `assets/<asset_id>/automatic` | `{"action": "start"}` (`409` if unavailable, already running, no raw radar, or -- LYRA -- the TIFF's reel name cannot be determined) or `{"action": "cancel"}`. |
 
 A job: `{"job_id", "picker", "status" (queued, running, completed, failed, cancelled, interrupted), "created_at", "started_at", "finished_at", "message", "log_tail", "summary", "warnings"}`.
 
@@ -130,17 +140,20 @@ A job: `{"job_id", "picker", "status" (queued, running, completed, failed, cance
 | DELETE | `assets/<asset_id>/products/<product_id>` | Remove a user-uploaded product (`403` otherwise). |
 | GET | `assets/<asset_id>/products.zip` | The downloadable products (not the raw TIFF) plus `PRODUCTS.json`. |
 
-A product: `{"product_id", "asset_id", "kind", "title", "type", "producer" ("frozen-legacies" | "user"), "workflow" ("astra-manual" | "ursa-automatic" | "upload" | "radar-source"), "filename", "mime", "bytes", "created_at", "available", "downloadable", "previewable", "provenance", "summary", "download_url", "preview_url"}`. URSA products (workflow `ursa-automatic` or an `ursa-*` kind) also carry `"scientific_status": "unvalidated"`.
+A product: `{"product_id", "asset_id", "kind", "title", "type", "producer" ("frozen-legacies" | "user"), "workflow" ("astra-manual" | "lyra-automatic" | "ursa-automatic" | "upload" | "radar-source"), "filename", "mime", "bytes", "created_at", "available", "downloadable", "previewable", "provenance", "summary", "download_url", "preview_url"}`. Automatic products (workflow `lyra-automatic` or `ursa-automatic`, or an `ursa-*` kind) also carry `"scientific_status": "unvalidated"`. LYRA's run products are `lyra-frame-index`, `lyra-calibration`, `lyra-run-echoes` (no positions) and `lyra-diagnostic` images; a run replaces all of them, so outputs a later run did not produce are removed.
 
-Upload kinds: `navigation`, `astra-csv`, `astra-qc`, `ursa-csv`, `lyra-echoes-csv`, `echogram`, `radargram`.
+Upload kinds: `navigation`, `astra-csv`, `astra-qc`, `ursa-csv`, `lyra-echoes-csv`, `lyra-guidance` and `lyra-guidance-derived` (LYRA's calibration-picks JSON, checked against LYRA's format, at most 1 MB), `echogram`, `radargram`.
 
 ## Radar catalog
 
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `radar/catalog?dataset=&flight=&status=&state=&q=&cbd=&id=&page=&page_size=` | Server-side search of the installation's radar catalog. `page_size` ≤ 100. `status` is the index status (`indexed`, `changed`, `missing`, `invalid`, `unavailable`; default: available files). `state` is the signed-in user's processing or review state (`unprocessed`, `manual_in_progress`, `manual_completed`, `automatic_pending`, `automatic_running`, `automatic_completed`, `automatic_failed`, `needs_review`, `returned`, `published`). `q` matches the file name literally; `id` looks up one catalog ID. |
+| GET | `radar/explorer?qv=1&audience=workspace&dataset=&flight=&source=&cbd_min=&cbd_max=&review=&bbox=&crs=EPSG:4326&spatial=&q=&sort=&cursor=` | Authorized ExplorerQueryV1 snapshot. Repeated identity/review keys are ORed within a field; fields are ANDed. The response returns the canonical effective query, exact total, bounded items and GeoJSON features, own-field-excluded facets, and a query-bound signed cursor from the same SQLite read snapshot. Restricted sources are absent for callers without a maintainer role. V1 currently rejects documented filters whose authoritative metadata is not indexed instead of silently broadening the request. |
 | GET | `radar/catalog/summary?dataset=` | Datasets and flights with file counts, CBD ranges and navigation coverage; each flight has `published` and `awaiting_review` (catalog files with a published / pending result, all users) and `mine`: the user's progress (`unprocessed`, `manual_in_progress`, `manual_completed`, `automatic_*`, `needs_review`, `returned`, `published`). |
 | GET | `radar/catalog/segments?dataset=&flight=&bbox=&limit=` | Catalog files with real navigation tracks as GeoJSON (LineString/Point), `limit` ≤ 5,000. Files without navigation are not included; `summary` is `{"returned", "truncated", "unplaced"}`, where `unplaced` counts the matching files that have no navigation and therefore no position. |
+| GET | `navigation/flights` | Optional installation-level navigation-only dataset and flight-track GeoJSON. It never creates radar assets and marks imagery unavailable until matching TIFFs are installed. |
+| GET | `context/riggs` | Optional checksum-verified RIGGS reference-station GeoJSON and provenance. Stations are scientific context, never user or automatic picks. |
 
 A catalog item: `{"catalog_id", "source_id", "source_name", "dataset_id", "filename", "flight", "cbd_start", "cbd_end", "width", "height", "mode", "bytes", "has_nav", "status", "duplicate", "first_indexed_at", "indexed_at", "processing"}`. Storage keys and locations are never returned. Open a catalog file with `POST assets/shared` and `{"source": "<catalog_id>"}`: the file is referenced, not copied.
 
@@ -150,7 +163,7 @@ A catalog item: `{"catalog_id", "source_id", "source_name", "dataset_id", "filen
 |---|---|---|
 | GET | `observations?bbox=&status=&asset=&limit=` | The signed-in user's picked observations as a GeoJSON FeatureCollection (WGS84). `bbox` is `min_lon,min_lat,max_lon,max_lat`; `status` is `draft` or `completed`; `limit` ≤ 20,000. `summary` reports counts and observations without a mappable position. |
 
-Each feature is one row of the asset's ASTRA CSV (same CBD, LAT/LON and values) with `workflow`, `status`, pick provenance and the georeferencing fields; its geometry is the verified position when the CBD was confirmed against the film, none when the label was unreadable, otherwise ASTRA's position (`geolocation_status` says which). Only the owner can read them; they are never added to the shared dataset files. With a catalog database the response comes from an indexed, owner-scoped copy of the workspace's `observations.json` files.
+Manual features are rows of the asset's ASTRA CSV (same CBD, LAT/LON and values) with `workflow`, `status`, pick provenance and georeferencing fields. Completed LYRA runs also contribute owner-only `lyra-automatic` features when a frame's LYRA CBD exactly matches an asset navigation record; these carry `scientific_status: "unvalidated"`, `cbd_source` (`lyra-ocr` or `lyra-sequence`) and can never enter review/publication. Automatic frames without an exact navigation match are counted in `summary.automatic.without_position` but have no map feature. Only the owner can read this collection; it never changes shared dataset files.
 
 ## Review and publication
 
@@ -202,13 +215,35 @@ These require a Control Center role of `maintainer`, `admin`, or `owner`, checke
 |---|---|---|
 | GET | `admin/sources` | Data sources with index counts and recent index runs. |
 | POST | `admin/sources` | Register a source: `{"source_id", "name", "dataset_id", "provider": "local", "root", "tiff_prefix"?, "nav_template"?}` (the root must be inside an approved storage root) or `{"source_id", "name", "dataset_id", "provider": "s3", "bucket", "prefix"?, "region"?, "endpoint"?, "tiff_prefix"?, "nav_template"?}` (the bucket/prefix must be approved in `CRYOSTACK_FROZEN_LEGACIES_S3_ALLOWED`; `endpoint` names an entry of `CRYOSTACK_FROZEN_LEGACIES_S3_ENDPOINTS`). Any credential-like field is refused (`400`). `201`. |
+| POST | `admin/intake-sessions` | Create a maintainer-owned resumable intake from source metadata plus `files: [{name, bytes, sha256}]`. The configured intake volume must already exist and be writable. Returns an opaque session ID and fixed 8 MiB chunk contract. |
+| GET | `admin/intake-sessions/<session_id>` | Session progress for its creating maintainer. Possession of the opaque ID alone is insufficient. |
+| PUT | `admin/intake-sessions/<session_id>/files/<file_id>/chunks/<index>` | Store one fixed-position chunk with `Content-Length` and `X-Chunk-SHA256`. Exact retries are idempotent; conflicting retries and invalid digests are refused. |
+| POST | `admin/intake-sessions/<session_id>/cancel` | Cancel an open session and reclaim its committed chunks; repeated cancellation is idempotent. |
+| POST | `admin/intake-sessions/<session_id>/finalize` | Recompute whole-file SHA-256 values, pass the originals through the existing safe curator stager, and register a maintainer-only, scientifically unverified and unpublished source. |
 | POST | `admin/sources/<source_id>/test` | Connection test, recorded on the source: `{"ok", "message"}`. |
 | POST | `admin/sources/<source_id>/index` | Queue a background index run (a separate worker process): `{"full": true}` re-reads unchanged files; `{"allow_mass_missing": true}` confirms removals after a `needs_confirmation` run. `202` with `run_id`; `409` if the source already has an active run or is disabled. |
 | POST | `admin/sources/<source_id>/retry` | Queue an incremental run that also re-reads files recorded as `invalid` (`unavailable` files are re-read by every run). `202`; `409` as above. |
 | POST | `admin/sources/<source_id>/cancel` | Stop the active run: a queued run ends at once, a running one after its current batch (`cancelled`; indexed files kept, nothing marked missing). `202`; `409` if nothing is running. |
-| POST | `admin/sources/<source_id>/status` | `{"status": "enabled" | "disabled"}`. |
+| POST | `admin/sources/<source_id>/status` | `{"status": "enabled" | "disabled"}`. Audited. |
+| POST | `admin/sources/<source_id>/visibility` | `{"visibility": "users" | "maintainers"}`: who can find and open the source's files (catalog search, map summaries, opening a `cat-` key; others get `404`). Assets already in a workspace keep working. Audited. |
+| DELETE | `admin/sources/<source_id>` | Remove the registration: `{"confirm": "<source_id>", "reason"?}`. Deletes the source's catalog rows and index runs only -- never files in the storage (`"storage_untouched": true`); registering the same ID again and indexing restores every catalog ID. `409` while an index run is active. Audited. |
+| GET | `admin/sources/<source_id>/files?q=&status=&page=&page_size=` | Discovered files of one source, any status: `catalog_id`, `key` (relative to the source), `filename`, flight/CBD from the name, size, `mtime_ns`, `status`, `error`, `duplicate`, `indexed_at`, `cache` (`in place` \| `cached` \| `not cached`). `page_size` ≤ 200. |
+
+`POST admin/sources` also accepts `"provider": "cedar"` (Georgia Tech CEDAR mounted on the server: a `root` inside an approved storage root that must be on a mounted network filesystem) and `"visibility"`. `GET admin/sources` lists `providers` (available), `planned` (not available, each with what it `requires`: `gdrive`, `onedrive`, `dropbox`) and `visibilities`. Registration, status, visibility and removal are recorded in the Control Center audit log (`frozen_legacies.source.*`; IDs and provider names only, never locations).
 
 The Control Center page `/control/frozen-legacies` uses these endpoints.
+
+## Workspace storage
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `storage/usage` | The caller's `used_bytes`, `reserved_bytes` (uploads in progress), `quota_bytes`, `available_bytes`, `percent`, `status` (`ok` \| `warning` \| `over`), `override`, `max_upload_bytes`. |
+| GET | `radar/catalog/sources` | Enabled data sources the caller may browse (`source_id`, `name`, `dataset_id`, `provider`, `visibility`, `files`) -- the asset selector's source filter. `radar/catalog` accepts `source=<source_id>`. |
+| GET | `admin/storage` | Administrators (`admin`/`owner`; `403` for maintainers): `settings`, `limits`, `totals` (`workspace_bytes`, `users`, `over_quota`, `warning`, `cache_bytes`, `cache_limit_bytes`, `disk`, `disk_status`), `users` (usage and quota of each), `sources` (provider, connection, last index, files, status, visibility). No paths. |
+| POST | `admin/storage/settings` | Any of `default_quota_bytes` (0–10 TiB), `max_upload_bytes` (1 MiB–200 MiB), `warn_percent`, `disk_warn_percent` (1–100), plus `reason`. All values are validated before any is stored. Audited (`cryostack.storage.<name>`). |
+| POST | `admin/storage/users/<user_id>` | `{"quota_bytes": <bytes> | null, "reason"?}`: set or clear a per-user quota. Audited (`cryostack.storage.user_quota`). |
+
+**Enforcement.** Uploads (`assets/upload`, `assets/products`, `assets/<id>/products`) must declare `Content-Length` (`411` otherwise); one that does not fit in the remaining allowance, or is larger than `max_upload_bytes`, is refused with `413` before its body is read: `{"error", "quota": {...usage}}`. While a user is at or above the quota, `assets/<id>/manual`, `assets/<id>/georef` and starting automatic picking are refused with `413` as well (cancelling never is); starting automatic picking also needs 160 MiB free. Reads, downloads and deletions are never blocked. Concurrent requests reserve their declared size until they finish. The platform Control Center page is `/control/storage`.
 
 ## Shared dataset downloads
 
@@ -228,7 +263,7 @@ The Control Center page `/control/frozen-legacies` uses these endpoints.
 | `radar/assets.py` | `asset.json`; upload/shared/products assets; resolving an asset's files. |
 | `radar/render.py` | Decoded-image cache and server-side window rendering. |
 | `radar/manual.py` | ASTRA session documents, validation, atomic outputs, working-window cache. |
-| `radar/automatic.py` | URSA availability and subprocess jobs. |
+| `radar/automatic.py` | Automatic-picker selection, availability and subprocess jobs (LYRA, URSA). |
 | `radar/products.py` | Product model, upload validation, summaries. |
 | `radar/storage.py` | Storage-provider interface; local/mounted and read-only S3 providers; storage-key safety and S3 approvals. |
 | `radar/catalog.py` | SQLite radar catalog: data sources, radar files, index runs, per-user state; search, summaries, segments. |
@@ -242,6 +277,7 @@ The Control Center page `/control/frozen-legacies` uses these endpoints.
 | `radar/review.py` | Submissions, immutable snapshots, review decisions, publication, supersession and withdrawal. |
 | `review_routes.py` | Review and publication routes; the Control Center review page. |
 | `pickers/astra.py` | ASTRA port (parity-tested against `Pickers/ASTRA_MAC.py`). |
+| `pickers/lyra_runner.py` | LYRA entry point run in a subprocess (phases 1, 3, 4; stops if the server dies). |
 | `pickers/ursa_runner.py` | URSA entry point run in a subprocess. |
 
 :::{raw} html

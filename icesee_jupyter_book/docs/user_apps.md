@@ -77,3 +77,8 @@ execution-mode concepts — see
 Control Center is CryoStack's administrative/operations tooling (roles,
 deployment status, account administration). It is not one of the
 principal scientific applications above.
+
+
+## Live interface walkthrough
+
+See the [visual walkthrough](visual_walkthrough.md) for dated screenshots from the running platform, application selection, allocation administration, and the Results workspace.

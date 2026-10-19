@@ -64,3 +64,8 @@ inspect the file listing and any generated images through ICESEE's own Run
 Log and Results Preview. See
 <a href="../applications/icesee/user_manual.html#results-and-reports">Results and reports</a>
 for the full walkthrough.
+
+
+## Live interface walkthrough
+
+See the [visual walkthrough](visual_walkthrough.md) for dated screenshots from the running platform, application selection, allocation administration, and the Results workspace.

@@ -3557,6 +3557,14 @@ def build_icesheets_ui():
                     bridge = current_cloud_bridge(
                         region=run.metadata.get("region") or None)
                 else:
+                    # host credentials: allow-listed operators only
+                    from cryostack_src.cloud.connect import CloudAccessError, is_cloud_operator
+
+                    if not is_cloud_operator(workspace_manager.owner):
+                        raise CloudAccessError(
+                            "This run was submitted with the CryoStack host's "
+                            "AWS credentials; its status is available to "
+                            "cloud operators only.")
                     bridge = CloudBridge(
                         provider="aws",
                         region=run.metadata.get("region") or "us-east-2",

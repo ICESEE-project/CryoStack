@@ -15,7 +15,8 @@
   "use strict";
 
   const API = "/frozen-legacies/api/radar/catalog";
-  const PAGE_SIZE = 25;
+  const EXPLORER_API = "/frozen-legacies/api/radar/explorer";
+  const PAGE_SIZE = 50;
 
   const STATE_LABELS = {
     unprocessed: "Unprocessed",
@@ -42,6 +43,11 @@
     layer: null,
     coverage: false,
     selected: null,
+    explorerQuery: null,
+    explorerSnapshot: null,
+    nextCursor: null,
+    cursorHistory: [null],
+    request: 0,
     onChange: () => {}
   };
 
@@ -69,7 +75,7 @@
   }
 
 
-  function query() {
+  function legacyQuery() {
     const params = new URLSearchParams({ page: String(state.page), page_size: String(PAGE_SIZE) });
     for (const [key, value] of Object.entries(state.filters)) {
       if (value) {
@@ -80,14 +86,77 @@
   }
 
 
-  async function search() {
+  function queryFromFilters() {
+    return {
+      qv: 1,
+      audience: "workspace",
+      dataset: state.filters.dataset ? [state.filters.dataset] : [],
+      flight: state.filters.flight ? [state.filters.flight] : [],
+      review: state.filters.state ? [state.filters.state] : [],
+      cbd_min: state.filters.cbd || "",
+      cbd_max: state.filters.cbd || "",
+      q: state.filters.q || ""
+    };
+  }
+
+
+  function applyExplorerFeatures(body) {
+    if (!state.layer || !body?.features) return;
+    const features = new ol.format.GeoJSON().readFeatures(body.features, {
+      dataProjection: "EPSG:4326", featureProjection: state.map.getView().getProjection()
+    });
+    state.layer.getSource().clear();
+    state.layer.getSource().addFeatures(features);
+    state.coverageSummary = {
+      returned: features.length,
+      truncated: Boolean(body.limits?.features_truncated),
+      total: Number(body.total || 0),
+      snapshot: body.snapshot
+    };
+    if (state.selected) {
+      state.selected = state.layer.getSource().getFeatureById(state.selected.getId()) || null;
+    }
+  }
+
+
+  async function search({cursor = undefined, reset = false} = {}) {
+    const queryApi = window.FrozenLegaciesExplorerQuery;
+    if (!queryApi) {
+      try {
+        state.result = await get(`${API}?${legacyQuery()}`);
+        state.error = null;
+      } catch (error) {
+        state.error = error.message;
+      }
+      renderResults();
+      return;
+    }
+    if (reset) {
+      state.cursorHistory = [null];
+      state.page = 1;
+      cursor = null;
+    }
+    const request = ++state.request;
+    const canonical = queryApi.normalize(state.explorerQuery || queryFromFilters());
+    const params = new URLSearchParams(queryApi.serialize(canonical));
+    if (cursor) params.set("cursor", cursor);
     try {
-      state.result = await get(`${API}?${query()}`);
+      const body = await get(`${EXPLORER_API}?${params}`);
+      if (request !== state.request) return;
+      state.explorerSnapshot = body.snapshot;
+      state.nextCursor = body.page?.next_cursor || null;
+      state.result = {
+        items: body.items || [], total: body.total || 0, page: state.page,
+        page_size: PAGE_SIZE, pages: Math.max(1, Math.ceil((body.total || 0) / PAGE_SIZE))
+      };
+      applyExplorerFeatures(body);
       state.error = null;
     } catch (error) {
+      if (request !== state.request) return;
       state.error = error.message;
     }
     renderResults();
+    state.onChange();
   }
 
 
@@ -144,7 +213,15 @@
         }
         state.page = 1;
         window.clearTimeout(state.timer);
-        state.timer = window.setTimeout(search, control.tagName === "INPUT" ? 300 : 0);
+        state.timer = window.setTimeout(() => {
+          const query = queryFromFilters();
+          if (window.FrozenLegaciesExplorerStore) {
+            window.FrozenLegaciesExplorerStore.replace(query);
+          } else {
+            state.explorerQuery = query;
+            search({reset: true});
+          }
+        }, control.tagName === "INPUT" ? 300 : 0);
       });
     });
   }
@@ -188,8 +265,16 @@
       </div>`;
     root.querySelectorAll("[data-page]").forEach(button => {
       button.addEventListener("click", () => {
-        state.page = Math.max(1, state.page + Number(button.dataset.page));
-        search();
+        const direction = Number(button.dataset.page);
+        if (direction > 0 && state.nextCursor) {
+          state.cursorHistory.push(state.nextCursor);
+          state.page += 1;
+          search({cursor: state.nextCursor});
+        } else if (direction < 0 && state.cursorHistory.length > 1) {
+          state.cursorHistory.pop();
+          state.page -= 1;
+          search({cursor: state.cursorHistory[state.cursorHistory.length - 1]});
+        }
       });
     });
     root.querySelectorAll("[data-catalog-open]").forEach(button => {
@@ -247,25 +332,7 @@
     if (!state.layer) {
       return;
     }
-    const params = new URLSearchParams();
-    if (state.filters.dataset) {
-      params.set("dataset", state.filters.dataset);
-    }
-    if (state.filters.flight) {
-      params.set("flight", state.filters.flight);
-    }
-    try {
-      const collection = await get(`${API}/segments?${params}`);
-      const features = new ol.format.GeoJSON().readFeatures(collection, {
-        dataProjection: "EPSG:4326", featureProjection: state.map.getView().getProjection()
-      });
-      state.layer.getSource().clear();
-      state.layer.getSource().addFeatures(features);
-      state.coverageSummary = collection.summary;
-    } catch (error) {
-      state.coverageSummary = { error: error.message };
-    }
-    state.onChange();
+    await search({reset: true});
   }
 
 
@@ -351,14 +418,9 @@
 
   /* The selected segment's catalog entry: navigation and the user's state. */
   async function loadSelected(catalogId) {
-    try {
-      const result = await get(`${API}?id=${encodeURIComponent(catalogId)}&page_size=1`);
-      if (state.selected && state.selected.getId() === catalogId) {
-        state.selectedItem = result.items[0] || null;
-        state.onChange();
-      }
-    } catch (error) {
-      // the segment's own properties are still shown
+    if (state.selected && state.selected.getId() === catalogId) {
+      state.selectedItem = state.result?.items?.find(item => item.catalog_id === catalogId) || null;
+      state.onChange();
     }
   }
 
@@ -389,10 +451,7 @@
           Show radar coverage on the map
         </label>
         <p class="fl-radar-panel-note">${state.coverage && s && !s.error
-          ? `${s.returned.toLocaleString("en-US")} radar segments placed from their navigation records${s.truncated ? " (first shown; filter by flight in the catalog browser)" : ""}. ${
-              s.unplaced
-                ? `${s.unplaced.toLocaleString("en-US")} segment${s.unplaced === 1 ? "" : "s"} without navigation ${s.unplaced === 1 ? "is" : "are"} not placed on the map; open ${s.unplaced === 1 ? "it" : "them"} from the catalog browser.`
-                : "Segments without navigation are never placed on the map."}`
+          ? `${s.returned.toLocaleString("en-US")} of ${s.total.toLocaleString("en-US")} matching radar segments are placed from navigation records${s.truncated ? " (feature limit reached; narrow the filters to see the remainder)" : ""}. Segments without navigation are not placed on the map. Catalog rows and coverage come from snapshot ${escapeHtml(s.snapshot || "unknown")}.`
           : `${state.summary.total.toLocaleString("en-US")} radar files in this installation's catalog.`}</p>
         ${selected}
       </div>`;
@@ -431,6 +490,9 @@
       button.hidden = true;
       return;
     }
+    if (window.FrozenLegaciesExplorerStore) {
+      applyExplorerQuery(window.FrozenLegaciesExplorerStore.get());
+    }
     button.hidden = false;
     button.textContent = `Browse radar catalog (${state.summary.total.toLocaleString("en-US")})`;
     button.addEventListener("click", () => toggle());
@@ -445,9 +507,23 @@
     }
   }
 
+  function applyExplorerQuery(query) {
+    state.explorerQuery = query;
+    state.filters.dataset = query.dataset?.[0] || "";
+    state.filters.flight = query.flight?.[0] || "";
+    state.filters.state = query.review?.[0] || "";
+    state.filters.q = query.q || "";
+    state.filters.cbd = query.cbd_min && query.cbd_min === query.cbd_max ? query.cbd_min : "";
+    if ($("fl-catalog-browser") && !$("fl-catalog-browser").hidden && state.summary) {
+      renderFilters();
+    }
+    search({reset: true});
+  }
+
 
   window.FrozenLegaciesCatalog = {
-    initialize, initializeMap, toggle, panelHtml, bindPanel, refreshSelected, selection, restore
+    initialize, initializeMap, toggle, panelHtml, bindPanel, refreshSelected, selection, restore,
+    applyExplorerQuery
   };
 
 })();

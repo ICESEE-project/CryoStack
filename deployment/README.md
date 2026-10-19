@@ -3,6 +3,11 @@
 The CryoStack deployment framework provides a unified way to build, update,
 validate, and operate all CryoStack applications.
 
+Operator guides:
+
+- [System services and staging](system_service_and_staging_guide.md)
+- [Durable storage and CEDAR](storage_cedar_runbook.md)
+
 Unlike the original `reboot_gui.sh`, the deployment system understands
 application dependencies and restart policies, allowing individual applications
 to be rebuilt without unnecessarily interrupting the rest of the platform.
@@ -230,19 +235,63 @@ python deployment/health_check.py \
 
 ---
 
+## Keep persistent state on a durable volume
+
+All persistent state -- accounts and sessions, user workspaces (uploaded
+radar, processed products, picking sessions, generated outputs, runs), the
+Frozen Legacies radar catalog with its registered data sources and index
+runs, review snapshots, the shared radar source registry, and Control Center
+settings (including storage quotas) with their audit trail -- is listed in
+`cryostack_src/storage_layout.py`. Each store is located by its own variable,
+then `$CRYOSTACK_DATA_ROOT/<path>`, then its historical default inside the
+repository (`var/`, `users/`). Without configuration an installation keeps
+working exactly as before -- and its data lives in the source tree, where a
+fresh checkout, `git clean` or a redeploy loses it.
+
+A directory is not durable because it survives a process restart. Before
+using one, an operator states why it is durable and marks it:
+
+```bash
+python deployment/cryostack_storage.py init-volume /data/cryostack \
+    --attest "NFS project storage, nightly snapshots kept 30 days" --operator "<name>"
+```
+
+Move an existing installation (services stopped; nothing at the old
+locations is changed):
+
+```bash
+bash deployment/services.sh stop
+python deployment/cryostack_storage.py migrate --installation ~/CryoLauncher --data-root /data/cryostack --dry-run
+python deployment/cryostack_storage.py migrate --installation ~/CryoLauncher --data-root /data/cryostack
+# for the services:  CRYOSTACK_DATA_ROOT=/data/cryostack  CRYOSTACK_REQUIRE_DURABLE_STORAGE=1
+python deployment/cryostack_storage.py check
+```
+
+With `CRYOSTACK_REQUIRE_DURABLE_STORAGE=1` the gateway refuses to start when
+any store is in the source tree, a temporary directory or a tmpfs, or not on
+a marked volume that is actually mounted (the marker records the device, so
+an empty mount point is caught). `preflight.py` reports the same. The
+gateway exports every store's resolved location to the processes it starts
+(Voila, kernels, workers). Caches (the Frozen Legacies working cache) are
+rebuildable and are never backed up.
+
 ## Back up and rehearse a restore
 
 ```bash
 python deployment/cryostack_backup.py create --dest ~/cryostack-backups
 python deployment/cryostack_backup.py verify ~/cryostack-backups/<stamp>
 python deployment/cryostack_backup.py drill  ~/cryostack-backups/<stamp> --scratch /tmp/cryostack-drill
+python deployment/cryostack_backup.py restore ~/cryostack-backups/<stamp> --data-root /data/cryostack-restored
 ```
 
 `create` copies the auth database, the Frozen Legacies catalog and review
-snapshots, the Control Center ops store, the LIVIST job store and both
-workspace roots (gateway `users/` and Voila `icesee_jupyter_notebooks/users/`)
-while the services keep running, into an owner-only directory with
-`SHA256SUMS` and `BACKUP.json`. The destination may not be inside the
+snapshots, the shared radar source registry, the Control Center ops store,
+the LIVIST job store and the workspaces (with a data root its
+`workspace/users`; otherwise both historical roots, gateway `users/` and
+Voila `icesee_jupyter_notebooks/users/`) while the services keep running, into an owner-only directory with
+`SHA256SUMS` and `BACKUP.json`. Regular-file contents and the un-followed
+target text of workspace symlinks are authenticated; changing a link to point
+somewhere else makes verification and restore fail. The destination may not be inside the
 repository. `drill` restores everything into the scratch directory -- never
 into the installation -- and checks that it opens and matches. Copy the
 backup off-host and re-run `verify` there. Output contains counts only.
@@ -250,6 +299,12 @@ SQLite files are opened read-only and an idle database is copied without
 leaving `-wal`/`-shm` files beside it. `--installation <repository>` backs up
 another checkout's data (for example the running installation from a
 review copy).
+
+`restore` puts a verified backup into a new, empty data root (a marked
+volume), laid out as `storage_layout` expects, without overwriting anything;
+relative paths in the radar source registry are made absolute so they keep
+pointing at the same radar files. Then start the services with
+`CRYOSTACK_DATA_ROOT` set to it.
 
 ### Encrypted off-host copy
 
@@ -370,6 +425,25 @@ sudo -u cryostack-kernel /path/to/python deployment/check_kernel_isolation.py \
    its own Voilà again), `systemctl disable --now cryostack-voila@*`.
 
 ---
+
+## ICESEE local runs
+
+ICESEE's **Local** mode runs experiments on the gateway host as background
+jobs (`icesee_jupyter_book/core/local_jobs.py`): in the gateway's Python, or
+in the ICESEE runtime image on the host's Docker when it is installed and the
+image is present (`docker image inspect`). Container runs have no network,
+mount the launcher's ICESEE read-only and can only write the run folder.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `CRYOSTACK_ICESEE_LOCAL_CONTAINER` | `1` | `0` turns the ICESEE-container environment off. |
+| `CRYOSTACK_ICESEE_LOCAL_IMAGE` | `bkyanjo/icesee-combined:v1.0.2` | The image local container runs use (must already be on the host; nothing is pulled). |
+| `CRYOSTACK_ICESEE_LOCAL_MEMORY` | unset | `docker run --memory` for local container runs (e.g. `8g`). |
+| `CRYOSTACK_ICESEE_MAX_LOCAL_RUNS` | `2` | Local runs one user may have in progress at once. |
+
+Jobs are detached process groups, so a gateway restart does not stop them;
+their state is read back from the run folder (`.icesee-job.json`,
+`.icesee-exit-code`) when the page is opened again.
 
 # Adding a New Application
 

@@ -1,0 +1,10 @@
+# Results contract (ICESEE.src.postprocessing.contract).
+schema: icesee-results/1
+model_name: flowline
+notebook: read_results.ipynb
+status: unsupported
+reason: >-
+  The example does not currently complete (synthetic-observation generation
+  fails with an IndexError), and read_results.ipynb has no working flowline
+  figure: cell 5 is the Lorenz x/y/z plot and cell 9 uses variables the
+  notebook never defines.

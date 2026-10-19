@@ -1,0 +1,14 @@
+[Unit]
+Description=CryoStack overnight autonomous development coordinator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/CryoLauncher
+ExecStart=%h/CryoLauncher/deployment/autonomy/run_daily.sh
+Environment=TZ=America/New_York
+Environment=CRYOSTACK_DATA_ROOT=%h/cryostack-data
+Environment=CRYOSTACK_AUTONOMY_SESSION_ID=01a14470-c7d6-7b20-8fea-fdead74b0671
+TimeoutStartSec=6h10m
+Nice=10

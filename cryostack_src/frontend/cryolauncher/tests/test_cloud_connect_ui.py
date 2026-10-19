@@ -33,6 +33,13 @@ ROLE_B = "arn:aws:iam::774888247882:role/CryoStackExecutionRole"
 ROLE_A = "arn:aws:iam::713938953301:role/CryoStackExecutionRole"
 
 
+@pytest.fixture(autouse=True)
+def _no_ambient_principal(monkeypatch):
+    """The host's own principal must not leak in: these tests use 713938953301
+    as a user account, and a role in the host account is refused."""
+    monkeypatch.delenv("CRYOSTACK_AWS_PRINCIPAL_ARN", raising=False)
+
+
 class _Out:
     def __init__(self):
         self.text = ""

@@ -311,6 +311,10 @@
         My Experiments
       </a>
 
+      <a href="/storage/">
+        My Storage &amp; quotas
+      </a>
+
       ${controlCenterLink}
 
       <button
@@ -548,5 +552,3 @@
   }
 
 })();
-
-

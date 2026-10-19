@@ -18,6 +18,7 @@ CONTROL_ROLES = {
 
 MIN_REASON_LENGTH = 4
 MAX_REASON_LENGTH = 500
+DEVELOPER_DOCS_ROLE = "developer_docs"
 
 
 ROLE_LEVEL = {
@@ -144,6 +145,67 @@ class AccessService:
         return self.effective_role(
             user_id=user_id,
         ) == "owner"
+
+    def can_read_developer_docs(self, *, user_id: str) -> bool:
+        role = self.effective_role(user_id=user_id)
+        return role == "owner" or (
+            role in {"maintainer", "admin"}
+            and self.storage.has_role(user_id=user_id, role=DEVELOPER_DOCS_ROLE)
+        )
+
+    def set_developer_docs_access(self, *, actor_user_id: str, target_user_id: str,
+                                  enabled: bool, reason: str | None = None) -> bool:
+        if self.effective_role(user_id=actor_user_id) != "owner":
+            raise PermissionError("Only an owner can manage Developer Guide access.")
+        target = self.storage.get_user_by_id(target_user_id)
+        if target is None:
+            raise LookupError("User not found.")
+        target_role = self.effective_role(user_id=target_user_id)
+        if target_role not in {"maintainer", "admin"}:
+            raise ValueError("Developer Guide access can be delegated only to maintainers or admins.")
+        reason = self._clean_reason(reason)
+        actor_label = self._label(actor_user_id) or actor_user_id
+        target_label = self._label(target_user_id)
+        connection = self.storage._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            actor_roles = {row["role"] for row in connection.execute(
+                "SELECT role FROM user_roles WHERE user_id = ?", (actor_user_id,))}
+            target_roles = {row["role"] for row in connection.execute(
+                "SELECT role FROM user_roles WHERE user_id = ?", (target_user_id,))}
+            if "owner" not in actor_roles:
+                raise PermissionError("Only an owner can manage Developer Guide access.")
+            eligible = [role for role in target_roles if role in ROLE_LEVEL]
+            effective = max(eligible, key=ROLE_LEVEL.get) if eligible else None
+            if effective not in {"maintainer", "admin"}:
+                raise ValueError(
+                    "Developer Guide access can be delegated only to maintainers or admins.")
+            previous = DEVELOPER_DOCS_ROLE in target_roles
+            if enabled:
+                connection.execute(
+                    """INSERT OR IGNORE INTO user_roles
+                       (id, user_id, role, created_at, created_by)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (secrets.token_hex(16), target_user_id, DEVELOPER_DOCS_ROLE,
+                     time.time(), actor_user_id))
+            else:
+                connection.execute(
+                    "DELETE FROM user_roles WHERE user_id = ? AND role = ?",
+                    (target_user_id, DEVELOPER_DOCS_ROLE))
+            access_log.record_audit(
+                connection, actor_user_id=actor_user_id, actor_label=actor_label,
+                target_user_id=target_user_id, target_label=target_label,
+                action="developer_docs_access_changed",
+                previous_value=str(previous).lower(),
+                new_value=str(bool(enabled)).lower(), reason=reason,
+                now=time.time())
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+        return bool(enabled)
 
 
     def can_operate_compute(
@@ -562,6 +624,34 @@ class AccessService:
                         now,
                         actor_user_id,
                     ),
+                )
+
+            # Delegated Developer Guide access is limited to maintainers and
+            # admins. Revoke it in this same transaction when a role change
+            # makes the account ineligible, so a stale capability cannot
+            # survive the demotion.
+            docs_access_revoked = False
+            if new_role not in {"maintainer", "admin", "owner"}:
+                docs_access_revoked = connection.execute(
+                    """
+                    DELETE FROM user_roles
+                    WHERE user_id = ? AND role = ?
+                    """,
+                    (target_user_id, DEVELOPER_DOCS_ROLE),
+                ).rowcount > 0
+
+            if docs_access_revoked:
+                access_log.record_audit(
+                    connection,
+                    actor_user_id=actor_user_id,
+                    actor_label=actor_label or actor_user_id,
+                    target_user_id=target_user_id,
+                    target_label=target_label,
+                    action="developer_docs_access_changed",
+                    previous_value="true",
+                    new_value="false",
+                    reason=reason,
+                    now=now,
                 )
 
             access_log.record_audit(

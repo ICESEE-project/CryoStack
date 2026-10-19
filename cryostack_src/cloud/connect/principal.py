@@ -74,3 +74,30 @@ def cryostack_principal_arn(*, env: "dict[str, str] | None" = None) -> str:
             f"{raw!r}"
         )
     return raw
+
+
+def principal_account_id(*, env: "dict[str, str] | None" = None) -> str:
+    """The 12-digit AWS account of the configured CryoStack principal, or ""
+    when it is not configured."""
+    source = os.environ if env is None else env
+    raw = (source.get(PRINCIPAL_ENV) or "").strip()
+    if not is_valid_principal_arn(raw):
+        return ""
+    return raw.split(":")[4]
+
+
+HOST_ACCOUNT_MESSAGE = (
+    "This role is in CryoStack's own AWS account. Connect a role in your own "
+    "AWS account instead."
+)
+
+
+def is_host_account_role(role_arn: str, *, env: "dict[str, str] | None" = None) -> bool:
+    """Whether ``role_arn`` belongs to the CryoStack principal's own account.
+
+    Such a role would run user workloads on the host's account, so it is never
+    accepted as a user connection, whatever its trust policy says.
+    """
+    host = principal_account_id(env=env)
+    parts = (role_arn or "").strip().split(":")
+    return bool(host) and len(parts) > 4 and parts[4] == host

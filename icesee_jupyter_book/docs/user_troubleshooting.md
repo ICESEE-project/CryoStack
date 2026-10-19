@@ -56,3 +56,14 @@ consolidated in
 If a problem is not covered here, check the specific application's own
 User Manual, then the [Developer Guide](developer_guide.md) for the
 implementation behind the behavior you are seeing.
+
+
+## Allocation access and empty states
+
+Resource Allocations administration requires an owner or administrator session. A forbidden response should be resolved through the existing role-management process; do not substitute demo credentials. Researchers can inspect their own allocations.
+
+A zero-budget overview means no pool budget has been configured. Automatic credits also require an enabled policy, matching registration metadata, and sufficient unallocated funds. Existing accounts need individual adjustments; enabling a policy does not issue retroactive grants.
+
+A missing or invalid BYO connection must fail closed. Reconnect the user's AWS account through the normal cloud workflow; do not enter a server profile to bypass verification. Test reservations do not provide real cloud execution.
+
+When reporting an issue, include the page, time, selected application and mode, visible error, and a screenshot with private data removed. Never include passwords, access keys, session tokens, or private datasets. See the [visual walkthrough](visual_walkthrough.md).

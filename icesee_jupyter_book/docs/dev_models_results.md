@@ -75,8 +75,7 @@ to add a new model adapter.
 **Scope: CryoLauncher only.** Everything in this section — the result
 package, `discover_results()`/`ResultPackage`, and the Remote↔Cloud parity
 work below — is CryoLauncher's (ISSM/Icepack) result path. ICESEE has its
-own, separate results implementation (`ExperimentBridge`, a raw file-tree
-listing and inline image display, not this package) — see
+own results path, described in [ICESEE results](#icesee-results) — see
 [Execution Backends](dev_execution.md) for exactly where the two diverge.
 
 **Result package.** A completed run exports a transport-neutral package —
@@ -160,3 +159,41 @@ Fargate (default) or EC2 (Advanced)),
 Plan, and manifests render these as separate rows and derive a historical run's
 identity from its **persisted metadata**, never the current UI defaults — a
 legacy widget such as `backend_dd` never determines cloud semantics.
+
+## ICESEE results
+
+An ICESEE run is an ensemble data-assimilation experiment, so its results
+are not a single-model result package. Its scientific views are the ones each
+example's `read_results.ipynb` draws, moved into a module the notebooks,
+the launcher and the tests share:
+
+- **`ICESEE.src.postprocessing`** (in `external/ICESEE`, no CryoStack
+  dependency) — `outputs.load_da_outputs()` reads a run's
+  `true-wrong-<model>.h5`, `true_nurged_states.h5`, `synthetic_obs.h5` and
+  ensemble file exactly as the notebooks do, raising `ResultsError` with a
+  `kind` (`missing` / `corrupt` / `incomplete`); `views/` holds the figure
+  and table functions (`lorenz.*`, `icepack.*`, `issm.*`, and the
+  supplementary `da.error_and_spread`), each naming the notebook cell it
+  reproduces; `render` saves a view and is the command-line entry point
+  (`--describe` lists a run's views with their availability and option
+  defaults).
+- **The results contract** — an example ships `results.yaml` beside its
+  notebook: `model_name`, where its outputs are, the view ids it supports,
+  and the notebook cells deliberately not reproduced (or `status:
+  unsupported` with a reason). Adding views to an example means adding view
+  functions and listing them there; the launcher discovers them — it has no
+  example-specific paths.
+- **`core/results_service.py`** — finds a run's outputs and contract (the
+  staged copy in the run folder, i.e. what actually ran) and calls the
+  renderer in a child process with a time and memory limit, using the
+  launcher's own ICESEE checkout; figures are cached in
+  `<run>/.icesee-results/`.
+- **Icepack maps** need the scalar space's degree-of-freedom coordinates;
+  `python -m ICESEE.src.postprocessing.icepack_mesh` writes
+  `dof_coordinates.h5` in the Firedrake environment (the local container
+  backend runs it after a successful run).
+
+The views are checked against the original notebooks: the notebook cells
+run on the same outputs and every plotted series, label, colour limit and
+table value is compared with the view's (`src/tests/test_postprocessing.py`
+covers loading, contracts and views on synthetic runs).

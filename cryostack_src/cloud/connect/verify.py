@@ -37,6 +37,7 @@ from dataclasses import dataclass
 from .assume_role import DEFAULT_SESSION_SECONDS, AssumeRoleError, assume_role
 from .context import AWSExecutionContext
 from .models import AWSConnection, is_valid_role_arn
+from .principal import HOST_ACCOUNT_MESSAGE, is_host_account_role
 
 
 @dataclass
@@ -77,6 +78,8 @@ def verify_connection(
         return VerificationResult(
             connection.mark_error("This connection has no ExternalId; reconnect.")
         )
+    if is_host_account_role(connection.role_arn):
+        return VerificationResult(connection.mark_error(HOST_ACCOUNT_MESSAGE))
 
     try:
         context = assume_role(

@@ -43,7 +43,7 @@ _STAGE_IGNORE = shutil.ignore_patterns("_modelrun_datasets", "results", "figures
                                        ".ipynb_checkpoints", "*.pyc")
 
 
-def stage_example(example_cfg: dict, rd: Path) -> dict:
+def stage_example(example_cfg: dict, rd: Path, overlays: "dict[str, Path] | None" = None) -> dict:
     """A private copy of the example directory inside the run directory.
 
     ICESEE example scripts change into their own directory and write
@@ -51,7 +51,11 @@ def stage_example(example_cfg: dict, rd: Path) -> dict:
     would read and overwrite each other's data (and a read-only installation
     could not run them at all). The copy keeps the directory name, which
     ICESEE uses to find example-specific model modules. Returns the example
-    configuration pointing at the copy."""
+    configuration pointing at the copy.
+
+    ``overlays`` maps a path inside the example to a replacement file (the
+    user's edited inputs, see experiment_files.py); each must already exist
+    in the example -- staging never adds files."""
     base = Path(example_cfg["base"])
     staged = rd / "example" / base.name
     if staged.exists():
@@ -68,12 +72,18 @@ def stage_example(example_cfg: dict, rd: Path) -> dict:
     for path in [staged, *staged.rglob("*")]:
         if path.is_dir() and not path.is_symlink():
             path.chmod(path.stat().st_mode | 0o700)
+    for rel, source in (overlays or {}).items():
+        target = (staged / rel).resolve()
+        if not target.is_relative_to(staged.resolve()) or not target.is_file():
+            raise ValueError(f"edited input {rel!r} is not a file of the example")
+        shutil.copyfile(source, target)
     return dict(example_cfg, base=staged)
 
 
 def force_external_icesee_env() -> tuple[dict, Path]:
     external_dir = (REPO / "external").resolve()
-    env = os.environ.copy()
+    # local runs never need AWS; keep the server's AWS identity away from them
+    env = {k: v for k, v in os.environ.items() if not k.startswith("AWS_")}
     env["PYTHONPATH"] = f"{external_dir}{os.pathsep}{env.get('PYTHONPATH', '')}"
     env["PYTHONNOUSERSITE"] = "1"
     return env, external_dir

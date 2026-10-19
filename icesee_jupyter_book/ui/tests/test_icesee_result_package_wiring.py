@@ -1,9 +1,7 @@
-"""ICESEE ResultPackage foundation + Results UI (Phases 3-4): selecting a
-historical run in the Workspace shell reuses the existing figures/H5
-preview AND adds a DA-aware summary (forecast/ensemble/observations,
-categorised from ICESEE's own dataset names) built from
-icesee_jupyter_book.core.results_package -- never a fabricated schema, and
-never replacing the existing preview.
+"""ICESEE ResultPackage categorisation in the Workspace: a selected run's
+HDF5 outputs are listed in Files with their DA role (forecast/truth,
+ensemble, observations), categorised from ICESEE's own dataset names by
+icesee_jupyter_book.core.results_package -- never a fabricated schema.
 """
 from __future__ import annotations
 
@@ -21,16 +19,10 @@ h5py = pytest.importorskip("h5py")
 _GW = _REPO / "icesee_jupyter_book/ui/icesee_gateway.py"
 
 
-def test_gateway_imports_and_uses_the_result_package():
-    src = _GW.read_text()
-    assert (
-        "from icesee_jupyter_book.core.results_package import discover_result_package"
-        in src
-    )
-    assert "discover_result_package(run.workspace_directory)" in src
-    assert "pkg.summary_lines()" in src
-    # the existing ad-hoc preview is preserved, not replaced
-    assert "refresh_results_preview(run.workspace_directory, results_out)" in src
+def test_workspace_uses_the_result_package_categories():
+    src = (_REPO / "icesee_jupyter_book/ui/icesee_workflow/workspace.py").read_text()
+    assert "from icesee_jupyter_book.core.results_package import _categorize" in src
+    assert "_categorize(key)" in src
 
 
 def test_selecting_a_run_with_da_outputs_prints_a_categorized_summary(monkeypatch, tmp_path, capsys):
@@ -62,33 +54,31 @@ def test_selecting_a_run_with_da_outputs_prints_a_categorized_summary(monkeypatc
 
     page = build_icesee_ui()
 
-    def freevar(fn, name):
-        idx = fn.__code__.co_freevars.index(name)
-        return fn.__closure__[idx].cell_contents
+    def find(cls):
+        out = []
 
-    found = {}
+        def walk(w):
+            if cls in getattr(w, "_dom_classes", ()):
+                out.append(w)
+            for c in getattr(w, "children", ()):
+                walk(c)
+        walk(page)
+        return out[0]
+
+    runs = find("icw-runlist")
+    runs.value = "da-summary-check"
+    tabs = find("icw-tabs").children[0]
+    tabs.value = "Files"
+    files = find("icw-filelist")
+    files.value = "results/true-wrong-lorenz.h5"
+    shown = []
 
     def walk(w):
-        notifiers = getattr(w, "_trait_notifiers", None)
-        if notifiers and "value" in notifiers and "on_run_selected" not in found:
-            for handlers in notifiers["value"].values():
-                for h in handlers:
-                    if getattr(h, "__name__", "") == "show_selection":
-                        found["show_selection"] = (w, h)
+        if isinstance(w, W.HTML) and "DA role" in (w.value or ""):
+            shown.append(w.value)
         for c in getattr(w, "children", ()):
             walk(c)
-
     walk(page)
-    assert "show_selection" in found, "Runs selector (show_selection) not found"
-    runs_select, show_selection = found["show_selection"]
-
-    on_run_selected = freevar(show_selection, "on_run_selected")
-    assert callable(on_run_selected)   # this IS _on_icesee_run_selected
-
-    capsys.readouterr()   # drop build-time output
-    runs_select.value = "da-summary-check"   # triggers show_selection -> on_run_selected
-    printed = capsys.readouterr().out
-
-    assert "DA outputs" in printed
-    assert "Forecast/truth: true_state" in printed
-    assert "Observations: hu_obs" in printed
+    assert shown, "no HDF5 preview with DA roles"
+    assert "true_state</td><td>Forecast / truth" in shown[0]
+    assert "hu_obs</td><td>Observations" in shown[0]

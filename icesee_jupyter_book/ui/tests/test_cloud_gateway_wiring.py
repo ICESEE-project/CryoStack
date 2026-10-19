@@ -535,6 +535,7 @@ def test_refresh_never_reverts_an_open_run_py_back_to_the_notebook(monkeypatch, 
 # "Remote" / "Cloud" -- there is no separate "Local" mode to toggle here).
 def _build_gateway_page(monkeypatch, tmp_path, *, user):
     monkeypatch.setenv("CRYOSTACK_WORKSPACE_USER", user)
+    monkeypatch.setenv("CRYOSTACK_CLOUD_OPERATOR_USER_IDS", user)  # developer mode is opt-in
     monkeypatch.setenv("USER", "cloud-wire-service")
     monkeypatch.setenv("CRYOSTACK_WORKSPACE_ROOT", str(tmp_path / "ws"))
     monkeypatch.delenv("CRYOSTACK_AWS_PRINCIPAL_ARN", raising=False)
@@ -2060,3 +2061,46 @@ def test_cloud_waiting_state_terminology_hygiene(monkeypatch, tmp_path):
     ):
         assert forbidden not in blob, forbidden
     assert "/connector/ws" not in blob
+
+
+def test_cloud_operations_without_a_connected_account_are_refused_for_an_ordinary_user(
+    monkeypatch, tmp_path,
+):
+    """No AWS connection and not an operator: every AWS operation the run
+    controller performs resolves credentials first and is refused -- the
+    host's credentials (or a typed profile) are never used."""
+    import pytest
+    from cryostack_src.cloud.connect import CloudAccessError
+
+    state = _gateway_state(monkeypatch, tmp_path, user="plain-issm-user")
+    monkeypatch.delenv("CRYOSTACK_CLOUD_OPERATOR_USER_IDS")
+    _setup_common(state, model="icepack")
+    _freevar(state["submit_fn"], "aws_profile").value = "default"
+    controller = state["_cloud"]["controller"]
+
+    with pytest.raises(CloudAccessError, match="No AWS account is connected"):
+        controller._resolve_execution()
+    with pytest.raises(CloudAccessError, match="No AWS account is connected"):
+        controller._bridge()
+
+    # the same user, once listed as an operator, gets developer mode
+    monkeypatch.setenv("CRYOSTACK_CLOUD_OPERATOR_USER_IDS", "plain-issm-user")
+    execution = controller._resolve_execution()
+    assert execution.mode == "developer" and execution.profile == "default"
+
+
+def test_status_of_a_host_credential_run_is_refused_for_an_ordinary_user(monkeypatch, tmp_path):
+    """A run recorded without an account id was submitted on the host's
+    credentials; only operators may query it with those credentials."""
+    import types
+
+    import pytest
+    from cryostack_src.cloud.connect import CloudAccessError
+
+    state = _gateway_state(monkeypatch, tmp_path, user="plain-status-user")
+    monkeypatch.delenv("CRYOSTACK_CLOUD_OPERATOR_USER_IDS")
+    resolver = _freevar(state["submit_fn"], "workspace_manager")._status_resolver
+    run = types.SimpleNamespace(execution_mode="cloud", jobid="job-1",
+                                metadata={"region": "us-east-2", "profile": "default"})
+    with pytest.raises(CloudAccessError, match="cloud operators only"):
+        resolver(run)

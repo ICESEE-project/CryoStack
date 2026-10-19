@@ -27,6 +27,7 @@ from .pages import (
     users_page_handler,
     user_detail_page_handler,
     user_role_update_handler,
+    user_developer_docs_update_handler,
     experiment_detail_page_handler,
     experiments_page_handler,
     hpc_page_handler,
@@ -144,6 +145,9 @@ def install_control_center(
 
     install_compute_routes(app, auth=auth, storage=storage)
 
+    from .api.allocations import install_allocation_routes
+    install_allocation_routes(app, auth=auth, storage=storage)
+
     install_operations(app, auth=auth, storage=storage, control_access=control_access)
 
     # --------------------------------------------------------
@@ -176,6 +180,10 @@ def install_control_center(
         control_access(
             user_role_update_handler
         ),
+    )
+    app.router.add_post(
+        "/control/users/{user_id}/developer-docs",
+        control_access(user_developer_docs_update_handler),
     )
 
     app.router.add_get(

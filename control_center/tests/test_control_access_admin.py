@@ -92,6 +92,113 @@ def env(tmp_path, monkeypatch):
     return Env(tmp_path)
 
 
+def test_owner_can_delegate_and_revoke_developer_docs_access(env):
+    owner = env.user("owner", "owner")
+    maintainer = env.user("maintainer", "maintainer")
+    ordinary = env.user("ordinary")
+    assert not env.access.can_read_developer_docs(user_id=maintainer.id)
+    env.access.set_developer_docs_access(actor_user_id=owner.id,
+        target_user_id=maintainer.id, enabled=True, reason="continuity coverage")
+    assert env.access.can_read_developer_docs(user_id=maintainer.id)
+    with pytest.raises(PermissionError):
+        env.access.set_developer_docs_access(actor_user_id=maintainer.id,
+            target_user_id=maintainer.id, enabled=False, reason="not allowed")
+    with pytest.raises(ValueError):
+        env.access.set_developer_docs_access(actor_user_id=owner.id,
+            target_user_id=ordinary.id, enabled=True, reason="wrong role")
+    env.access.set_developer_docs_access(actor_user_id=owner.id,
+        target_user_id=maintainer.id, enabled=False, reason="rotation complete")
+    assert not env.access.can_read_developer_docs(user_id=maintainer.id)
+    assert [r["action"] for r in env.audit_rows()].count("developer_docs_access_changed") == 2
+
+
+def test_stale_developer_docs_capability_fails_closed(env):
+    user = env.user("stale", "developer", "developer_docs")
+    assert not env.access.can_read_developer_docs(user_id=user.id)
+
+
+def test_owner_manages_developer_docs_access_through_user_page(env):
+    owner = env.user("owner", "owner")
+    maintainer = env.user("maintainer", "maintainer")
+    admin = env.user("admin", "admin")
+    owner_cookies = env.login(owner)
+    maintainer_cookies = env.login(maintainer)
+
+    async def script(client):
+        owner_page = await _get(client, f"/control/users/{maintainer.id}", owner_cookies)
+        owner_html = await owner_page.text()
+        maint_page = await _get(client, f"/control/users/{admin.id}", maintainer_cookies)
+        maint_html = await maint_page.text()
+        denied = await _post(
+            client, f"/control/users/{admin.id}/developer-docs", maintainer_cookies,
+            {"enabled": "1", "reason": "not owner"})
+        granted = await _post(
+            client, f"/control/users/{maintainer.id}/developer-docs", owner_cookies,
+            {"enabled": "1", "reason": "leave coverage"})
+        updated_page = await _get(
+            client, f"/control/users/{maintainer.id}", owner_cookies)
+        updated_html = await updated_page.text()
+        revoked = await _post(
+            client, f"/control/users/{maintainer.id}/developer-docs", owner_cookies,
+            {"reason": "coverage ended"})
+        return (owner_page.status, owner_html, maint_page.status, maint_html,
+                denied.status, granted.status, updated_html, revoked.status)
+
+    (owner_status, owner_html, maint_status, maint_html,
+     denied, granted, updated_html, revoked) = env.run(script)
+    assert owner_status == maint_status == 200
+    assert f'/control/users/{maintainer.id}/developer-docs' in owner_html
+    assert "Allow access to owner documentation" in owner_html
+    assert "/developer-docs" not in maint_html
+    assert denied == 403
+    assert granted == 303 and "checked" in updated_html
+    assert revoked == 303 and not env.access.can_read_developer_docs(user_id=maintainer.id)
+
+
+def test_developer_docs_access_requires_reason_and_same_origin(env):
+    owner = env.user("owner", "owner")
+    target = env.user("target", "admin")
+    cookies = env.login(owner)
+
+    async def script(client):
+        missing = await _post(
+            client, f"/control/users/{target.id}/developer-docs", cookies,
+            {"enabled": "1", "reason": " "})
+        cross = await _post(
+            client, f"/control/users/{target.id}/developer-docs", cookies,
+            {"enabled": "1", "reason": "cross origin"},
+            origin="https://evil.example")
+        return missing.status, cross.status
+
+    assert env.run(script) == (400, 403)
+    assert not env.access.can_read_developer_docs(user_id=target.id)
+    assert env.audit_rows() == []
+
+
+def test_demotion_revokes_delegated_developer_docs_access_atomically(env):
+    owner = env.user("owner", "owner")
+    maintainer = env.user("maintainer", "maintainer")
+    env.access.set_developer_docs_access(
+        actor_user_id=owner.id, target_user_id=maintainer.id,
+        enabled=True, reason="continuity coverage",
+    )
+
+    env.access.set_control_role(
+        actor_user_id=owner.id, target_user_id=maintainer.id,
+        new_role="developer", reason="duties changed",
+    )
+
+    assert env.role(maintainer) == "developer"
+    assert not env.access.can_read_developer_docs(user_id=maintainer.id)
+    changes = [row for row in env.audit_rows()
+               if row["action"] == "developer_docs_access_changed"]
+    assert [(row["previous_value"], row["new_value"], row["reason"])
+            for row in changes] == [
+                ("false", "true", "continuity coverage"),
+                ("true", "false", "duties changed"),
+            ]
+
+
 async def _post(client, path, cookies, data, origin=None):
     headers = {"Origin": origin} if origin else {}
     client.session.cookie_jar.clear()

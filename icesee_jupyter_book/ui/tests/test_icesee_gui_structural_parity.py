@@ -1,17 +1,15 @@
-"""ICESEE GUI structural-parity checkpoint.
+"""Application-shell structure of CryoLauncher and ICESEE.
 
-CryoLauncher and ICESEE must be technically identical in application-shell
-structure (header -> two-column area -> LEFT[Run settings (with Run Plan
-nested last) + Execution] / RIGHT[one Workspace: Runs/Files/Run Log/
-Results]). Scientific controls and result interpretation may differ.
+CryoLauncher keeps its shell (header -> two columns -> LEFT[Run settings
+(Run Plan last) + Execution] / RIGHT[one Workspace: Runs/Files/Run Log/
+Results]) built from the shared primitives in
+cryostack_src/frontend/cryolauncher.
 
-This is proven here by widget-hierarchy inspection (class names, Tab
-titles, object identity), not by comparing CSS strings -- both gateways
-now build their shell through the SAME shared primitives
-(cryostack_src/frontend/cryolauncher/{panels/run_settings.py,
-panels/runtime_panel.py, workspace/run_details.py, workspace/explorer.py}),
-so a passing assertion here is a claim about actual shared construction,
-not two hand-built trees that merely look alike.
+ICESEE has its own production workflow shell (ui/icesee_workflow): LEFT
+[Mode, Experiment, Environment & resources, Scientific parameters, Review &
+launch] / RIGHT[one Workspace: Run/Files/Editor/Logs/Results following the
+selected run]. Both are checked here by widget-hierarchy inspection (class
+names, titles, object identity).
 """
 from __future__ import annotations
 
@@ -104,14 +102,16 @@ def test_cryolauncher_exposes_exactly_one_workspace(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 # 2. Runs / Files / Run Log / Results, same order, both applications
 # ---------------------------------------------------------------------------
-def test_icesee_workspace_tabs_are_runs_files_run_log_results_in_order(monkeypatch, tmp_path):
+def _icesee_workspace_tabs(page):
+    bars = _widgets_with_class(page, "icw-tabs")
+    assert len(bars) == 1, f"expected one ICESEE workspace tab bar, found {len(bars)}"
+    return bars[0].children[0]
+
+
+def test_icesee_workspace_tabs_are_run_files_editor_logs_results_in_order(monkeypatch, tmp_path):
     page = _build_icesee(monkeypatch, tmp_path, user="parity-tabs-icesee")
-    tabs = _find_run_details_tabs(page)
-    assert len(tabs) == 1
-    tab = tabs[0]
-    assert len(tab.children) == 4
-    titles = [tab.get_title(i) for i in range(4)]
-    assert titles == ["Runs", "Files", "Run Log", "Results"]
+    tabs = _icesee_workspace_tabs(page)
+    assert list(tabs.options) == ["Run", "Files", "Editor", "Logs", "Results"]
 
 
 def test_cryolauncher_workspace_tabs_are_runs_files_run_log_results_in_order(monkeypatch, tmp_path):
@@ -143,19 +143,11 @@ def test_icesee_has_no_duplicate_standalone_results_preview_heading(monkeypatch,
 
 
 def test_icesee_log_out_and_results_out_widgets_appear_exactly_once(monkeypatch, tmp_path):
-    """The SAME log_out/results_out Output widgets ICESEE always used are
-    now mounted only inside the Workspace's Run Log / Results tabs -- not
-    also duplicated into a second, independent top-right presentation."""
+    """log_out (launcher activity) and results_out (remote fetch / cloud
+    sync messages) are each mounted once, inside the single Workspace."""
     page = _build_icesee(monkeypatch, tmp_path, user="parity-single-mount")
-
-    def walk_for_run_click(w, found):
-        pass
-
-    # reach log_out / results_out via the real build_icesee_ui closure
-    tabs = _find_run_details_tabs(page)[0]
-    log_out_in_tabs = _widgets_with_class(tabs, "icesee-out")
-    assert len(log_out_in_tabs) == 2   # log_out + results_out, both class icesee-out
-    # and both are direct/indirect descendants of the single Workspace
+    workspace = _widgets_with_class(page, "cryostack-output-workspace")[0]
+    assert len(_widgets_with_class(workspace, "icesee-out")) == 2
     all_icesee_out = _widgets_with_class(page, "icesee-out")
     assert len(all_icesee_out) == 2, "log_out/results_out must not be mounted twice"
 
@@ -185,17 +177,18 @@ def _left_column_headings(page):
     return run_settings, runtime
 
 
-def test_icesee_left_column_is_run_settings_then_execution(monkeypatch, tmp_path):
+def test_icesee_left_column_is_mode_first_then_the_workflow(monkeypatch, tmp_path):
+    """Mode is the first decision -- before the experiment, the environment,
+    the parameters and Review & launch (never buried in run settings)."""
     page = _build_icesee(monkeypatch, tmp_path, user="parity-left-icesee")
-    run_settings, runtime = _left_column_headings(page)
-
-    settings_html = "\n".join(_html_values(run_settings))
-    assert "Run settings" in settings_html
-    assert "Run Plan" in settings_html          # nested inside Run settings, last
-
-    runtime_html = "\n".join(_html_values(runtime))
-    assert "Execution" in runtime_html
-    assert "Status" not in runtime_html or "Execution" in runtime_html  # no separate generic "Status" card
+    left = _widgets_with_class(page, "icw-col")[0]
+    cards = [c for c in left.children if "icw-card" in c._dom_classes]
+    titles = []
+    for c in cards:
+        heads = [v for v in _html_values(c) if "icw-card-title" in v]
+        titles.append(heads[0] if heads else "")
+    order = ["Mode", "Experiment", "Environment &amp; resources", "Scientific parameters", "Review &amp; launch"]
+    assert [next((o for o in order if o in t), "?") for t in titles] == order
 
 
 def test_cryolauncher_left_column_is_run_settings_then_execution(monkeypatch, tmp_path):
@@ -221,40 +214,28 @@ def test_icesee_has_no_separate_status_card_outside_execution(monkeypatch, tmp_p
 # ---------------------------------------------------------------------------
 def test_switching_icesee_scientific_controls_does_not_reconstruct_the_workspace(monkeypatch, tmp_path):
     page = _build_icesee(monkeypatch, tmp_path, user="parity-no-rebuild")
-    tabs_before = _find_run_details_tabs(page)[0]
-
-    mode_tabs = None
-
-    def walk(w):
-        nonlocal mode_tabs
-        if isinstance(w, W.Tab) and w is not tabs_before and mode_tabs is None:
-            mode_tabs = w
-        for c in getattr(w, "children", ()):
-            walk(c)
-
-    walk(page)
-    assert mode_tabs is not None
-
-    mode_tabs.selected_index = 1   # Remote
-    mode_tabs.selected_index = 2   # Cloud
-    mode_tabs.selected_index = 0   # Local
-
-    tabs_after = _find_run_details_tabs(page)[0]
-    assert tabs_after is tabs_before, "the Workspace Tab widget was rebuilt on a mode switch"
-    assert [tabs_after.get_title(i) for i in range(4)] == ["Runs", "Files", "Run Log", "Results"]
+    tabs_before = _icesee_workspace_tabs(page)
+    workspace_before = _widgets_with_class(page, "cryostack-output-workspace")[0]
+    mode = next(w for w in _walk(page) if isinstance(w, W.ToggleButtons) and "Cloud" in w._options_labels)
+    for value in ("cluster", "cloud", "local"):
+        mode.value = value
+    assert _icesee_workspace_tabs(page) is tabs_before
+    assert _widgets_with_class(page, "cryostack-output-workspace")[0] is workspace_before
+    assert list(tabs_before.options) == ["Run", "Files", "Editor", "Logs", "Results"]
 
 
 # ---------------------------------------------------------------------------
 # 8. ICESEE Results still uses its DA-aware ResultPackage
 # ---------------------------------------------------------------------------
-def test_icesee_results_still_uses_the_da_aware_result_package():
-    src = (_REPO / "icesee_jupyter_book/ui/icesee_gateway.py").read_text()
-    assert "from icesee_jupyter_book.core.results_package import discover_result_package" in src
-    assert "discover_result_package(run.workspace_directory)" in src
-    # the shared Workspace's Results tab hosts ICESEE's own content -- it is
-    # not forced through cryostack_src/models/*/results.py's glaciological
-    # ResultPackage
-    assert "cryostack_src.models" not in src.split("discover_result_package")[0][-400:]
+def test_icesee_results_use_icesee_postprocessing_not_the_glaciological_package():
+    """ICESEE Results come from ICESEE's own post-processing (the example's
+    results contract and read_results views), never from
+    cryostack_src/models/*/results.py's single-model ResultPackage."""
+    ws = (_REPO / "icesee_jupyter_book/ui/icesee_workflow/workspace.py").read_text()
+    svc = (_REPO / "icesee_jupyter_book/core/results_service.py").read_text()
+    assert "results_service as rs" in ws and "rs.discover(" in ws and "rs.render(" in ws
+    assert "ICESEE.src.postprocessing.render" in svc
+    assert "cryostack_src.models" not in ws + svc
 
 
 # ---------------------------------------------------------------------------

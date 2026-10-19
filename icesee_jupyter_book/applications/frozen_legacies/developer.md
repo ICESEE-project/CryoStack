@@ -1,5 +1,10 @@
 # Frozen Legacies Developer Guide
 
+Dataset operators should also follow the [dataset intake runbook](data_intake.md)
+for checksum, scratch, CEDAR promotion, and TIFF-association requirements.
+Repository and interoperability decisions are recorded in the
+[scientific data platform architecture](scientific_data_platform.md).
+
 :::{raw} html
 <style>
 .bd-article-container section:first-child > h1:first-child {
@@ -138,6 +143,8 @@ datasets/
 ```
 
 The registry loads each manifest, validates the dataset definition, identifies the requested adapter, and returns the configured dataset and adapter to the build pipeline.
+
+Dataset `id` values must be unique across all `.yaml` and `.yml` manifests in the directory. The registry stops before ingestion and reports both manifest paths when it finds a duplicate; this prevents one collection from silently replacing another in generated catalog indexes.
 
 ## Dataset Manifests
 
@@ -838,6 +845,22 @@ no identities or paths. Outputs are `outputs/<TIFF stem>.csv` (rewritten on
 values such as `9999` are written unchanged; the viewer's normalized
 navigation summary is separate.
 
+## Automatic Picker (LYRA)
+
+LYRA (Layered-echo Yield from Radiometric Archives; handoff `Pickers/Automatic_picker/LYRA.zip` and guide of 13 October 2026) is the default automatic picker. URSA (next section) stays available as the fallback.
+
+**Selection.** `CRYOSTACK_FROZEN_LEGACIES_AUTOMATIC_PICKER` = `lyra` (default) | `ursa`. Set it explicitly in deployment configuration; an unrecognised value is logged and LYRA is used. Every job records `picker` and `picker_version` (`source_sha256` of the picker's code, file count, commit when determinable) when it is created, so failed and interrupted jobs carry them too; every LYRA product records `"picker": "LYRA (automatic)"` and `lyra_source_sha256` in its provenance. The Automatic view shows the results of the picker of the asset's latest job, so earlier URSA results stay readable after a switch; all automatic products stay listed under Products.
+
+**Configuration.** `CRYOSTACK_FROZEN_LEGACIES_LYRA_ROOT` (directory holding `codes/`; default `Pickers/Automatic_picker/LYRA`), `CRYOSTACK_FROZEN_LEGACIES_LYRA_PYTHON` (default: the gateway's Python; dependencies in `env/lyra-requirements.txt`), `CRYOSTACK_FROZEN_LEGACIES_LYRA_RENAME_LOGS` (extra rename-log directory; `<LYRA root>/rename_logs` is always read), `CRYOSTACK_FROZEN_LEGACIES_LYRA_TIMEOUT` (30–86,400 seconds, default 3600). `CRYOSTACK_FROZEN_LEGACIES_URSA_CONCURRENCY` limits automatic jobs of both pickers together (1–4, default 1); invalid or unsafe values fall back to the default and are logged. A LYRA phase-1 run on a 117 MB strip peaks near 2.6 GB. Each asset also holds an advisory OS lease while its job runs, preventing duplicate work across gateway workers; the lease is released automatically if a worker exits.
+
+**Runner.** `pickers/lyra_runner.py` runs LYRA unmodified, as its guide does, from a private copy of `codes/` (LYRA writes next to its own source) with the TIFF linked under its canonical name in `tiff/<flight>/`: `detect_frames.py --method segment` (phase 1), then -- only with an uploaded `lyra-guidance` file -- `calibrate.py` (phase 3) and `echoes.py` (phase 4). LYRA's phase 2 is its interactive desktop picker; phase 3 refuses to run without a human −60 dB reference pick, and CryoStack never supplies one. The runner writes `lyra-run.json` (phases, exit codes, where it stopped, outputs). It runs in its own process group (Cancel stops the group) and stops LYRA when the server that started it dies, so a killed gateway leaves no LYRA running for a job it later reports as interrupted. `--check` is the health check: it imports `lyra`, `segment_ocr` and `build_digit_templates` and reports package versions.
+
+**Canonical name.** LYRA needs `<reel>_<start>_<end>-reel_begin_end.tiff`. It is taken from the file name (with the asset's recorded flight) or from a LYRA rename log whose entry for the file agrees with the asset's flight; conflicting or ambiguous logs make LYRA unavailable for that asset with the reason. Nothing is guessed. The catalog derives flights only from `F<flight>-C…` names, so archive files under their reel names need a flight recorded (radar sources `flight:`) before LYRA can run.
+
+**Results.** Products `lyra-frame-index`, `lyra-calibration`, `lyra-run-echoes` (no positions: LYRA's navigation alignment needs reference files that are not part of the handoff) and `lyra-diagnostic` images (contact sheet, OCR diagnostic, per-frame calibration/echo/waveform/publication figures, bounded like URSA's). Each run replaces them all, so outputs a later run did not produce disappear. The frame table shows LYRA's values as written, with display-only flags: CBD inferred by LYRA's sequence constraint where the OCR read disagrees or is empty, main bang more than 100 px from the strip median, and LYRA's echo status other than `good`. Figure-to-frame keys follow `calibrate.py`'s `file_id` (`CBD<n>`, `CBD<n>_f<frame>` for duplicated CBDs, `fr<nn>` without a CBD).
+
+**Validation (2026-10-14).** Phase 1 on real F127 film: reel `47_0004650_0004674` -- 14 frames, 12 complete, CBD 0551–0562; the 5 flagged frames are raw OCR misreads where the sequence agrees with the labels visible in LYRA's OCR diagnostic. Reel `47_0004800_0004824` (`F127-C0471_C0483`) -- LYRA assigns 0473–0484, but the film labels read 471–475, 478–484 (*film CBD* below): its sequence constraint assumes no skipped CBD numbers, so frames 1–5 are 2 too high. LYRA's rename log maps reel `47_0004650_0004674` to `F327-C0551_C0562`, while the film prints flight 127 and LYRA's handoff files it under F127; the flight attribution of that reel needs confirming. The frame index is byte-identical under numpy 1.26/pandas 2.2 and numpy 2.4/pandas 3.0. Phases 3–4 have not run on real data: no human calibration picks exist in the handoff or anywhere on the server. LYRA's results are scientifically unvalidated and never eligible for review or publication.
+
 ## Automatic Picker (URSA)
 
 URSA (`external/FrozenLegacies/Frozen Legacy Tools/Unsupervised Retrieval of Signal for A-scopes (U.R.S.A.)`) is the existing automatic A-scope processor. Frozen Legacies runs it unmodified:
@@ -964,7 +987,9 @@ Frozen Legacies keeps five things apart:
 
 **Implemented:** `s3` -- read-only Amazon S3 (or an operator-approved S3-compatible endpoint), described in *S3 data sources* below.
 
-**Not implemented:** Google Drive, OneDrive/SharePoint. Neither can be used. `radar/storage.py` only reserves their names (`PLANNED_PROVIDERS = ("gdrive", "onedrive")`, not in `PROVIDERS`, so the Control Center refuses them) and defines the rules a future provider must follow in `validate_drive_config`: a shared drive (`drive_id`) and folder (`folder_id` / `folder`), an operator allow-list (`CRYOSTACK_FROZEN_LEGACIES_GDRIVE_ALLOWED` / `CRYOSTACK_FROZEN_LEGACIES_ONEDRIVE_ALLOWED`), and no credentials or client settings in a data source. `GoogleDriveProvider` / `OneDriveProvider` are placeholders that refuse construction; no API client, credentials model or workload identity exists for them.
+**Implemented:** `cedar` -- Georgia Tech CEDAR ("Cost-Effective Data Access for Research") research storage. Investigation (2026-10-14): CEDAR is campus network storage that is *mounted*; on this server it is NFSv4 (`cedar-cos.nas.gatech.edu:/cedar_cos/<lab>` at `/projects/<lab>`). There is no CEDAR object or cloud API to integrate, so `CedarProvider` is `LocalProvider` (approved storage roots, path containment, files read in place) plus one rule: the directory must be on a mounted network filesystem (`nfs`, `nfs4`, `cifs`, `smb3`; from `/proc/self/mountinfo`). A local folder cannot pose as CEDAR, and an unmounted CEDAR path is reported as a failed connection instead of being indexed as empty. To use it, an operator adds the CEDAR directory (or a subfolder) to `CRYOSTACK_FROZEN_LEGACIES_STORAGE_ROOTS`; the gateway's service account needs read permission on the NFS export.
+
+**Not implemented:** Google Drive, OneDrive/SharePoint, Dropbox. None can be used. `radar/storage.py` only reserves their names (`PLANNED_PROVIDERS = ("gdrive", "onedrive", "dropbox")`, not in `PROVIDERS`, so the Control Center refuses them; `PLANNED_REQUIREMENTS` lists what each needs and the Control Center shows it) and defines the rules a future provider must follow in `validate_drive_config`: a shared drive (`drive_id`) and folder (`folder_id` / `folder`), an operator allow-list (`CRYOSTACK_FROZEN_LEGACIES_GDRIVE_ALLOWED` / `CRYOSTACK_FROZEN_LEGACIES_ONEDRIVE_ALLOWED`), and no credentials or client settings in a data source. `GoogleDriveProvider` / `OneDriveProvider` are placeholders that refuse construction; no API client, credentials model or workload identity exists for them.
 
 ### S3 data sources
 
@@ -1022,6 +1047,18 @@ The stored configuration is exactly `{bucket, prefix, region, endpoint, tiff_pre
 ### Working cache
 
 The pickers need random access. `radar/working_cache.py` materializes an object as a local file: in place for `local_files` providers (no copy), otherwise streamed into `var/frozen_legacies_cache/` (`$CRYOSTACK_FROZEN_LEGACIES_WORKING_CACHE`, size limit `$CRYOSTACK_FROZEN_LEGACIES_WORKING_CACHE_MB`, default 20 GB) as `<entry>/<original file name>`, where the entry is a digest of source, key and version. The original name is kept on purpose: ASTRA and URSA read flight and CBD range from it and ASTRA writes it into its CSV, so a working copy gives byte-identical products to the same file read in place. Copies are written to a temporary file, checked against the object's size and renamed (an interrupted download is retried once and leaves nothing); downloaded once under concurrency, also when several users open the same file; evicted least-recently-used except while leased -- manual ASTRA actions and URSA jobs hold a lease on their file. A file larger than the whole cache limit is refused before any download, and a copy is started only while the cache's file system keeps at least 512 MB free after it (`FREE_SPACE_RESERVE`); both give the user a clear message instead of filling the disk. The cache is disposable and is never a permanent copy: user workspaces only reference catalog files. Catalog files are resolved through it on every open (the catalog state is checked every time; storage round trips are reused for 30 s), so no code assumes a catalog file is permanently a local path.
+
+### Workspace storage quotas
+
+`radar/quota.py` and `storage_routes.py`. Each user's quota covers the persistent files of their whole workspace (`<workspace-root>/users/<safe-id>`): uploads, generated outputs and other applications' files. Usage is measured by walking that tree (each `(st_dev, st_ino)` once, so hard links are not double-counted; symbolic links, `*.part`, `.automatic-work`, `.cache` and `__pycache__` excluded), cached 30 s per user and invalidated after each chargeable request. External catalog radar and the shared working cache live outside workspaces and never count.
+
+Settings (`default_quota_bytes` 2 GiB, `max_upload_bytes` ≤ the 200 MiB handler limit, `warn_percent` 80, `disk_warn_percent` 90) and per-user overrides are authoritative configuration in their own SQLite database (`$CRYOSTACK_FROZEN_LEGACIES_STORAGE_DB`, default `var/frozen_legacies_storage.db`; WAL, created on first use), not in the rebuildable catalog. Changes are written to the Control Center `access_audit_log`.
+
+Enforcement is an aiohttp middleware (`make_quota_middleware`) in front of the chargeable routes (`CHARGEABLE`); the handlers only read the per-file limit (`server._upload_limit`). Check and reservation happen on the event-loop thread with no await between them, so parallel requests cannot jointly overshoot: each request reserves its declared `Content-Length` (required for uploads; aiohttp stops a body at it) until it finishes. Starting automatic picking needs `AUTOMATIC_RESERVE_BYTES` (160 MiB, the bound of an automatic run's outputs) free; the job then writes asynchronously, so a run started just under the quota can finish above it -- bounded by that size. **Contract for the automatic pickers:** `QuotaAccounts.usage(root, user_id)` / `reserve()` / `release()` are the API a picker should call before collecting large outputs if per-file finalization checks are wanted; the current runners are not modified. Users above their quota keep read, download and delete access; nothing is deleted automatically. The guard assumes one gateway process (as deployed); several processes would need the reservations in the database.
+
+### Data-source visibility and removal
+
+`data_sources.visibility` (`users` default, `maintainers`) is an additive column. Catalog search, summaries and segments exclude maintainers-only sources unless the caller is a maintainer (`include_restricted`), and `make_visibility_middleware` refuses opening a `cat-` key of such a source (`404`) for others; assets already in a workspace keep resolving. `RadarCatalog.remove_source` deletes the source row, its `radar_assets` rows and index runs in one transaction (refused while a run is active); user state, submissions and published observations are kept, and because catalog IDs are derived from source and key, re-registering the same source ID and indexing restores every ID. Storage is never touched.
 
 ### Radar catalog (SQLite)
 
@@ -1251,6 +1288,11 @@ In a real browser (headless Chrome for Testing, desktop and phone sizes) the map
 ### Ready-product ingestion at scale (design; not implemented)
 
 A maintainer registers a data source whose layout or manifest states the relationships (for example `tiff/{flight}/{name}.tiff`, `astra/{flight}/{name}.csv`, `qc/{flight}/{name}_QC.png`, `nav/{flight}.csv`). The indexer then associates a product with a radar file only through those declared rules -- the same flight and the same TIFF stem in the declared folders, validated by the product's schema (exact ASTRA columns, image signatures) -- never by vague name similarity, and records the products as installation (published) products of the catalog file. No archive extraction is involved.
+
+Navigation-only flights deliberately show empty product slots for the source
+TIFF, radargram/echogram, digitized radar data, and automatic output. Those
+slots are UI contracts, not catalog objects. They must not acquire identifiers,
+URLs, checksums, dimensions, or measurements until verified files are indexed.
 
 ## Security
 

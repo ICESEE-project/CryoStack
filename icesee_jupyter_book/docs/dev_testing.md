@@ -30,7 +30,7 @@
 
 | Suite | Command |
 |---|---|
-| Python | `python -m pytest cryostack_src icesee_jupyter_book icesee_hpc_connector deployment` |
+| Python (canonical first-party regression) | `env -u CRYOSTACK_DATA_ROOT -u CRYOSTACK_AWS_PRINCIPAL_ARN -u CRYOSTACK_CF_TEMPLATE_URL python -m pytest -q cryostack_src icesee_jupyter_book icesee_hpc_connector deployment control_center` |
 | Node (connector setup page) | `node --test deployment/tests/*.test.mjs` |
 | Documentation | `jupyter-book build icesee_jupyter_book` |
 
@@ -57,5 +57,8 @@ browser.
 | Auto-config · Beta | the test list in [Extending CryoStack](dev_extending.md) |
 | Documentation | `jupyter-book build icesee_jupyter_book` (inspect the rendered navigation, not just source) |
 
-Always finish with the full Python suite before proposing a change; state
-plainly what passed and what was skipped.
+Always finish with the canonical first-party Python suite before proposing a
+change; record the revision, exact command, pass/skip/fail totals, duration and
+warning count. This does not replace real browser/device, representative
+large-TIFF, non-production restore, or external cloud/HPC evidence when a
+change requires those checks.

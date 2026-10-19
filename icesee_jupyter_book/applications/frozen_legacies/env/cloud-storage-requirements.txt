@@ -1,0 +1,6 @@
+# Read-only external storage connectors. Credentials are supplied only through
+# workload identity / server environment; never through data-source records.
+google-api-python-client==2.201.0
+google-auth==2.62.0
+msal==1.39.0
+dropbox==12.2.3

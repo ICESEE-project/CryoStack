@@ -25,11 +25,15 @@ def test_gateway_records_a_run_on_every_submission_path():
     assert "from icesee_jupyter_book.core import run_records" in src
     assert "def _record_icesee_run(" in src
     assert "def _update_icesee_run(" in src
-    # one _record_icesee_run(...) call per execution mode
-    assert 'execution_mode="local"' in src
+    # Remote and Cloud submissions record through _record_icesee_run; a
+    # Local run is recorded by run_launcher.prepare_local_run (before the
+    # model starts, with its lifecycle and provenance)
     assert 'execution_mode="remote"' in src
     assert 'execution_mode="cloud"' in src
     assert src.count("_record_icesee_run(") >= 3
+    assert "run_launcher.prepare_local_run(req)" in src
+    launcher = (_REPO / "icesee_jupyter_book/core/run_launcher.py").read_text()
+    assert 'execution_mode="local"' in launcher and "run_records.record_run(" in launcher
 
 
 def test_remote_and_cloud_status_checks_update_the_local_manifest():

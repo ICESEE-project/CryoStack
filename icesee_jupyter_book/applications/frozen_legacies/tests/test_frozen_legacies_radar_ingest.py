@@ -98,6 +98,12 @@ def test_valid_8bit_tiff(tmp_path):
     assert validate_tiff(path)["mode"] == "L"
 
 
+def test_full_validation_suppresses_pillow_warning_after_explicit_bounds(tmp_path, monkeypatch):
+    path = write_tiff(tmp_path / "a.tif")
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 7_000)
+    assert validate_tiff(path)["width"] == 300
+
+
 def test_rgb_tiff_is_rejected(tmp_path):
     path = tmp_path / "rgb.tiff"
     Image.new("RGB", (20, 10)).save(path, format="TIFF")

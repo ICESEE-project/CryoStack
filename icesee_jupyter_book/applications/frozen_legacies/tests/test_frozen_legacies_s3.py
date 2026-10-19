@@ -653,16 +653,12 @@ def test_gateway_stays_responsive_while_a_worker_indexes(web_env):
     assert polls >= 2 and p95 < 1.0
 
 
-# ── cloud drives: planned, never enabled ────────────────────────────
-def test_cloud_drive_providers_are_reserved_but_not_available(monkeypatch):
-    assert storage.PLANNED_PROVIDERS == ("gdrive", "onedrive")
-    assert not set(storage.PLANNED_PROVIDERS) & set(storage.PROVIDERS)
-    for name, cls in (("gdrive", storage.GoogleDriveProvider), ("onedrive", storage.OneDriveProvider)):
-        with pytest.raises(StorageError, match="not available on this server"):
-            storage.provider_for(name, {"drive_id": "d1"})
-        with pytest.raises(StorageError, match="not available on this server"):
-            cls({"drive_id": "d1"})
-        assert issubclass(cls, storage.RadarStorageProvider)
+def test_cloud_drive_providers_are_available_only_after_approval(monkeypatch):
+    assert set(storage.CLOUD_PROVIDERS) <= set(storage.PROVIDERS)
+    for name in storage.CLOUD_PROVIDERS:
+        monkeypatch.delenv(storage.DRIVE_ALLOWED_ENV[name], raising=False)
+        with pytest.raises(StorageKeyError, match="not approved"):
+            storage.validate_drive_config(name, {"drive_id": "d1", "folder_id": "f1"})
 
 
 def test_cloud_drive_configuration_follows_the_approval_pattern(monkeypatch):
@@ -687,7 +683,7 @@ def test_cloud_drive_configuration_follows_the_approval_pattern(monkeypatch):
         v("s3", {"drive_id": "x"})
 
 
-def test_control_center_refuses_cloud_drive_sources(web_env):
+def test_control_center_requires_cloud_drive_approval(web_env):
     _m, maint = _login(web_env, "maint@example.org", "maintainer")
 
     async def script(client, app):
@@ -696,4 +692,4 @@ def test_control_center_refuses_cloud_drive_sources(web_env):
         return await _json(await client.post(f"{API}/admin/sources", cookies=maint, json=payload))
 
     status, body = _run(web_env, script)
-    assert status == 400 and "provider must be one of: local, s3" in body["error"]
+    assert status == 400 and "not approved" in body["error"]

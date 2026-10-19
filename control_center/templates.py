@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from html import escape
+import os
 
 
 def _date(
@@ -958,9 +959,17 @@ def control_layout(
             "cloud",
         )}
 
+        {nav_item("Resource Allocations", "/control/allocations", "allocations")}
+
         <div class="nav-section">
           Data
         </div>
+
+        {nav_item(
+            "Storage & quotas",
+            "/control/storage",
+            "storage",
+        )}
 
         {nav_item(
             "Frozen Legacies",
@@ -1671,6 +1680,7 @@ def user_detail_page(
             allowed_roles=allowed_roles,
             can_revoke=can_revoke,
             is_self=is_self,
+            can_manage_developer_docs=user.get("can_manage_developer_docs", False),
         )}
 
         {workspace_panel(

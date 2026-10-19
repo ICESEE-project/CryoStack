@@ -48,7 +48,10 @@ FREE_SPACE_RESERVE = 512 * 1024 * 1024
 class WorkingCache:
     def __init__(self, directory: str | Path | None = None, *, max_bytes: int | None = None):
         configured = (os.environ.get(CACHE_DIR_ENV) or "").strip()
-        self.directory = Path(directory or configured or DEFAULT_DIR)
+        if not (directory or configured):
+            from cryostack_src.storage_layout import default_path
+            configured = str(default_path("frozen-legacies-working-cache", DEFAULT_DIR))
+        self.directory = Path(directory or configured)
         if max_bytes is None:
             try:
                 max_bytes = int(os.environ.get(CACHE_MB_ENV, "20480")) * 1024 * 1024

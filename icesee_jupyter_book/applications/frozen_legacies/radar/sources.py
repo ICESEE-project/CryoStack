@@ -87,7 +87,10 @@ def sources_file() -> Path | None:
     configured = (os.environ.get(SOURCES_ENV) or "").strip()
     if configured:
         return Path(configured).expanduser()
-    return DEFAULT_SOURCES_FILE if DEFAULT_SOURCES_FILE.is_file() else None
+    from cryostack_src.storage_layout import default_path
+
+    default = default_path("frozen-legacies-radar-sources", DEFAULT_SOURCES_FILE)
+    return default if default.is_file() else None
 
 
 def _optional_str(value) -> str | None:

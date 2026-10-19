@@ -88,20 +88,23 @@
      stage: dashed while awaiting review, teal once published (the colour of
      the Reviewed results layer), red when returned or rejected. */
   function style(feature) {
+    const automatic = feature.get("workflow") === "lyra-automatic";
     const completed = feature.get("status") === "completed";
     const verified = feature.get("geolocation_status") === "verified";
     const stage = feature.get("review")?.stage;
     const selected = state.selected && feature.getId() === state.selected.getId();
-    const colour = verified ? "#7c2d12" : "#c2410c";
+    const colour = automatic ? "#6d28d9" : verified ? "#7c2d12" : "#c2410c";
     const outline = stage === "published" ? "#0f766e"
       : stage === "returned" || stage === "rejected" ? "#b91c1c" : colour;
     return new ol.style.Style({
       image: new ol.style.RegularShape({
-        points: 4,
-        radius: selected ? 8 : 6,
+        points: automatic ? 8 : 4,
+        // Match the 4.5 px shared-observation symbols. Selection is conveyed
+        // by the outline, not by inflating a scientific point on the map.
+        radius: 4.5,
         angle: Math.PI / 4,
         fill: completed || verified ? new ol.style.Fill({ color: colour }) : new ol.style.Fill({ color: "rgba(255,255,255,0.85)" }),
-        stroke: new ol.style.Stroke({ color: outline, width: selected ? 3 : 2,
+        stroke: new ol.style.Stroke({ color: outline, width: selected ? 2.5 : 1.5,
                                       lineDash: stage === "in_review" ? [3, 2] : undefined })
       }),
       zIndex: 10
@@ -147,44 +150,47 @@
       return "";
     }
     if (s.error) {
-      return `<div class="fl-record-section"><div class="fl-record-section-title">My picks</div>
+      return `<div class="fl-record-section"><div class="fl-record-section-title">My work</div>
         <p class="fl-radar-panel-note">${escapeHtml(s.error)}</p></div>`;
     }
-    const total = (s.by_status?.draft || 0) + (s.by_status?.completed || 0);
+    const manualTotal = (s.by_status?.draft || 0) + (s.by_status?.completed || 0);
+    const automaticTotal = s.automatic?.total || 0;
+    const total = manualTotal + automaticTotal;
     let selected = "";
     if (state.selected) {
       const p = state.selected.getProperties();
+      const automatic = p.workflow === "lyra-automatic";
       selected = `
         <div class="fl-record-grid fl-pick-detail">
-          <div class="fl-record-item"><span>A-scope</span><strong>${escapeHtml(p.a_scope)} · ${escapeHtml(p.filename)}</strong></div>
-          <div class="fl-record-item"><span>Review</span><strong>${stageChip(p.review || { stage: p.status })}</strong></div>
+          <div class="fl-record-item"><span>${automatic ? "LYRA frame" : "A-scope"}</span><strong>${escapeHtml(automatic ? p.frame : p.a_scope)} · ${escapeHtml(p.filename)}</strong></div>
+          <div class="fl-record-item"><span>Status</span><strong>${automatic ? '<span class="fl-astra-chip fl-unvalidated">Scientifically unvalidated</span>' : stageChip(p.review || { stage: p.status })}</strong></div>
           <div class="fl-record-item"><span>CBD</span><strong>${
-            p.cbd_differs && Number.isFinite(p.verified_cbd)
+            !automatic && p.cbd_differs && Number.isFinite(p.verified_cbd)
               ? `ASTRA CBD ${escapeHtml(p.cbd)} · film CBD ${escapeHtml(p.verified_cbd)} (confirmed)`
               : escapeHtml(p.cbd ?? "—")}</strong></div>
           <div class="fl-record-item"><span>Position</span><strong>${fmt(p.lat, 4, "°")}, ${fmt(p.lon, 4, "°")}</strong></div>
           <div class="fl-record-item"><span>Surface / bed</span><strong>${fmt(p.surface_us, 2, " µs")} / ${fmt(p.bed_us, 2, " µs")}</strong></div>
           <div class="fl-record-item"><span>Ice thickness</span><strong>${fmt(p.h_ice_m, 1, " m")}</strong></div>
         </div>
-        <p class="fl-radar-panel-note">${escapeHtml(p.workflow === "astra-manual" ? "ASTRA manual pick" : p.workflow)}${
+        <p class="fl-radar-panel-note">${escapeHtml(automatic ? "LYRA automatic result" : "ASTRA manual pick")}${
           p.dataset_id ? ` · ${escapeHtml(p.dataset_id)}` : ""}${
           p.picks && Object.values(p.picks).includes("suggested") ? " · includes suggested picks" : ""}${
-          p.geolocation_status === "verified" ? " · position verified against the film" : " · position unverified (ASTRA-assigned CBD)"} · ${
-          escapeHtml(stageNote(p.review || { stage: p.status, visibility: "private" }))}</p>
-        <button type="button" class="fl-radar-button" data-open-pick="${escapeHtml(p.asset_id)}"
-          data-focus="${Number.isInteger(p.window_x) ? p.window_x : ""}">Open in Manual at this A-scope</button>`;
+          automatic ? ` · exact-CBD navigation · ${escapeHtml(p.cbd_source === "lyra-ocr" ? "CBD read by OCR" : "CBD inferred by LYRA")} · visible only to you`
+            : `${p.geolocation_status === "verified" ? " · position verified against the film" : " · position unverified (ASTRA-assigned CBD)"} · ${escapeHtml(stageNote(p.review || { stage: p.status, visibility: "private" }))}`}</p>
+        <button type="button" class="fl-radar-button" ${automatic ? "data-open-automatic" : "data-open-pick"}="${escapeHtml(p.asset_id)}"
+          data-focus="${Number.isInteger(p.window_x) ? p.window_x : ""}">Open in ${automatic ? "Automatic" : "Manual at this A-scope"}</button>`;
     }
     return `
       <div class="fl-record-section">
-        <div class="fl-record-section-title">My picks</div>
+        <div class="fl-record-section-title">My work</div>
         <label class="fl-astra-toggle">
           <input type="checkbox" data-my-picks ${state.visible ? "checked" : ""}>
-          Show my picks on the map
+          Show my manual and automatic results on the map
         </label>
         <p class="fl-radar-panel-note">${total
-          ? `${total} picked A-scope${total === 1 ? "" : "s"} (${s.by_status.draft || 0} draft, ${s.by_status.completed || 0} completed)${
-              s.without_position ? ` · ${s.without_position} without a navigation position` : ""}.`
-          : "A-scopes you commit in Manual appear here and on the map."}</p>
+          ? `${manualTotal} manual pick${manualTotal === 1 ? "" : "s"} · ${automaticTotal} automatic frame${automaticTotal === 1 ? "" : "s"}${
+              (s.without_position || s.automatic?.without_position) ? ` · ${(s.without_position || 0) + (s.automatic?.without_position || 0)} without a navigation position` : ""}.`
+          : "Manual picks and positioned Automatic results appear here and on the map."}</p>
         ${stagesHtml(s.results_by_stage)}
         ${selected}
       </div>`;
@@ -204,7 +210,7 @@
   }
 
 
-  function bindPanel(root, { openAsset }) {
+  function bindPanel(root, { openAsset, openAutomatic }) {
     root.querySelector("[data-my-picks]")?.addEventListener("change", event => {
       state.visible = event.target.checked;
       state.layer?.setVisible(state.visible);
@@ -212,6 +218,9 @@
     root.querySelector("[data-open-pick]")?.addEventListener("click", event => {
       const focus = event.target.dataset.focus;
       openAsset(event.target.dataset.openPick, focus === "" ? null : Number(focus));
+    });
+    root.querySelector("[data-open-automatic]")?.addEventListener("click", event => {
+      openAutomatic(event.target.dataset.openAutomatic);
     });
   }
 
@@ -225,7 +234,7 @@
     state.layer = new ol.layer.Vector({
       source: new ol.source.Vector(),
       style,
-      properties: { id: "frozen-my-picks", label: "My picks" },
+      properties: { id: "frozen-my-picks", label: "My work" },
       zIndex: 20
     });
     map.addLayer(state.layer);

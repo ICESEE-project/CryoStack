@@ -125,7 +125,9 @@ def write(workdir: Path, manifest: dict) -> str:
     data = json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8")
     tmp = workdir / f".{MANIFEST}.tmp"
     tmp.write_bytes(data)
-    os.replace(tmp, workdir / MANIFEST)
+    from cryostack_src.storage_layout import durable_replace
+
+    durable_replace(tmp, workdir / MANIFEST)
     return hashlib.sha256(data).hexdigest()
 
 

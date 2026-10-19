@@ -60,9 +60,9 @@ class NoRadarImage(LookupError):
 
 
 def _write_manifest(path: Path, manifest: dict) -> None:
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
-    os.replace(tmp, path)
+    from cryostack_src.storage_layout import atomic_write
+
+    atomic_write(path, json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8"))
 
 
 def write_manifest(workspace: FrozenLegaciesWorkspace, asset_id: str, manifest: dict) -> None:

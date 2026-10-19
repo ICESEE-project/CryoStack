@@ -31,7 +31,7 @@ session as the page but answers ``401`` instead of redirecting, like the
 * ``GET  assets/<id>/products/<pid>/preview``  bounded PNG preview of an image product
 * ``DELETE assets/<id>/products/<pid>``        remove a user-provided product
 * ``GET  assets/<id>/products.zip``            download the asset's products together
-* ``GET  assets/<id>/automatic``   automatic-picking (URSA) availability, job and per-frame diagnostics
+* ``GET  assets/<id>/automatic``   automatic-picking (LYRA, or URSA) availability, job and per-frame diagnostics
 * ``POST assets/<id>/automatic``   ``{"action": "start" | "cancel"}``
 * ``DELETE assets/<id>``           remove the asset from the user's workspace
 * ``GET  datasets/<dataset_id>/downloads/<kind>``  shared dataset downloads
@@ -57,7 +57,8 @@ from aiohttp import web
 from cryostack_src.workspace.identity import WorkspaceIdentityError
 from cryostack_src.workspace.manager import WorkspacePermissionError
 
-from .radar import automatic, products
+from .radar import automatic, preview_derivatives, products
+from .riggs_context import riggs_collection
 from .radar.assets import (
     NoRadarImage,
     SharedSourceUnavailable,
@@ -89,6 +90,8 @@ from .radar.render import (
     render_cached,
 )
 from .radar.catalog import CatalogError
+from .navigation_flights import navigation_collection
+from .radar.storage import StorageError
 from .radar import observations as observations_mod
 from .radar.sources import is_valid_source_key, load_sources
 from .radar.working_cache import working_cache
@@ -160,7 +163,7 @@ def workspace_for_request(request: web.Request) -> FrozenLegaciesWorkspace:
 
 def _private(response: web.StreamResponse) -> web.StreamResponse:
     # Authenticated content: never store in a shared cache.
-    response.headers["Cache-Control"] = "private, no-cache"
+    response.headers["Cache-Control"] = "private, no-cache, must-revalidate"
     return response
 
 
@@ -275,6 +278,22 @@ async def api_list_sources(request: web.Request) -> web.Response:
     return _json({"sources": [s.public() for s in sources.values()]})
 
 
+async def api_navigation_flights(request: web.Request) -> web.Response:
+    """Installation navigation coverage, independent of TIFF availability."""
+    try:
+        return _json(await _blocking(navigation_collection))
+    except (OSError, StorageError, ValueError):
+        return _error(503, "The navigation collection is not available on this server.")
+
+
+async def api_riggs_context(request: web.Request) -> web.Response:
+    """Verified RIGGS reference stations, never user or automatic picks."""
+    try:
+        return _json(await _blocking(riggs_collection))
+    except (OSError, StorageError, UnicodeError, ValueError, json.JSONDecodeError):
+        return _error(503, "The RIGGS scientific-context layer is not available on this server.")
+
+
 async def api_list_assets(request: web.Request) -> web.Response:
     workspace = workspace_for_request(request)
     sources = load_sources()
@@ -327,15 +346,27 @@ async def _stream_part(part, target: Path, limit: int, *, digest=None, signature
             if digest is not None:
                 digest.update(chunk)
             out.write(chunk)
+        # on disk before it is renamed into place and registered
+        out.flush()
+        os.fsync(out.fileno())
     if signature and size and len(head) < 4:
         check_tiff_signature(head)
     return size
 
 
+def _upload_limit(request: web.Request, built_in: int) -> int:
+    """The per-file upload limit: the handler's own limit, lowered by the
+    administrators' maximum upload size (storage_routes) where set."""
+    store = request.app.get("frozen_legacies_quota_store")
+    if store is None:
+        return built_in
+    return min(built_in, int(store.settings()["max_upload_bytes"]))
+
+
 async def api_upload_asset(request: web.Request) -> web.Response:
     _require_same_origin(request)
     workspace = workspace_for_request(request)
-    limit = int(request.app.get(UPLOAD_LIMIT_KEY, MAX_UPLOAD_BYTES))
+    limit = _upload_limit(request, int(request.app.get(UPLOAD_LIMIT_KEY, MAX_UPLOAD_BYTES)))
     if (request.content_length or 0) > limit + MAX_NAV_BYTES + 64 * 1024:
         return _error(413, f"Upload exceeds the {limit // (1024 * 1024)} MB limit.")
     try:
@@ -379,6 +410,8 @@ async def api_upload_asset(request: web.Request) -> web.Response:
         os.replace(tiff_part, workspace.asset_file(asset_id, ASSET_SOURCE_TIFF))
         if has_nav:
             os.replace(nav_part, workspace.asset_file(asset_id, ASSET_NAV_CSV))
+        from cryostack_src.storage_layout import fsync_directory
+        fsync_directory(directory)            # the renames survive before asset.json exists
         manifest = await _blocking(
             finalize_upload,
             workspace,
@@ -703,6 +736,8 @@ def _finish_product(workspace, asset_id: str, manifest: dict, received: dict) ->
                     "This radar asset already has navigation or picking results; "
                     "navigation can only be added before picking starts.")
             os.replace(stored, nav_path)
+            from cryostack_src.storage_layout import fsync_directory
+            fsync_directory(nav_path.parent)
             attach_navigation(workspace, asset_id, manifest)
             return {"attached": "navigation"}
         record = products.upload_record(
@@ -722,7 +757,7 @@ async def api_upload_product(request: web.Request) -> web.Response:
     _require_same_origin(request)
     workspace, manifest = await _blocking(_owned, request)
     asset_id = manifest["asset_id"]
-    limit = products.MAX_IMAGE_BYTES
+    limit = _upload_limit(request, products.MAX_IMAGE_BYTES)
     if (request.content_length or 0) > limit + 64 * 1024:
         return _error(413, f"Upload exceeds the {limit // (1024 * 1024)} MB limit.")
     lock = request.app[MANUAL_LOCKS_KEY].setdefault(f"{workspace.root}/{asset_id}", asyncio.Lock())
@@ -741,7 +776,7 @@ async def api_upload_product(request: web.Request) -> web.Response:
 async def api_create_products_asset(request: web.Request) -> web.Response:
     _require_same_origin(request)
     workspace = workspace_for_request(request)
-    limit = products.MAX_IMAGE_BYTES
+    limit = _upload_limit(request, products.MAX_IMAGE_BYTES)
     if (request.content_length or 0) > limit + 64 * 1024:
         return _error(413, f"Upload exceeds the {limit // (1024 * 1024)} MB limit.")
     asset_id, directory, manifest = await _blocking(
@@ -798,6 +833,11 @@ def _render_preview(path: Path) -> bytes:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", Image.DecompressionBombWarning)
         with Image.open(path) as image:
+            if (image.width <= 0 or image.height <= 0
+                    or image.width > products.MAX_IMAGE_SIDE
+                    or image.height > products.MAX_IMAGE_SIDE
+                    or image.width * image.height > products.MAX_IMAGE_PIXELS):
+                raise products.ProductValidationError("Image dimensions exceed preview limits.")
             image.draft("RGB", (PREVIEW_MAX_WIDTH, PREVIEW_MAX_HEIGHT))
             factor = max(1, -(-image.width // PREVIEW_MAX_WIDTH),
                          -(-image.height // PREVIEW_MAX_HEIGHT))
@@ -837,15 +877,58 @@ async def api_preview_product(request: web.Request) -> web.Response:
                                    load_sources(), request.match_info["product_id"])
     if not record["previewable"]:
         return _error(404, "This product has no preview.")
-    stat = path.stat()
-    key = ("preview", str(path), stat.st_mtime_ns, stat.st_size)
-    cache = request.app[WINDOW_CACHE_KEY]
-    png = cache.get(key)
-    if png is None:
-        png = await _blocking(_render_preview_bounded, path)
-        cache.put(key, png)
+    png, provenance = await _blocking(
+        preview_derivatives.get_or_create,
+        asset_dir=workspace.asset_dir(manifest["asset_id"]),
+        product_id=record["product_id"], source=path, source_record=record,
+        extension="png", media_type="image/png",
+        generator="frozen-legacies-bounded-preview-v1", render=_render_preview_bounded)
     response = web.Response(body=png, content_type="image/png")
     response.headers["Cache-Control"] = "private, max-age=300"
+    response.headers["X-Preview-SHA256"] = provenance["derivative"]["sha256"]
+    response.headers["X-Preview-Source-SHA256"] = provenance["source"]["sha256"]
+    response.headers["X-Scientific-Status"] = "preview-only"
+    return response
+
+
+def _render_preview_pdf(path: Path) -> bytes:
+    """Single-page, visibly labelled report. It contains no measurements."""
+    import io
+    from PIL import Image, ImageDraw
+
+    # PDF export decodes the same potentially very large source as PNG
+    # previewing, so it must share the global decode-concurrency bound.
+    preview = Image.open(io.BytesIO(_render_preview_bounded(path))).convert("RGB")
+    margin, label = 36, 54
+    page = Image.new("RGB", (preview.width + margin * 2,
+                              preview.height + margin * 2 + label), "white")
+    page.paste(preview, (margin, margin + label))
+    ImageDraw.Draw(page).text((margin, margin),
+                              "PREVIEW ONLY - not a scientific source object", fill="black")
+    output = io.BytesIO()
+    page.save(output, format="PDF", resolution=96.0)
+    return output.getvalue()
+
+
+async def api_preview_product_pdf(request: web.Request) -> web.Response:
+    workspace, manifest = await _blocking(_owned, request)
+    record, path = await _blocking(products.resolve_product, workspace, manifest,
+                                   load_sources(), request.match_info["product_id"])
+    if not record["previewable"]:
+        return _error(404, "This product has no preview.")
+    data, provenance = await _blocking(
+        preview_derivatives.get_or_create,
+        asset_dir=workspace.asset_dir(manifest["asset_id"]),
+        product_id=record["product_id"], source=path, source_record=record,
+        extension="pdf", media_type="application/pdf",
+        generator="frozen-legacies-preview-report-v1", render=_render_preview_pdf)
+    response = web.Response(body=data, content_type="application/pdf")
+    response.headers["Content-Disposition"] = _content_disposition(
+        f"{record['product_id']}-preview.pdf")
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["X-Preview-SHA256"] = provenance["derivative"]["sha256"]
+    response.headers["X-Preview-Source-SHA256"] = provenance["source"]["sha256"]
+    response.headers["X-Scientific-Status"] = "preview-only"
     return response
 
 
@@ -941,22 +1024,53 @@ def _automatic_state(request, workspace, manifest) -> dict:
     has_radar = manifest["origin"] != "products"
     sources = load_sources()
     listed = products.list_products(workspace, manifest, sources)
-    return {
+    picker = automatic.configured_picker()
+    # results are shown for the picker that produced them (an earlier URSA
+    # job stays readable after the switch to LYRA)
+    shown = (job or {}).get("picker") if (job or {}).get("picker") in automatic.PICKERS else picker
+    workflow = automatic.WORKFLOWS[shown]
+    if not has_radar:
+        warnings = []
+    elif picker == "lyra":
+        warnings = automatic.lyra_warnings(manifest, automatic.lyra_guidance(workspace, asset_id))
+    else:
+        warnings = automatic.warnings_for(manifest.get("filename") or "",
+                                          bool((manifest.get("nav") or {}).get("present")),
+                                          picker="ursa")
+    state = {
         "asset_id": asset_id,
-        "availability": automatic.availability(),
+        "picker": picker,
+        "picker_label": automatic.LABELS[picker],
+        "availability": automatic.availability(picker=picker),
         "has_radar": has_radar,
         "job": automatic.public_job(job),
-        "warnings": automatic.warnings_for(manifest.get("filename") or "",
-                                           bool((manifest.get("nav") or {}).get("present")))
-        if has_radar else [],
-        "products": [p for p in listed if p["workflow"] == "ursa-automatic"
-                     and p["kind"] != "ursa-diagnostic"],
-        "frames": automatic.frame_diagnostics(workspace, manifest, listed, sources),
+        "warnings": warnings,
+        "products": [p for p in listed if p["workflow"] == workflow
+                     and p["kind"] not in products.DIAGNOSTIC_KINDS],
+        "frames": automatic.frame_diagnostics(workspace, manifest, listed, sources, picker=shown),
         # operational availability is not scientific validation
         "scientific_status": automatic.SCIENTIFIC_STATUS,
-        "scientific_note": automatic.SCIENTIFIC_NOTE,
+        "scientific_note": automatic.scientific_note(shown),
         "publication_eligible": False,
     }
+    if picker == "lyra" and has_radar:
+        inputs = automatic.lyra_inputs(manifest)
+        guidance = automatic.lyra_guidance(workspace, asset_id)
+        state["lyra"] = {
+            "canonical_name": inputs.get("canonical_name"),
+            "canonical_name_from": inputs.get("resolved_by"),
+            "runnable": bool(inputs["ok"]),
+            "reason": None if inputs["ok"] else inputs["reason"],
+            "guidance": {key: {"product_id": g["product_id"], "name": g["name"],
+                               "summary": g["summary"]} for key, g in guidance.items()},
+            "guidance_required": "picks" not in guidance,
+            "guidance_requirements": {
+                "human": True,
+                "required": ["main bang", "-60 dB reference line", "at least two X-grid lines"],
+                "recommended": ["four X-grid lines", "two Y-grid lines"],
+            },
+        }
+    return state
 
 
 async def api_automatic_get(request: web.Request) -> web.Response:
@@ -986,13 +1100,24 @@ async def api_automatic_action(request: web.Request) -> web.Response:
             await runner.cancel(workspace, asset_id)
         else:
             tiff, nav = asset_image_paths(workspace, manifest, load_sources())
-            state = await _blocking(automatic.availability)
+            picker = automatic.configured_picker()
+            state = await _blocking(automatic.availability, picker=picker)
             if not state["available"]:
                 return _json({"error": state["reason"], "available": False}, status=409)
             if runner.active(workspace, asset_id):
                 return _error(409, "Automatic picking is already running for this asset.")
-            runner.start(workspace, asset_id, tiff=tiff, nav=nav,
-                         filename=manifest.get("filename") or tiff.name)
+            lyra = None
+            if picker == "lyra":
+                inputs = await _blocking(automatic.lyra_inputs, manifest)
+                if not inputs["ok"]:
+                    return _json({"error": inputs["reason"], "available": True}, status=409)
+                lyra = {"inputs": inputs, "manifest": {"flight": manifest.get("flight")}}
+            try:
+                runner.start(workspace, asset_id, tiff=tiff, nav=nav,
+                             filename=manifest.get("filename") or tiff.name,
+                             picker=picker, lyra=lyra)
+            except automatic.AutomaticJobBusy as error:
+                return _error(409, str(error))
     return _json(await _blocking(_automatic_state, request, workspace, manifest))
 
 
@@ -1084,6 +1209,8 @@ def install_frozen_legacies(app: web.Application, *, auth) -> None:
     )
 
     api = "/frozen-legacies/api"
+    app.router.add_get(f"{api}/navigation/flights", _api(auth, api_navigation_flights))
+    app.router.add_get(f"{api}/context/riggs", _api(auth, api_riggs_context))
     app.router.add_get(f"{api}/radar/sources", _api(auth, api_list_sources))
     app.router.add_get(f"{api}/assets", _api(auth, api_list_assets))
     app.router.add_post(f"{api}/assets/shared", _api(auth, api_create_shared_asset))
@@ -1122,6 +1249,8 @@ def install_frozen_legacies(app: web.Application, *, auth) -> None:
                           _api(auth, api_delete_product))
     app.router.add_get(f"{api}/assets/{_ASSET_ID_PATTERN}/products/{product}/preview",
                        _api(auth, api_preview_product))
+    app.router.add_get(f"{api}/assets/{_ASSET_ID_PATTERN}/products/{product}/preview.pdf",
+                       _api(auth, api_preview_product_pdf))
     app.router.add_get(f"{api}/assets/{_ASSET_ID_PATTERN}/automatic",
                        _api(auth, api_automatic_get))
     app.router.add_post(f"{api}/assets/{_ASSET_ID_PATTERN}/automatic",

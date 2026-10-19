@@ -1,0 +1,59 @@
+% Shared NSF formatting adapted directly from DRAGON_proposal.tex.
+% The document class must be declared by each driver before this file.
+
+\usepackage[paperwidth=8.5in,paperheight=11.0in,
+  left=1.0in,right=1.0in,top=1.0in,bottom=1.0in]{geometry}
+\usepackage{times}
+\usepackage[breakable,theorems,skins]{tcolorbox}
+\usepackage{titlesec}
+\usepackage[format=plain,labelfont=it,textfont=it]{caption}
+\usepackage{graphicx}
+\usepackage{wrapfig}
+\usepackage[authoryear,colon,square]{natbib}
+\usepackage{verbatim}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{bibentry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{url}
+
+\titleformat*{\section}{\normalsize\bfseries}
+\titleformat*{\subsection}{\normalsize\bfseries}
+\titleformat*{\subsubsection}{\normalsize\bfseries}
+
+\titlespacing\section{0pt}{2pt}{0pt}
+\titlespacing\subsection{0pt}{2pt}{0pt}
+\titlespacing\subsubsection{0pt}{2pt}{0pt}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+\setlength{\intextsep}{8pt}
+\setlength{\emergencystretch}{2em}
+
+\pagenumbering{gobble}
+
+\newcommand{\mytilde}{\raise.17ex\hbox{$\scriptstyle\mathtt{\sim}$}}
+
+\DeclareRobustCommand{\mybox}[2][gray!10]{%
+\begin{tcolorbox}[
+  breakable,
+  left=5pt,
+  right=5pt,
+  top=5pt,
+  bottom=5pt,
+  colback=#1,
+  colframe=#1,
+  width=6.5in,
+  enlarge left by=0mm,
+  boxsep=5pt,
+  arc=0pt,
+  outer arc=0pt]
+#2
+\end{tcolorbox}}
+
+\newcommand{\proposalTitle}{Elements: CryoStack --- Reusable Cyberinfrastructure for Reproducible Cryosphere Computing}
+\newcommand{\proposalTitleBlock}{{\Large\textbf{\proposalTitle}}\par}
+
+\bibliographystyle{apalike}

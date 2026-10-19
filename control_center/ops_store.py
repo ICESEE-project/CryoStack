@@ -64,9 +64,11 @@ CREATE TABLE IF NOT EXISTS app_usage_daily (
 
 
 def default_ops_database(auth_database: Path | None = None) -> Path:
-    configured = (os.environ.get(OPS_DATABASE_ENV) or "").strip()
-    if configured:
-        return Path(configured).expanduser()
+    from cryostack_src.storage_layout import resolve
+
+    path, how = resolve("control-center-ops")
+    if how != "legacy":         # its own variable, or $CRYOSTACK_DATA_ROOT
+        return path
     if auth_database is not None:
         return Path(auth_database).parent / "control_center_ops.db"
     return (

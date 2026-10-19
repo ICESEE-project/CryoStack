@@ -12,9 +12,19 @@ frozen-legacies          catalog + review snapshots                    :mod:`...
                                                                        of a read-only copy
 control-center-ops       ``$CRYOSTACK_CONTROL_OPS_DATABASE``           read-only SQLite copy
 livist                   ``$CRYOSTACK_LIVIST_DATABASE``                read-only SQLite copy
+frozen-legacies-radar-   ``$CRYOSTACK_FROZEN_LEGACIES_RADAR_SOURCES``  file copy (hash-checked)
+sources                  (shared radar source registry)
+frozen-legacies-intake   ``$CRYOSTACK_FROZEN_LEGACIES_INTAKE_ROOT``    locked file copy of open
+                                                                       sessions and releases
 workspaces/<label>       ``users/`` (gateway) and                      file copy (links kept as
                          ``icesee_jupyter_notebooks/users/`` (Voila)   links, never followed)
 =======================  ===========================================  ==========================
+
+Locations come from :mod:`cryostack_src.storage_layout` (each store's own
+variable, then ``$CRYOSTACK_DATA_ROOT``, then the historical default in the
+repository), the same resolution the services use. With a data root the one
+workspace root ``<data root>/workspace/users`` is backed up as
+``workspaces/data``.
 
 Not included (rebuildable or large): the LIVIST input cache, LIVIST job
 directories, the Frozen Legacies working cache, radar archives, conda
@@ -26,6 +36,7 @@ written)::
     cryostack_backup.py create --dest /home/<user>/cryostack-backups
     cryostack_backup.py verify <backup directory>
     cryostack_backup.py drill  <backup directory> --scratch <empty directory>
+    cryostack_backup.py restore <backup directory> --data-root <empty marked volume dir>
 
 Off-host copies are encrypted to a public key whose private half is kept
 off this host::
@@ -67,12 +78,14 @@ password hashes, session ids or file contents are printed.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
 import shutil
 import socket
 import sqlite3
+import stat
 import subprocess
 import sys
 import time
@@ -104,23 +117,31 @@ def _env_path(name: str, default: Path) -> Path:
 
 
 def sources(repo: Path = REPO) -> dict:
-    """Where this installation keeps each component (environment first)."""
+    """Where this installation keeps each component: the services' own
+    resolution (:mod:`cryostack_src.storage_layout`), with the historical
+    defaults taken relative to ``repo``."""
     from control_center.ops_store import default_ops_database
-    from icesee_jupyter_book.applications.frozen_legacies.radar.catalog import CATALOG_ENV
+    from cryostack_src import storage_layout as layout
 
-    auth = _env_path("CRYOSTACK_AUTH_DATABASE", repo / "var" / "cryostack_auth.db")
-    roots = {"gateway": repo / "users",
-             "voila": repo / "icesee_jupyter_book" / "icesee_jupyter_notebooks" / "users"}
-    configured = (os.environ.get("CRYOSTACK_WORKSPACE_ROOT") or "").strip()
-    if configured:
-        extra = Path(configured).expanduser() / "users"
-        if extra.resolve() not in {p.resolve() for p in roots.values()}:
-            roots["configured"] = extra
+    def located(name: str) -> tuple[Path, str]:
+        return layout.resolve(name, repo / layout.store(name).legacy)
+
+    auth = located("auth")[0]
+    workspace_root, how = layout.resolve("workspaces", repo)
+    if how == "legacy":
+        roots = {"gateway": repo / "users",
+                 "voila": repo / "icesee_jupyter_book" / "icesee_jupyter_notebooks" / "users"}
+    else:
+        roots = {"data" if how == "data-root" else "configured": workspace_root / "users"}
+    intake = (os.environ.get("CRYOSTACK_FROZEN_LEGACIES_INTAKE_ROOT") or "").strip()
     return {
         "auth": auth,
-        "frozen_legacies_catalog": _env_path(CATALOG_ENV, repo / "var" / "frozen_legacies_catalog.db"),
+        "frozen_legacies_catalog": located("frozen-legacies-catalog")[0],
+        "frozen_legacies_storage": located("frozen-legacies-storage")[0],
         "control_center_ops": default_ops_database(auth),
-        "livist": _env_path("CRYOSTACK_LIVIST_DATABASE", repo / "var" / "livist.db"),
+        "livist": located("livist")[0],
+        "frozen_legacies_radar_sources": located("frozen-legacies-radar-sources")[0],
+        "frozen_legacies_intake": Path(intake).expanduser() if intake else None,
         "workspaces": roots,
     }
 
@@ -212,6 +233,30 @@ def _copy_tree(source: Path, target: Path) -> dict:
             "directories": sum(1 for p in target.iterdir() if p.is_dir() and not p.is_symlink())}
 
 
+def _copy_intake(source: Path, target: Path) -> dict:
+    """Copy all intake state while holding the same lock as its writers."""
+    sessions = source / ".upload-sessions"
+    if not sessions.is_dir():
+        raise BackupError(f"Configured intake root has no session store: {sessions}")
+    lock = sessions / ".intake.lock"
+    try:
+        descriptor = os.open(lock, os.O_RDWR | getattr(os, "O_NOFOLLOW", 0))
+    except OSError as exc:
+        raise BackupError(f"Configured intake root has no safe writer lock: {lock}") from exc
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise BackupError(f"Configured intake root has no safe writer lock: {lock}")
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        if any(path.is_symlink() for path in source.rglob("*")):
+            raise BackupError("Configured intake root contains a symbolic link; refusing backup.")
+        result = _copy_tree(source, target)
+    finally:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
+    result["lock"] = "volume"
+    return result
+
+
 def _revision(repo: Path) -> str | None:
     try:
         return subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True,
@@ -223,6 +268,12 @@ def _revision(repo: Path) -> str | None:
 def _hashed_files(root: Path) -> dict[str, str]:
     return {str(p.relative_to(root)): _sha256(p) for p in sorted(root.rglob("*"))
             if p.is_file() and not p.is_symlink() and p.name not in (SUMS, MANIFEST)}
+
+
+def _hashed_links(root: Path) -> dict[str, str]:
+    """Digest symlink target text without following the links."""
+    return {str(p.relative_to(root)): hashlib.sha256(os.fsencode(os.readlink(p))).hexdigest()
+            for p in sorted(root.rglob("*")) if p.is_symlink()}
 
 
 def _read_sums(backup: Path) -> dict[str, str]:
@@ -244,7 +295,10 @@ def create(dest: Path, *, repo: Path = REPO, locations: dict | None = None) -> t
     locations = locations or sources(repo)
     roots = locations["workspaces"]
     dest = Path(dest)
-    _check_destination(dest, repo, list(roots.values()), "backup destination")
+    protected = list(roots.values())
+    if locations.get("frozen_legacies_intake"):
+        protected.append(Path(locations["frozen_legacies_intake"]))
+    _check_destination(dest, repo, protected, "backup destination")
     auth = Path(locations["auth"])
     if not auth.is_file():
         raise BackupError(f"No authentication database at {auth}.")
@@ -283,8 +337,32 @@ def create(dest: Path, *, repo: Path = REPO, locations: dict | None = None) -> t
         else:
             components["frozen-legacies"] = {"absent": True}
 
-        for name, key in (("control-center-ops", "control_center_ops"), ("livist", "livist")):
-            source = Path(locations[key])
+        registry = Path(locations.get("frozen_legacies_radar_sources") or "")
+        if registry.name and registry.is_file():
+            shutil.copy2(registry, work / "frozen-legacies-radar-sources.yaml")
+            components["frozen-legacies-radar-sources"] = {
+                "config_file": "frozen-legacies-radar-sources.yaml",
+                "sha256": _sha256(work / "frozen-legacies-radar-sources.yaml"),
+                "source_directory": str(registry.resolve().parent)}
+        else:
+            components["frozen-legacies-radar-sources"] = {"absent": True}
+
+        intake = locations.get("frozen_legacies_intake")
+        if intake and Path(intake).is_dir():
+            components["frozen-legacies-intake"] = _copy_intake(
+                Path(intake), work / "frozen-legacies-intake")
+        else:
+            components["frozen-legacies-intake"] = {"absent": True}
+
+        for name, key in (("control-center-ops", "control_center_ops"),
+                          ("livist", "livist"),
+                          ("frozen-legacies-storage", "frozen_legacies_storage")):
+            configured = locations.get(key)
+            # Preserve compatibility with explicit location maps created by
+            # older callers; normal discovery always includes every store.
+            if configured is None:
+                continue
+            source = Path(configured)
             if source.is_file():
                 components[name] = dict(_sqlite_copy(source, work / f"{name}.db"),
                                         file=f"{name}.db")
@@ -307,9 +385,10 @@ def create(dest: Path, *, repo: Path = REPO, locations: dict | None = None) -> t
         (work / SUMS).write_text("".join(f"{d}  ./{n}\n" for n, d in files.items()),
                                  encoding="utf-8")
         manifest = {
-            "schema": SCHEMA, "version": 1, "created_at": time.time(), "stamp": stamp,
+            "schema": SCHEMA, "version": 2, "created_at": time.time(), "stamp": stamp,
             "host": socket.gethostname(), "source_revision": _revision(repo),
             "components": components, "files": len(files),
+            "symlinks": _hashed_links(work),
             "bytes": sum((work / n).stat().st_size for n in files),
             "problems": problems, "not_included": NOT_INCLUDED,
         }
@@ -348,6 +427,19 @@ def verify(backup: Path) -> dict:
         elif present[name] != digest:
             problems.append(f"{name} does not match {SUMS}")
     problems += [f"{name} is not listed in {SUMS}" for name in sorted(set(present) - set(sums))]
+    # Version 1 backups predate authenticated link targets and remain readable.
+    # New backups record hashes of os.readlink() text so verification never
+    # follows a link outside the backup while still detecting retargeting.
+    expected_links = manifest.get("symlinks")
+    if expected_links is not None:
+        present_links = _hashed_links(backup)
+        for name, digest in expected_links.items():
+            if name not in present_links:
+                problems.append(f"{name} symlink is missing")
+            elif present_links[name] != digest:
+                problems.append(f"{name} symlink target does not match {MANIFEST}")
+        problems += [f"{name} symlink is not listed in {MANIFEST}"
+                     for name in sorted(set(present_links) - set(expected_links))]
     components = manifest.get("components", {})
     for name, component in components.items():
         if component.get("file") and (backup / component["file"]).is_file():
@@ -376,9 +468,14 @@ def drill(backup: Path, scratch: Path, *, repo: Path = REPO, keep: bool = False,
 
     backup, scratch = Path(backup), Path(scratch)
     locations = locations or sources(repo)
-    _check_destination(scratch, repo, list(locations["workspaces"].values()), "drill directory")
+    protected = list(locations["workspaces"].values())
+    if locations.get("frozen_legacies_intake"):
+        protected.append(Path(locations["frozen_legacies_intake"]))
+    _check_destination(scratch, repo, protected, "drill directory")
     live = [Path(locations[k]) for k in ("auth", "frozen_legacies_catalog",
                                          "control_center_ops", "livist")]
+    if locations.get("frozen_legacies_storage"):
+        live.append(Path(locations["frozen_legacies_storage"]))
     if any(_inside(scratch, p.parent) for p in live):
         raise BackupError("The drill directory may not be next to the installation's data.")
     if scratch.exists() and any(scratch.iterdir()):
@@ -414,16 +511,28 @@ def drill(backup: Path, scratch: Path, *, repo: Path = REPO, keep: bool = False,
                 ok = result["ok"] and result["counts"] == component["rows"]
                 restored[name] = "ok" if ok else "failed"
                 problems += [f"{name}: {p}" for p in result["problems"]]
+            elif component.get("config_file"):
+                target = scratch / component["config_file"]
+                shutil.copy2(backup / component["config_file"], target)
+                restored[name] = "ok" if _sha256(target) == component["sha256"] else "failed"
             elif name.startswith("workspaces/"):
                 source = backup / name
                 target = scratch / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copytree(source, target, symlinks=True)
-                same = _hashed_files(source) == _hashed_files(target)
+                same = (_hashed_files(source) == _hashed_files(target)
+                        and _hashed_links(source) == _hashed_links(target))
                 links = sorted(str(p.relative_to(target)) for p in target.rglob("*")
                                if p.is_symlink())
                 ok = same and len(links) == component["links"]
                 restored[name] = "ok" if ok else "failed"
+            elif name == "frozen-legacies-intake":
+                source = backup / name
+                target = scratch / name
+                shutil.copytree(source, target, symlinks=False)
+                same = (_hashed_files(source) == _hashed_files(target)
+                        and not _hashed_links(source) and not _hashed_links(target))
+                restored[name] = "ok" if same else "failed"
             if restored[name] == "failed":
                 problems.append(f"{name}: restored copy does not match the backup")
     finally:
@@ -433,6 +542,142 @@ def drill(backup: Path, scratch: Path, *, repo: Path = REPO, keep: bool = False,
     return {"ok": not problems, "verified": True, "stamp": manifest.get("stamp"),
             "restored": restored, "problems": problems,
             "seconds": round(time.time() - started, 2), "kept": keep}
+
+
+# ── restore (into a new data root) ───────────────────────────────────
+
+def absolutize_registry(text: str, base: Path) -> tuple[str, int]:
+    """Rewrite relative ``tiff:``/``nav:`` paths of a radar source registry
+    against ``base`` (the registry's original directory), keeping comments and
+    layout, so the registry means the same after it moves. Returns the new
+    text and the number of rewritten paths."""
+    import re
+
+    pattern = re.compile(r"^(\s*(?:-\s+)?(?:tiff|nav):\s*)(.+?)\s*$")
+    out, changed = [], 0
+    for line in text.splitlines(keepends=True):
+        match = pattern.match(line.rstrip("\n"))
+        if match:
+            raw = match.group(2)
+            value = raw.split(" #", 1)[0].strip().strip("'\"")
+            if value and value.lower() not in ("null", "~") and not value.startswith(("/", "~")):
+                line = f"{match.group(1)}{json.dumps(str((Path(base) / value).resolve()))}\n"
+                changed += 1
+        out.append(line)
+    return "".join(out), changed
+
+
+def restore(backup: Path, data_root: Path, *, allow_unmarked: bool = False) -> dict:
+    """Restore a verified backup into a new, empty data root laid out as
+    :mod:`cryostack_src.storage_layout` expects (``db/``, ``workspace/users``,
+    ...). Nothing that exists is overwritten; the result is checked as in
+    ``drill``. Point the services at it with ``CRYOSTACK_DATA_ROOT``."""
+    from cryostack_src import storage_layout as layout
+    from icesee_auth.storage import AuthStorage
+    from icesee_jupyter_book.applications.frozen_legacies.radar import backup as fl_backup
+
+    backup, data_root = Path(backup), Path(data_root).resolve()
+    _check_destination(data_root, REPO, [], "data root")
+    if not allow_unmarked:
+        durability_problems = layout.location_problems(data_root)
+        if durability_problems:
+            raise BackupError(f"{data_root} is not a usable marked durable volume: "
+                              + "; ".join(durability_problems))
+    targets = {item.name: data_root / item.relative for item in layout.STORES if item.durable}
+    intake_target = data_root / "frozen_legacies" / "intakes"
+    occupied = [str(path) for path in targets.values()
+                if path.exists() and (path.is_file() or any(path.iterdir()))]
+    if intake_target.exists():
+        occupied.append(str(intake_target))
+    if occupied:
+        raise BackupError("Existing data would be replaced: " + ", ".join(occupied))
+    check = verify(backup)
+    if not check["ok"]:
+        return {"ok": False, "verified": False, "problems": check["problems"]}
+    manifest = json.loads((backup / MANIFEST).read_text(encoding="utf-8"))
+    sqlite_targets = {"auth": targets["auth"], "control-center-ops": targets["control-center-ops"],
+                      "livist": targets["livist"],
+                      "frozen-legacies-storage": targets["frozen-legacies-storage"]}
+    labels = [n for n, c in manifest["components"].items()
+              if n.startswith("workspaces/") and not c.get("absent")]
+    users = {}
+    for label in labels:
+        for entry in (backup / label).iterdir():
+            users.setdefault(entry.name, []).append(label)
+    clashes = sorted(u for u, where in users.items() if len(where) > 1)
+    if clashes:
+        raise BackupError(f"{len(clashes)} workspace(s) exist in more than one root of the "
+                          "backup; merge them by hand before restoring.")
+    previous = os.umask(0o077)
+    restored, problems = {}, []
+    try:
+        for name, component in manifest["components"].items():
+            if component.get("absent"):
+                restored[name] = "absent at backup time"
+                continue
+            if component.get("file") and name in sqlite_targets:
+                target = sqlite_targets[name]
+                target.parent.mkdir(parents=True, exist_ok=True)
+                tmp = target.with_name(f".{target.name}.restore")
+                shutil.copy2(backup / component["file"], tmp)
+                layout.durable_replace(tmp, target)
+                result = _sqlite_check(target)
+                ok = result["integrity"] == "ok" and result["rows"] == component["rows"]
+                if name == "auth":
+                    # the current auth code opens (and, if needed, migrates) it
+                    AuthStorage(target)
+                    ok = ok and _sqlite_check(target)["integrity"] == "ok"
+                restored[name] = "ok" if ok else "failed"
+            elif component.get("directory"):
+                targets["frozen-legacies-catalog"].parent.mkdir(parents=True, exist_ok=True)
+                targets["frozen-legacies-reviews"].parent.mkdir(parents=True, exist_ok=True)
+                result = fl_backup.restore(backup / component["directory"],
+                                           catalog=targets["frozen-legacies-catalog"],
+                                           reviews=targets["frozen-legacies-reviews"])
+                ok = result["ok"] and result["counts"] == component["rows"]
+                restored[name] = "ok" if ok else "failed"
+                problems += [f"{name}: {p}" for p in result["problems"]]
+            elif component.get("config_file"):
+                target = targets["frozen-legacies-radar-sources"]
+                target.parent.mkdir(parents=True, exist_ok=True)
+                text = (backup / component["config_file"]).read_text(encoding="utf-8")
+                text, changed = absolutize_registry(text, Path(component["source_directory"]))
+                layout.atomic_write(target, text.encode("utf-8"))
+                restored[name] = f"ok ({changed} relative paths made absolute)"
+            elif name == "frozen-legacies-intake":
+                intake_target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(backup / name, intake_target, symlinks=False)
+                same = (_hashed_files(backup / name) == _hashed_files(intake_target)
+                        and not _hashed_links(backup / name) and not _hashed_links(intake_target))
+                restored[name] = "ok" if same else "failed"
+        users_root = targets["workspaces"] / "users"
+        users_root.mkdir(parents=True, exist_ok=True)
+        for label in labels:
+            source = backup / label
+            for entry in sorted(source.iterdir()):
+                destination = users_root / entry.name
+                if entry.is_dir() and not entry.is_symlink():
+                    shutil.copytree(entry, destination, symlinks=True)
+                else:
+                    shutil.copy2(entry, destination, follow_symlinks=False)
+            same = all(_hashed_files(source / u) == _hashed_files(users_root / u)
+                       for u in (e.name for e in source.iterdir()
+                                 if e.is_dir() and not e.is_symlink()))
+            restored[label] = "ok" if same else "failed"
+        for path in [p for p in users_root.rglob("*") if p.is_dir() and not p.is_symlink()]:
+            layout.fsync_directory(path)
+        problems += [f"{n}: restored copy does not match the backup"
+                     for n, v in restored.items() if v == "failed"]
+        layout.atomic_write(data_root / "RESTORE.json", json.dumps({
+            "restored_at": time.time(), "backup_stamp": manifest.get("stamp"),
+            "source_host": manifest.get("host"), "restored": restored, "problems": problems,
+        }, indent=1, sort_keys=True).encode("utf-8"))
+    finally:
+        os.umask(previous)
+    return {"ok": not problems, "verified": True, "stamp": manifest.get("stamp"),
+            "data_root": str(data_root), "restored": restored, "problems": problems,
+            "environment": {layout.DATA_ROOT_ENV: str(data_root),
+                            "CRYOSTACK_FROZEN_LEGACIES_INTAKE_ROOT": str(intake_target)}}
 
 
 # ── export / unpack (encrypted off-host copy) ─────────────────────────
@@ -563,6 +808,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--keep", action="store_true", help="keep the restored scratch copy")
     p.add_argument("--installation", type=Path, default=REPO,
                    help="repository whose data locations the drill must stay away from")
+    p = sub.add_parser("restore", help="restore a backup into a new, empty data root")
+    p.add_argument("backup", type=Path)
+    p.add_argument("--data-root", type=Path, required=True)
+    p.add_argument("--allow-unmarked", action="store_true",
+                   help="restore into a directory that is not a marked durable volume (tests)")
     p = sub.add_parser("export", help="encrypt a verified backup for an off-host copy")
     p.add_argument("backup", type=Path)
     p.add_argument("--recipient-key", type=Path, required=True, help="ASCII-armoured public key")
@@ -587,6 +837,8 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "export":
             result = export(args.backup, args.recipient_key, args.dest,
                             repo=args.installation.resolve())
+        elif args.command == "restore":
+            result = restore(args.backup, args.data_root, allow_unmarked=args.allow_unmarked)
         elif args.command == "unpack":
             result = unpack(args.archive, args.into)
         else:

@@ -428,6 +428,12 @@ async def _start_job(request: web.Request, names: object, *,
     workspace = _workspace(user)
     job_id = new_job_id()
     workdir = workspace.job_dir(job_id)
+    from cryostack_src.workspace.storage_policy import QuotaExceeded, check_workspace_write
+    try:
+        await _blocking(check_workspace_write, workspace.owner_root, str(user.id),
+                        settings.job_reserve_bytes(), what="starting this LIVIST job")
+    except QuotaExceeded as error:
+        return _error(413, str(error))
     short = await _blocking(worker.space_problem, workdir, settings.job_reserve_bytes())
     if short:
         return _error(409, short)

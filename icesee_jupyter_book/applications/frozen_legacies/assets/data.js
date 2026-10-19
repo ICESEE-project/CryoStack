@@ -34,6 +34,16 @@ const FLIGHTS_DATA_URL =
 const OBSERVATIONS_DATA_URL =
   `${FROZEN_DATA_ROOT}/observations.geojson`;
 
+const ROSS_BOUNDARY_URL =
+  `${FROZEN_DATA_ROOT}/antarctica/ross_ice_shelf.geojson`;
+
+
+const NAVIGATION_FLIGHTS_URL =
+  "/frozen-legacies/api/navigation/flights";
+
+const RIGGS_CONTEXT_URL =
+  "/frozen-legacies/api/context/riggs";
+
 
 function buildDatasetIndex(
   catalog
@@ -67,16 +77,17 @@ function buildDatasetIndex(
 }
 
 function datasetIdsFromObservations(
-  observations
+  observations,
+  flights = null
 ) {
 
   return [
     ...new Set(
 
-      (
-        observations.features
-        || []
-      )
+      [
+        ...(observations.features || []),
+        ...(flights?.features || [])
+      ]
 
         .map(
           feature =>
@@ -175,7 +186,8 @@ function flightsForDataset(
 
 function flightNumbersForDataset(
   observations,
-  datasetId = null
+  datasetId = null,
+  flights = null
 ) {
 
   const source =
@@ -188,10 +200,13 @@ function flightNumbersForDataset(
   return [
     ...new Set(
 
-      (
-        source.features
-        || []
-      )
+      [
+        ...(source.features || []),
+        ...(flightsForDataset(
+          flights || { type: "FeatureCollection", features: [] },
+          datasetId
+        ).features || [])
+      ]
 
         .map(
           feature =>
@@ -288,6 +303,34 @@ async function loadJson(
 }
 
 
+async function loadNavigationFlights() {
+  try {
+    return await loadJson(NAVIGATION_FLIGHTS_URL, "Navigation flights");
+  } catch (error) {
+    console.warn("[FrozenLegacies] optional navigation collection unavailable:", error.message);
+    return {
+      dataset: null,
+      flights: { type: "FeatureCollection", features: [] },
+      summary: { files: 0, flights: 0, invalid: 0 }
+    };
+  }
+}
+
+async function loadRiggsContext() {
+  try {
+    return await loadJson(RIGGS_CONTEXT_URL, "RIGGS context");
+  } catch (error) {
+    console.warn("[FrozenLegacies] optional RIGGS context unavailable:", error.message);
+    return {
+      available: false,
+      metadata: null,
+      stations: { type: "FeatureCollection", features: [] },
+      summary: { stations: 0, seismic: 0, radar: 0 }
+    };
+  }
+}
+
+
 /* ------------------------------------------------------------
  * Raw FrozenLegacies datasets
  * ------------------------------------------------------------ */
@@ -300,7 +343,11 @@ async function loadFrozenLegaciesGeoJSON() {
 
     flights,
 
-    observations
+    observations,
+
+    navigation,
+
+    rossBoundary
 
   ] = await Promise.all([
 
@@ -317,6 +364,13 @@ async function loadFrozenLegaciesGeoJSON() {
     loadJson(
       OBSERVATIONS_DATA_URL,
       "Observations"
+    ),
+
+    loadNavigationFlights(),
+
+    loadJson(
+      ROSS_BOUNDARY_URL,
+      "Ross Ice Shelf boundary"
     )
 
   ]);
@@ -359,14 +413,38 @@ async function loadFrozenLegaciesGeoJSON() {
 
   }
 
+  if (
+    rossBoundary?.type !== "FeatureCollection" ||
+    rossBoundary.features?.length !== 1
+  ) {
+    throw new Error(
+      "Ross Ice Shelf boundary GeoJSON is invalid."
+    );
+  }
+
+
+  const datasets = [...catalog.datasets];
+  if (navigation?.dataset && !datasets.some(dataset => dataset.id === navigation.dataset.id)) {
+    datasets.push(navigation.dataset);
+  }
+
+  const flightFeatures = [...(flights.features || [])];
+  const flightIds = new Set(flightFeatures.map(feature => String(feature.id || "")));
+  for (const feature of navigation?.flights?.features || []) {
+    if (!flightIds.has(String(feature.id || ""))) {
+      flightFeatures.push(feature);
+    }
+  }
 
   return {
 
-    catalog,
+    catalog: { ...catalog, datasets },
 
-    flights,
+    flights: { type: "FeatureCollection", features: flightFeatures },
 
-    observations
+    observations,
+
+    rossBoundary
 
   };
 
@@ -770,6 +848,9 @@ async function loadFrozenLegaciesData({
   const raw =
     await loadFrozenLegaciesGeoJSON();
 
+  const riggs =
+    await loadRiggsContext();
+
   const datasetIndex =
     buildDatasetIndex(
       raw.catalog
@@ -788,47 +869,75 @@ async function loadFrozenLegaciesData({
       projection
     );
 
+  const rossBoundaryFeatures =
+    new ol.format.GeoJSON().readFeatures(
+      raw.rossBoundary,
+      {
+        dataProjection: "EPSG:3031",
+        featureProjection: projection
+      }
+    );
+
+  const focused =
+    FrozenLegaciesRossFocus.focus({
+      flightFeatures,
+      observationFeatures,
+      boundaryFeature: rossBoundaryFeatures[0]
+    });
+
+  const riggsFeatures =
+    readProjectedFeatures(
+      riggs.stations,
+      projection
+    );
+
 
   populateFrozenSources(
     sources,
-    flightFeatures,
-    observationFeatures
+    focused.flights,
+    focused.observations
   );
+
+  if (sources.riggs) {
+    sources.riggs.clear(true);
+    sources.riggs.addFeatures(riggsFeatures);
+  }
 
 
   const flightNumbers =
     getFlightNumbers(
-      observationFeatures,
-      flightFeatures
+      focused.observations,
+      focused.flights
     );
 
 
   const flightIndex =
     buildFlightIndex(
-      flightFeatures
+      focused.flights
     );
 
 
   const observationIndex =
     buildObservationIndex(
-      observationFeatures
+      focused.observations
     );
 
   const datasetIds =
     datasetIdsFromObservations(
-      raw.observations
+      raw.observations,
+      raw.flights
     );
 
 
   console.log(
     "[FrozenLegacies] flights:",
-    flightFeatures.length
+    focused.flights.length
   );
 
 
   console.log(
     "[FrozenLegacies] observations:",
-    observationFeatures.length
+    focused.observations.length
   );
 
 
@@ -849,9 +958,24 @@ async function loadFrozenLegaciesData({
 
       raw,
 
-      flightFeatures,
+      riggs,
 
-      observationFeatures,
+      riggsFeatures,
+
+      flightFeatures:
+        focused.flights,
+
+      observationFeatures:
+        focused.observations,
+
+      fullFlightFeatures:
+        flightFeatures,
+
+      fullObservationFeatures:
+        observationFeatures,
+
+      rossBoundaryFeature:
+        rossBoundaryFeatures[0],
 
       flightNumbers,
 
@@ -981,7 +1105,10 @@ window.FrozenLegaciesData = {
       FLIGHTS_DATA_URL,
 
     observations:
-      OBSERVATIONS_DATA_URL
+      OBSERVATIONS_DATA_URL,
+
+    riggs:
+      RIGGS_CONTEXT_URL
 
   },
 

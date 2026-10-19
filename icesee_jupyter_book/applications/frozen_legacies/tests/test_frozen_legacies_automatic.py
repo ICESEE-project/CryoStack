@@ -1,4 +1,4 @@
-"""Automatic picking (URSA) jobs: truthful availability, the subprocess job
+"""Automatic picking with URSA (the rollback picker) jobs: truthful availability, the subprocess job
 lifecycle, products, failures, cancellation, recovery and ownership.
 
 URSA itself needs OpenCV, which the CryoStack test environment does not
@@ -131,6 +131,13 @@ FRAMES_CSV = (
     b"4,474,-81.657104,-168.972702,7.937500,21.515625,1140.562500,-24.128440,-26.055046,"
     b"0.000000,-11.284404,1301,6.281250,-52.935780\r\n"
 )
+
+
+@pytest.fixture(autouse=True)
+def _ursa_picker(monkeypatch):
+    """These tests cover URSA, selected as the rollback picker (LYRA is the
+    default: test_frozen_legacies_lyra.py)."""
+    monkeypatch.setenv(automatic.PICKER_ENV, "ursa")
 
 
 def _strip(width=3000, height=420):
