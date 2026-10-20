@@ -44,6 +44,8 @@ def test_staging_configures_riggs_only_after_a_release_exists():
 def test_production_launcher_preserves_navigation_after_restart():
     launcher = (ROOT / "deployment" / "services.sh").read_text(encoding="utf-8")
     assert "CRYOSTACK_FROZEN_LEGACIES_NAVIGATION_ROOT" in launcher
+    assert "CRYOSTACK_FROZEN_LEGACIES_INTAKE_ROOT" in launcher
+    assert "/srv/cryostack/workspace/datasets/frozen-legacies/intakes" in launcher
     assert "CRYOSTACK_FROZEN_LEGACIES_NAVIGATION_FLIGHTS" in launcher
     assert ("/srv/cryostack/workspace/datasets/frozen-legacies/spri/navigation/"
             "releases/nav-177c92df4cc0f690") in launcher
