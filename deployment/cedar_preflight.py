@@ -271,15 +271,26 @@ def scratch_checks(scratch: Path, protected: list[Path], mounts: list[Mount]) ->
 
 
 _LOCK_CHILD = r"""
-import fcntl, json, os, sys
-fd = os.open(sys.argv[1], os.O_RDWR)
+import errno, fcntl, json, os, sys
+try:
+    fd = os.open(sys.argv[1], os.O_RDWR)
+except OSError as error:
+    # Mandatory SMB locks may reject open(2), while advisory locks reject
+    # lockf(2). Both outcomes mean the competing process was excluded.
+    if error.errno in {errno.EACCES, errno.EAGAIN}:
+        print(json.dumps({"result": "blocked"}))
+        raise SystemExit(0)
+    raise
 try:
     try:
         fcntl.lockf(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         result = "acquired"
         fcntl.lockf(fd, fcntl.LOCK_UN)
-    except BlockingIOError:
-        result = "blocked"
+    except OSError as error:
+        if error.errno in {errno.EACCES, errno.EAGAIN}:
+            result = "blocked"
+        else:
+            raise
 finally:
     os.close(fd)
 print(json.dumps({"result": result}))
@@ -382,17 +393,32 @@ def probe_write_semantics(directory: Path) -> list[dict]:
                              f"{type(error).__name__}: {error}"))
     finally:
         if created:
-            try:
-                shutil.rmtree(probe)
+            cleanup_error = None
+            for attempt in range(5):
+                try:
+                    shutil.rmtree(probe)
+                    cleanup_error = None
+                    break
+                except FileNotFoundError:
+                    cleanup_error = None
+                    break
+                except OSError as error:
+                    cleanup_error = error
+                    # CIFS directory entries can remain briefly visible after
+                    # handles close. Retry only this private probe directory.
+                    if attempt < 4:
+                        time.sleep(0.25 * (attempt + 1))
+            if cleanup_error is None:
                 parent_fd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
                 try:
                     os.fsync(parent_fd)
                 finally:
                     os.close(parent_fd)
                 checks.append(_check("probe cleanup", "pass", "isolated probe removed"))
-            except OSError as error:
+            else:
                 checks.append(_check("probe cleanup", "fail",
-                                     f"manual cleanup required for {probe.name}: {error.strerror}"))
+                                     f"manual cleanup required for {probe.name}: "
+                                     f"{cleanup_error.strerror}"))
     return checks
 
 

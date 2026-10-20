@@ -90,18 +90,15 @@ export CRYOSTACK_CF_TEMPLATE_URL="${CRYOSTACK_CF_TEMPLATE_URL:-https://cryostack
 export CRYOSTACK_FROZEN_LEGACIES_AUTOMATIC_PICKER="${CRYOSTACK_FROZEN_LEGACIES_AUTOMATIC_PICKER:-lyra}"
 export CRYOSTACK_FROZEN_LEGACIES_URSA_CONCURRENCY="${CRYOSTACK_FROZEN_LEGACIES_URSA_CONCURRENCY:-1}"
 
-# Read-only Georgia Tech CEDAR research storage approved for Frozen Legacies
-# catalog sources. Source registrations may select this mount or a child path;
-# the gateway never writes to it.
-# Scratch is an explicitly labelled, maintainer-only transitional source for
-# verified A-/Z-scope intake. It is never an authoritative publication target;
-# CEDAR promotion must re-index the same source from durable storage.
-export CRYOSTACK_FROZEN_LEGACIES_STORAGE_ROOTS="${CRYOSTACK_FROZEN_LEGACIES_STORAGE_ROOTS:-/projects/cos-lab-nuiaq:/home/bkyanjo3/cryostack-data/datasets:/scratch/cryostack-development/incoming}"
+# Georgia Tech CEDAR scientific storage is authoritative for large Frozen
+# Legacies datasets. The local durable root and scratch remain approved during
+# the migration rollback window; scratch is never a publication target.
+export CRYOSTACK_FROZEN_LEGACIES_STORAGE_ROOTS="${CRYOSTACK_FROZEN_LEGACIES_STORAGE_ROOTS:-/srv/cryostack/workspace/datasets:/home/bkyanjo3/cryostack-data/datasets:/scratch/cryostack-development/incoming}"
 
 # Verified SPRI navigation is published as an immutable, versioned data release
 # under the durable application data root.  Keep these defaults in the runtime
 # launcher so an operator restart cannot silently remove the map coverage.
-export CRYOSTACK_FROZEN_LEGACIES_NAVIGATION_ROOT="${CRYOSTACK_FROZEN_LEGACIES_NAVIGATION_ROOT:-/home/bkyanjo3/cryostack-data/datasets/spri/navigation-current}"
+export CRYOSTACK_FROZEN_LEGACIES_NAVIGATION_ROOT="${CRYOSTACK_FROZEN_LEGACIES_NAVIGATION_ROOT:-/srv/cryostack/workspace/datasets/frozen-legacies/spri/navigation/releases/nav-177c92df4cc0f690}"
 export CRYOSTACK_FROZEN_LEGACIES_NAVIGATION_FLIGHTS="${CRYOSTACK_FROZEN_LEGACIES_NAVIGATION_FLIGHTS:-125,126,127,128,137,138,139,141,143,149}"
 export CRYOSTACK_FROZEN_LEGACIES_NAVIGATION_DATASET="${CRYOSTACK_FROZEN_LEGACIES_NAVIGATION_DATASET:-frozen-legacies-spri-navigation}"
 export CRYOSTACK_FROZEN_LEGACIES_NAVIGATION_TITLE="${CRYOSTACK_FROZEN_LEGACIES_NAVIGATION_TITLE:-SPRI archival radar navigation}"
@@ -109,8 +106,8 @@ export CRYOSTACK_FROZEN_LEGACIES_NAVIGATION_TITLE="${CRYOSTACK_FROZEN_LEGACIES_N
 # Optional, independently versioned RIGGS scientific context. A manifest may
 # explicitly carry citation_pending=true; the API and UI then keep every point
 # provisional and publication-ineligible until complete provenance is supplied.
-export CRYOSTACK_FROZEN_LEGACIES_RIGGS_CSV="${CRYOSTACK_FROZEN_LEGACIES_RIGGS_CSV:-/home/bkyanjo3/cryostack-data/datasets/riggs/current/riggs_stations.csv}"
-export CRYOSTACK_FROZEN_LEGACIES_RIGGS_MANIFEST="${CRYOSTACK_FROZEN_LEGACIES_RIGGS_MANIFEST:-/home/bkyanjo3/cryostack-data/datasets/riggs/current/manifest.json}"
+export CRYOSTACK_FROZEN_LEGACIES_RIGGS_CSV="${CRYOSTACK_FROZEN_LEGACIES_RIGGS_CSV:-/srv/cryostack/workspace/datasets/frozen-legacies/riggs/releases/riggs-e83879057daf36a0/riggs_stations.csv}"
+export CRYOSTACK_FROZEN_LEGACIES_RIGGS_MANIFEST="${CRYOSTACK_FROZEN_LEGACIES_RIGGS_MANIFEST:-/srv/cryostack/workspace/datasets/frozen-legacies/riggs/releases/riggs-e83879057daf36a0/manifest.json}"
 
 # All authoritative state lives outside the source checkout. The gateway's
 # storage-layout gate verifies the marked volume before accepting traffic.
