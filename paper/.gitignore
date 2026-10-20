@@ -1,0 +1,14 @@
+output/
+paper.pdf
+paper_wrapper.aux
+paper_wrapper.bbl
+paper_wrapper.bcf
+paper_wrapper.blg
+paper_wrapper-blx.bib
+paper_wrapper.fdb_latexmk
+paper_wrapper.fls
+paper_wrapper.log
+paper_wrapper.luabridge.lua
+paper_wrapper.out
+paper_wrapper.run.xml
+_markdown_*/

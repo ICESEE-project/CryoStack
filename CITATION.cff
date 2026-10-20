@@ -1,35 +1,43 @@
-cff-version: 1.2.0
-message: "If you use this software, please cite it using the metadata below."
-type: software
-title: "CryoStack"
-abstract: >-
-  CryoStack is an open-source cyberinfrastructure stack for assembling
-  reproducible cryosphere workflows from scientific applications, user
-  workspaces, data catalogs, simulation configurations, and heterogeneous
-  execution resources. It connects ice-sheet modeling, ensemble data
-  assimilation, and radar observations behind one shared platform.
-authors:
-  - family-names: Kyanjo
-    given-names: Brian
-    orcid: "https://orcid.org/0000-0002-0995-1051"
-    affiliation: "Georgia Institute of Technology"
-  - family-names: Robel
-    given-names: "Alexander A."
-    orcid: "https://orcid.org/0000-0003-4520-0105"
-    affiliation: "Georgia Institute of Technology"
-  - family-names: Suyosa
-    given-names: "Angelo Tarzona"
-    orcid: "https://orcid.org/0000-0002-3464-7537"
-    affiliation: "Georgia Institute of Technology"
-repository-code: "https://github.com/ICESEE-project/CryoStack"
-url: "https://cryostack.eas.gatech.edu/"
-license: MIT
-keywords:
-  - cryosphere
-  - ice-sheet modeling
-  - data assimilation
-  - radar data
-  - scientific gateways
-  - reproducible workflows
-  - high-performance computing
-  - cloud computing
+{
+  "cff-version": "1.2.0",
+  "message": "Please cite the CryoStack release and the source revision used.",
+  "type": "software",
+  "title": "CryoStack: A modular cyberinfrastructure stack for cryosphere data, models, data assimilation, and heterogeneous computing",
+  "authors": [
+    {
+      "family-names": "Kyanjo",
+      "given-names": "Brian",
+      "orcid": "https://orcid.org/0000-0002-0995-1051",
+      "affiliation": "Georgia Institute of Technology"
+    },
+    {
+      "family-names": "Robel",
+      "given-names": "Alexander A.",
+      "orcid": "https://orcid.org/0000-0003-4520-0105",
+      "affiliation": "Georgia Institute of Technology"
+    },
+    {
+      "family-names": "Tarzona",
+      "given-names": "Angelo S.",
+      "orcid": "https://orcid.org/0000-0002-3464-7537",
+      "affiliation": "Georgia Institute of Technology"
+    },
+    {
+      "family-names": "Dawson",
+      "given-names": "Eliza J.",
+      "orcid": "https://orcid.org/0000-0002-2662-3201",
+      "affiliation": "Georgia Institute of Technology"
+    },
+    {
+      "family-names": "Chu",
+      "given-names": "Winnie",
+      "orcid": "https://orcid.org/0000-0002-8107-7450",
+      "affiliation": "Georgia Institute of Technology"
+    }
+  ],
+  "repository-code": "https://github.com/ICESEE-project/CryoStack",
+  "url": "https://cryostack.eas.gatech.edu/",
+  "license": "MIT",
+  "version": "1.0.0",
+  "doi": "10.5281/zenodo.22901225"
+}

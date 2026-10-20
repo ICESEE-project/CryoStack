@@ -108,7 +108,7 @@ CryoStack/
 ```
 ## Architecture and configuration
 
-See the [current manuscript](paper_/paper.md) for the architecture and qualified
+See the [current manuscript](paper/paper.md) for the architecture and qualified
 execution paths. **Auto-config · Beta** in CryoLauncher and ICESEE prepares
 configuration changes from natural-language requests. It offers a compact change
 preview, retention of valid current settings, bounded diagnosis and repairs,
@@ -143,13 +143,13 @@ PACE, or MATLAB access.
 ## Paper
 
 A JOSS submission describing CryoStack's architecture and scope is at
-[`paper_/paper.md`](paper_/paper.md).
+[`paper/paper.md`](paper/paper.md).
 
 ## Citing CryoStack
 
-A citable release (Zenodo DOI and `CITATION.cff`) has not yet been issued.
-Until then, cite the JOSS paper above once published, or reference the
-repository URL and the commit/tag used.
+CryoStack v1.0.0 is archived on [Zenodo](https://doi.org/10.5281/zenodo.22901225).
+Citation metadata is available in [`CITATION.cff`](CITATION.cff). Record the
+source revision used; the submission paper is [`paper/paper.md`](paper/paper.md).
 
 ## License
 
