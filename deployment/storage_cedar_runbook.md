@@ -1,6 +1,28 @@
 # CryoStack durable storage and CEDAR runbook
 
 This runbook is an operator procedure, not evidence that CEDAR is configured.
+
+## Current CryoStack deployment decision (2026-10-19)
+
+The CryoStack VM currently mounts the CEDAR exports through the storage team's
+authless SMB proxy:
+
+- `//cos-smb01.cos.gatech.edu/cryostack-users` at
+  `/srv/cryostack/workspace/users`;
+- `//cos-smb01.cos.gatech.edu/cryostack-datasets` at
+  `/srv/cryostack/workspace/datasets`.
+
+Both mounts force the `cryostack-app` identity (`uid=978`, `gid=977`). Large
+immutable scientific datasets and user files belong on these mounts. SQLite,
+authentication, quota, catalog and job-coordination databases remain on the
+VM's durable XFS volume and must be backed up to CEDAR: the real SMB acceptance
+probe passes atomic rename and fsync but SQLite WAL fails at
+`PRAGMA journal_mode=WAL` with `database is locked`.
+
+The SMB proxy does not support application-created symbolic links. Dataset
+releases therefore use immutable explicit directories and a plain `CURRENT`
+marker containing the relative active release path. Runtime configuration must
+use the explicit immutable path; it must not assume `current` is a symlink.
 Do not put credentials, tokens, private keys, or recovery codes in this file or
 in command output attached to a release report.
 
