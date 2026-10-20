@@ -95,6 +95,11 @@ export CRYOSTACK_FROZEN_LEGACIES_URSA_CONCURRENCY="${CRYOSTACK_FROZEN_LEGACIES_U
 # the migration rollback window; scratch is never a publication target.
 export CRYOSTACK_FROZEN_LEGACIES_STORAGE_ROOTS="${CRYOSTACK_FROZEN_LEGACIES_STORAGE_ROOTS:-/srv/cryostack/workspace/datasets:/home/bkyanjo3/cryostack-data/datasets:/scratch/cryostack-development/incoming}"
 
+# Browser uploads and their resumable session records land directly on the
+# writable CEDAR dataset mount.  They remain private, unpublished intakes until
+# a maintainer explicitly indexes and reviews them in the Control Center.
+export CRYOSTACK_FROZEN_LEGACIES_INTAKE_ROOT="${CRYOSTACK_FROZEN_LEGACIES_INTAKE_ROOT:-/srv/cryostack/workspace/datasets/frozen-legacies/intakes}"
+
 # Verified SPRI navigation is published as an immutable, versioned data release
 # under the durable application data root.  Keep these defaults in the runtime
 # launcher so an operator restart cannot silently remove the map coverage.

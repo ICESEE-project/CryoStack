@@ -623,7 +623,11 @@ def test_maintainer_access_is_checked_on_every_request(web_env):
         status, listed = await _json(await client.get(f"{API}/admin/sources", cookies=maint))
         out["listed"] = listed["sources"][0]
         page = await client.get("/control/frozen-legacies", cookies=maint)
-        out["page"] = (page.status, "Last successful index" in await page.text())
+        page_text = await page.text()
+        out["page"] = (page.status, "Last successful index" in page_text)
+        out["intake_help"] = all(term in page_text for term in (
+            "How dataset intake works", "resumes verified chunks",
+            "managed SMB gateway", "Indexing alone never makes results public"))
         # role revoked: the very next request is refused
         web_env["auth"].storage.revoke_role(user_id=maint_user.id, role="maintainer")
         out["revoked"] = (await client.get(f"{API}/admin/sources", cookies=maint)).status
@@ -638,6 +642,7 @@ def test_maintainer_access_is_checked_on_every_request(web_env):
     assert source["connection"]["ok"] is True and source["last_success_at"]
     assert source["location"].startswith("…/") and str(web_env["tmp"]) not in json.dumps(source)
     assert out["page"] == (200, True)
+    assert out["intake_help"] is True
     assert out["revoked"] == 403
 
 

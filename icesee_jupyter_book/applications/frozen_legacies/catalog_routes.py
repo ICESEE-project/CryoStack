@@ -1952,6 +1952,18 @@ async def control_page(request: web.Request) -> web.Response:
         '<a class="small-button" href="/control/storage">Storage &amp; quotas →</a> '
         '<a class="small-button" href="/control/frozen-legacies/review">Scientific review →</a>') + """
     <div class="metric-grid" id="fl-metrics"></div>
+    <section class="panel">
+      <div class="panel-header">How dataset intake works</div>
+      <div class="fl-form">
+        <ol>
+          <li>Choose a stable source ID and dataset, then select TIFF imagery, navigation CSVs, or a ZIP archive.</li>
+          <li>CryoStack writes resumable chunks directly to managed CEDAR storage and verifies each file before it is accepted.</li>
+          <li>The completed intake stays private to maintainers and unpublished. Test it, index it, and inspect every failure.</li>
+          <li>Publish only after provenance and scientific review are complete. Indexing alone never makes results public.</li>
+        </ol>
+        <p class="fl-notice info"><strong>Safe recovery:</strong> If a browser, laptop, or network connection stops, return here and re-select the same files. CryoStack resumes verified chunks instead of starting over. Server credentials, mount paths, and command-line access are not required.</p>
+      </div>
+    </section>
     <section class="panel" id="fl-intake-panel">
       <div class="panel-header">New scientific intake</div>
       <form id="fl-curator-intake" class="fl-form" enctype="multipart/form-data">
@@ -1999,7 +2011,7 @@ async def control_page(request: web.Request) -> web.Response:
               <span>A directory on this server, for example a mounted archive.</span></label>
             <label><input type="radio" name="provider" value="cedar">
               <strong>Georgia Tech CEDAR · read-only</strong>
-              <span>CEDAR research storage mounted on this server (NFS), inside an approved storage root.</span></label>
+              <span>CEDAR research storage mounted on this server through the managed SMB gateway, inside an approved storage root.</span></label>
             <label><input type="radio" name="provider" value="s3">
               <strong>Amazon S3 · read-only</strong>
               <span>A bucket prefix read with the server's own AWS credentials, or an approved S3-compatible endpoint.</span></label>
