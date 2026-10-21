@@ -30,7 +30,7 @@ setfacl -R -m "u:${service_user}:rX" /home/bkyanjo3/.icesee_conda/envs/icesee1-d
 
 install -d -o root -g "${service_group}" -m 0750 "${release_root}"
 rsync -a --delete \
-    --exclude '.git/' \
+    --exclude '.git' \
     --exclude '.pytest_cache/' \
     --exclude '__pycache__/' \
     --exclude '/build/' \

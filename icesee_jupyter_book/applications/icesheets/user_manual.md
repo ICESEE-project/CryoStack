@@ -1130,6 +1130,15 @@ resource, scientific-parameter, and backend checks still run at submission.
       Run <b>Check environment</b>, then <b>Prepare environment</b> if needed.
       A scientific run is only allowed once the live probe reports Ready.
     </p>
+    <p>
+      For ISSM, the message says whether an ISSM build was found in the
+      ICESEE-Spack checkout. <i>No ISSM build was found</i>: run
+      <b>Prepare environment</b> with ISSM selected; it submits a Slurm job that
+      builds ISSM (MATLAB required). <i>An ISSM build exists at &hellip;</i>:
+      <b>Prepare environment</b> updates ICESEE-Spack so its activation script
+      finds that build; nothing is rebuilt. ICESEE-Spack pins ICESEE, Spack,
+      Icepack and ISSM as git submodules, and an update keeps existing builds.
+    </p>
   </details>
 
   <details>

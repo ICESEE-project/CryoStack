@@ -1,0 +1,45 @@
+name: Update ICESEE submodule
+
+# external/ICESEE is a git submodule that follows the branch named in
+# .gitmodules (cryostack: ICESEE main plus what the launcher has validated).
+# This moves the pin to that branch's latest commit; ICESEE's own CI tests the
+# branch, and tests.yml runs CryoStack's tests on the new pin.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * *"   # daily 06:00 UTC
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Move the pin to the tracked branch
+        id: bump
+        run: |
+          before="$(git rev-parse HEAD:external/ICESEE)"
+          git submodule update --remote external/ICESEE
+          after="$(git -C external/ICESEE rev-parse HEAD)"
+          echo "before=${before}" >> "$GITHUB_OUTPUT"
+          echo "after=${after}" >> "$GITHUB_OUTPUT"
+          if [ "${before}" = "${after}" ]; then echo "No new ICESEE commit."; fi
+
+      - name: Commit the new pin
+        if: steps.bump.outputs.before != steps.bump.outputs.after
+        run: |
+          git add external/ICESEE
+          git commit -m "CI: pin ICESEE ${{ steps.bump.outputs.after }}"
+          git push

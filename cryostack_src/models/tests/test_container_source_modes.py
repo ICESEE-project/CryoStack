@@ -110,7 +110,12 @@ def _assert_common_container_contract(txt: str, sif_path: str):
     assert 'exec mpiexec -np "$np" "$@"' not in txt
     assert f'"{_RUN_DIR}":"{_RUN_DIR}"' in txt
     assert f"ICESEE_RUN_DIR='{_RUN_DIR}'" in txt
-    assert f"run('{_RUN_DIR}/postprocess_icesee.m'); exit" in txt
+    # a solve/export error exits MATLAB non-zero, so Slurm does not report
+    # COMPLETED for a failed run
+    assert f"try, run('runme.m'); run('{_RUN_DIR}/postprocess_icesee.m'); catch cs_err" in txt
+    assert "exit(1); end; exit(0)" in txt
+    # the run directory must take output before the solve starts
+    assert f'of="{_RUN_DIR}/.cryostack-space-probe"' in txt and "exit 28" in txt
     # no host Slurm/PMIx dependency introduced by provisioning
     assert "/opt/slurm" not in txt
     assert "/opt/pmix" not in txt

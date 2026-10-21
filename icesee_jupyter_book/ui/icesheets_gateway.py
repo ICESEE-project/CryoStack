@@ -868,7 +868,7 @@ def build_icesheets_ui():
             STATUS["batch_job_id"] = handle.job_id
             STATUS["cloud_run"] = s3_run
             _container, _software = _cloud_container_provenance(handle)
-            workspace_bridge.start_run(
+            _new_run = workspace_bridge.start_run(
                 name=str(handle.run_id or handle.job_id),
                 model=handle.model,
                 backend="aws",
@@ -910,6 +910,7 @@ def build_icesheets_ui():
                 container=_container,
                 software=_software,
             )
+            _show_new_run(_new_run)
             # Cloud runs join the shared experiment record like HPC runs, so
             # the Control Center execution records include them.
             try:
@@ -2235,7 +2236,7 @@ def build_icesheets_ui():
 
             if backend == "spack":
                 if model == "issm":
-                    model_root = "ICESEE-Spack/.icesee-spack/externals/ISSM"
+                    model_root = "ICESEE-Spack/externals/ISSM (older installs: ICESEE-Spack/.icesee-spack/externals/ISSM)"
                     exec_note = "Use the native ISSM workflow inside the ICESEE-Spack environment."
                 else:
                     model_root = "ICESEE-Spack/icepack"
@@ -2902,7 +2903,7 @@ def build_icesheets_ui():
                 STATUS["jobid"] = result["jobid"]
                 STATUS["log_file"] = result.get("log_file")
 
-                workspace_bridge.start_run(
+                _new_run = workspace_bridge.start_run(
                     name=Path(STATUS["remote_dir"]).name,
                     model=model_dd.value,
                     backend=backend_dd.value,
@@ -2925,6 +2926,7 @@ def build_icesheets_ui():
                     container=stack_provenance.get("container") or {},
                     software=stack_provenance.get("software") or {},
                 )
+                _show_new_run(_new_run)
 
                 experiment_bridge.create(
                     application="cryolauncher",
@@ -4258,6 +4260,15 @@ def build_icesheets_ui():
                 return
             workspace_manager.select_run(rid)
             on_results_download()                     # download only -- no tab switch
+
+        def _show_new_run(run):
+            """List a just-registered run in the Runs panel and select it."""
+            try:
+                workspace_history_panel.refresh_button.click()
+                if run is not None and run.id in [v for _, v in workspace_history_panel.runs.options]:
+                    workspace_history_panel.runs.value = run.id
+            except Exception:  # noqa: BLE001 - the run is recorded either way
+                pass
 
         with perf.span("history panel"):
             workspace_history_panel = build_workspace_history_panel(

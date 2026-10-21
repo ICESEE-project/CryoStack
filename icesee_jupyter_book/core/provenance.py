@@ -49,20 +49,35 @@ def _git(*args: str) -> str:
 
 def code_versions() -> dict:
     """CryoLauncher commit (and whether the checkout has local changes) and
-    the ICESEE version the launcher runs: the upstream commit it was vendored
-    from plus the git tree of the vendored copy. Cached per process."""
+    the ICESEE version the launcher runs. external/ICESEE is a submodule:
+    ``upstream_commit`` is the ICESEE commit checked out there, ``pinned_commit``
+    the one CryoLauncher records, ``vendored_tree`` that commit's source tree.
+    A pre-submodule checkout falls back to ICESEE_UPSTREAM_SHA.txt and the
+    vendored subtree. Cached per process."""
     if _CODE_CACHE:
         return dict(_CODE_CACHE)
     commit = _git("rev-parse", "HEAD")
-    dirty = _git("status", "--porcelain", "--untracked-files=no")
-    upstream = ""
-    sha_file = REPO / "external" / "ICESEE_UPSTREAM_SHA.txt"
-    if sha_file.is_file():
-        upstream = sha_file.read_text(encoding="utf-8").strip()
+    dirty = _git("status", "--porcelain", "--untracked-files=no", "--ignore-submodules=all")
+    icesee_dir = REPO / "external" / "ICESEE"
+    pinned = _git("rev-parse", "HEAD:external/ICESEE")
+    if (icesee_dir / ".git").exists():
+        checked_out = _git("-C", "external/ICESEE", "rev-parse", "HEAD")
+        icesee = {
+            "upstream_commit": checked_out or None,
+            "pinned_commit": pinned or None,
+            "vendored_tree": _git("-C", "external/ICESEE", "rev-parse", "HEAD^{tree}") or None,
+            "local_changes": bool(_git("-C", "external/ICESEE", "status", "--porcelain",
+                                       "--untracked-files=no")) if checked_out else None,
+        }
+    else:
+        upstream = ""
+        sha_file = REPO / "external" / "ICESEE_UPSTREAM_SHA.txt"
+        if sha_file.is_file():
+            upstream = sha_file.read_text(encoding="utf-8").strip()
+        icesee = {"upstream_commit": upstream or None, "vendored_tree": pinned or None}
     _CODE_CACHE.update({
         "cryolauncher": {"commit": commit or None, "local_changes": bool(dirty) if commit else None},
-        "icesee": {"upstream_commit": upstream or None,
-                   "vendored_tree": _git("rev-parse", "HEAD:external/ICESEE") or None},
+        "icesee": icesee,
     })
     return dict(_CODE_CACHE)
 
