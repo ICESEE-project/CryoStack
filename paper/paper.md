@@ -106,7 +106,7 @@ Limitations include process-local Connector sessions, incomplete resource-policy
 
 # Research impact statement
 
-Evidence is functional and architectural rather than adoption-based: CryoStack integrates the modeling, assimilation, and observational applications described above. Concrete examples include qualified AWS workflows and deployed radar and temperature interfaces. Research groups gain a common entry point for moving supported computational workflows among available resources and connecting observational applications to shared deployment and data infrastructure. Application registrations, model adapters and result readers, and dataset manifests and ingestion adapters support extension without a universal execution or result-handling model.
+Evidence is functional and architectural rather than adoption-based: CryoStack integrates the modeling, assimilation, and observational applications described above. Concrete examples include qualified remote-HPC and AWS workflows, deployed radar, and temperature interfaces. Research groups gain a common entry point for moving supported computational workflows among available resources and connecting observational applications to shared deployment and data infrastructure. Application registrations, model adapters and result readers, and dataset manifests and ingestion adapters support extension without a universal execution or result-handling model.
 
 # AI usage disclosure
 
