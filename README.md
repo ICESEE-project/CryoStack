@@ -51,7 +51,7 @@ documentation.
 ## Local installation
 
 ```bash
-git clone https://github.com/ICESEE-project/CryoStack.git
+git clone --recurse-submodules https://github.com/ICESEE-project/CryoStack.git
 cd CryoStack
 conda env create -f tools/icesee1_environment.yml -n cryostack-dev
 conda activate cryostack-dev
@@ -103,7 +103,7 @@ CryoStack/
 │   └── ui/                  # Gateways for each application
 ├── control_center/          # Administrative/operations tooling (not a
 │                            # principal scientific application)
-├── external/                # ICESEE, Frozen Legacies, LIVIST (subtrees)
+├── external/                # ICESEE, Frozen Legacies, LIVIST (git submodules)
 ├── deployment/              # CloudFormation and deployment scripts
 ├── bin/                     # Launcher scripts
 ├── LICENSE                  # MIT License

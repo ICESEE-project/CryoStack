@@ -140,6 +140,26 @@ def _matlab_container_env(
     )
 
 
+def _storage_preflight(run_dir: str) -> str:
+    """Job-start check that the run directory can take output.
+
+    A full filesystem or exhausted quota otherwise surfaces only at the end,
+    as HDF5/MATLAB write errors in the result export. Writing a small probe
+    file is the one check that also catches per-user quotas, which ``df``
+    does not show.
+    """
+    probe = f"{run_dir}/.cryostack-space-probe"
+    return f'''if ! dd if=/dev/zero of="{probe}" bs=1M count=256 status=none 2>/dev/null; then
+    rm -f "{probe}"
+    echo "[icesheets][ERROR] Cannot write to {run_dir}: the file system is full or your disk quota is exceeded."
+    echo "[icesheets][ERROR] Free space on that storage (old runs, cached container images), then run again."
+    df -h "{run_dir}" 2>/dev/null || true
+    command -v pace-quota >/dev/null 2>&1 && pace-quota || true
+    exit 28
+fi
+rm -f "{probe}"'''
+
+
 def _assert_spack_ready(run_script, *, model: str, spack_path: str) -> None:
     """Block a scientific ICESEE-Spack run unless the live probe reports Ready.
 
@@ -431,7 +451,7 @@ mkdir -p "{spack_parent}"
 if [ ! -d "{spack_path}" ]; then
     git clone "{repo}" "{spack_path}"
 fi
-test -f "{spack_path}/scripts/activate.sh"
+{spack_env.submodule_sync_fragment(spack_path)}test -f "{spack_path}/scripts/activate.sh"
 echo "{spack_path}"
 '''
         eres = connector_ssh(session_id, host, user, port, ensure_cmd, timeout=600, cluster_name=cluster_name)
@@ -558,7 +578,7 @@ mkdir -p "{remote_exec_dir}"
 {matlab_log_line}
 apptainer exec {matlab_env_flag}{_issm_container_mpi_env()}\
 -B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution,"{remote_run_dir}":"{remote_run_dir}"{_stack_binds} \
-"{sif_path}" with-issm matlab -nodesktop -nosplash -r "cd('/opt/ISSM/examples'); ICESEE_RUN_DIR='{remote_run_dir}'; setenv('ICESEE_RUN_DIR','{remote_run_dir}'); run('{target_m}'); run('{remote_run_dir}/postprocess_icesee.m'); exit"
+"{sif_path}" with-issm matlab -nodesktop -nosplash -r "cd('/opt/ISSM/examples'); ICESEE_RUN_DIR='{remote_run_dir}'; setenv('ICESEE_RUN_DIR','{remote_run_dir}'); try, run('{target_m}'); run('{remote_run_dir}/postprocess_icesee.m'); catch cs_err, disp(getReport(cs_err, 'extended')); exit(1); end; exit(0)"
 '''
         else:
             if run_file_name.endswith((".py", ".ipynb")):
@@ -615,6 +635,7 @@ set -euo pipefail
 cd "{remote_run_dir}"
 mkdir -p outputs/model outputs/figures
 export CRYOSTACK_RUN_STARTED="$(date +%s)"
+{_storage_preflight(remote_run_dir)}
 
 echo "[icesheets] Host: $(hostname)"
 echo "[icesheets] Date: $(date)"
@@ -972,7 +993,7 @@ mkdir -p "{remote_exec_dir}"
 {matlab_log_line}
 apptainer exec {matlab_env_flag}{_issm_container_mpi_env()}\
 -B "{remote_example_dir}":/opt/ISSM/examples,"{remote_exec_dir}":/opt/ISSM/execution,"{remote_run_dir}":"{remote_run_dir}"{_stack_binds} \
-"{sif_path}" with-issm matlab -nodesktop -nosplash -r "cd('/opt/ISSM/examples'); ICESEE_RUN_DIR='{remote_run_dir}'; setenv('ICESEE_RUN_DIR','{remote_run_dir}'); run('{target_m}'); run('{remote_run_dir}/postprocess_icesee.m'); exit"
+"{sif_path}" with-issm matlab -nodesktop -nosplash -r "cd('/opt/ISSM/examples'); ICESEE_RUN_DIR='{remote_run_dir}'; setenv('ICESEE_RUN_DIR','{remote_run_dir}'); try, run('{target_m}'); run('{remote_run_dir}/postprocess_icesee.m'); catch cs_err, disp(getReport(cs_err, 'extended')); exit(1); end; exit(0)"
 '''
             elif model == "icepack":
                 if run_file_name.endswith((".py", ".ipynb")):
@@ -1036,6 +1057,7 @@ set -euo pipefail
 cd "{remote_run_dir}"
 mkdir -p outputs/model outputs/figures  # create expected output dirs
 export CRYOSTACK_RUN_STARTED="$(date +%s)"
+{_storage_preflight(remote_run_dir)}
 
 echo "[icesheets] Host: $(hostname)"
 echo "[icesheets] Date: $(date)"

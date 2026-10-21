@@ -140,3 +140,51 @@ def test_setup_sbatch_rejects_unknown_model():
 def test_deep_verify_ok_reads_the_marker_line():
     assert spack_env.deep_verify_ok("...\nCRYOSTACK_ENV_DEEP=ok\n...") is True
     assert spack_env.deep_verify_ok("CRYOSTACK_ENV_DEEP=fail") is False
+
+
+# ── pinned submodules + ISSM diagnostics ─────────────────────────────────────
+import os
+import stat
+import subprocess
+
+
+def test_setup_job_populates_the_models_submodules_after_clone_or_pull():
+    text = install_sbatch_text(model="issm", paths=_paths(), setup_dir="/home/u/base/setup")
+    sync = text.index("scripts/submodules.sh --with-issm")
+    assert text.index("pull --ff-only") < sync < text.index("./scripts/install.sh --with-issm")
+    # checkouts without the helper still get ICESEE and spack, never fatally
+    assert "submodule update --init ICESEE spack || true" in text
+
+
+def test_run_time_clones_sync_submodules_without_model_sources():
+    fragment = spack_env.submodule_sync_fragment("/home/u/base/ICESEE-Spack")
+    assert "scripts/submodules.sh\n" in fragment and "--with-" not in fragment
+
+
+def _fake_spack(tmp_path, *, issm_build=None):
+    repo = tmp_path / "ICESEE-Spack"
+    (repo / "scripts").mkdir(parents=True)
+    # stand-in for ICESEE-Spack's activate.sh: leaves ISSM_DIR unset
+    (repo / "scripts" / "activate.sh").write_text("true\n")
+    if issm_build:
+        exe = tmp_path / issm_build / "bin" / "issm.exe"
+        exe.parent.mkdir(parents=True)
+        exe.write_text("#!/bin/sh\n")
+        exe.chmod(exe.stat().st_mode | stat.S_IXUSR)
+    return spack_paths_from_repo(str(repo))
+
+
+@pytest.mark.parametrize("build,expect", [
+    (None, "No ISSM build was found"),
+    ("home/.icesee-spack/externals/ISSM", "An ISSM build exists at"),
+])
+def test_issm_probe_reports_where_it_looked(tmp_path, build, expect):
+    paths = _fake_spack(tmp_path, issm_build=build)
+    env = dict(os.environ, HOME=str(tmp_path / "home"))
+    env.pop("ISSM_DIR", None)
+    out = subprocess.run(["bash"], input=probe_script(model="issm", paths=paths),
+                         capture_output=True, text=True, env=env, check=True).stdout
+    report = classify_probe(out, model="issm")
+    assert report.status is EnvStatus.REPO_ONLY
+    assert "issm_dir_unset" in report.messages[0]
+    assert any(expect in m for m in report.messages)

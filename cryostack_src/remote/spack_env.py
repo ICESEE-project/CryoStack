@@ -114,7 +114,16 @@ def _model_probe_fragment(model: str) -> str:
             'elif [ ! -d "${ISSM_DIR}" ]; then echo "CRYOSTACK_ENV_MODEL=fail:issm_dir_missing";\n'
             'elif [ ! -x "${ISSM_DIR}/bin/issm.exe" ] && ! command -v issm.exe >/dev/null 2>&1; then\n'
             '  echo "CRYOSTACK_ENV_MODEL=fail:issm_exe_missing";\n'
-            'else echo "CRYOSTACK_ENV_MODEL=ok"; fi'
+            'else echo "CRYOSTACK_ENV_MODEL=ok"; fi\n'
+            # where activate.sh looked, and any ISSM build that exists, for the message
+            'echo "CRYOSTACK_ENV_ISSM_DIR=${ISSM_DIR:-unset}"\n'
+            '__found=none\n'
+            'for __d in "${CRYOSTACK_SPACK_ROOT}/externals/ISSM" '
+            '"${CRYOSTACK_SPACK_ROOT}/.icesee-spack/externals/ISSM" '
+            '"${HOME}/.icesee-spack/externals/ISSM"; do\n'
+            '  if [ -x "${__d}/bin/issm.exe" ]; then __found="${__d}"; break; fi\n'
+            'done\n'
+            'echo "CRYOSTACK_ENV_ISSM_BUILD=${__found}"'
         )
     # icepack: the required check is the firedrake + icepack import (seconds).
     return (
@@ -167,6 +176,7 @@ if [ ! -d {repo} ]; then
   exit 0
 fi
 echo "CRYOSTACK_ENV_REPO=present"
+CRYOSTACK_SPACK_ROOT={repo}
 [ -f {marker} ] && echo "CRYOSTACK_ENV_MARKER=present" || echo "CRYOSTACK_ENV_MARKER=absent"
 if [ ! -f {activate} ]; then
   echo "CRYOSTACK_ENV_ACTIVATE=fail:no_activate_script"
@@ -184,13 +194,35 @@ exit 0
 """
 
 
+def submodule_sync_fragment(repo: str, model: str | None = None) -> str:
+    """Populate ICESEE-Spack's pinned submodules after a clone or pull.
+
+    ICESEE-Spack pins ICESEE, Spack, Icepack and ISSM as git submodules;
+    ``scripts/submodules.sh`` populates ICESEE and Spack, plus the selected
+    model's sources, and reuses existing builds (no rebuild). Checkouts from
+    before that script existed fall back to a plain submodule update, and a
+    checkout without ``.gitmodules`` (tracked source trees) needs neither.
+    """
+    q = shlex.quote(repo)
+    flag = f" {_INSTALL_FLAG[_require_model(model)]}" if model else ""
+    return (
+        f"if [ -f {q}/scripts/submodules.sh ]; then\n"
+        f"  bash {q}/scripts/submodules.sh{flag}\n"
+        f"elif [ -f {q}/.gitmodules ]; then\n"
+        f"  git -C {q} submodule update --init ICESEE spack || true\n"
+        "fi\n"
+    )
+
+
 def ensure_repo_script(
     *,
     paths: SpackPaths,
     repo_url: str = DEFAULT_SPACK_REPO,
     update: bool = True,
+    model: str | None = None,
 ) -> str:
-    """Clone ICESEE-Spack if absent; otherwise a safe fast-forward-only pull."""
+    """Clone ICESEE-Spack if absent, otherwise a safe fast-forward-only pull;
+    then populate its pinned submodules (see :func:`submodule_sync_fragment`)."""
     base = shlex.quote(paths.base)
     repo = shlex.quote(paths.repo)
     name = shlex.quote(paths.dirname)
@@ -207,7 +239,7 @@ if [ ! -d {repo}/.git ]; then
   git clone {url} {base}/{name}
 else
 {pull}fi
-test -f {shlex.quote(paths.activate)} || {{ echo "[spack-setup][ERROR] missing scripts/activate.sh"; exit 3; }}
+{submodule_sync_fragment(paths.repo, model)}test -f {shlex.quote(paths.activate)} || {{ echo "[spack-setup][ERROR] missing scripts/activate.sh"; exit 3; }}
 """
 
 
@@ -266,7 +298,7 @@ set -euo pipefail
 echo "[spack-setup] host=$(hostname) date=$(date)"
 echo "[spack-setup] model={model} repo={paths.repo}"
 
-{ensure_repo_script(paths=paths, repo_url=repo_url, update=True)}
+{ensure_repo_script(paths=paths, repo_url=repo_url, update=True, model=model)}
 
 echo "[spack-setup] running scripts/install.sh {flag}"
 cd {repo}
@@ -309,13 +341,35 @@ def classify_probe(stdout: str, *, model: str, ok: bool = True) -> EnvReport:
     model_state = m.get("model", "")
     if model_state != "ok":
         why = model_state.split(":", 1)[1] if ":" in model_state else "not built"
-        return EnvReport(EnvStatus.REPO_ONLY, model,
-                         (f"ICESEE-Spack is not built for {model.upper()} ({why}).",), m)
+        msgs = [f"ICESEE-Spack is not built for {model.upper()} ({why})."]
+        if model == "issm":
+            msgs += _issm_not_ready_hints(why, m)
+        return EnvReport(EnvStatus.REPO_ONLY, model, tuple(msgs), m)
 
     if not ok:
         msgs.append("[warn] probe transport reported a non-zero result")
     return EnvReport(EnvStatus.READY, model,
                      tuple(msgs) + (f"ICESEE-Spack is ready for {model.upper()}.",), m)
+
+
+def _issm_not_ready_hints(why: str, markers: dict) -> list[str]:
+    """Say where the probe looked for ISSM and what fixes it."""
+    issm_dir = markers.get("issm_dir", "")
+    build = markers.get("issm_build", "none")
+    hints = []
+    if issm_dir and issm_dir != "unset":
+        hints.append(f"  activate.sh set ISSM_DIR={issm_dir}.")
+    if build and build != "none" and build != issm_dir:
+        hints.append(
+            f"  An ISSM build exists at {build}, but activate.sh does not use it. "
+            "Update ICESEE-Spack (Prepare environment pulls the current scripts), "
+            f"or export ISSM_DIR={build} in your shell profile on the resource.")
+    else:
+        hints.append(
+            "  No ISSM build was found in this ICESEE-Spack checkout. Use Prepare "
+            "environment with ISSM selected: it submits a Slurm job that builds "
+            "ISSM (MATLAB required), then Check environment again.")
+    return hints
 
 
 def deep_verify_ok(setup_log_text: str) -> bool:

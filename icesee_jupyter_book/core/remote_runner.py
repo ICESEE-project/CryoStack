@@ -814,9 +814,15 @@ git clone {sh_quote(repo_url)} {sh_quote(spack_name)}
 else
 echo "[spack] exists: {spack_path}"
 fi
-echo "[spack] done"
+{_spack_submodule_sync(spack_path)}echo "[spack] done"
 """
     return spack_path, rsh(host, user, port, cmd, timeout=180)
+
+def _spack_submodule_sync(spack_path):
+    """Shell that populates ICESEE-Spack's pinned submodules (see spack_env)."""
+    from cryostack_src.remote.spack_env import submodule_sync_fragment
+    return submodule_sync_fragment(spack_path)
+
 
 def remote_maybe_install_spack(host, user, port, spack_path, install_flag, slurm_dir, pmix_dir):
     """
@@ -1303,7 +1309,7 @@ if [ ! -d {sh_quote(spack_path)} ]; then
 else
   echo "[spack] exists: {spack_path}"
 fi
-test -f {sh_quote(spack_path + '/scripts/activate.sh')}
+{_spack_submodule_sync(spack_path)}test -f {sh_quote(spack_path + '/scripts/activate.sh')}
 echo {sh_quote(spack_path)}
 """
 
@@ -1580,7 +1586,7 @@ if [ ! -d {sh_quote(spack_path)} ]; then
 else
   echo "[spack] exists: {spack_path}"
 fi
-test -f {sh_quote(spack_path + '/scripts/activate.sh')}
+{_spack_submodule_sync(spack_path)}test -f {sh_quote(spack_path + '/scripts/activate.sh')}
 echo {sh_quote(spack_path)}
 """
 

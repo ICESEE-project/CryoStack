@@ -52,18 +52,30 @@ def read_manifest(path: Path) -> RunInfo:
     if payload.get("schema") != SCHEMA or payload.get("version") not in SUPPORTED_VERSIONS:
         raise ValueError("Unsupported CryoStack run manifest")
     data = payload["run"]
-    if Path(data["workspace"]).resolve() != path.parent.resolve():
-        raise ValueError("Manifest workspace does not match its managed directory")
+    # The manifest's own directory is the run workspace. A different recorded
+    # path means the workspace was moved (e.g. the storage migration to the
+    # durable data root); local paths inside the old workspace follow it.
+    recorded = Path(data["workspace"]).resolve()
+    workspace = path.parent.resolve()
+
     def optional_path(name):
         value = data.get(name)
-        return Path(value) if value else None
+        if not value:
+            return None
+        local = Path(value)
+        if recorded != workspace and local.is_absolute():
+            try:
+                return workspace / local.resolve().relative_to(recorded)
+            except ValueError:
+                pass
+        return local
     return RunInfo(
         id=str(data["id"]), name=str(data["name"]), model=str(data["model"]),
         backend=str(data["backend"]), execution_mode=str(data["execution_mode"]),
         status=str(data.get("status") or "submitted"),
         created=datetime.fromisoformat(data["created"]),
         finished=datetime.fromisoformat(data["finished"]) if data.get("finished") else None,
-        workspace_directory=path.parent.resolve(),
+        workspace_directory=workspace,
         remote_directory=optional_path("remote_directory"),
         results_directory=optional_path("results_directory"),
         figures_directory=optional_path("figures_directory"),
