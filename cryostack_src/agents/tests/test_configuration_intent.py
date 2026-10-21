@@ -96,3 +96,54 @@ def test_resource_profile_is_metadata_driven():
     c = catalog(); c["profiles"].append("new-lab-cluster")
     p = infer_request("SquareIceShelf on new-lab-cluster with 4 CPUs", c)
     assert p.applicable and p.values["profile"] == "new-lab-cluster"
+
+
+def _locked(mode):
+    c = catalog()
+    c.update(mode_locked=True)
+    c["current"]["mode"] = mode
+    return c
+
+
+@pytest.mark.parametrize("mode", ["remote", "cloud"])
+def test_locked_mode_plans_for_the_selected_mode_without_switching(mode):
+    p = infer_request("Run SquareIceShelf with ISSM", _locked(mode))
+    assert p.applicable and "mode" not in p.values and p.values["example"] == "shelf"
+
+
+def test_locked_remote_keeps_scheduler_settings():
+    p = infer_request("Run SquareIceShelf on PACE using 4 CPUs", _locked("remote"))
+    assert p.applicable and "mode" not in p.values
+    assert p.values["profile"] == "pace" and p.values["cpus"] == 4 and p.values["tasks_per_node"] == 4
+
+
+def test_locked_cloud_never_takes_hpc_resources():
+    p = infer_request("Run SquareIceShelf with ISSM using 4 CPUs", _locked("cloud"))
+    assert not p.applicable and "cpus" not in p.values and p.unresolved
+
+
+@pytest.mark.parametrize("mode,text,named", [
+    ("remote", "Run SquareIceShelf on AWS", "Cloud"),
+    ("cloud", "Run SquareIceShelf on the cluster", "Remote HPC"),
+    ("cloud", "Run SquareIceShelf on PACE", "Remote HPC"),
+])
+def test_locked_mode_reports_a_request_for_another_mode(mode, text, named):
+    p = infer_request(text, _locked(mode))
+    assert not p.applicable and "mode" not in p.values
+    assert any(named in e and "is selected" in e for e in p.errors)
+
+
+def test_a_matching_mode_word_is_accepted():
+    assert infer_request("Run SquareIceShelf on Remote using 4 CPUs", _locked("remote")).applicable
+    assert infer_request("Run SquareIceShelf in the cloud", _locked("cloud")).applicable
+
+
+def test_unlocked_catalog_still_infers_the_mode():
+    assert infer_request("Run SquareIceShelf on AWS", catalog()).values["mode"] == "cloud"
+
+
+def test_locked_remote_repair_does_not_switch_from_cloud():
+    from cryostack_src.agents.diagnosis import diagnose_request
+    d = diagnose_request("repair_remote", _locked("cloud"), lambda: [])
+    assert not d.proposal.applicable and "mode" not in d.proposal.values
+    assert "Remote HPC is not the selected execution mode" in d.issues[0]

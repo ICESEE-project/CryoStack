@@ -237,6 +237,8 @@ def test_riggs_is_optional_verified_context_and_not_a_pick_layer():
     assert "renderRiggsStation" in _UI_JS
     assert "Independent scientific context" in _UI_JS
     assert "not a Frozen Legacies manual or automatic pick" in _UI_JS
+    assert "Provisional reference · citation pending · not publication eligible" in _UI_JS
+    assert "metadata?.note" in _UI_JS
 
 
 def test_radar_frontend_uses_only_server_ids_and_no_paths():

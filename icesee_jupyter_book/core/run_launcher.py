@@ -111,6 +111,15 @@ def validate_launch(req: LaunchRequest, *, mode: str = "local") -> list[Issue]:
         if req.environment == "native" and int(req.np) != 1:
             issues.append(Issue("warning", "the launcher's Python runs the model as one process; "
                                            "MPI processes apply to the container environment"))
+        exec_mode = str((req.config.get("enkf-parameters") or {}).get("execution_mode")).strip()
+        if req.environment == "container" and exec_mode == "2":
+            issues.append(Issue("error", "execution_mode 2 (full parallel) writes through parallel HDF5, "
+                                         "which the ICESEE container's h5py does not support; use the "
+                                         "launcher's Python environment, or execution_mode 0 or 1"))
+        if req.environment == "container" and exec_mode == "0" and int(req.np) > 1:
+            issues.append(Issue("error", "execution_mode 0 (serial) runs on one process; with more MPI "
+                                         "processes every rank repeats the run and they do not finish "
+                                         "together. Set MPI processes to 1, or use execution_mode 1"))
     elif req.drafts:
         issues.append(Issue("warning", "edited input files ("
                             + ", ".join(sorted(req.drafts)) + f") apply to Local runs only; a {mode} run "

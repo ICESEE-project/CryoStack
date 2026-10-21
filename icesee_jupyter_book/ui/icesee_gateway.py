@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import time as _time
+import threading
 import uuid
 import html as html_lib
 import yaml
@@ -29,7 +30,7 @@ from icesee_jupyter_book.core.connector_relay_client import (
 )
 
 from icesee_jupyter_book.core import ssh_key_manager
-from icesee_jupyter_book.core.example_registry import EXAMPLES, enabled_names
+from icesee_jupyter_book.core.example_registry import EXAMPLES, enabled_names, selector_options
 from cryostack_src.workspace import resolve_workspace_user, user_run_root, read_manifest
 from cryostack_src.resources.profiles import get_compute_profile, initial_remote_fields
 from cryostack_src.remote import RemoteBridge
@@ -41,7 +42,7 @@ from cryostack_src.remote.access_state import (
     classify_ssh_failure,
     SSH_KEY_NOT_AUTHORIZED,
 )
-from icesee_jupyter_book.core.config_io import load_yaml, dump_yaml
+from icesee_jupyter_book.core.config_io import dump_yaml, load_yaml, with_legacy_parallel_flag
 from icesee_jupyter_book.core.example_discovery import (
     find_run_script,
     find_params_template,
@@ -78,6 +79,8 @@ from icesee_jupyter_book.ui.icesee_run_progress import run_progress_html
 from icesee_jupyter_book.core.cloud_bridge_adapter import (
     IceseeCloudBridgeConfig,
     build_icesee_cloud_bridge,
+    cloud_max_np,
+    cloud_runtime_config,
     icesee_cloud_status,
     icesee_cloud_terminate,
     submit_icesee_cloud_run,
@@ -100,6 +103,8 @@ from cryostack_src.frontend.cryolauncher.cloud_runtime import build_cloud_enviro
 from cryostack_src.cloud.review import InfrastructureReadiness
 from icesee_jupyter_book.core.cloud_review import (
     build_icesee_cloud_review,
+    completed_cloud_minutes,
+    icesee_run_estimate,
     render_icesee_review_panel,
 )
 
@@ -161,10 +166,14 @@ from icesee_jupyter_book.core import run_launcher
 from icesee_jupyter_book.core import run_lifecycle
 from icesee_jupyter_book.core.experiment_files import ExperimentFiles, Issue
 from icesee_jupyter_book.core.local_jobs import JobMonitor, LocalJob
+from icesee_jupyter_book.core.user_plots import PlotWorkspace
+from icesee_jupyter_book.ui.icesee_workflow.examples import ExamplePicker
 from icesee_jupyter_book.ui.icesee_workflow import (
     LaunchPanel, LocalEnvironmentPanel, ModeSelector, RunWorkspace, Stepper, Ticker, card, field,
     run_js, stylesheet,
 )
+from icesee_jupyter_book.ui.icesee_workflow.components import callout
+from icesee_jupyter_book.core.remote_poll import POLL_SECONDS, RemoteStatusPoller
 
 # ============================================================
 # Params widgets factory
@@ -296,7 +305,9 @@ def build_icesee_ui():
         # -----------------------------
         # Top controls
         # -----------------------------
-        example_dd = W.Dropdown(options=enabled_names(), value=enabled_names()[0], layout=W.Layout(width="320px"))
+        # every example key (the visible Application/Example pickers follow it,
+        # see icesee_workflow/examples.py); legacy keys resolve on selection
+        example_dd = W.Dropdown(options=selector_options(), value=enabled_names()[0], layout=W.Layout(width="320px"))
         preset_dd = W.Dropdown(options=["Default"], value="Default", layout=W.Layout(width="320px"))
 
         filter_alg_dd = W.Dropdown(
@@ -1512,7 +1523,7 @@ def build_icesee_ui():
                 example_cfg = EXAMPLES[example_dd.value]
 
                 sync_quick_into_widgets()
-                cfg_yaml = build_config_from_widgets()
+                cfg_yaml = with_legacy_parallel_flag(build_config_from_widgets())
                 params_text = yaml.safe_dump(cfg_yaml, sort_keys=False)
 
                 _run_id = _new_icesee_run_id()
@@ -2158,7 +2169,8 @@ def build_icesee_ui():
             example_cfg = EXAMPLES[example_dd.value]
 
             sync_quick_into_widgets()
-            cfg_yaml = build_config_from_widgets()
+            cfg_yaml, runtime_changes = cloud_runtime_config(build_config_from_widgets(),
+                                                             np=int(cloud_mpi_np.value))
 
             set_status("running")
             log_out.clear_output()
@@ -2168,6 +2180,8 @@ def build_icesee_ui():
                 print("region :", aws_region.value.strip() or "us-east-1")
                 print("profile:", aws_profile.value.strip() or "(default)")
                 print("s3     :", cloud_bucket.value.strip())
+                for change in runtime_changes:
+                    print("[cloud] set for the Cloud image's ICESEE:", change)
 
             _run_id = _new_icesee_run_id()
             _rd = run_dir(_icesee_run_dir_base(), _run_id)
@@ -2203,7 +2217,7 @@ def build_icesee_ui():
                     # SLURM template unconditionally threads into mpirun --
                     # a real ICESEE Batch entrypoint reads these to launch
                     # the identical command (see MAX_SINGLE_TASK_MPI_RANKS).
-                    np=int(cluster_mpi_np.value),
+                    np=int(cloud_mpi_np.value),
                     nens=int(ens_sl.value),
                     model_nprocs=int(cluster_model_nprocs.value),
                     run_dir_base=_icesee_run_dir_base(),
@@ -3104,6 +3118,22 @@ def build_icesee_ui():
         # Execution panel; Submit only happens through its own Review &
         # Launch (wired below) -- neither is duplicated here.
         cloud_panel = icesee_cloud_environment.container
+        # Cloud's own MPI processes -- never the Remote tab's Slurm value: the
+        # cloud task has cloud_max_np() vCPUs
+        cloud_mpi_np = W.BoundedIntText(value=1, min=1, max=cloud_max_np(), layout=W.Layout(width="90px"))
+
+        def _cloud_np_default(_=None):
+            model = (EXAMPLES[example_dd.value].get("model_name") or "").lower()
+            cloud_mpi_np.value = min(cloud_max_np(), 2 if model == "icepack" else 1)
+
+        example_dd.observe(_cloud_np_default, names="value")
+        _cloud_np_default()
+        _cloud_body = icesee_cloud_environment.container.children[0]
+        _cloud_body.children = (*_cloud_body.children[:3], W.HBox(
+            [W.HTML("<div style='font-size:12px;color:#66758d;width:110px'>MPI processes:</div>"), cloud_mpi_np,
+             W.HTML(f"<div class='cryostack-help' style='margin-left:8px'>1-{cloud_max_np()} "
+                    "(the cloud task's vCPUs)</div>")],
+            layout=W.Layout(align_items="center", gap="6px")), *_cloud_body.children[3:])
         cloud_panel.add_class("cryostack-cloud-config")
 
         # =========================================================
@@ -3183,8 +3213,12 @@ def build_icesee_ui():
                 ("registry", getattr(capabilities, "registry_ready", False), "Ready", "Not prepared"),
                 ("compute", getattr(capabilities, "batch_ready", False), "Ready", "Not prepared"),
             ):
-                set_cloud_status(rows[key], state="done" if ready else "fail",
+                # amber = something to do (connect / Prepare cloud); red is
+                # kept for operations that actually failed
+                set_cloud_status(rows[key], state="done" if ready else "warning",
                                  label=ready_label if ready else missing_label)
+            _icesee_refresh_estimate(all(getattr(capabilities, attr, False) for attr in (
+                "authenticated", "storage_ready", "registry_ready", "batch_ready")))
 
         def _icesee_cloud_check_worker():
             execution = _resolve_icesee_cloud_execution()
@@ -3213,8 +3247,15 @@ def build_icesee_ui():
             # hardcode Ready just because Prepare ran without raising.
             try:
                 _icesee_update_infrastructure_rows(_icesee_cloud_check_worker())
-            except Exception:
-                pass
+            except Exception as _err:
+                # never leave the rows on "Preparing…": say the state is unknown
+                for _row in (icesee_cloud_environment.account_status, icesee_cloud_environment.storage_status,
+                             icesee_cloud_environment.registry_status, icesee_cloud_environment.compute_status):
+                    set_cloud_status(_row, state="warning", label="Not verified")
+                _icesee_refresh_estimate(False)
+                with log_out:
+                    print("[cloud][WARN] could not re-check the environment after Prepare:",
+                          type(_err).__name__, _err)
 
         icesee_cloud_ops = build_cloud_environment_ops(
             buttons={"test": icesee_cloud_environment.test_button,
@@ -3238,15 +3279,43 @@ def build_icesee_ui():
         # RUN ESTIMATE / Review & Launch -- ICESEE's OWN DA-aware review
         # (icesee_jupyter_book/core/cloud_review.py), rendered into the SAME
         # shared review_body/launch_button widgets, never CryoLauncher's
-        # model/example/run_target review schema. The estimate line is
-        # shown unconditionally (cost unavailable -- ICESEE has no Fargate
-        # cost model) purely so Review & Launch itself is reachable; Launch
-        # is gated inside the review, not by this line.
+        # model/example/run_target review schema. As in CryoLauncher the
+        # estimate and Review & Launch appear once Test connection / Prepare
+        # cloud report every row Ready; Launch stays gated inside the review.
         # =========================================================
-        set_run_estimate_view(icesee_cloud_environment, visible=True, unavailable=True)
-        icesee_cloud_environment.run_estimate_line.value = (
-            "<div style='font-size:11px;color:#96a1b4;'>Review the run before launching.</div>"
-        )
+        _icesee_estimate_state = {"seq": 0}
+
+        def _icesee_refresh_estimate(ready: bool) -> None:
+            _icesee_estimate_state["seq"] += 1
+            seq = _icesee_estimate_state["seq"]
+            if not ready:
+                set_run_estimate_view(icesee_cloud_environment, visible=False)
+                return
+            set_run_estimate_view(icesee_cloud_environment, visible=True)
+            icesee_cloud_environment.run_estimate_line.value = (
+                "<div class='cryostack-estimate-pending'>Cloud environment is ready. "
+                "Preparing your run estimate…</div>")
+            region = aws_region.value.strip() or "us-east-1"
+            compute_mode = getattr(icesee_cloud_environment.compute_mode, "value", "fargate")
+            example = example_dd.value
+
+            def worker():
+                from cryostack_src.cloud.estimate.pricing import resolve_fargate_prices
+
+                try:
+                    durations = completed_cloud_minutes(run_records.discover_runs(_icesee_run_dir_base()),
+                                                        example=example)
+                except Exception:  # noqa: BLE001 - history is best-effort
+                    durations = []
+                prices = None if compute_mode == "ec2" else resolve_fargate_prices(region)
+                estimate = icesee_run_estimate(region=region, compute_mode=compute_mode,
+                                               durations_minutes=durations, prices=prices)
+                if seq == _icesee_estimate_state["seq"]:      # a newer refresh wins
+                    set_run_estimate_view(icesee_cloud_environment, visible=True, **estimate)
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        set_run_estimate_view(icesee_cloud_environment, visible=False)
 
         _icesee_review_state = {"review": None}
 
@@ -3272,15 +3341,12 @@ def build_icesee_ui():
                                 or example_dd.value),
                 filter_alg=identity.assimilation_filter or filter_alg_dd.value,
                 ensemble_size=int(identity.ensemble_size or ens_sl.value),
-                parallel_processes=int(cluster_mpi_np.value),
+                parallel_processes=int(cloud_mpi_np.value),
                 account_id=execution.account_id, region=execution.region,
                 infrastructure=infra, account_freshly_verified=execution.is_byo,
-                # the run's OWN canonical example key (params.yaml's
-                # modeling-parameters.example_name, e.g. "lorenz96") -- NOT
-                # the human-readable example_dd.value label -- checked
-                # against the verified runtime contract
-                # (ICESEE_VERIFIED_EXAMPLES / ICESEE_VERIFIED_MAX_NP).
-                example_name=identity.example_name or example_dd.value,
+                # the example's own folder name (e.g. "synthetic_ice_stream"),
+                # never the menu label -- the cloud runtime is keyed by it
+                example_name=Path(EXAMPLES[example_dd.value]["base"]).name,
                 matlab_license_configured=bool(
                     getattr(execution.matlab_license, "configured", False)),
                 matlab_license_requires_tunnel=bool(
@@ -3388,6 +3454,14 @@ def build_icesee_ui():
         def _experiment_files() -> ExperimentFiles:
             return ExperimentFiles(EXAMPLES[example_dd.value]["base"], _drafts_root, example_key=example_dd.value)
 
+        # the user's own plotting code, next to their drafts (core/user_plots.py)
+        _plots_root = _drafts_root.parent / "icesee_plots"
+
+        def _plot_workspace(example_key: str, contract_dir=None) -> PlotWorkspace:
+            if contract_dir is None:
+                contract_dir = EXAMPLES[example_key]["base"]
+            return PlotWorkspace(_plots_root, example_key, contract_dir)
+
         _WF["experiment_files"] = _experiment_files
 
         # ── 1. Mode ────────────────────────────────────────────────────────
@@ -3406,14 +3480,17 @@ def build_icesee_ui():
 
         # ── 2. Experiment ──────────────────────────────────────────────────
         example_status = W.HTML()
+        example_picker = ExamplePicker(example_dd)
         for _w in (example_dd, preset_dd, filter_alg_dd, seed_in):
             _w.layout = W.Layout(width="100%")
+        example_dd.layout.display = "none"      # the pickers above are its visible face
         ens_sl.layout = W.Layout(width="100%")
         ens_sl.tooltip = "Number of ensemble members (enkf-parameters.Nens)"
         filter_alg_dd.tooltip = "Assimilation filter (enkf-parameters.filter_type)"
         seed_in.tooltip = "Random seed (enkf-parameters.seed)"
         experiment_card = card(
-            [field("Example", example_dd), example_status,
+            [field("Application", example_picker.application), field("Example", example_picker.example),
+             example_picker.note, example_status, example_dd,
              W.VBox([field("Filter", filter_alg_dd),
                      field("Ensemble size", ens_sl, "members"),
                      field("Seed", seed_in),
@@ -3527,7 +3604,7 @@ def build_icesee_ui():
                                           "wall_time": slurm_time.value, "memory": slurm_mem.value,
                                           "mpi_np": cluster_mpi_np.value, "model_nprocs": cluster_model_nprocs.value})
                 else:
-                    cfg_resources.update({"region": aws_region.value.strip(), "mpi_np": cluster_mpi_np.value,
+                    cfg_resources.update({"region": aws_region.value.strip(), "mpi_np": cloud_mpi_np.value,
                                           "model_nprocs": cluster_model_nprocs.value})
                 record = run_provenance.collect(
                     run_id=run_id, run_dir=Path(rd), example=example_dd.value, example_cfg=EXAMPLES[example_dd.value],
@@ -3557,6 +3634,9 @@ def build_icesee_ui():
 
             def experiment_files(self):
                 return _experiment_files()
+
+            def plot_workspace(self, example_key, contract_dir=None):
+                return _plot_workspace(example_key, contract_dir)
 
             def current_config(self):
                 return _current_config()
@@ -3628,8 +3708,8 @@ def build_icesee_ui():
                     return
                 params_file = Path(run.workspace_directory) / "params.yaml"
                 example = (run.metadata or {}).get("example")
-                if example in EXAMPLES and example_dd.value != example:
-                    example_dd.value = example
+                if example in EXAMPLES and example_dd.value != EXAMPLES.canonical(example):
+                    example_dd.value = EXAMPLES.canonical(example)
                 mode = {"local": "local", "remote": "cluster", "cloud": "cloud"}.get(run.execution_mode, "local")
                 mode_selector.toggle.value = mode
                 if params_file.is_file():
@@ -3742,12 +3822,12 @@ def build_icesee_ui():
 
         launch_panel = LaunchPanel(
             on_launch=_workflow_launch, on_validate=_workflow_validate, on_cancel=_cancel_active,
-            on_open_logs=lambda: (workspace.select_run(_active["run_id"], tab="Logs")),
-            on_open_results=lambda: (workspace.select_run(_active["run_id"], tab="Results")))
+            on_open_logs=lambda: workspace.focus(_active["run_id"], "Logs"),
+            on_open_results=lambda: workspace.focus(_active["run_id"], "Results"))
         _WF["activity"] = lambda state: launch_panel.set_activity(state)
-        # Cloud submits only through the cloud card's own gated Launch; its
-        # separate "Review & Launch" opener is replaced by the panel's button.
-        icesee_cloud_environment.review_button.layout.display = "none"
+        # Cloud submits only through the cloud card's own gated Launch. Its
+        # Review & Launch (shown with the estimate once the environment is
+        # Ready) and step 5's button both open that same review.
 
         def _summary_rows(rows):
             mode = get_mode()
@@ -3763,7 +3843,8 @@ def build_icesee_ui():
                             ("MPI", f"np {cluster_mpi_np.value} · model {cluster_model_nprocs.value}")]
             else:
                 env_rows = [("Region", aws_region.value.strip() or "us-east-1"),
-                            ("Compute", getattr(icesee_cloud_environment.compute_mode, "value", "fargate"))]
+                            ("Compute", getattr(icesee_cloud_environment.compute_mode, "value", "fargate")),
+                            ("MPI processes", str(cloud_mpi_np.value))]
             drafts = sorted(_experiment_files().drafts_in_use())
             out = [("Mode", html_lib.escape(_MODE_TITLE[mode])),
                    ("Experiment", html_lib.escape(example_dd.value))]
@@ -3868,7 +3949,6 @@ def build_icesee_ui():
             "<div class='icw-hero'><div><h1>Ice-Sheet Modeling with Data Assimilation</h1>"
             "<p>Configure an ICESEE ensemble data-assimilation experiment, run it locally, on your cluster or in "
             "the cloud, and inspect its scientific results here.</p></div></div>")
-        agent_rows = []
         if os.environ.get("CRYOSTACK_AGENT_PANEL", "").strip().lower() in ("1", "true", "on", "yes"):
             from icesee_jupyter_book.ui.configuration_agent import build_icesee_configuration_agent
 
@@ -3886,11 +3966,11 @@ def build_icesee_ui():
                 sync_quick=sync_quick_into_widgets, cloud_validate=_agent_cloud_validate)
             agent_acc = W.Accordion(children=[icesee_agent.container], selected_index=None)
             agent_acc.set_title(0, "Auto-config · Beta")
-            agent_rows.append(agent_acc)
+            mode_selector.attach_assistant(agent_acc)
 
         _js_out = W.Output(layout=W.Layout(height="0px", overflow="hidden"))
         left = W.VBox([mode_selector.container, experiment_card, environment_card, parameters_card,
-                       launch_panel.container, *agent_rows], layout=W.Layout(width="100%"))
+                       launch_panel.container], layout=W.Layout(width="100%"))
         left.add_class("icw-col")
         left.add_class("cryostack-left-workspace")
         right = W.VBox([workspace.container], layout=W.Layout(width="100%"))
@@ -3942,6 +4022,27 @@ def build_icesee_ui():
                         launch_panel.show_run(run)
                         stepper.set_live(launch_panel.live_html)
             _active["ticker"] = Ticker(_tick, interval=5.0)
+
+            # the selected Remote run's scheduler state is checked quietly every
+            # minute while it is active (remote_poll.py); Check status resumes
+            # checks paused after repeated failures
+            def _apply_remote_update(run, update):
+                experiment_bridge.update_by_job(job_id=str(run.jobid), **update)
+                _update_icesee_run(Path(run.workspace_directory), status=update.get("status"))
+                if workspace.selected is not None and workspace.selected.id == run.id:
+                    workspace.reload_selected()
+                _show_active(run.id)
+
+            def _remote_notice(text, kind):
+                workspace.run_msg.value = callout(text, kind)
+
+            remote_poller = RemoteStatusPoller(
+                selected=lambda: workspace.selected if cluster_host.value.strip() else None,
+                check=lambda jobid: remote_job_status(cluster_host.value.strip(), cluster_user.value.strip(),
+                                                      int(cluster_port.value), jobid),
+                apply=_apply_remote_update, notify=_remote_notice)
+            status_btn.on_click(lambda _b: remote_poller.resume())
+            _active["remote_poll"] = Ticker(remote_poller.tick, interval=POLL_SECONDS)
 
         set_status("idle")
         rebuild_for_example()

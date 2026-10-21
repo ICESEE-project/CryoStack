@@ -135,6 +135,13 @@ def diagnose_request(kind, data, read_only_validate):
     """Evaluate a requested Remote target using pure checks, never widget changes."""
     if not kind.endswith("_remote"):
         return diagnose_configuration(data, read_only_validate())
+    if kind == "repair_remote" and data.get("mode_locked") and data["current"].get("mode") != "remote":
+        # the host's execution-mode control decides where the run goes
+        message = ("Remote HPC is not the selected execution mode. Select Remote HPC above, then ask "
+                   "again to prepare a Remote configuration.")
+        result = Diagnosis(issues=[message])
+        result.proposal.errors.append(message)
+        return result
     target = copy.deepcopy(data)
     target["current"]["mode"] = "remote"
     result = diagnose_configuration(target, [REMOTE_REVIEW_NOTE])

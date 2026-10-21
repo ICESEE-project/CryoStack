@@ -94,7 +94,7 @@ def page(monkeypatch, tmp_path):
 
     fake = dict(enabled=True, base=ex, run_script="run_da_fake.py", params="params.yaml", report_nb=None,
                 assets=[], model_name="fake", figures_dir="figures", remote_rel="x", remote_sbatch=None)
-    registry = {FAKE_KEY: fake, **example_registry.EXAMPLES}
+    registry = example_registry.ExampleRegistry({FAKE_KEY: fake, **example_registry.EXAMPLES})
     monkeypatch.setattr(example_registry, "EXAMPLES", registry)
     import icesee_jupyter_book.ui.icesee_gateway as gw
 

@@ -328,24 +328,33 @@ def test_icesee_runner_reads_the_established_env_var_contract():
         assert var in script
 
 
-def test_icesee_runner_uses_with_icesee_and_allow_run_as_root():
+def test_icesee_runner_picks_the_models_environment_and_allows_run_as_root():
     from icesee_jupyter_book.core.cloud_runner import build_icesee_batch_runner
 
     script = build_icesee_batch_runner()
-    assert "with-icesee mpirun --allow-run-as-root" in script
+    assert "icepack) RUNWITH=with-icepack" in script and "lorenz|flowline) RUNWITH=with-icesee" in script
+    assert '${RUNWITH} mpirun --allow-run-as-root' in script
     assert "-F" in script and "--Nens=" in script and "--model_nprocs=" in script
 
 
-def test_icesee_runner_refuses_unverified_np():
-    from icesee_jupyter_book.core.cloud_runner import (
-        ICESEE_VERIFIED_MAX_NP,
-        build_icesee_batch_runner,
-    )
+def test_icesee_runner_bounds_np_and_keeps_the_in_image_path_single_rank():
+    from icesee_jupyter_book.core.cloud_runner import ICESEE_VERIFIED_MAX_NP, build_icesee_batch_runner
 
     assert ICESEE_VERIFIED_MAX_NP == 1
     script = build_icesee_batch_runner()
-    assert 'if [ "${NP}" != "1" ]; then' in script
-    assert "not verified for cloud execution" in script
+    assert '[ "${NP}" -le 16 ] || fail 65' in script
+    assert '[ "${NP}" = "1" ] || fail 65' in script            # in-image lorenz96 path
+    assert "export OMPI_MCA_rmaps_base_oversubscribe=1" in script
+
+
+def test_icesee_runner_installs_the_staged_icesee_and_reports_driver_errors():
+    from icesee_jupyter_book.core.cloud_runner import build_icesee_batch_runner
+
+    script = build_icesee_batch_runner()
+    assert 'aws s3 sync "${ICESEE_S3_RUN}/input/" "${WORKDIR}/"' in script
+    assert 'rm -rf /opt/ICESEE && tar --no-same-owner -xzf "${WORKDIR}/icesee-src.tgz" -C /opt' in script
+    assert 'grep -aq "Error in [A-Za-z ]*run mode"' in script and "rc=70" in script
+    assert "ICESEE.src.postprocessing.icepack_mesh" in script
 
 
 def test_icesee_runner_only_knows_the_one_verified_example():
@@ -368,6 +377,7 @@ def test_icesee_runner_syncs_params_in_and_results_out():
 
     script = build_icesee_batch_runner()
     assert "aws s3 cp \"${ICESEE_S3_RUN}/params.yaml\"" in script
-    assert "aws s3 sync \"${EXAMPLE_DIR}/results/\"" in script
-    assert "aws s3 sync \"${EXAMPLE_DIR}/_modelrun_datasets/\"" in script
+    assert 'for d in results _modelrun_datasets; do' in script
+    assert 'aws s3 sync "${EXAMPLE_DIR}/${d}/" "${ICESEE_S3_RUN}/outputs/${d}/"' in script
+    assert 'aws s3 cp "${OUT}/run.log" "${ICESEE_S3_RUN}/outputs/run.log"' in script
     assert 'exit "${rc}"' in script

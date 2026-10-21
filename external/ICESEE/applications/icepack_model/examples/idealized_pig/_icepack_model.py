@@ -11,6 +11,8 @@ import sys
 import os
 import h5py
 
+from ICESEE.src.utils.init_trace import traced_init
+
 os.environ["OMP_NUM_THREADS"] = "1"
 
 # --- import model functions ---
@@ -72,14 +74,17 @@ def initialState(h0, s0, u0, zb, grounded0, floating0, Q):
 # ---- initial mesh ---
 
 def initializeMesh(**icesee_kwargs):
-
     initFile = icesee_kwargs["initFile"]
     meshFile = icesee_kwargs["meshFile"]
-    meshI = mf.getMeshFromCheckPoint(initFile,icesee_kwargs)
-    mesh, Q, V, meshOpts = \
-        mf.setupMesh(meshFile, degree=1,
-                     meshOversample=2,
-                     newMesh=meshI)
+    comm = icesee_kwargs.get("comm")
+    with traced_init("checkpoint mesh load", comm=comm):
+        meshI = mf.getMeshFromCheckPoint(initFile,icesee_kwargs)
+    with traced_init("mesh construction (argus + function spaces)", comm=comm):
+        mesh, Q, V, meshOpts = \
+            mf.setupMesh(meshFile, degree=1,
+                         meshOversample=2,
+                         newMesh=meshI,
+                         comm=comm)
 
     return mesh, meshOpts, Q, V
 
@@ -90,11 +95,47 @@ def initializeMesh(**icesee_kwargs):
 
 def initializeRun(icesee_kwargs, forward_solver, mesh, Q, V):
 
-
-    with firedrake.CheckpointFile(icesee_kwargs["initFile"],'r') as checkpoint:
-        velocity = checkpoint.load_function(mesh, "velocity", idx=20000) # idx index set to the LAST time step of the steady-state run (20,000 for 1000 year run)
-        h0 = checkpoint.load_function(mesh, "thickness", idx=20000)
-        s0 = checkpoint.load_function(mesh, "surface", idx=20000)
+    # Forward whatever communicator this call's mesh/model context already
+    # uses, rather than accepting CheckpointFile's own default (COMM_WORLD,
+    # baked into firedrake.checkpointing.CheckpointFile.__init__). That
+    # default is harmless for modes 0-2 (one Firedrake mesh partitioned
+    # across the whole run's model communicator, which IS COMM_WORLD in
+    # practice) but is a genuine correctness bug for mode 3's native
+    # adapter (_icepack_native.py), which builds one independent
+    # mesh/solver context per ensemble group on topology.spatial_comm and
+    # calls this function once per rank, group by group, not in lockstep
+    # across the whole world. A tiny 2-rank/2-independent-group probe
+    # confirmed this concretely: with no comm= (both ranks collectively
+    # opening CheckpointFile on COMM_WORLD despite each naming a different
+    # file), the read did not hang but returned silently WRONG values
+    # (cross-contaminated between the two groups' files) -- worse than a
+    # deadlock, since it fails without any visible error. Explicit
+    # comm=icesee_kwargs["comm"] (falling back to COMM_WORLD only if that
+    # key is absent, matching Firedrake's own `comm or COMM_WORLD`
+    # convention elsewhere in checkpointing.py) scopes the collective open
+    # to exactly the ranks that own this call's mesh, for every mode --
+    # not a mode-name conditional, just using the communicator the caller
+    # already established. See src/tests/test_icepack_checkpoint_communicator.py.
+    checkpoint_comm = icesee_kwargs.get("comm") or firedrake.COMM_WORLD
+    # Optional, explicitly opt-in (default False -- the full spin-up-
+    # history checkpoint's read path below is byte-for-byte unchanged):
+    # a "compact" initFile built by tools/build_compact_initialization.py
+    # stores velocity/thickness/surface in NORMAL (non-timestepping) mode,
+    # not at idx=20000 -- see that script's own docstring for why
+    # (measured: idx-mode storage is proportional to the index value, not
+    # to how many indices are written, so preserving idx=20000 on write
+    # produced a 34.67 GB file instead of a compact one).
+    compact_initialization = bool(icesee_kwargs.get("compact_initialization", False))
+    with traced_init("checkpoint field load", comm=checkpoint_comm, compact=compact_initialization), \
+            firedrake.CheckpointFile(icesee_kwargs["initFile"], 'r', comm=checkpoint_comm) as checkpoint:
+        if compact_initialization:
+            velocity = checkpoint.load_function(mesh, "velocity")
+            h0 = checkpoint.load_function(mesh, "thickness")
+            s0 = checkpoint.load_function(mesh, "surface")
+        else:
+            velocity = checkpoint.load_function(mesh, "velocity", idx=20000) # idx index set to the LAST time step of the steady-state run (20,000 for 1000 year run)
+            h0 = checkpoint.load_function(mesh, "thickness", idx=20000)
+            s0 = checkpoint.load_function(mesh, "surface", idx=20000)
         bed = checkpoint.load_function(mesh, "bed")
         grounded0 = checkpoint.load_function(mesh, "grounded")
         floating0 = checkpoint.load_function(mesh, "floating")
@@ -103,12 +144,13 @@ def initializeRun(icesee_kwargs, forward_solver, mesh, Q, V):
 
     """ find initial velocity """
     uThresh = firedrake.Constant(icesee_kwargs['uThresh'])
-    u0 = forward_solver.diagnostic_solve(velocity=velocity, thickness=h0,
-                                                surface=s0,
-                                                beta=beta0, fluidity=A0,
-                                                grounded=grounded0,
-                                                floating=floating0,
-                                                uThresh=uThresh)
+    with traced_init("initial diagnostic solve", comm=checkpoint_comm):
+        u0 = forward_solver.diagnostic_solve(velocity=velocity, thickness=h0,
+                                                    surface=s0,
+                                                    beta=beta0, fluidity=A0,
+                                                    grounded=grounded0,
+                                                    floating=floating0,
+                                                    uThresh=uThresh)
 
     """ define initial state """
     h, hLast, s, u, zF, grounded, floating = initialState(h0, s0, u0, bed, grounded0, floating0, Q)
@@ -164,8 +206,41 @@ def readSMB(icesee_kwargs, Q):
 
 # --- Basal melt rate field ---
 
-def BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='control'):
+# True-vs-wrong basal-melt forcing experiment (Idealized PIG only). This is
+# deliberately NOT a generic ICESEE concept -- it lives entirely in this
+# application file. Two explicit, canonical string values; BasalMeltRate
+# validates against them so a caller can never silently fall into the
+# wrong branch via a str/bool type mismatch (see docs/execution-mode-3-
+# design.md's 2026-09-28 reconciliation note for the history: an earlier
+# WIP used `experiment == 'true'` against callers that passed Python
+# bools, which happened to "fail safe" into the wrong-trajectory branch
+# for every ensemble member -- functionally the intended science, but
+# fragile and undocumented).
+EXPERIMENT_TRUE = "true"    # reference/true trajectory: melt_max ramps 20 -> 100 over the run
+EXPERIMENT_WRONG = "wrong"  # ensemble/forecast trajectory: melt_max held constant at 20
 
+# melt_max changes every step of the true trajectory. Carrying it in one
+# mutable Constant keeps the melt expression identical from step to step, so
+# Firedrake compiles its interpolation kernel once instead of once per step
+# (a changing Python float is a new literal in the form each time).
+_MELT_MAX = None
+
+
+def _melt_max_constant(value):
+    global _MELT_MAX
+    if _MELT_MAX is None:
+        _MELT_MAX = firedrake.Constant(value)
+    else:
+        _MELT_MAX.assign(value)
+    return _MELT_MAX
+
+def BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='control', experiment=EXPERIMENT_TRUE):
+
+    if experiment not in (EXPERIMENT_TRUE, EXPERIMENT_WRONG):
+        raise ValueError(
+            f"BasalMeltRate: experiment must be {EXPERIMENT_TRUE!r} or "
+            f"{EXPERIMENT_WRONG!r}, got {experiment!r}"
+        )
 
     # Draft depth (negative below sea level): z = s - h
     draft = firedrake.Function(Q)
@@ -175,8 +250,10 @@ def BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='control'):
     beginning_bmr = 20
     final_bmr = 100 #from Dutriex, 2013
 
-    ####### TIMING OF LINEAR INCREASE IN BMR
-    if (step * icesee_kwargs['dt']) < icesee_kwargs["bmr_increase_time"]:
+    ####### TIMING OF LINEAR INCREASE IN BMR (true trajectory only) #######
+    if experiment == EXPERIMENT_WRONG:
+        melt_max = beginning_bmr
+    elif (step * icesee_kwargs['dt']) < icesee_kwargs["bmr_increase_time"]:
         melt_max = beginning_bmr
 
     # The period over which BMR increases shortens by 'x' years
@@ -204,6 +281,7 @@ def BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='control'):
 
     # Build depth-dependent piecewise melt profile
     z = draft
+    melt_max_c = _melt_max_constant(melt_max)
 
     # Create melt expression
     melt_expr = firedrake.conditional(
@@ -211,19 +289,36 @@ def BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='control'):
         0.0,
         firedrake.conditional(
             z <= z_max,
-            melt_max,
-            melt_max * (z_min - z) / (z_min - z_max)
+            melt_max_c,
+            melt_max_c * (z_min - z) / (z_min - z_max)
         )
     )
 
     # Apply floating mask
     melt_expr *= floating
 
-    # Interpolate into scalar function space
-    basal_melt_rate_field = firedrake.interpolate(melt_expr, Q)
+    # Interpolate into scalar function space.
+    #
+    # firedrake.interpolate(expr, Q) (the free-function form) now returns a
+    # lazy symbolic Interpolate object in the installed Firedrake/UFL
+    # version, not an evaluated Function -- Function(Q).interpolate(expr)
+    # is the eager-evaluation equivalent (same math; this call runs on
+    # every forecast step via BasalMeltRate, so it must stay eager).
+    basal_melt_rate_field = firedrake.Function(Q).interpolate(melt_expr)
 
     return basal_melt_rate_field, melt_max
 
+
+
+def profile_path(data_path, name):
+    """Path of the flowline-profile file ``<data_path>/<name>.h5``. Runs made
+    before the .h5 extension was added wrote ``<data_path>/<name>``; that
+    file is returned instead when it is the only one present."""
+    path = os.path.join(data_path, f"{name}.h5")
+    legacy = os.path.join(data_path, name)
+    if not os.path.exists(path) and os.path.exists(legacy):
+        return legacy
+    return path
 
 
 # --- Checking the ice thickness ---
@@ -283,7 +378,8 @@ def initialize_model(**icesee_kwargs):
     opts = {"dirichlet_ids": [1],"diagnostic_solver_parameters": {"max_iterations": 150, "tolerance": 1e-6},}
     # opts = {"dirichlet_ids": meshOpts["dirichlet_ids"],"diagnostic_solver_parameters": {"max_iterations": 150, "tolerance": 1e-6},}
 
-    forward_solver = icepack.solvers.FlowSolver(forward_model, **opts)
+    with traced_init("Icepack solver construction", comm=comm):
+        forward_solver = icepack.solvers.FlowSolver(forward_model, **opts)
 
 
 
@@ -294,7 +390,7 @@ def initialize_model(**icesee_kwargs):
 
     # ---- Initial basal melt  ----
     k = 0 # time step (ICESEE uses 'k' as the time-stepping index)
-    basal_melt_field, melt_max0 = BasalMeltRate(icesee_kwargs, step=k, floating=floating, Q=Q, s=s0, h=h0, scenario="control")
+    basal_melt_field, melt_max0 = BasalMeltRate(icesee_kwargs, step=k, floating=floating, Q=Q, s=s0, h=h0, scenario="control", experiment=EXPERIMENT_TRUE)
 
 
 
@@ -305,60 +401,24 @@ def initialize_model(**icesee_kwargs):
 
 # --- Visualizing the model with a flowline profile DURING THE SIMULATION  ---
 def initial_flowline_profile(icesee_kwargs):
-
-    # -- arrays to save the ALL of the flowline profile outputs (including the initial state) throughout the simulation --
-    h_profiles=[]
-    s_profiles = []
-
-    """ define flowline in EPSG:3031 to track the profile of PIG across a seafloor ridge """
+    from ._mode3_profiles import sample_fields
     start = np.array([-1587750., -200000.])
     end = np.array([-1610250., -500000.])
-
-    num_points = 1000
-    t_values = np.linspace(0, 1, num_points)
-    profile_points = np.outer(1 - t_values, start) + np.outer(t_values, end)
-
-    """ try extracting values from the flowline and filter out points that fail """
-    valid_points = []
-    bed_values, surface_values, thickness_values = [], [], []
-
-    for p in profile_points:
-        try:
-            bed_values.append(icesee_kwargs["bed"].at(tuple(p)))
-            surface_values.append(icesee_kwargs["s"].at(tuple(p)))
-            thickness_values.append(icesee_kwargs["h"].at(tuple(p)))
-            valid_points.append(tuple(p))
-        except firedrake.PointNotInDomainError:
-            pass  # Ignore points that are outside the mesh
-
-    # Convert valid points back to NumPy array
-    valid_points = np.array(valid_points)
-    distances = np.linspace(0, np.linalg.norm(end - start), len(valid_points))
-
-    h_profiles.append(thickness_values)
-    s_profiles.append(surface_values)
-
-    return(h_profiles, s_profiles, valid_points, distances, bed_values)
+    points = start + np.linspace(0., 1., 1000)[:, None] * (end - start)
+    values = sample_fields((icesee_kwargs["h"], icesee_kwargs["s"], icesee_kwargs["bed"]), points)
+    valid = np.array([all(v[i] is not None for v in values) for i in range(len(points))])
+    valid_points = points[valid]
+    h, s, bed = [np.asarray([v[i] for i in np.flatnonzero(valid)], dtype=float).reshape(-1) for v in values]
+    distances = np.linalg.norm(valid_points - start, axis=1)
+    return [h], [s], valid_points, distances, bed
 
 
-
-
-# --- Visualizing the model with a flowline profile DURING THE SIMULATION  ---
 def flowline_profile(h, s, valid_points):
-
-    # -- arrays to save the flowline profile outputs at a particular time step --
-    surface_values, thickness_values = [], []
-
-    # -- sample values from the flowline points --
-    for p in valid_points:
-        try:
-            surface_values.append(s.at(tuple(p)))
-            thickness_values.append(h.at(tuple(p)))
-        except firedrake.PointNotInDomainError:
-            pass  # Ignore points that are outside the mesh
-
-
-    return np.array(thickness_values), np.array(surface_values)
+    from ._mode3_profiles import sample_fields
+    values = sample_fields((h, s), valid_points)
+    if any(value is None for field_values in values for value in field_values):
+        raise ValueError("A saved flowline point is outside the current model mesh")
+    return tuple(np.asarray(value, dtype=float).reshape(-1) for value in values)
 
 
 #########################################################################################
@@ -379,6 +439,10 @@ def Icepack(solver, h, u, smb, basal_melt_field, bed, dt, h0, icesee_kwargs):
         outputs: h - updated ice thickness
                  u - updated ice velocity
                  s - updated ice surface elevation
+                 floating - recomputed floating mask (diagnostic, not DA
+                   state -- a pure function of (s, bed); callers should
+                   recompute it fresh each call rather than cache it)
+                 grounded - recomputed grounded mask (diagnostic, complement of floating)
     """
     w2i     = float(icesee_kwargs.get('water_to_ice', 1.0))
 
@@ -421,7 +485,7 @@ def Icepack(solver, h, u, smb, basal_melt_field, bed, dt, h0, icesee_kwargs):
         grounded = grounded,
     )
 
-    return h, u, s
+    return h, u, s, floating, grounded
 
 
 
@@ -475,8 +539,8 @@ def run_model(ensemble, **icesee_kwargs):
 
     #print(f"h_vec_mean={np.mean(h_vec)}, u_vec_mean = {np.mean(u_vec)}, v_vec_mean = {np.mean(v_vec)}\n")
 
-    if icesee_kwargs["joint_estimation"]:
-        basal_melt_vec = ensemble[indx_map["basal_melt_field"]]
+    # The configured state vector includes basal_melt_field independently of joint estimation.
+    basal_melt_vec = ensemble[indx_map["basal_melt_field"]]
 
     h = Function(Q)
     u = Function(V)
@@ -494,54 +558,54 @@ def run_model(ensemble, **icesee_kwargs):
     ### Conditionals for depth-dependent basal melt rate function
     ### Select forcing scenario between 1935 - 2017
     if step < (6/dt):
-        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='control') # 1935 - 1941
+        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='control', experiment=EXPERIMENT_WRONG) # 1935 - 1941
 
     elif (6 / dt) <= step < (15/dt):
-        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='warm') # 1941 - 1950
+        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='warm', experiment=EXPERIMENT_WRONG) # 1941 - 1950
 
     elif (15 / dt) <= step < (18/dt):
-        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='control') # 1950 - 1953
+        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='control', experiment=EXPERIMENT_WRONG) # 1950 - 1953
 
     elif (18/ dt) <= step < (20/dt):
-        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='warm') # 1953 - 1955
+        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='warm', experiment=EXPERIMENT_WRONG) # 1953 - 1955
 
     elif (20/ dt) <= step < (25/dt):
-        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='control') # 1955 - 1960
+        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='control', experiment=EXPERIMENT_WRONG) # 1955 - 1960
 
     elif (25/ dt) <= step < (27/dt):
-        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='warm') # 1960 - 1962
+        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='warm', experiment=EXPERIMENT_WRONG) # 1960 - 1962
 
     elif (27/ dt) <= step < (31/dt):
-        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='control') # 1962 - 1966
+        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='control', experiment=EXPERIMENT_WRONG) # 1962 - 1966
 
     elif (31/ dt) <= step < (40/dt):
-        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='warm') # 1966 - 1975
+        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='warm', experiment=EXPERIMENT_WRONG) # 1966 - 1975
 
     elif (40/ dt) <= step < (48/dt):
-        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='control') # 1975 - 1983
+        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='control', experiment=EXPERIMENT_WRONG) # 1975 - 1983
 
     elif (48/dt) <= step < (50/dt):
-        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='warm') # 1983 - 1985
+        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='warm', experiment=EXPERIMENT_WRONG) # 1983 - 1985
 
     elif (50/ dt) <= step < (59/dt):
-        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='control') # 1985 - 1994
+        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='control', experiment=EXPERIMENT_WRONG) # 1985 - 1994
 
     elif (59/ dt) <= step < (64/dt):
-        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='warm') # 1994 - 2000
+        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='warm', experiment=EXPERIMENT_WRONG) # 1994 - 2000
 
     elif (64/ dt) <= step < (69/dt):
-        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='control') # 2000 - 2005
+        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='control', experiment=EXPERIMENT_WRONG) # 2000 - 2005
 
     elif (69/ dt) <= step < (76/dt):
-        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='warm') # 2005 - 2012
+        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='warm', experiment=EXPERIMENT_WRONG) # 2005 - 2012
 
     elif (76/ dt) <= step:
-        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='control') # 2012 - 2017
+        basal_melt_field, melt_max = BasalMeltRate(icesee_kwargs, step, floating, Q, s, h, scenario='control', experiment=EXPERIMENT_WRONG) # 2012 - 2017
 
 
     #print(f"\ndt = {dt}, h0_mean = {np.mean(h0.dat.data_ro)}, h_mean = {np.mean(h.dat.data_ro)}, u_mean = {np.mean(u.dat.data_ro[:,0])}, v_mean = {np.mean(u.dat.data_ro[:,1])}\n")
 
-    h, u, s = Icepack(solver, h, u, smb, basal_melt_field, bed, dt, h0, icesee_kwargs)
+    h, u, s, floating, grounded = Icepack(solver, h, u, smb, basal_melt_field, bed, dt, h0, icesee_kwargs)
 
     # ----- joint estimation --------
 
@@ -557,50 +621,31 @@ def run_model(ensemble, **icesee_kwargs):
     #     if basal_melt is None:
     #         raise ValueError("basal_melt_field missing in icesee_kwargs when joint_estimation=False")
 
-    # return a list of the updated state variables
+    # return a list of the updated state variables. basal_melt_field is
+    # always part of the packed vector (see the unconditional read above).
     updated_state = {'h': h.dat.data_ro,
                      'u': u.dat.data_ro[:,0],
                      'v': u.dat.data_ro[:,1],
-                     's': s.dat.data_ro}
-
-    if icesee_kwargs["joint_estimation"]:
-        updated_state['basal_melt_field'] = basal_melt_field.dat.data_ro
+                     's': s.dat.data_ro,
+                     'basal_melt_field': basal_melt_field.dat.data_ro}
 
 
-    # -- extract the flowline profile at particular steps --
-
-
-    #if step in int(flowline_profile_steps):
-
-    hs_ensemble_files = f"_modelrun_datasets/hs_ensemble_profiles{ens}"
-    with h5py.File(hs_ensemble_files, "r") as F:
-        valid_points = F["valid_points"][:]
-
-    h_profiles, s_profiles = flowline_profile(h, s, valid_points)
-    print(s_profiles.shape, h_profiles.shape,"\n")
-
-    print(f"t[{k}] = {t[k]}")
-
-    # -- manually saving at the time steps but need to find an efficient way to determine this --
-    if t[k] == 5:
-        print(f"t[{k}] = {t[k]}")
+    # Sample only configured physical-year save points. Keep the established
+    # per-member .h5 schema and respect the run's data_path.
+    columns = [
+        index + 1 for index, year in enumerate(save_steps)
+        if np.isclose(float(step) * float(dt), float(year), rtol=0.0, atol=1e-9)
+    ]
+    if columns:
+        _modelrun_datasets = icesee_kwargs.get("data_path") or "_modelrun_datasets"
+        hs_ensemble_files = profile_path(_modelrun_datasets, f"hs_ensemble_profiles{ens}")
+        with h5py.File(hs_ensemble_files, "r") as F:
+            valid_points = F["valid_points"][:]
+        h_profiles, s_profiles = flowline_profile(h, s, valid_points)
         with h5py.File(hs_ensemble_files, "a") as F:
-            F["h_profiles"][:,1] = h_profiles
-            F["s_profiles"][:,1] = s_profiles
-
-    if t[k] == 10:
-        print(f"t[{k}] = {t[k]}")
-        with h5py.File(hs_ensemble_files, "a") as F:
-            F["h_profiles"][:,2] = h_profiles
-            F["s_profiles"][:,2] = s_profiles
-
-    if t[k] == 20:
-        print(f"t[{k}] = {t[k]}")
-        with h5py.File(hs_ensemble_files, "a") as F:
-            F["h_profiles"][:,3] = h_profiles
-            F["s_profiles"][:,3] = s_profiles
-
-
+            for column in columns:
+                F["h_profiles"][:, column] = h_profiles
+                F["s_profiles"][:, column] = s_profiles
 
     return updated_state
 

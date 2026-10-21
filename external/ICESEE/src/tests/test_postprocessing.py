@@ -115,6 +115,94 @@ def test_inconsistent_shapes_are_incomplete(tmp_path):
     assert err.value.kind == "incomplete"
 
 
+def test_compact_observations_are_scattered_to_dense(tmp_path):
+    d = tmp_path / "data"
+    write_run(d)
+    with h5py.File(d / "synthetic_obs.h5", "a") as f:
+        dense = f["hu_obs"][:]
+        del f["hu_obs"]
+        f["hu_obs_compact"] = dense[[0, 2]]
+        f["obs_indices"] = np.array([0, 2])
+        f.attrs["state_dimension"] = 3
+    out = load_da_outputs(d, model_name="lorenz")
+    expected = dense.copy()
+    expected[1] = 0.0
+    np.testing.assert_array_equal(out.observations, expected)
+
+
+def write_mode3_history(d: Path, members: np.ndarray, blocks: dict, *, skip=()):
+    """Execution-mode-3 checkpoints of ``members`` (state, member, time) in
+    the layout of ICESEE.src.parallelization.mode3_checkpointing, two shards
+    each holding half of the members and splitting the first block."""
+    import json
+
+    nd, nens, nt = members.shape
+    (d / ENSEMBLE_FILE).unlink()
+    for index in range(nt):
+        if index in skip:
+            continue
+        ckpt = (d / "_mode3_state_history" / "initial_condition" / "checkpoint_00000000" if index == 0
+                else d / "_mode3_state_history" / "steps" / f"checkpoint_{index - 1:08d}")
+        ckpt.mkdir(parents=True)
+        shards = []
+        for s, ids in enumerate((list(range(nens // 2)), list(range(nens // 2, nens)))):
+            name = f"shard_{s:08d}.h5"
+            shard_blocks = [{"name": n, "global_offset": off, "global_size": size,
+                             "owned_start": 0, "owned_stop": size} for n, (off, size) in blocks.items()]
+            with h5py.File(ckpt / name, "w") as f:
+                for m in ids:
+                    for b in shard_blocks:
+                        f[f"member_{m}/{b['name']}"] = members[b["global_offset"]:b["global_offset"]
+                                                               + b["global_size"], m, index]
+            shards.append({"file": name, "member_ids": ids, "blocks": shard_blocks})
+        (ckpt / "manifest.json").write_text(json.dumps({
+            "complete": True, "global_size": nd, "number_of_members": nens, "shards": shards,
+            "timestep": index - 1}))
+
+
+ENSEMBLE_FILE = "icesee_ensemble_data.h5"
+
+
+def test_mode3_history_reads_like_an_ensemble_file(tmp_path):
+    d = tmp_path / "data"
+    truth, members = write_run(d, nd=5, nt=12, nens=4)
+    write_mode3_history(d, members, {"h": (0, 2), "u": (2, 2), "xg": (4, 1)})
+    out = load_da_outputs(d, model_name="lorenz")
+    assert out.ensemble_key == "_mode3_state_history" and out.n_ens == 4 and not out.warnings
+    np.testing.assert_allclose(out.ensemble_mean, members.mean(axis=1))
+    np.testing.assert_allclose(out.ensemble_members(3), members[3].T)
+    ctx = open_context(d, parse_contract(CONTRACT))
+    rendered, _ = render_view(ctx, "da.error_and_spread", png=tmp_path / "x.png")
+    assert (tmp_path / "x.png").is_file()
+
+
+def test_mode3_pruned_checkpoints_are_blank_and_reported(tmp_path):
+    d = tmp_path / "data"
+    truth, members = write_run(d, nd=3, nt=10, nens=2)
+    write_mode3_history(d, members, {"x": (0, 3)}, skip=(4, 5))
+    out = load_da_outputs(d, model_name="lorenz")
+    assert np.isnan(out.ensemble_mean[:, 4]).all() and not np.isnan(out.ensemble_mean[:, 6]).any()
+    assert any("2 of 10 time steps" in w for w in out.warnings)
+
+
+def test_flowline_view_scales_to_physical_units(tmp_path):
+    d = tmp_path / "data"
+    nx = 4
+    truth, members = write_run(d, model="flowline", nd=2 * nx + 1, nt=21, nens=4)
+    params = {"physical-parameters": {"hscale": 1000.0, "rho_ice": 900.0, "g": 9.81, "C": 3e6,
+                                      "N1": 3, "N2": 1},
+              "modeling-parameters": {"year": 31536000}}
+    contract = parse_contract({"schema": "icesee-results/1", "model_name": "flowline",
+                               "views": ["flowline.state_estimation"]})
+    ctx = open_context(d, contract, params=params)
+    _, fig = render_view(ctx, "flowline.state_estimation", png=tmp_path / "f.png")
+    data = figure_data(fig)
+    truth_gl = next(ln for ln in data[0]["lines"] if ln["label"] == "Truth")
+    xscale = 900.0 * 9.81 * 1000.0 / 3e6 * 1000.0 / 1e3
+    np.testing.assert_allclose(truth_gl["y"], truth[2 * nx] * xscale)
+    assert [ax["ylabel"] for ax in data] == ["Grounding line (km)", "h at node 2 (m)", "u at terminus (m/yr)"]
+
+
 def test_filter_outputs_when_run_mode_is_parallel(tmp_path):
     d = tmp_path / "data"
     truth, members = write_run(d, run_mode=1)
@@ -309,3 +397,28 @@ def test_cli_writes_json_for_success_and_failure(tmp_path):
     rc = render_main(["--data-dir", str(d), "--contract", str(ex), "--view", "icepack.transects",
                       "--json", str(tmp_path / "u.json")])
     assert rc == 4
+
+
+def test_user_views_replace_and_add_views(tmp_path):
+    d = tmp_path / "data"
+    write_run(d)
+    mine = tmp_path / "mine"
+    mine.mkdir()
+    (mine / "results.yaml").write_text(json.dumps({**CONTRACT, "views": ["lorenz.state_estimation", "my.table"]}))
+    (mine / "views.py").write_text(
+        "from ICESEE.src.postprocessing.views import ViewResult, ViewSpec, get_view, register\n"
+        "base = get_view('lorenz.state_estimation')\n"
+        "register(ViewSpec(id=base.id, title='Mine', description='', source='me', build=base.build,"
+        " options=base.options))\n"
+        "register(ViewSpec(id='my.table', title='T', description='', source='me', kind='table',"
+        " build=lambda ctx, o: ViewResult(table={'columns': ['n'], 'rows': [[ctx.outputs.n_ens]]})))\n")
+    args = ["--data-dir", str(d), "--contract", str(mine), "--user-views", str(mine)]
+    assert render_main([*args, "--describe", "--json", str(tmp_path / "d.json")]) == 0
+    described = {v["id"]: v for v in json.loads((tmp_path / "d.json").read_text())["views"]}
+    assert described["lorenz.state_estimation"]["customized"] and described["my.table"]["customized"]
+    assert render_main([*args, "--view", "my.table", "--json", str(tmp_path / "t.json")]) == 0
+    assert json.loads((tmp_path / "t.json").read_text())["table"]["rows"] == [[4]]
+    (mine / "views.py").write_text("x = (\n")
+    assert render_main([*args, "--describe", "--json", str(tmp_path / "e.json")]) == 5
+    err = json.loads((tmp_path / "e.json").read_text())
+    assert err["kind"] == "user_code" and "views.py line 1" in err["message"]

@@ -311,3 +311,13 @@ def test_built_book_pages_are_filtered_for_ordinary_users():
             resolved = access.urljoin("/" + page, target)
             assert access.restricted_doc(resolved) is None, (page, href)
         assert "Getting Started" in html
+
+
+def test_a_missing_page_is_not_found_not_a_server_error(tmp_path, monkeypatch, book):
+    async def script(client, login):
+        user = login("u@example.org")
+        return {who: await _get(client, "/docs/no_such_page.html", ck)
+                for who, ck in (("anonymous", None), ("user", user))}
+
+    out = _client_run(tmp_path, monkeypatch, book, script)
+    assert out["anonymous"][0] == 404 and out["user"][0] == 404

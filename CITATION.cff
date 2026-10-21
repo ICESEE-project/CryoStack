@@ -24,8 +24,8 @@ authors:
 repository-code: "https://github.com/ICESEE-project/CryoStack"
 url: "https://cryostack.eas.gatech.edu/"
 license: MIT
-version: "1.0.1"
-date-released: "2026-09-22"
+version: "1.1.0"
+date-released: "2026-10-21"
 keywords:
   - cryosphere
   - ice-sheet modeling

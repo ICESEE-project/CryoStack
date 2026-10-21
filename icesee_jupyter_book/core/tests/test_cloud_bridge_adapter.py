@@ -24,6 +24,7 @@ if str(_REPO) not in sys.path:
 from icesee_jupyter_book.core.cloud_bridge_adapter import (
     IceseeCloudBridgeConfig,
     build_icesee_cloud_bridge,
+    cloud_runtime_config,
     icesee_cloud_status,
     icesee_cloud_terminate,
     submit_icesee_cloud_run,
@@ -41,6 +42,17 @@ class _FakeAWS:
         if self._responses:
             return self._responses.pop(0)
         return (0, "{}", "")
+
+
+def test_cloud_runtime_config_pins_the_images_verified_driver():
+    config = {"modeling-parameters": {"num_years": 10},
+              "enkf-parameters": {"Nens": 10, "execution_mode": 2}}
+    pinned, changes = cloud_runtime_config(config)
+    assert pinned["enkf-parameters"] == {"Nens": 10, "execution_mode": 0, "parallel_flag": "serial"}
+    assert pinned["modeling-parameters"] == {"num_years": 10}
+    assert config["enkf-parameters"]["execution_mode"] == 2        # input untouched
+    assert changes == ["execution_mode: 2 -> 0", "parallel_flag: None -> 'serial'"]
+    assert cloud_runtime_config(pinned)[1] == []
 
 
 def test_config_rejects_a_missing_region():

@@ -137,9 +137,16 @@ def test_real_manual_controls_remain_authoritative(gateway, app):
     fields['memory'].value = '128G'
     panel.ask('Change the CPUs to 12'); panel.apply()
     assert fields['memory'].value == '128G' and fields['cpus'].value == 12
-    panel.ask('Switch this to Cloud'); panel.apply()
-    assert not host['checks']  # Refinement never invokes credential-resolving Cloud Review.
-    assert 'Cloud readiness has not been checked here' in contents(panel)
+    if app == 'icesee':
+        panel.ask('Switch this to Cloud'); panel.apply()
+        assert not host['checks']  # Refinement never invokes credential-resolving Cloud Review.
+        assert 'Cloud readiness has not been checked here' in contents(panel)
+    else:
+        # CryoLauncher's Mode card owns the execution mode; Auto-config reports the request
+        assert not panel.ask('Switch this to Cloud').applicable
+        panel.apply()
+        assert host['mode'].value == 'remote' and not host['checks']
+        assert 'Remote HPC is selected' in contents(panel)
     assert panel.ask('Keep everything but run this on PACE').applicable
     panel.apply()
     assert fields['memory'].value == '128G' and fields['cpus'].value == 12

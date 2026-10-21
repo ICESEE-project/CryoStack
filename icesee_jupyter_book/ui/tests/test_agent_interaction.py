@@ -142,12 +142,12 @@ def test_icesee_example_filter_ensemble_and_manual_changes(gateway):
     panel.ask('Prepare Lorenz96 locally with 40 ensemble members.')
     c['mode_tabs'].selected_index=1
     panel.apply(); assert c['ensemble'].value==35
-    p=panel.ask('Prepare ICESEE using Icepack with ensemble data assimilation on the cloud.')
+    p=panel.ask('Prepare ICESEE using Icepack synthetic_ice_stream with ensemble data assimilation on the cloud.')
     assert p.applicable
     panel.apply()
     assert 'Icepack' in c['example'].value and c['mode_tabs'].selected_index==2
     assert c['checks']==['cloud']
-    panel.ask('Prepare ICESEE using ISSM on Remote with 4 CPUs.')
+    panel.ask('Prepare ICESEE using ISSM ISMIP_Choi on Remote with 4 CPUs.')
     panel.apply()
     assert 'ISSM' in c['example'].value and c['mode_tabs'].selected_index==1
     assert c['fields']['cpus'].value==4 and c['fields']['parallel_processes'].value==4
@@ -261,3 +261,74 @@ def test_icesee_summary_labels_filter_and_ensemble():
     view, changes = _change_preview(c, p)
     assert changes == {'filter': 'EnKF'} and view.count('<tr>') == 2
     assert '20 ensemble members' in view and 'Retained:' in view
+
+
+def _shown(widget, root):
+    """``widget`` and every ancestor under ``root`` are displayed."""
+    def path(node, trail):
+        if node is widget:
+            return trail + [node]
+        for child in getattr(node, 'children', ()):
+            found = path(child, trail + [node])
+            if found:
+                return found
+        return None
+    chain = path(root, [])
+    return chain is not None and all(getattr(w.layout, 'display', '') != 'none' for w in chain)
+
+
+@pytest.mark.parametrize('mode', ['remote', 'cloud'])
+def test_cryolauncher_mode_toggle_survives_interface_switches(gateway, monkeypatch, mode):
+    import subprocess
+    c = gateway('icesheets'); page = c['page']; panel = c['panel']
+    ui = next(w for w in walk(page) if isinstance(w, W.ToggleButtons) and 'agent' in [v for _, v in w.options])
+    toggle = next(w for w in walk(page) if isinstance(w, W.ToggleButtons)
+                  and [v for _, v in w.options] == ['remote', 'cloud'])
+    modes_box = next(w for w in walk(page) if 'icw-modes' in getattr(w, '_dom_classes', ()))
+    toggle.value = mode
+    assert c['mode'].value == mode
+
+    def no_process(*a, **k):
+        pytest.fail('Auto-config must not start a process or a job')
+    monkeypatch.setattr(subprocess, 'run', no_process)
+    monkeypatch.setattr(subprocess, 'Popen', no_process)
+
+    for value in ('basic', 'advanced', 'agent', 'basic', 'agent'):
+        ui.value = value
+        assert _shown(modes_box, page) and _shown(toggle, page), value
+        assert c['mode'].value == mode and toggle.value == mode, value
+
+    request = 'Run SquareIceShelf with ISSM' + (' on PACE using 4 CPUs.' if mode == 'remote' else '.')
+    p = panel.ask(request)
+    assert p.applicable and 'mode' not in p.values
+    panel.apply()
+    assert c['mode'].value == mode and c['model'].value == 'issm'
+    if mode == 'remote':
+        assert c['fields']['cpus'].value == 4
+    else:
+        assert c['checks'] == ['cloud']          # the plan was checked against the Cloud configuration
+    button(panel, 'Review in Advanced').click()
+    assert ui.value == 'advanced' and c['mode'].value == mode and _shown(toggle, page)
+
+
+def test_cryolauncher_auto_config_reports_another_mode_instead_of_switching(gateway):
+    c = gateway('icesheets'); page = c['page']; panel = c['panel']
+    ui = next(w for w in walk(page) if isinstance(w, W.ToggleButtons) and 'agent' in [v for _, v in w.options])
+    c['mode'].value = 'remote'; ui.value = 'agent'
+    p = panel.ask('Run SquareIceShelf with ISSM on AWS.')
+    assert not p.applicable and button(panel, 'Apply to configuration').layout.display == 'none'
+    assert 'Remote HPC is selected' in contents(panel)
+    panel.apply()
+    assert c['mode'].value == 'remote'
+    c['mode'].value = 'cloud'
+    assert not panel.ask('Make this configuration valid for Remote execution.').applicable
+    assert c['mode'].value == 'cloud'
+
+
+def test_cryolauncher_request_example_follows_the_selected_mode(gateway):
+    c = gateway('icesheets'); panel = c['panel']
+    text = next(w for w in walk(panel.container) if isinstance(w, W.Textarea))
+    c['mode'].value = 'cloud'
+    assert 'PACE' not in text.placeholder and panel.ask(text.placeholder).applicable
+    c['mode'].value = 'remote'
+    assert 'PACE' in text.placeholder and panel.ask(text.placeholder).applicable

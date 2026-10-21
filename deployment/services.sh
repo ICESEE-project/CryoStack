@@ -95,10 +95,11 @@ export CRYOSTACK_FROZEN_LEGACIES_URSA_CONCURRENCY="${CRYOSTACK_FROZEN_LEGACIES_U
 # the migration rollback window; scratch is never a publication target.
 export CRYOSTACK_FROZEN_LEGACIES_STORAGE_ROOTS="${CRYOSTACK_FROZEN_LEGACIES_STORAGE_ROOTS:-/srv/cryostack/workspace/datasets:/home/bkyanjo3/cryostack-data/datasets:/scratch/cryostack-development/incoming}"
 
-# Browser uploads and their resumable session records land directly on the
-# writable CEDAR dataset mount.  They remain private, unpublished intakes until
-# a maintainer explicitly indexes and reviews them in the Control Center.
-export CRYOSTACK_FROZEN_LEGACIES_INTAKE_ROOT="${CRYOSTACK_FROZEN_LEGACIES_INTAKE_ROOT:-/srv/cryostack/workspace/datasets/frozen-legacies/intakes}"
+# Browser uploads, resumable session records and the shared writer lock are
+# mutable state. Keep them on the marked local XFS durable volume: the active
+# SMB dataset share failed lock acceptance and is restricted to immutable
+# releases. Moving an existing intake requires a separately reviewed migration.
+export CRYOSTACK_FROZEN_LEGACIES_INTAKE_ROOT="${CRYOSTACK_FROZEN_LEGACIES_INTAKE_ROOT:-/home/bkyanjo3/cryostack-data/datasets/frozen-legacies/intakes}"
 
 # Verified SPRI navigation is published as an immutable, versioned data release
 # under the durable application data root.  Keep these defaults in the runtime
@@ -237,10 +238,13 @@ start_gui() {
     # Remote deployment shells may close immediately after this command; a
     # separate session prevents that teardown from killing only the gateway
     # while leaving its Voilà children orphaned.
+    # Fresh log per start, opened in append mode so it can be emptied while
+    # the gateway runs (`: > icesee.log`) without leaving a sparse file.
+    : > "${GUI_LOG}"
     nohup setsid bash \
         "${REPO_ROOT}/bin/start_icesee_services.sh" \
         < /dev/null \
-        > "${GUI_LOG}" \
+        >> "${GUI_LOG}" \
         2>&1 &
 
     GUI_PID=$!

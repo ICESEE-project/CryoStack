@@ -521,6 +521,8 @@ def build_icesheets_configuration_agent(*, manager, fields, model, example, mode
                                          workspace_name=ex.path.name if ex.owned else "",
                                          aliases=[ex.path.stem, ex.label.lstrip("⧉ ").strip()]))
         return dict(application="icesheets", workspace_scope=scope, examples=examples, resource_switch_requires_review=True, example_switch_requires_review=True,
+                    # the Mode card's execution mode is the user's choice; plans never change it
+                    mode_locked=True,
                     profiles=list(COMPUTE_PROFILES), modes=[v for _, v in mode.options],
                     validate_scientific=True, validate_resources=True,
                     control_bounds=control_bounds(fields), defaults=resource_defaults(fields),
@@ -530,10 +532,10 @@ def build_icesheets_configuration_agent(*, manager, fields, model, example, mode
                                  overrides=(md_panel.overrides() if model.value == "issm" else icepack_panel.overrides())))
 
     def apply_values(values):
+        if values.get("mode", mode.value) != mode.value:
+            raise ValueError("A plan cannot change the selected execution mode.")
         model.value = values["model"]
         example.value = values["example"]
-        if "mode" in values:
-            mode.value = values["mode"]
         if "backend" in values:
             backend.value = values["backend"]
         set_fields(values, fields)
@@ -571,7 +573,15 @@ def build_icesheets_configuration_agent(*, manager, fields, model, example, mode
     panel = build_configuration_agent(catalog=catalog, apply_values=apply_values,
                                       snapshot=full_snapshot, validate=validate,
                                       diagnosis_validate=diagnosis_validate)
-    panel.container.children[1].placeholder = "Run SquareIceShelf with ISSM on PACE using 4 CPUs."
+    examples = {"remote": "Run SquareIceShelf with ISSM on PACE using 4 CPUs.",
+                "cloud": "Run SquareIceShelf with ISSM."}
+    request = panel.container.children[1]
+
+    def follow_mode(_=None):
+        request.placeholder = examples.get(mode.value, examples["remote"])
+
+    mode.observe(follow_mode, names="value")
+    follow_mode()
     review = W.Button(description="Review in Advanced", layout=W.Layout(width="190px"))
     review.on_click(lambda _: show_manual())
     panel.container.children = (*panel.container.children, review)

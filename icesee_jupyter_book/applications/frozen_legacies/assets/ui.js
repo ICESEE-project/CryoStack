@@ -1902,6 +1902,9 @@ function renderRiggsStation(feature, metadata) {
   if (!panel) return;
   const properties = feature.getProperties();
   const method = properties.measurement_method === "seismic" ? "Seismic" : "Radar";
+  const scientificStatus = metadata?.citation_pending
+    ? "Provisional reference · citation pending · not publication eligible"
+    : (metadata?.note || "Independent reference observation; not a Frozen Legacies pick.");
   panel.innerHTML = `
     <div class="fl-record-card">
       <div class="fl-record-eyebrow">Independent scientific context</div>
@@ -1917,6 +1920,7 @@ function renderRiggsStation(feature, metadata) {
       </div>
       <div class="fl-record-section">
         <div class="fl-record-section-title">Source and scientific status</div>
+        <p class="fl-record-description"><strong>${escapeHtmlUI(scientificStatus)}</strong></p>
         <p class="fl-record-description">${escapeHtmlUI(metadata?.citation || "Citation unavailable")}</p>
         ${metadata?.source_url ? `<a class="fl-radar-button" href="${escapeHtmlUI(metadata.source_url)}" target="_blank" rel="noopener">Authoritative dataset record</a>` : ""}
       </div>

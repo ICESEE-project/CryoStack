@@ -12,12 +12,23 @@ authless SMB proxy:
 - `//cos-smb01.cos.gatech.edu/cryostack-datasets` at
   `/srv/cryostack/workspace/datasets`.
 
-Both mounts force the `cryostack-app` identity (`uid=978`, `gid=977`). Large
-immutable scientific datasets and user files belong on these mounts. SQLite,
-authentication, quota, catalog and job-coordination databases remain on the
-VM's durable XFS volume and must be backed up to CEDAR: the real SMB acceptance
-probe passes atomic rename and fsync but SQLite WAL fails at
-`PRAGMA journal_mode=WAL` with `database is locked`.
+Both mounts force the `cryostack-app` identity (`uid=978`, `gid=977`). The
+accepted production boundary currently uses only explicit immutable scientific
+dataset releases on SMB. Private workspaces, SQLite, authentication, quota,
+catalog, intake chunks/session records/writer locks, audit and job-coordination
+state remain on the VM's
+marked durable XFS volume and must be backed up to CEDAR: the real SMB
+acceptance probe passes atomic rename and fsync but its lock/WAL behavior is not
+accepted for mutable state. The mounted users share is therefore acceptance
+evidence only; it is not an approved CryoStack workspace destination.
+
+After publication, the application dataset mount must be read-only. Until the
+current read/write mount is changed by an authorized operator and the
+read-only dataset-only preflight passes, treat the storage boundary as an open
+release blocker. Do not move workspaces, resumable intake, or transactional
+state to SMB to make the preflight green. Supply the active intake path with
+`--intake-root`; a dataset-only preflight fails if it is omitted or resolves to
+the dataset mount.
 
 The SMB proxy does not support application-created symbolic links. Dataset
 releases therefore use immutable explicit directories and a plain `CURRENT`

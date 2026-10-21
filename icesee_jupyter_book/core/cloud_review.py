@@ -20,14 +20,12 @@ tested cloud container/job definition is registered for "icesee" in
 v1.0.1's Lorenz-96 example runs end-to-end under ``with-icesee``), so this
 alone no longer blocks Launch.
 
-A second, independent fact now also gates Launch: the verified runtime
-contract only covers ONE example (``lorenz96``) at ``ICESEE_NP=1`` (see
-``icesee_jupyter_book.core.cloud_runner``'s ``ICESEE_VERIFIED_EXAMPLES`` /
-``ICESEE_VERIFIED_MAX_NP`` -- NP>1 races on shared HDF5 output files, and
-no other example has been run against this image). ``build_icesee_cloud_review``
-checks the run's OWN configured example/NP against that contract and
-refuses to claim launch readiness for anything outside it, with an honest
-reason -- never a silent coercion to NP=1.
+A second, independent fact also gates Launch: the run's OWN example and
+MPI processes must be inside what the cloud runtime runs
+(``icesee_jupyter_book.core.cloud_runner``'s ``ICESEE_CLOUD_EXAMPLES`` --
+staged with the launcher's ICESEE -- and at most the task's vCPUs,
+``cloud_max_np()``). ``build_icesee_cloud_review`` refuses to claim launch
+readiness for anything outside it, with an honest reason.
 """
 from __future__ import annotations
 
@@ -50,13 +48,10 @@ def icesee_runtime_contract_ok(*, example_name: str, parallel_processes: int) ->
     """Whether THIS run's configuration (example + NP) is inside the
     verified runtime contract -- a fact about the run, distinct from
     :func:`icesee_cloud_runtime_ready` (a fact about the image)."""
-    from icesee_jupyter_book.core.cloud_runner import (
-        ICESEE_VERIFIED_EXAMPLES,
-        ICESEE_VERIFIED_MAX_NP,
-    )
+    from icesee_jupyter_book.core.cloud_runner import ICESEE_CLOUD_EXAMPLES, cloud_max_np
 
     key = (example_name or "").strip().lower()
-    return key in ICESEE_VERIFIED_EXAMPLES and int(parallel_processes) == ICESEE_VERIFIED_MAX_NP
+    return key in ICESEE_CLOUD_EXAMPLES and 1 <= int(parallel_processes) <= cloud_max_np()
 
 
 @dataclass
@@ -252,34 +247,27 @@ def build_icesee_cloud_review(
             "gap, not a temporary check."
         )
 
-    from icesee_jupyter_book.core.cloud_runner import (
-        ICESEE_VERIFIED_EXAMPLES,
-        ICESEE_VERIFIED_MAX_NP,
-    )
+    from icesee_jupyter_book.core.cloud_runner import ICESEE_CLOUD_EXAMPLES, cloud_max_np
 
     contract_ok = icesee_runtime_contract_ok(
         example_name=example_name, parallel_processes=parallel_processes)
     example_key = (example_name or "").strip().lower()
+    max_np = cloud_max_np()
     if runtime_ready and not contract_ok:
-        if example_key not in ICESEE_VERIFIED_EXAMPLES:
+        if example_key not in ICESEE_CLOUD_EXAMPLES:
             reasons.append(
-                f"ICESEE example {example_name!r} has no verified cloud "
-                f"runtime path -- only "
-                f"{', '.join(sorted(ICESEE_VERIFIED_EXAMPLES)) or 'none'} "
-                "has been verified end-to-end. Launch is blocked until this "
-                "example is verified."
+                f"ICESEE example {example_name!r} has no cloud runtime yet -- "
+                f"Cloud runs {', '.join(sorted(ICESEE_CLOUD_EXAMPLES))}. Run this "
+                "example on Local or Remote HPC."
             )
-        if int(parallel_processes) != ICESEE_VERIFIED_MAX_NP:
+        if not 1 <= int(parallel_processes) <= max_np:
             reasons.append(
-                f"ICESEE_NP={parallel_processes} is not verified for cloud "
-                f"execution -- only single-rank (NP="
-                f"{ICESEE_VERIFIED_MAX_NP}) runs have been verified "
-                "end-to-end; multi-rank runs race on shared output files. "
-                "Launch is blocked until multi-rank execution is verified."
+                f"{parallel_processes} MPI processes do not fit the cloud task "
+                f"({max_np} vCPUs). Set Cloud MPI processes to 1-{max_np}."
             )
 
     parallel_mode_label = (
-        "Single-rank verified" if contract_ok
+        f"{parallel_processes} of {max_np} vCPUs" if contract_ok
         else f"Unverified (example={example_name or '—'}, NP={parallel_processes})"
     )
 
@@ -399,3 +387,65 @@ def render_icesee_review_panel(widgets, review: IceseeCloudReview) -> None:
       {blocked}
     """
     widgets.launch_button.disabled = not review.can_launch
+
+
+# ---------------------------------------------------------------------------
+# RUN ESTIMATE -- the Cloud card's compact estimate line for an ICESEE run
+# ---------------------------------------------------------------------------
+def completed_cloud_minutes(runs, *, example: str) -> list[float]:
+    """Running -> completed durations (minutes) of this user's earlier Cloud
+    runs of ``example``, oldest first, from each run's own lifecycle."""
+    from datetime import datetime
+
+    from . import run_lifecycle as lc
+
+    out = []
+    for run in runs:
+        if getattr(run, "execution_mode", "") != "cloud" or (getattr(run, "metadata", None) or {}).get("example") != example:
+            continue
+        started = finished = None
+        for event in lc.history(run):
+            if event.get("state") == lc.RUNNING and started is None:
+                started = event.get("at")
+            elif event.get("state") == lc.COMPLETED:
+                finished = event.get("at")
+        try:
+            minutes = (datetime.fromisoformat(finished) - datetime.fromisoformat(started)).total_seconds() / 60
+        except (TypeError, ValueError):
+            continue
+        if minutes > 0:
+            out.append((finished, minutes))
+    return [m for _at, m in sorted(out)]
+
+
+def icesee_run_estimate(*, region: str, compute_mode: str, durations_minutes, prices) -> dict:
+    """Runtime, resources and cost for the estimate line: the runtime from
+    earlier Cloud runs of this example (median of the last ten), the
+    resources of the job definition CryoStack provisions, and the cost from
+    Fargate pricing. Without history the runtime is "not yet known" and the
+    cost is per hour -- never a guessed total."""
+    from statistics import median
+
+    from cryostack_src.cloud.drivers.aws.batch_config import FargateJobConfig, normalize_compute_mode
+    from cryostack_src.cloud.estimate.estimator import estimate_cloud_cost
+
+    job = FargateJobConfig()
+    vcpu, memory_gib = float(job.vcpu), int(job.memory_mib) / 1024
+    is_ec2 = normalize_compute_mode(compute_mode) == "ec2"
+    resource_text = f"{vcpu:g} vCPU · {memory_gib:g} GiB · AWS Batch {'EC2' if is_ec2 else 'Fargate'}"
+    usable = [float(d) for d in durations_minutes if d and d > 0][-10:]
+    if usable:
+        minutes = round(median(usable), 1)
+        runtime_text = (f"~{minutes:.0f} min" if minutes >= 1 else f"~{minutes:.1f} min") + \
+            f" (from {len(usable)} earlier cloud run{'s' if len(usable) != 1 else ''} of this example)"
+    else:
+        minutes = 60.0
+        runtime_text = "Not known yet (no completed cloud run of this example)"
+    if is_ec2:
+        return dict(runtime_text=runtime_text, resource_text=resource_text,
+                    cost_text="", unavailable=True)
+    cost = estimate_cloud_cost(region=region, vcpu=vcpu, memory_gib=memory_gib,
+                               expected_runtime_minutes=minutes, prices=prices)
+    cost_text = cost.display_total() + ("" if usable else " per hour")
+    return dict(runtime_text=runtime_text, resource_text=resource_text,
+                cost_text=cost_text, unavailable=not cost.available)

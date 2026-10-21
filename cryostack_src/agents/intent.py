@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 import re
 from .language import contextual_request, duration_request, scientific_assignments
 
+MODE_LABELS = {"local": "Local", "remote": "Remote HPC", "cloud": "Cloud"}
+
 
 def normalized(value):
     return re.sub(r"[^a-z0-9]+", " ", str(value).lower()).strip()
@@ -71,6 +73,14 @@ def infer_request(text, catalog):
     specific = [e for e in hits if any(mentioned(text, a) and normalized(a) not in models
                                      for a in e["aliases"])]
     hits = specific or hits
+
+    # "ISMIP_Choi" also mentions "ISMIP": an example named only by a name
+    # contained in another hit's longer name is not what was asked for.
+    def _named(e):
+        return [normalized(a) for a in e["aliases"] if mentioned(text, a)]
+    hits = [e for e in hits
+            if not any(o is not e and all(any(f" {n} " in f" {m} " and n != m for m in _named(o)) for n in _named(e))
+                       for o in hits)] or hits
     if len(model_hits) > 1:
         p.unresolved.append("Choose one forecast model and example; combined workflows need manual configuration.")
     if len(hits) > 1:
@@ -119,13 +129,27 @@ def infer_request(text, catalog):
         if re.search(pattern, text, re.I):
             modes.append(mode)
     profiles = [name for name in catalog["profiles"] if mentioned(text, name)]
-    if profiles and "remote" not in modes:
-        modes.append("remote")
-        p.suggested.append("mode")
-        p.reasons["mode"] = "The selected compute resource uses Remote execution."
-    if len(modes) > 1:
-        p.unresolved.append("Choose one execution location: " + ", ".join(modes))
-    mode = modes[0] if len(modes) == 1 else catalog["current"].get("mode")
+    if catalog.get("mode_locked"):
+        # The host's execution-mode control is authoritative: plan for the
+        # selected mode, and report a request for another one instead of
+        # switching it.
+        mode = catalog["current"].get("mode")
+        requested = sorted(set(modes) | ({"remote"} if profiles else set()))
+        other = [m for m in requested if m != mode]
+        if other:
+            p.errors.append(f"This request asks for {' or '.join(MODE_LABELS.get(m, m) for m in other)} "
+                            f"execution, but {MODE_LABELS.get(mode, mode)} is selected. Auto-config prepares "
+                            "settings for the selected execution mode; change the mode above to plan for "
+                            "another one.")
+        modes = []
+    else:
+        if profiles and "remote" not in modes:
+            modes.append("remote")
+            p.suggested.append("mode")
+            p.reasons["mode"] = "The selected compute resource uses Remote execution."
+        if len(modes) > 1:
+            p.unresolved.append("Choose one execution location: " + ", ".join(modes))
+        mode = modes[0] if len(modes) == 1 else catalog["current"].get("mode")
     allowed_modes = chosen.get("modes", catalog["modes"]) if chosen else catalog["modes"]
     if mode not in allowed_modes:
         p.errors.append(f"{mode} execution is not available in this application. Supported: " + ", ".join(allowed_modes))

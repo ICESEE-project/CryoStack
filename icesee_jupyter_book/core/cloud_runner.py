@@ -37,7 +37,8 @@ from cryostack_src.cloud.legacy.aws_batch import (
 
 from .config_io import dump_yaml
 from .example_discovery import find_run_script
-from .local_runner import run_dir
+from .local_runner import run_dir, stage_example
+from .paths import EXT
 
 
 @dataclass
@@ -125,6 +126,59 @@ def build_icesee_container_env(
     return env
 
 
+#: canonical example (params.yaml modeling-parameters.example_name) -> the
+#: ICESEE model whose runtime the staged cloud runner uses for it. Verified
+#: in bkyanjo/icesee-combined:v1.0.2 with the launcher's ICESEE installed over
+#: /opt/ICESEE (2026-10-20): lorenz96 and synthetic_ice_stream ran to
+#: completion with their outputs (and Icepack's mesh export).
+ICESEE_CLOUD_EXAMPLES: dict[str, str] = {
+    "lorenz96": "lorenz",
+    "synthetic_ice_stream": "icepack",
+}
+
+#: source files of the launcher's ICESEE shipped with every staged cloud run
+_SOURCE_SUFFIXES = (".py", ".yaml", ".yml", ".json", ".toml", ".cfg")
+_SOURCE_SKIP = ("src/tests", "_modelrun_datasets", "results", "scripts/benchmarks",
+                "ICESEE.egg-info", "__pycache__", ".ipynb_checkpoints", ".git")
+
+
+def cloud_max_np() -> int:
+    """The vCPUs of the Fargate task CryoStack provisions for ICESEE."""
+    from cryostack_src.cloud.drivers.aws.batch_config import FargateJobConfig
+
+    return int(FargateJobConfig().vcpu)
+
+
+def build_icesee_source_archive(dest: Path, root: Path | None = None) -> Path:
+    """``icesee-src.tgz``: the launcher's ICESEE package (code and configs,
+    no tests, notebooks or datasets), extracted over the image's /opt/ICESEE
+    by the cloud runner -- the same code a Local container run mounts."""
+    import tarfile
+
+    root = Path(root or EXT)
+    with tarfile.open(dest, "w:gz") as tar:
+        for path in sorted(root.rglob("*")):
+            rel = path.relative_to(root).as_posix()
+            if not path.is_file() or path.suffix not in _SOURCE_SUFFIXES:
+                continue
+            if any(part in rel for part in _SOURCE_SKIP):
+                continue
+            tar.add(path, arcname=f"ICESEE/{rel}")
+    return dest
+
+
+def stage_cloud_input(example_cfg: dict, rd: Path, config: dict) -> tuple[Path, Path]:
+    """``<rd>/cloud-input/``: params.yaml, the ICESEE source archive and a
+    private copy of the example (``example/<name>/``). Returns the input
+    directory and the example directory relative to it."""
+    inp = Path(rd) / "cloud-input"
+    inp.mkdir(parents=True, exist_ok=True)
+    staged = stage_example(example_cfg, inp)
+    dump_yaml(config, inp / "params.yaml")
+    build_icesee_source_archive(inp / "icesee-src.tgz")
+    return inp, Path(staged["base"]).relative_to(inp)
+
+
 def aws_batch_submit(
     cfg: AWSBatchConfig,
     local_run_dir: Path,
@@ -134,8 +188,12 @@ def aws_batch_submit(
     np: int | None = None,
     nens: int | None = None,
     model_nprocs: int | None = None,
+    staged: "tuple[Path, Path, str] | None" = None,
     aws=None,
 ) -> dict:
+    """``staged`` = (input directory, example directory inside it, model)
+    from :func:`stage_cloud_input`: uploaded to ``<s3-run>/input/`` and run
+    by the cloud runner's staged branch."""
     if not cfg.s3_prefix or not cfg.job_queue or not cfg.job_definition:
         raise ValueError("Cloud config missing: s3_prefix/job_queue/job_definition")
 
@@ -166,6 +224,15 @@ def aws_batch_submit(
         s3_run=s3_run, example_name=example_name, run_script_name=run_script_name,
         np=np, nens=nens, model_nprocs=model_nprocs,
     )
+    if staged is not None:
+        input_dir, example_dir, model = staged
+        code, out, err = _run(cfg, ["s3", "sync", str(input_dir), f"{s3_run}/input/", "--only-show-errors"],
+                              aws=aws)
+        if code != 0:
+            raise RuntimeError(err or out)
+        env += [{"name": "ICESEE_INPUT", "value": "1"},
+                {"name": "ICESEE_MODEL", "value": model},
+                {"name": "ICESEE_EXAMPLE_DIR", "value": example_dir.as_posix()}]
 
     submit_args = [
         "batch",
@@ -236,43 +303,64 @@ MODEL_NPROCS="${ICESEE_MODEL_NPROCS:-0}"
 WORKDIR="${ICESEE_WORKDIR:-/tmp/icesee/run}"
 
 command -v aws >/dev/null 2>&1 || fail 3 "the batch container has no 'aws' CLI (needed for S3 I/O)"
+mkdir -p "${WORKDIR}" || fail 4 "cannot create ${WORKDIR}"
 
-if [ "${NP}" != "1" ]; then
-  fail 65 "ICESEE_NP=${NP} is not verified for cloud execution -- only single-rank (ICESEE_NP=1) runs have been verified end-to-end against this runtime; multi-rank runs race on shared HDF5 output files (or crash: h5py in this image has no MPI I/O support) and are refused rather than silently producing wrong results"
+if [ "${ICESEE_INPUT:-0}" = "1" ]; then
+  # staged run: the launcher's own ICESEE + the staged example + params.yaml,
+  # installed over the image's /opt/ICESEE exactly like a Local container run
+  # the review caps NP at the task's vCPUs; mpirun may not count Fargate's
+  # vCPUs as slots, so oversubscription is allowed as for Local containers
+  [ "${NP}" -ge 1 ] 2>/dev/null && [ "${NP}" -le 16 ] || fail 65 "ICESEE_NP=${NP} is not 1-16"
+  export OMPI_MCA_rmaps_base_oversubscribe=1
+  case "${ICESEE_MODEL:-}" in
+    icepack) RUNWITH=with-icepack ;;
+    lorenz|flowline) RUNWITH=with-icesee ;;
+    *) fail 64 "no cloud runtime for ICESEE model '${ICESEE_MODEL:-}'" ;;
+  esac
+  log "phase 1/3  sync  ${ICESEE_S3_RUN}/input/  ->  ${WORKDIR}"
+  aws s3 sync "${ICESEE_S3_RUN}/input/" "${WORKDIR}/" --only-show-errors || fail 4 "input sync failed"
+  rm -rf /opt/ICESEE && tar --no-same-owner -xzf "${WORKDIR}/icesee-src.tgz" -C /opt \
+    || fail 6 "could not install the staged ICESEE"
+  EXAMPLE_DIR="${WORKDIR}/${ICESEE_EXAMPLE_DIR:?ICESEE_EXAMPLE_DIR is required}"
+  PARAMS="${WORKDIR}/params.yaml"
+else
+  [ "${NP}" = "1" ] || fail 65 "ICESEE_NP=${NP}: the in-image path is verified for one process only"
+  RUNWITH=with-icesee
+  case "${ICESEE_EXAMPLE}" in
+    lorenz96) EXAMPLE_DIR="/opt/ICESEE/applications/lorenz_model/examples/lorenz96" ;;
+    *) fail 64 "unverified ICESEE example: ${ICESEE_EXAMPLE} (only lorenz96 has an in-image path)" ;;
+  esac
+  log "phase 1/3  fetch  ${ICESEE_S3_RUN}/params.yaml  ->  ${WORKDIR}"
+  aws s3 cp "${ICESEE_S3_RUN}/params.yaml" "${WORKDIR}/params.yaml" --only-show-errors \
+      || fail 4 "params.yaml download failed"
+  PARAMS="${WORKDIR}/params.yaml"
 fi
-
-case "${ICESEE_EXAMPLE}" in
-  lorenz96)
-    EXAMPLE_DIR="/opt/ICESEE/applications/lorenz_model/examples/lorenz96"
-    ;;
-  *)
-    fail 64 "unverified ICESEE example: ${ICESEE_EXAMPLE} (only lorenz96 has a verified cloud runtime path)"
-    ;;
-esac
 
 SCRIPT="${EXAMPLE_DIR}/${ICESEE_RUN_SCRIPT}"
-[ -f "${SCRIPT}" ] || fail 66 "run script not found in the image: ${SCRIPT}"
+[ -f "${SCRIPT}" ] || fail 66 "run script not found: ${SCRIPT}"
+OUT="${WORKDIR}/outputs"; mkdir -p "${OUT}"
 
-log "phase 1/3  fetch  ${ICESEE_S3_RUN}/params.yaml  ->  ${WORKDIR}"
-mkdir -p "${WORKDIR}" || fail 4 "cannot create ${WORKDIR}"
-aws s3 cp "${ICESEE_S3_RUN}/params.yaml" "${WORKDIR}/params.yaml" --only-show-errors \
-    || fail 4 "params.yaml download failed"
-
-log "phase 2/3  run  example=${ICESEE_EXAMPLE} np=${NP} nens=${NENS} model_nprocs=${MODEL_NPROCS}"
-with-icesee mpirun --allow-run-as-root -np "${NP}" python "${SCRIPT}" \
-    -F "${WORKDIR}/params.yaml" --Nens="${NENS}" --model_nprocs="${MODEL_NPROCS}" --verbose
-rc=$?
+log "phase 2/3  run  example=${ICESEE_EXAMPLE} model=${ICESEE_MODEL:-lorenz} np=${NP} nens=${NENS}"
+cd "${EXAMPLE_DIR}" || fail 5 "cannot enter ${EXAMPLE_DIR}"
+${RUNWITH} mpirun --allow-run-as-root -np "${NP}" python "${SCRIPT}" \
+    -F "${PARAMS}" --Nens="${NENS}" --model_nprocs="${MODEL_NPROCS}" --verbose 2>&1 | tee "${OUT}/run.log"
+rc=${PIPESTATUS[0]}
+# ICESEE's driver reports a failed run and still exits 0
+if [ "${rc}" = "0" ] && grep -aq "Error in [A-Za-z ]*run mode" "${OUT}/run.log"; then rc=70; fi
 log "model runtime exit code: ${rc}"
+if [ "${rc}" = "0" ] && [ "${ICESEE_MODEL:-}" = "icepack" ]; then
+  (cd /opt && with-icepack python -m ICESEE.src.postprocessing.icepack_mesh "${PARAMS}" "${EXAMPLE_DIR}/_modelrun_datasets") \
+    || log "WARNING: mesh coordinates were not exported; maps will be unavailable"
+fi
 
 log "phase 3/3  sync  outputs  ->  ${ICESEE_S3_RUN}/outputs/"
-if [ -d "${EXAMPLE_DIR}/results" ]; then
-  aws s3 sync "${EXAMPLE_DIR}/results/" "${ICESEE_S3_RUN}/outputs/results/" --only-show-errors \
-      || log "WARNING: results output sync failed (model rc=${rc})"
-fi
-if [ -d "${EXAMPLE_DIR}/_modelrun_datasets" ]; then
-  aws s3 sync "${EXAMPLE_DIR}/_modelrun_datasets/" "${ICESEE_S3_RUN}/outputs/_modelrun_datasets/" --only-show-errors \
-      || log "WARNING: dataset output sync failed (model rc=${rc})"
-fi
+aws s3 cp "${OUT}/run.log" "${ICESEE_S3_RUN}/outputs/run.log" --only-show-errors || true
+for d in results _modelrun_datasets; do
+  if [ -d "${EXAMPLE_DIR}/${d}" ]; then
+    aws s3 sync "${EXAMPLE_DIR}/${d}/" "${ICESEE_S3_RUN}/outputs/${d}/" --only-show-errors \
+        || log "WARNING: ${d} output sync failed (model rc=${rc})"
+  fi
+done
 
 exit "${rc}"
 """
@@ -399,9 +487,17 @@ def submit_cloud_example(
     )
 
     aws_test(cfg, aws=aws)
+    # the example's own folder name (e.g. "synthetic_ice_stream"), never the
+    # menu label -- the runner and the verified examples are keyed by it
+    canonical = Path(example_cfg["base"]).name if example_cfg.get("base") else example_name
+    model = ICESEE_CLOUD_EXAMPLES.get(canonical.lower())
+    staged = None
+    if model is not None and example_cfg.get("base"):
+        input_dir, example_dir = stage_cloud_input(example_cfg, rd, config)
+        staged = (input_dir, example_dir, model)
     resp = aws_batch_submit(
-        cfg, rd, example_name, find_run_script(example_cfg).name,
-        np=np, nens=nens, model_nprocs=model_nprocs, aws=aws,
+        cfg, rd, canonical, find_run_script(example_cfg).name,
+        np=np, nens=nens, model_nprocs=model_nprocs, staged=staged, aws=aws,
     )
 
     messages = [

@@ -167,6 +167,92 @@ _SHARED_APPLICATION_CSS = """
     color: #b91c1c;
 }
 
+/* status_badge() normalises done -> success and fail -> error, so those are
+   the class names the Cloud Environment rows actually carry. A leading dot
+   gives each state its own colour; while an operation runs it becomes a
+   spinning ring. */
+.cryostack-status-ready,
+.cryostack-status-success {
+    background: rgba(22, 163, 74, 0.14);
+    border-color: rgba(22, 163, 74, 0.30);
+    color: #15803d;
+}
+
+.cryostack-status-warning {
+    background: rgba(217, 119, 6, 0.13);
+    border-color: rgba(217, 119, 6, 0.32);
+    color: #a35a00;
+}
+
+.cryostack-status-error {
+    background: rgba(220, 38, 38, 0.14);
+    border-color: rgba(220, 38, 38, 0.30);
+    color: #b91c1c;
+}
+
+.cryostack-status-running {
+    border-color: rgba(37, 99, 235, 0.32);
+}
+
+.cryostack-status::before {
+    content: "";
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-right: 7px;
+    border-radius: 50%;
+    vertical-align: -0.5px;
+    background: #94a3b8;
+}
+
+.cryostack-status-ready::before,
+.cryostack-status-success::before,
+.cryostack-status-done::before { background: #16a34a; }
+
+.cryostack-status-warning::before { background: #d97706; }
+
+.cryostack-status-error::before,
+.cryostack-status-failed::before { background: #dc2626; }
+
+.cryostack-status-running::before {
+    width: 7px;
+    height: 7px;
+    background: transparent;
+    border: 2px solid rgba(29, 78, 216, 0.25);
+    border-top-color: #1d4ed8;
+    animation: cryostack-status-spin 0.8s linear infinite;
+}
+
+@keyframes cryostack-status-spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cryostack-status-running::before { animation: none; border-color: #1d4ed8; }
+}
+
+.cryostack-estimate-pending {
+    font-size: 11px;
+    color: #1d4ed8;
+}
+
+.cryostack-estimate-pending::before {
+    content: "";
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-right: 7px;
+    border-radius: 50%;
+    border: 2px solid rgba(29, 78, 216, 0.25);
+    border-top-color: #1d4ed8;
+    vertical-align: -1px;
+    animation: cryostack-status-spin 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .cryostack-estimate-pending::before { animation: none; }
+}
+
 
 /* =========================================================
    Configuration summaries

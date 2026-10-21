@@ -451,20 +451,57 @@ def backup_checks(backup_path: Path | None, drill_scratch: Path | None) -> list[
     return checks
 
 
+def dataset_only_boundary_checks(workspace: Path, dataset: Path, state_root: Path | None,
+                                 intake_root: Path | None, mounts: list[Mount],
+                                 dataset_mode: str) -> list[dict]:
+    """Prove that CIFS contains immutable datasets, not mutable application state."""
+    checks = []
+    dataset_real = Path(os.path.realpath(dataset))
+    checks.append(_check(
+        "dataset-only read-only policy", "pass" if dataset_mode == "ro" else "fail",
+        "dataset mount is required read-only after publication" if dataset_mode == "ro" else
+        "dataset-only profile forbids a writable application dataset mount"))
+    for role, path in (("workspace", workspace), ("state", state_root),
+                       ("intake", intake_root)):
+        if path is None:
+            checks.append(_check(f"dataset-only {role} filesystem", "fail",
+                                 f"{role} path is required for the dataset-only profile"))
+            continue
+        real = Path(os.path.realpath(path))
+        mount = mount_for(real, mounts)
+        outside_dataset = real != dataset_real and dataset_real not in real.parents
+        local_xfs = mount is not None and mount.fstype == "xfs"
+        checks.append(_check(
+            f"dataset-only {role} filesystem", "pass" if local_xfs and outside_dataset else "fail",
+            (f"filesystem is XFS at {mount.target}; path is outside the dataset mount"
+             if local_xfs and outside_dataset else
+             f"filesystem is {mount.fstype if mount else 'unknown'}; require XFS outside "
+             "the dataset mount"),
+            fstype=mount.fstype if mount else None,
+            mount_target=str(mount.target) if mount else None))
+    return checks
+
+
 def preflight(*, workspace: Path, dataset: Path, scratch: Path,
               dataset_mode: str = "ro", expected_workspace_source: str | None = None,
               expected_dataset_source: str | None = None, service_user: str = DEFAULT_SERVICE_USER,
               uid: int = DEFAULT_UID, gid: int = DEFAULT_GID,
               reserve_bytes: int = DEFAULT_RESERVE_BYTES, state_root: Path | None = None,
+              intake_root: Path | None = None,
               reserve_inodes: int = DEFAULT_RESERVE_INODES,
               backup_path: Path | None = None, drill_scratch: Path | None = None,
-              write_probe: bool = False, mounts: list[Mount] | None = None,
+              write_probe: bool = False, storage_profile: str = "full-network",
+              mounts: list[Mount] | None = None,
               fstab: list[Mount] | None = None) -> dict:
     mounts = read_mounts() if mounts is None else mounts
     fstab = read_fstab() if fstab is None else fstab
     checks = identity_checks(service_user, uid, gid)
-    checks += mount_checks(workspace, "workspace", "rw", mounts, fstab,
-                           expected_workspace_source)
+    if storage_profile == "dataset-only":
+        checks += dataset_only_boundary_checks(
+            workspace, dataset, state_root, intake_root, mounts, dataset_mode)
+    else:
+        checks += mount_checks(workspace, "workspace", "rw", mounts, fstab,
+                               expected_workspace_source)
     checks += mount_checks(dataset, "dataset", dataset_mode, mounts, fstab,
                            expected_dataset_source)
     checks += capacity_checks(workspace, "workspace", reserve_bytes, reserve_inodes)
@@ -488,7 +525,11 @@ def preflight(*, workspace: Path, dataset: Path, scratch: Path,
         checks.append(_check("state volume marker", "not_run", "provide --state-root"))
     checks += scratch_checks(scratch, protected, mounts)
     checks += backup_checks(backup_path, drill_scratch)
-    if write_probe:
+    if write_probe and storage_profile == "dataset-only":
+        checks.append(_check(
+            "write semantics probe", "fail",
+            "refused: dataset-only profile excludes network workspaces and transactional state"))
+    elif write_probe:
         workspace_mount = mount_for(workspace, mounts)
         exact_network_mount = (
             workspace_mount is not None and workspace_mount.fstype in NETWORK_FS and
@@ -503,14 +544,20 @@ def preflight(*, workspace: Path, dataset: Path, scratch: Path,
                                  f"{os.geteuid()}:{os.getegid()}"))
         else:
             checks += probe_write_semantics(workspace)
-    else:
+    elif storage_profile == "full-network":
         checks.append(_check("write semantics probe", "not_run",
                              "run as the service identity with --write-probe"))
+    else:
+        checks.append(_check(
+            "network transactional storage excluded", "pass",
+            "workspace, state and intake stay on XFS; SMB lock/WAL semantics are not accepted"))
     failures = [item for item in checks if item["status"] == "fail"]
     incomplete = [item for item in checks if item["status"] == "not_run"]
     return {
-        "schema": "cryostack.cedar-preflight", "version": 1,
-        "created_at": time.time(), "read_only": not write_probe,
+        "schema": "cryostack.cedar-preflight", "version": 2,
+        "storage_profile": storage_profile,
+        "created_at": time.time(),
+        "read_only": not (write_probe and storage_profile == "full-network"),
         "ok": not failures, "ready_for_cutover": not failures and not incomplete,
         "summary": {status: sum(1 for item in checks if item["status"] == status)
                     for status in ("pass", "warn", "fail", "not_run")},
@@ -531,7 +578,12 @@ def main(argv: list[str] | None = None) -> int:
                         help="local rebuildable scratch directory")
     parser.add_argument("--state-root", type=Path,
                         help="marked durable root for databases and authoritative metadata")
+    parser.add_argument("--intake-root", type=Path,
+                        help="durable root for mutable resumable intake sessions")
     parser.add_argument("--dataset-mode", choices=("ro", "rw"), default="ro")
+    parser.add_argument("--storage-profile", choices=("full-network", "dataset-only"),
+                        default="full-network",
+                        help="dataset-only keeps workspaces and transactional state on XFS")
     parser.add_argument("--workspace-source", help="exact expected NFS or SMB export")
     parser.add_argument("--dataset-source", help="exact expected NFS or SMB export")
     parser.add_argument("--service-user", default=DEFAULT_SERVICE_USER)
@@ -554,7 +606,9 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--drill-scratch requires --backup")
     result = preflight(
         workspace=args.workspace, dataset=args.dataset, scratch=args.scratch,
-        state_root=args.state_root, dataset_mode=args.dataset_mode,
+        state_root=args.state_root, intake_root=args.intake_root,
+        dataset_mode=args.dataset_mode,
+        storage_profile=args.storage_profile,
         expected_workspace_source=args.workspace_source,
         expected_dataset_source=args.dataset_source,
         service_user=args.service_user, uid=args.uid, gid=args.gid,

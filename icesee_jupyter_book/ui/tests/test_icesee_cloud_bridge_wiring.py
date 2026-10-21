@@ -412,13 +412,15 @@ def test_cloud_submit_threads_mpi_ensemble_params_into_the_container_env(
     batch_job_queue = _freevar(submit_handler, "batch_job_queue")
     batch_job_def = _freevar(submit_handler, "batch_job_def")
     cluster_mpi_np = _freevar(submit_handler, "cluster_mpi_np")
+    cloud_mpi_np = _freevar(submit_handler, "cloud_mpi_np")
     cluster_model_nprocs = _freevar(submit_handler, "cluster_model_nprocs")
     ens_sl = _freevar(submit_handler, "ens_sl")
     aws_region.value = "us-east-2"
     cloud_bucket.value = "s3://bucket/runs"
     batch_job_queue.value = "q"
     batch_job_def.value = "jd"
-    cluster_mpi_np.value = 8
+    cluster_mpi_np.value = 8          # the Remote tab's Slurm value never reaches Cloud
+    cloud_mpi_np.value = 2
     cluster_model_nprocs.value = 2
     ens_sl.value = 20
 
@@ -427,7 +429,10 @@ def test_cloud_submit_threads_mpi_ensemble_params_into_the_container_env(
     submit_call = next(c for c in calls if "submit-job" in c)
     overrides = json.loads(submit_call[submit_call.index("--container-overrides") + 1])
     env = {e["name"]: e["value"] for e in overrides["environment"]}
-    assert env["ICESEE_NP"] == "8"
+    assert env["ICESEE_NP"] == "2"
+    # the run is staged: the launcher's ICESEE + example go to <s3-run>/input/
+    assert env["ICESEE_INPUT"] == "1" and env["ICESEE_MODEL"] == "lorenz"
+    assert any("sync" in c and any(str(a).endswith("/input/") for a in c) for c in calls)
     assert env["ICESEE_MODEL_NPROCS"] == "2"
     assert env["ICESEE_NENS"] == "20"
 

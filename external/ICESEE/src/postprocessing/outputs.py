@@ -8,11 +8,16 @@ use:
 * ``<data_dir>/true-wrong-<model>.h5``    -- ``t``, ``obs_index``,
   ``obs_max_time``, ``run_mode`` (+ ``Lxy``, ``nxy``, ``b_io``)
 * ``<data_dir>/true_nurged_states.h5``    -- ``true_state``, ``nurged_state``
-* ``<data_dir>/synthetic_obs.h5``         -- ``hu_obs``
+* ``<data_dir>/synthetic_obs.h5``         -- ``hu_obs``, or mode 2's compact
+  ``hu_obs_compact`` + ``obs_indices`` (scattered back to dense, as
+  ``ICESEE.src.utils.tools.load_hu_obs_from_h5`` does)
 * ``run_mode == 0``: ``<data_dir>/icesee_ensemble_data.h5`` -- ``ensemble``
   (state, member, time) and ``ensemble_mean`` (state, time)
 * ``run_mode != 0``: ``<results_dir>/<filter>-<model>.h5`` --
   ``ensemble_vec_full``, ``ensemble_vec_mean``, ``ensemble_bg``
+* execution mode 3: ``<data_dir>/_mode3_state_history/`` -- per-step
+  checkpoints (``manifest.json`` + ``shard_*.h5``), read by
+  :class:`Mode3History` as the same (state, member, time) ensemble
 
 Nothing is interpreted here: arrays are returned as stored. Problems are
 raised as :class:`ResultsError` with a ``kind`` a user interface can act on
@@ -20,6 +25,8 @@ raised as :class:`ResultsError` with a ``kind`` a user interface can act on
 """
 from __future__ import annotations
 
+import json
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -30,6 +37,8 @@ STATES = "true_nurged_states.h5"
 OBSERVATIONS = "synthetic_obs.h5"
 ENSEMBLE = "icesee_ensemble_data.h5"
 FILTER_OUTPUT = "{filter}-{model}.h5"
+#: execution mode 3 (ICESEE.src.parallelization.mode3_checkpointing)
+MODE3_HISTORY = "_mode3_state_history"
 #: written by :func:`ICESEE.src.postprocessing.icepack_mesh.export_dof_coordinates`
 DOF_COORDINATES = "dof_coordinates.h5"
 
@@ -47,6 +56,95 @@ class ResultsError(Exception):
         self.kind = kind
         self.message = message
         self.files = tuple(str(f) for f in files)
+
+
+class Mode3History:
+    """The ensemble an execution-mode-3 run keeps in ``_mode3_state_history``,
+    indexed like the ``(state, member, time)`` ensemble of modes 0-2.
+
+    ``initial_condition/checkpoint_00000000`` is time index 0 and
+    ``steps/checkpoint_<k>`` (the ensemble after cycle ``k``) is time index
+    ``k + 1`` (the convention of the mode-3 runners, e.g. Icepack's
+    ``idealized_pig/mode3_runner.py``). Only complete checkpoints are used; time slots whose
+    checkpoint was pruned (``checkpoint_keep_last``) read as NaN and are
+    listed in :attr:`missing`. Each checkpoint is read when it is needed, so
+    the history is never loaded whole.
+    """
+
+    def __init__(self, root: Path, n_times: int):
+        self.root = Path(root)
+        self.checkpoints: dict[int, tuple[Path, dict]] = {}
+        candidates = [(0, self.root / "initial_condition" / "checkpoint_00000000")]
+        for d in (self.root / "steps").glob("checkpoint_*"):
+            try:
+                candidates.append((int(d.name.split("_")[-1]) + 1, d))
+            except ValueError:
+                continue
+        for index, d in candidates:
+            try:
+                manifest = json.loads((d / "manifest.json").read_text())
+            except (OSError, ValueError):
+                continue
+            if manifest.get("complete") and 0 <= index < n_times:
+                self.checkpoints[index] = (d, manifest)
+        if not self.checkpoints:
+            raise ResultsError("missing", f"{MODE3_HISTORY} holds no complete checkpoint", files=(self.root,))
+        first = next(iter(self.checkpoints.values()))[1]
+        self.shape = (int(first["global_size"]), int(first["number_of_members"]), int(n_times))
+        self.missing = [i for i in range(n_times) if i not in self.checkpoints]
+
+    def _members(self, index: int) -> np.ndarray:
+        """``(state, member)`` at time ``index``; NaN when not kept."""
+        out = np.full(self.shape[:2], np.nan)
+        if index not in self.checkpoints:
+            return out
+        import h5py
+
+        d, manifest = self.checkpoints[index]
+        try:
+            for shard in manifest["shards"]:
+                with h5py.File(d / shard["file"], "r") as f:
+                    for column, member in enumerate(shard["member_ids"]):
+                        for block in shard["blocks"]:
+                            start = int(block["global_offset"]) + int(block["owned_start"])
+                            stop = int(block["global_offset"]) + int(block["owned_stop"])
+                            out[start:stop, int(member)] = f[f"member_{member}/{block['name']}"][()]
+        except Exception as exc:
+            raise ResultsError("corrupt", f"{d.name} could not be read ({type(exc).__name__}: {exc})",
+                               files=(d,)) from exc
+        return out
+
+    def __getitem__(self, key) -> np.ndarray:
+        rows, members, times = key
+        steps = range(self.shape[2])[times] if isinstance(times, slice) else [times]
+        stacked = np.stack([self._members(i)[rows][..., members] for i in steps], axis=-1)
+        return stacked if isinstance(times, slice) else stacked[..., 0]
+
+    def mean(self) -> np.ndarray:
+        """The ensemble mean, ``(state, time)``."""
+        return np.stack([self._members(i).mean(axis=1) for i in range(self.shape[2])], axis=1)
+
+
+def _read_observations(path: Path) -> np.ndarray:
+    """The dense ``(state, obs time)`` observation matrix from either layout."""
+    try:
+        return _read(path, ("hu_obs",))["hu_obs"]
+    except ResultsError as exc:
+        if exc.kind != "missing" or not path.is_file():
+            raise
+    import h5py
+
+    compact = _read(path, ("hu_obs_compact", "obs_indices"))
+    indices = np.asarray(compact["obs_indices"], dtype=np.int64)
+    try:
+        with h5py.File(path, "r") as f:
+            nd = int(f.attrs.get("state_dimension", (int(indices.max()) + 1) if indices.size else 0))
+    except Exception as exc:
+        raise ResultsError("corrupt", f"{path.name} could not be read ({type(exc).__name__}: {exc})",
+                           files=(path,)) from exc
+    dense = np.zeros((nd, compact["hu_obs_compact"].shape[1]), dtype=np.float64)
+    dense[indices, :] = compact["hu_obs_compact"]
+    return dense
 
 
 def _read(path: Path, keys: tuple[str, ...], *, optional: tuple[str, ...] = ()) -> dict:
@@ -105,10 +203,20 @@ class DAOutputs:
     def _ensemble_shape(self):
         if self.ensemble_file is None:
             return None
+        with self.open_ensemble() as ds:
+            return ds.shape
+
+    @contextmanager
+    def open_ensemble(self):
+        """The ``(state, member, time)`` ensemble: an HDF5 dataset, or a
+        :class:`Mode3History` for an execution-mode-3 run."""
+        if self.ensemble_key == MODE3_HISTORY:
+            yield Mode3History(self.ensemble_file, self.n_times)
+            return
         import h5py
 
         with h5py.File(self.ensemble_file, "r") as f:
-            return f[self.ensemble_key].shape
+            yield f[self.ensemble_key]
 
     def ensemble_members(self, index) -> np.ndarray:
         """Members of the ensemble at state row(s) ``index``: an array shaped
@@ -117,11 +225,11 @@ class DAOutputs:
         never loaded whole."""
         if self.ensemble_file is None:
             raise ResultsError("missing", "this run has no ensemble members on disk")
-        import h5py
-
         try:
-            with h5py.File(self.ensemble_file, "r") as f:
-                return np.asarray(f[self.ensemble_key][index, :, :]).T
+            with self.open_ensemble() as ds:
+                return np.asarray(ds[index, :, :]).T
+        except ResultsError:
+            raise
         except Exception as exc:
             raise ResultsError("corrupt", f"ensemble members could not be read ({exc})",
                                files=(self.ensemble_file,)) from exc
@@ -161,8 +269,21 @@ def load_da_outputs(data_dir: Path | str, *, model_name: str, filter_type: str =
                ("t", "obs_index", "obs_max_time", "run_mode"),
                optional=("Lxy", "nxy", "b_io"))
     run_mode = int(np.ravel(tw["run_mode"])[0])
+    states = _read(data_dir / STATES, ("true_state", "nurged_state"))
+    observations = _read_observations(data_dir / OBSERVATIONS)
     ensemble_bg = None
-    if run_mode != 0:
+    warnings = []
+    history = data_dir / MODE3_HISTORY
+    # mode 3 writes run_mode 0; Lorenz still writes the ensemble file, the
+    # spatially distributed runners keep only checkpoints
+    if run_mode == 0 and history.is_dir() and not (data_dir / ENSEMBLE).is_file():
+        mode3 = Mode3History(history, int(states["true_state"].shape[1]))
+        ensemble_file, ensemble_key = history, MODE3_HISTORY
+        ensemble_mean = mode3.mean()
+        if mode3.missing:
+            warnings.append(f"{len(mode3.missing)} of {mode3.shape[2]} time steps have no kept checkpoint "
+                            "(checkpoint_keep_last: 0 keeps them all) and are left blank")
+    elif run_mode != 0:
         path = results_dir / FILTER_OUTPUT.format(filter=filter_type, model=model_name)
         ens = _read(path, ("ensemble_vec_mean",), optional=("ensemble_bg",))
         ensemble_file, ensemble_key = path, "ensemble_vec_full"
@@ -173,23 +294,23 @@ def load_da_outputs(data_dir: Path | str, *, model_name: str, filter_type: str =
         ens = _read(path, ("ensemble_mean",))
         ensemble_file, ensemble_key = path, "ensemble"
         ensemble_mean = ens["ensemble_mean"]
-    states = _read(data_dir / STATES, ("true_state", "nurged_state"))
-    obs = _read(data_dir / OBSERVATIONS, ("hu_obs",))
 
-    import h5py
+    if ensemble_key != MODE3_HISTORY:
+        import h5py
 
-    with h5py.File(ensemble_file, "r") as f:
-        if ensemble_key not in f:
-            ensemble_file = None
+        with h5py.File(ensemble_file, "r") as f:
+            if ensemble_key not in f:
+                ensemble_file = None
 
     out = DAOutputs(
         data_dir=data_dir, model_name=model_name, filter_type=filter_type,
         t=np.asarray(tw["t"], dtype=float), obs_index=np.asarray(tw["obs_index"]),
         obs_max_time=float(np.ravel(tw["obs_max_time"])[0]), run_mode=run_mode,
         true_state=states["true_state"], nurged_state=states["nurged_state"],
-        ensemble_mean=ensemble_mean, observations=obs["hu_obs"],
+        ensemble_mean=ensemble_mean, observations=observations,
         metadata={k: tw[k] for k in ("Lxy", "nxy", "b_io") if k in tw},
         ensemble_file=ensemble_file, ensemble_key=ensemble_key, ensemble_bg=ensemble_bg,
+        warnings=warnings,
     )
     _check_consistency(out)
     return out

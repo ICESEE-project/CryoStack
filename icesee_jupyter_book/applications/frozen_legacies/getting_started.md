@@ -220,6 +220,15 @@ When radar imagery becomes available for an observation, the corresponding radar
 
 Until imagery is available, Frozen Legacies displays a placeholder while preserving the rest of the observation metadata.
 
+## RIGGS Reference Stations
+
+When the optional **RIGGS reference stations** layer is available, its points
+are independent historical context rather than Frozen Legacies manual or
+automatic picks. Select a station to see its measurement method, thickness,
+source, and scientific status. If its citation is still pending, both the map
+legend and station details label it provisional and not publication eligible;
+it does not validate LYRA or any other picker output.
+
 ## Scientific Products
 
 Frozen Legacies is designed to associate scientific products directly with observations.

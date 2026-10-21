@@ -160,7 +160,7 @@ def test_advanced_mode_puts_editor_first_then_the_original_four_tabs(monkeypatch
     # editor is NOT also present in the LEFT configuration column (820px is
     # this editor's distinguishing height -- the left column has unrelated
     # Textareas, e.g. the Agent-mode experiment description field)
-    left = _widgets_with_class(page, "icesee-left")[0]
+    left = _widgets_with_class(page, "cryostack-left-workspace")[0]
     editor_in_left = [w for w in _walk(left)
                       if isinstance(w, W.Textarea) and str(w.layout.height) == "820px"]
     assert editor_in_left == []
@@ -229,7 +229,7 @@ def test_switch_workspace_tab_is_title_based_not_a_hardcoded_index_map():
     src = _ICESHEETS_GW.read_text()
     assert 'idx = _WS_TAB.get(name)' not in src
     assert '_WS_TAB = {"runs": 0, "files": 1, "log": 2, "results": 3}' not in src
-    start = src.index("def _switch_workspace_tab(name):")
+    start = src.index("def _switch_workspace_tab(name")
     end = src.index("def _runs_tail_log():", start)
     block = src[start:end]
     assert "tab.get_title(index) == title" in block
