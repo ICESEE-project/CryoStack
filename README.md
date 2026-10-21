@@ -155,20 +155,7 @@ source revision used; the submission paper is [`paper/paper.md`](paper/paper.md)
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-**Copyright (c) 2026 ICESEE, Brian Kyanjo, Alexander Robel**
-
-##  Citation
-
-If you use ICESEE in your research, please cite:
-
-```bibtex
-@software{icesee2026,
-  author = {Kyanjo, Brian and Robel, Alexander},
-  title = {ICESEE: Ice Sheet State and Parameter Estimator},
-  year = {2026},
-  url = {https://github.com/ICESEE-project/ICESEE}
-}
-```
+**Copyright (c) 2026 CryoStack, Brian Kyanjo, Alexander Robel, Angelo S. Tarzona, Eliza J. Dawson, and Winnie Chu**
 
 ##  Support
 
