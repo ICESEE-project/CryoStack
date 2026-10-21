@@ -4,3 +4,7 @@
 [submodule "external/FrozenLegacies"]
 	path = external/FrozenLegacies
 	url = https://github.com/ICESEE-project/FrozenLegacies.git
+[submodule "external/ICESEE"]
+	path = external/ICESEE
+	url = https://github.com/ICESEE-project/ICESEE.git
+	branch = cryostack
