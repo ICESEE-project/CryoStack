@@ -13,6 +13,8 @@ names, titles, object identity).
 """
 from __future__ import annotations
 
+import re
+
 import sys
 from pathlib import Path
 
@@ -53,7 +55,7 @@ def _find_run_details_tabs(root):
 
 
 def _find_left_column(root):
-    matches = _widgets_with_class(root, "icesee-left")
+    matches = _widgets_with_class(root, "cryostack-left-workspace")
     return matches[0] if matches else None
 
 
@@ -169,12 +171,16 @@ def test_icesee_page_top_level_children_contain_no_second_workspace(monkeypatch,
 # ---------------------------------------------------------------------------
 # 6. Run Settings / Run Plan / Execution occupy the same shell positions
 # ---------------------------------------------------------------------------
-def _left_column_headings(page):
-    left = _find_left_column(page)
-    assert left is not None, "no 'icesee-left' column found (build_workspace_explorer not used?)"
-    assert len(left.children) == 2, "LEFT column must be exactly [run_settings, runtime]"
-    run_settings, runtime = left.children
-    return run_settings, runtime
+def _card_titles(left):
+    """Each workflow card's title (the text of its ``icw-card-title``)."""
+    titles = []
+    for c in left.children:
+        if "icw-card" not in c._dom_classes:
+            continue
+        head = next((v for v in _html_values(c) if "icw-card-title" in v), "")
+        m = re.search(r'class="icw-card-title">.*?<span>(.*?)</span></div>', head)
+        titles.append(m.group(1).replace("&amp;", "&") if m else "")
+    return titles
 
 
 def test_icesee_left_column_is_mode_first_then_the_workflow(monkeypatch, tmp_path):
@@ -191,16 +197,21 @@ def test_icesee_left_column_is_mode_first_then_the_workflow(monkeypatch, tmp_pat
     assert [next((o for o in order if o in t), "?") for t in titles] == order
 
 
-def test_cryolauncher_left_column_is_run_settings_then_execution(monkeypatch, tmp_path):
+def test_cryolauncher_left_column_is_the_mode_first_workflow(monkeypatch, tmp_path):
+    """CryoLauncher uses ICESEE's workflow: Mode (with the interface and
+    Auto-config) first, then Experiment, Environment, Parameters and Review &
+    launch -- which still holds the Run Plan and the Execution controls."""
     page = _build_cryolauncher(monkeypatch, tmp_path, user="parity-left-cl")
-    run_settings, runtime = _left_column_headings(page)
-
-    settings_html = "\n".join(_html_values(run_settings))
-    assert "Run settings" in settings_html
-    assert "Run Plan" in settings_html
-
-    runtime_html = "\n".join(_html_values(runtime))
-    assert "Execution" in runtime_html
+    left = _find_left_column(page)
+    assert left is not None
+    assert _card_titles(left) == ["Mode", "Experiment", "Environment & resources", "Parameters",
+                                  "Review & launch"]
+    review = left.children[4]
+    review_html = "\n".join(_html_values(review))
+    assert "Run Plan" in review_html and "Execution" in review_html
+    environment = left.children[2]
+    assert _widgets_with_class(environment, "cryostack-remote-config")
+    assert _widgets_with_class(environment, "cryostack-cloud-config")
 
 
 def test_icesee_has_no_separate_status_card_outside_execution(monkeypatch, tmp_path):
@@ -247,4 +258,4 @@ def test_cryolauncher_shell_still_builds_and_keeps_its_own_shape(monkeypatch, tm
     workspaces = _widgets_with_class(page, "cryostack-output-workspace")
     assert len(workspaces) == 1
     left = _find_left_column(page)
-    assert left is not None and len(left.children) == 2
+    assert left is not None and len(left.children) == 5

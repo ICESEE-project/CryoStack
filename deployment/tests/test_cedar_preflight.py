@@ -105,6 +105,61 @@ def test_dataset_mode_is_explicit(tmp_path):
         "dataset access mode"] == "fail"
 
 
+def test_dataset_only_boundary_requires_read_only_smb_and_local_xfs(tmp_path):
+    workspace, state, intake, dataset = (
+        tmp_path / name for name in ("workspace", "state", "intake", "dataset"))
+    for path in (workspace, state, intake, dataset):
+        path.mkdir()
+    mounts = [
+        _mount("/dev/xfs", tmp_path, "xfs", {"rw"}),
+        _mount("//cedar/datasets", dataset, "cifs", {
+            "ro", "vers=3.1.1", "sec=none", "cache=strict", "forceuid", "forcegid",
+            "uid=978", "gid=977",
+        }),
+    ]
+    checks = cedar.dataset_only_boundary_checks(workspace, dataset, state, intake, mounts, "ro")
+    assert _statuses(checks) == {
+        "dataset-only read-only policy": "pass",
+        "dataset-only workspace filesystem": "pass",
+        "dataset-only state filesystem": "pass",
+        "dataset-only intake filesystem": "pass",
+    }
+
+    assert _statuses(cedar.dataset_only_boundary_checks(
+        workspace, dataset, state, intake, mounts, "rw"))["dataset-only read-only policy"] == "fail"
+
+    smb_state = dataset / "state"
+    bad = cedar.dataset_only_boundary_checks(
+        workspace, dataset, smb_state, intake, mounts, "ro")
+    assert _statuses(bad)["dataset-only state filesystem"] == "fail"
+
+    smb_intake = dataset / "intakes"
+    bad = cedar.dataset_only_boundary_checks(
+        workspace, dataset, state, smb_intake, mounts, "ro")
+    assert _statuses(bad)["dataset-only intake filesystem"] == "fail"
+
+
+def test_dataset_only_profile_refuses_transactional_write_probe(tmp_path, monkeypatch):
+    workspace, state, dataset, scratch = (
+        tmp_path / name for name in ("workspace", "state", "dataset", "scratch"))
+    for path in (workspace, state, dataset, scratch):
+        path.mkdir()
+    mounts = [
+        _mount("/dev/xfs", tmp_path, "xfs", {"rw"}),
+        _mount("//cedar/datasets", dataset, "cifs", {"ro"}),
+    ]
+    monkeypatch.setattr(cedar, "identity_checks", lambda *_: [])
+    monkeypatch.setattr(cedar, "backup_checks", lambda *_: [])
+    result = cedar.preflight(
+        workspace=workspace, state_root=state, intake_root=state,
+        dataset=dataset, scratch=scratch,
+        storage_profile="dataset-only", write_probe=True, reserve_bytes=0,
+        mounts=mounts, fstab=[])
+    probe = next(item for item in result["checks"] if item["name"] == "write semantics probe")
+    assert probe["status"] == "fail" and "refused" in probe["detail"]
+    assert result["storage_profile"] == "dataset-only"
+
+
 def test_capacity_and_scratch_boundary_checks(tmp_path):
     workspace = tmp_path / "workspace"
     dataset = tmp_path / "dataset"

@@ -7,6 +7,41 @@ migrate data, restart a service, or alter production configuration.
 
 ## Intended storage boundary
 
+### Active dataset-only SMB profile (2026-10-19)
+
+The accepted current boundary is narrower than the proposed full-network
+layout below. Only explicit immutable dataset release directories belong on
+the SMB dataset share. Private workspaces and every transactional store
+(SQLite databases, authentication, quota, catalog, intake/session, audit and
+job-coordination state) remain on the marked local XFS durable volume because
+the SMB lock/WAL probe failed. The application dataset mount must be read-only
+after publication. A writable mount is an ingestion state, not an accepted
+steady-state deployment.
+
+Audit that boundary without writing to CEDAR:
+
+```bash
+python deployment/cedar_preflight.py \
+  --storage-profile dataset-only \
+  --workspace /approved/xfs/workspaces \
+  --dataset /srv/cryostack/workspace/datasets \
+  --dataset-source //cos-smb01.cos.gatech.edu/cryostack-datasets \
+  --dataset-mode ro \
+  --state-root /approved/xfs/cryostack-state \
+  --intake-root /approved/xfs/datasets/frozen-legacies/intakes \
+  --scratch /scratch/cryostack \
+  --backup /approved/backups/<stamp>
+```
+
+This profile fails unless workspace, state and mutable resumable intake resolve
+to XFS outside the dataset mount, and unless the dataset mount is read-only. It deliberately does
+not accept `--write-probe`: passing it is a hard failure because a successful
+SMB write probe must not be interpreted as approval for transactional state.
+Backup verification and restore-drill evidence remain mandatory before the
+result can become `ready_for_cutover`.
+
+### Proposed full-network profile (not accepted on the current SMB mounts)
+
 Keep the three classes of storage explicit:
 
 | Storage | Purpose | Persistence | Access |
@@ -33,7 +68,7 @@ With that layout, set `CRYOSTACK_WORKSPACE_ROOT=/srv/cryostack/workspace`.
 `CRYOSTACK_REQUIRE_DURABLE_STORAGE=1` must stay enabled so a missing mount or
 replaced volume fails closed instead of filling the root disk.
 
-## Read-only inspection
+## Proposed full-network inspection
 
 Run this first as an ordinary operator. It reads account records, mount tables,
 capacity, the CryoStack volume marker and (when supplied) backup checksums. It

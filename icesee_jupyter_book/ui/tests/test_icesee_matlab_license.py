@@ -71,9 +71,9 @@ def _gateway_state(monkeypatch, tmp_path, *, user):
     }
 
 
-LORENZ = "Lorenz-96 (fully runnable locally)"
-ISSM_EXAMPLE = "ISSM (fully runable in Remote)"
-ICEPACK_EXAMPLE = "Icepack (under development)"
+LORENZ = "Lorenz-96 · lorenz96"
+ISSM_EXAMPLE = "ISSM · ISMIP_Choi"
+ICEPACK_EXAMPLE = "Icepack · synthetic_ice_stream"
 
 
 # ── visibility: driven exclusively by the workflow-capability resolver ───

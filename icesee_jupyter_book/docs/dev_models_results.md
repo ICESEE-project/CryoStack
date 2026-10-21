@@ -170,10 +170,15 @@ the launcher and the tests share:
 - **`ICESEE.src.postprocessing`** (in `external/ICESEE`, no CryoStack
   dependency) — `outputs.load_da_outputs()` reads a run's
   `true-wrong-<model>.h5`, `true_nurged_states.h5`, `synthetic_obs.h5` and
-  ensemble file exactly as the notebooks do, raising `ResultsError` with a
-  `kind` (`missing` / `corrupt` / `incomplete`); `views/` holds the figure
-  and table functions (`lorenz.*`, `icepack.*`, `issm.*`, and the
-  supplementary `da.error_and_spread`), each naming the notebook cell it
+  ensemble file exactly as the notebooks do (dense or mode 2's compact
+  `hu_obs_compact` observations), raising `ResultsError` with a
+  `kind` (`missing` / `corrupt` / `incomplete`). A mode-3 run without an
+  ensemble file is read from `_mode3_state_history/` by `Mode3History`,
+  which presents the checkpoints as the same `(state, member, time)` array
+  (`initial_condition` is time 0, `steps/checkpoint_<k>` time `k + 1`;
+  pruned steps read as NaN and are reported). `views/` holds the figure
+  and table functions (`lorenz.*`, `icepack.*`, `issm.*`, `flowline.*`, and
+  the supplementary `da.error_and_spread`), each naming the notebook cell it
   reproduces; `render` saves a view and is the command-line entry point
   (`--describe` lists a run's views with their availability and option
   defaults).

@@ -185,6 +185,23 @@ def test_validation_blocks_bad_launches(tmp_path, fake_example):
     assert any("Local runs only" in i.message for i in run_launcher.validate_launch(req, mode="remote"))
 
 
+def test_full_parallel_mode_is_refused_in_the_container(tmp_path, fake_example):
+    full = {**PARAMS, "enkf-parameters": {**PARAMS["enkf-parameters"], "execution_mode": 2}}
+    blocked = lambda env: [i for i in run_launcher.validate_launch(run_launcher.LaunchRequest(  # noqa: E731
+        example="Fake", example_cfg=fake_example, config=full, environment=env, run_root=tmp_path))
+        if "parallel HDF5" in i.message]
+    assert blocked("container") and blocked("container")[0].level == "error"
+    assert not blocked("native")
+
+
+def test_serial_mode_on_several_container_processes_is_refused(tmp_path, fake_example):
+    serial = {**PARAMS, "enkf-parameters": {**PARAMS["enkf-parameters"], "execution_mode": 0}}
+    issues = lambda np: [i for i in run_launcher.validate_launch(run_launcher.LaunchRequest(  # noqa: E731
+        example="Fake", example_cfg=fake_example, config=serial, environment="container", np=np,
+        run_root=tmp_path)) if "serial" in i.message]
+    assert issues(2) and not issues(1)
+
+
 def test_progress_parsing_and_log_cleaning():
     text = ("[ICESEE] Generating true state ...\n[ICESEE] Assimilation progress (12 ranks):  10%|#| 24/240 [00:01]"
             "\r[ICESEE] Assimilation progress (12 ranks):  50%|##| 120/240 [00:02]")

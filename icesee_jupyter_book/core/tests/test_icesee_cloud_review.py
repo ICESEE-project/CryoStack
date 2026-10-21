@@ -71,13 +71,24 @@ def test_review_launches_for_lorenz96_at_np1_once_infrastructure_is_ready():
     assert review.blocked_reasons == []
     assert review.icesee_runtime_ready is True
     assert review.runtime_contract_ok is True
-    assert review.parallel_mode_label == "Single-rank verified"
+    assert review.parallel_mode_label == "1 of 2 vCPUs"
     assert review.image_reference == "bkyanjo/icesee-combined:v1.0.2"
 
 
-def test_np_greater_than_one_is_blocked_with_the_exact_reason():
-    """NP>1 must never be silently coerced to NP=1 -- it is refused with a
-    clear, honest reason, even though the image itself is tested-ready."""
+def test_review_launches_icepack_synthetic_ice_stream_on_both_vcpus():
+    review = build_icesee_cloud_review(
+        forecast_model="icepack", filter_alg="EnKF", ensemble_size=30,
+        parallel_processes=2, account_id="774888247882", region="us-east-2",
+        infrastructure=_READY_INFRA, account_freshly_verified=True,
+        example_name="synthetic_ice_stream",
+    )
+    assert review.can_launch is True and review.blocked_reasons == []
+    assert review.parallel_mode_label == "2 of 2 vCPUs"
+
+
+def test_np_beyond_the_tasks_vcpus_is_blocked_with_the_exact_reason():
+    """More MPI processes than the cloud task's vCPUs are refused with a
+    clear reason, never silently lowered."""
     review = build_icesee_cloud_review(
         forecast_model="lorenz96", filter_alg="EnKF", ensemble_size=30,
         parallel_processes=4, account_id="774888247882", region="us-east-2",
@@ -86,10 +97,7 @@ def test_np_greater_than_one_is_blocked_with_the_exact_reason():
     )
     assert review.can_launch is False
     assert review.runtime_contract_ok is False
-    assert any(
-        "ICESEE_NP=4" in r and "not verified" in r and "single-rank" in r.lower()
-        for r in review.blocked_reasons
-    )
+    assert any("4 MPI processes do not fit" in r and "2 vCPUs" in r for r in review.blocked_reasons)
     assert "Unverified" in review.parallel_mode_label
     assert "NP=4" in review.parallel_mode_label
 
@@ -252,8 +260,7 @@ def test_icesee_compute_not_ready_reason_names_the_resolved_backend():
 
 
 def test_unsupported_icesee_examples_remain_blocked():
-    """An example besides lorenz96 must remain blocked even at NP=1 -- only
-    lorenz96 has ever been run against this image."""
+    """An example without a cloud runtime stays blocked even at NP=1."""
     review = build_icesee_cloud_review(
         forecast_model="issm", filter_alg="EnKF", ensemble_size=30,
         parallel_processes=1, account_id="774888247882", region="us-east-2",
@@ -262,10 +269,7 @@ def test_unsupported_icesee_examples_remain_blocked():
     )
     assert review.can_launch is False
     assert review.runtime_contract_ok is False
-    assert any(
-        "issm" in r and "no verified cloud runtime path" in r
-        for r in review.blocked_reasons
-    )
+    assert any("issm" in r and "no cloud runtime yet" in r for r in review.blocked_reasons)
 
 
 def test_review_reports_every_real_blocking_reason_not_just_one():
@@ -388,7 +392,7 @@ def test_render_enables_launch_for_lorenz96_at_np1_and_shows_verified_wording():
     assert widgets.launch_button.disabled is False
     assert "bkyanjo/icesee-combined:v1.0.2" in widgets.review_body.value
     assert "ICESEE runtime" in widgets.review_body.value
-    assert "Single-rank verified" in widgets.review_body.value
+    assert "1 of 2 vCPUs" in widgets.review_body.value
     assert "Parallel mode" in widgets.review_body.value
     assert "Processes" in widgets.review_body.value
 

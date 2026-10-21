@@ -154,9 +154,15 @@ class DAIdentity:
             ("Observation window", obs_window),
             ("State variables", ", ".join(str(v) for v in self.state_vars)),
             ("Estimating", ", ".join(est)),
+            ("Execution mode", EXECUTION_MODES.get(self.execution_flag, "")),
             ("Parallel mode", self.parallel_flag),
         ]
         return [(label, value) for label, value in rows if value]
+
+
+#: ICESEE ``enkf-parameters.execution_mode`` values
+EXECUTION_MODES = {0: "0 · serial", 1: "1 · partial parallel", 2: "2 · full parallel",
+                   3: "3 · spatially distributed"}
 
 
 def da_identity_from_params(params: dict) -> DAIdentity:

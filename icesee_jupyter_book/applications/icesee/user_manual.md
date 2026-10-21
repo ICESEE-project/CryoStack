@@ -101,15 +101,49 @@ in the bar at its top:
 
 ## Examples and maturity
 
+In the **Experiment** card, choose the **Application** (the forecast model:
+Lorenz-96, ISSM, Icepack or Flowline), then one of its **Examples**. Every
+example that ICESEE couples to that application is listed. The launcher
+reads them from the ICESEE repository (`ICESEE/applications/<model>_model/examples/`),
+and the application's reference example is marked *(default)*. Selecting
+an example loads its own `params.yaml` into the form. An example counts as
+coupled when it has a `params.yaml` and the application's data-assimilation
+driver (`run_da_<model>.py`); notebook-only folders are not listed.
+
+| Application | Coupled examples |
+|---|---|
+| Lorenz-96 | lorenz96 |
+| ISSM | ISMIP_Choi (default), basal_friction_variation, ISMIP |
+| Icepack | synthetic_ice_stream (default), idealized_pig |
+| Flowline | flowline_1d |
+
+A new example added to the ICESEE repository under an existing application,
+with a `params.yaml` and that driver, appears in the list without any change
+to the launcher. Add a `results.yaml` to give it result views (see
+[Results and reports](#results-and-reports)); without one, Results reports
+*no result views*. Runs recorded under the older example names (for example
+"ISSM (fully runable in Remote)") still resolve to their example.
+
+The table below covers the reference examples. The other examples of an
+application share its environment requirements. Remote ISSM submissions use
+`run_job_spack.sbatch` when the example ships one.
+
 | Example | Forecast model | Local | Remote | Cloud | Results views |
 |---|---|---|---|---|---|
-| Lorenz-96 | Lorenz-96 (synthetic) | **Supported** (launcher Python or ICESEE container) | Available | **Supported** — the only verified cloud configuration (one process) | State estimation (x, y, z), assimilation error |
-| Icepack — synthetic_ice_stream | Icepack | **Supported in the ICESEE container** (Firedrake) | Available | Refused | Ensemble profiles, error maps, thickness/velocity maps, transects, SMB along x, truth vs. wrong, error tables, assimilation error |
+| Lorenz-96 | Lorenz-96 (synthetic) | **Supported** (launcher Python; ICESEE container with `execution_mode` 0 or 1) | Available | **Supported** (1–2 processes) | State estimation (x, y, z), assimilation error |
+| Icepack — synthetic_ice_stream | Icepack | **Supported in the ICESEE container** (Firedrake) | Available | **Supported** (1–2 processes, staged with this launcher's ICESEE) | Ensemble profiles, error maps, thickness/velocity maps, transects, SMB along x, truth vs. wrong, error tables, assimilation error |
 | ISSM — ISMIP_Choi | ISSM | Not available (needs MATLAB, ISSM and MPI) | **Supported** (ships a Slurm batch script) | Refused | Five-field profile time series, assimilation error |
-| Flowline — flowline_1d | 1-D flowline | **Under development** — the example does not currently complete | Under development | Refused | None (declared unsupported) |
+| Flowline — flowline_1d | 1-D flowline | **Under development** — the run finishes but its result is not usable yet | Under development | Refused | None (declared unsupported) |
 
 ISSM needs MATLAB and ISSM on the Remote resource, which the ICESEE-Spack
 environment provides; it is too heavy for Local.
+
+Flowline runs in `execution_mode: 3` and finishes, but the current ICESEE
+example produces a true state that does not change over time and an initial
+ensemble with no spread, so the first analysis diverges. In
+`execution_mode: 2` it still stops with an `IndexError` while generating the
+synthetic observations. Results stays unavailable for Flowline until the
+example is fixed in ICESEE.
 
 ## Execution modes
 
@@ -196,12 +230,15 @@ See CryoLauncher's
 licensing for ISSM cloud runs</a> for the one-time setup — the same
 mechanism applies here.
 
-Today that verified contract covers exactly one configuration: the
-**Lorenz-96** example at a single process (**Processes = 1** on the Review
-card). Selecting a
-different example, or more than one process, is refused at Review — not
-silently coerced — because it has not been run end-to-end against the
-current container image. See the
+A cloud run uses the tested container image CryoLauncher's cloud runs use,
+with this launcher's own ICESEE code, example and `params.yaml` installed in
+it for the run (the same code a Local run uses). Two examples have a cloud
+runtime: **Lorenz-96** and **Icepack — synthetic_ice_stream**. Set **MPI
+processes** in the Cloud card (1–2, the cloud task's vCPUs; Icepack defaults
+to 2). The image's HDF5 has no parallel I/O, so a cloud run uses
+`execution_mode` 1 with several processes and 0 with one; the submission
+log lists any change it made. Other examples, or more processes, are refused
+at Review with the reason. See the
 [Cloud Run Guide](https://cryostack.eas.gatech.edu/docs/hpc_cloud.html) for
 the platform-wide AWS account/infrastructure concepts this reuses, and the
 walkthrough below for the exact ICESEE steps.
@@ -223,7 +260,7 @@ walkthrough below for the exact ICESEE steps.
      Nens: 30
      filter_type: "EnKF"
      model_name: "lorenz"
-     parallel_flag: "serial"
+     execution_mode: 0
    ```
 
 3. In **Run settings**, select the **Cloud** tab.
@@ -234,15 +271,24 @@ walkthrough below for the exact ICESEE steps.
 5. Return to CryoStack and click **Verify connection**; confirm the panel
    shows **● Connected**.
 6. Click **Prepare cloud** and wait for **Account / Storage / Containers /
-   Compute** to all read **Ready**.
-7. Set **MPI np** to **1**. This field is on the **Remote** tab under
-   **Slurm resources** (default 40), and the Cloud Review card shows it as
-   **Processes**. One process is the only value CryoStack will let you
-   launch today for ICESEE (see the verified contract above).
-8. Click **Review cloud launch**. Confirm the cloud review reads
-   **ICESEE runtime: Ready**, **Parallel mode: Single-rank verified**,
-   **Processes: 1** — this is CryoStack's own honest preflight check, not a
-   cosmetic label.
+   Compute** to all read **Ready**. While a check or Prepare runs, the rows
+   are blue with a spinning ring (**Checking…** / **Preparing…**); green
+   means **Ready** or **Connected**, amber means something still needs you
+   (**Not prepared**, **Not verified**), and red means the step failed (the
+   reason is in **Logs › Launcher activity**). Once every row is Ready,
+   **RUN ESTIMATE** appears with the expected runtime, the resources (the
+   job's vCPU and memory) and the estimated cost, and the card's
+   **Review & Launch** button. The runtime comes from your earlier completed
+   cloud runs of the same example; before the first one the runtime reads
+   *Not known yet* and the cost is shown per hour.
+7. Set **MPI processes** in the Cloud card (1 or 2; the Remote tab's
+   **MPI np** is not used for Cloud). The review shows it as **Processes**.
+8. Click **Review & Launch** in the Cloud card (or **Review cloud launch** in
+   Review & launch; both open the same review). Confirm the cloud review reads
+   **ICESEE runtime: Ready** and **Parallel mode: 1 of 2 vCPUs** (or 2 of 2)
+   — this is CryoStack's own preflight check, not a cosmetic label. After
+   updating CryoStack, run **Prepare cloud** once so AWS gets the current
+   ICESEE job definition.
 9. Click **Launch cloud run**.
 10. ICESEE does not poll AWS in the background — click **Check status** in
     the Workspace **Run** tab whenever you want to know whether the job has
@@ -309,24 +355,29 @@ where you also set **MPI np** and **Model nprocs**.
 |---|---|---|
 | `0` | serial | One process does all the work. For small models and testing the filter variants. |
 | `1` | partial | Ensemble forecasts run in parallel; the analysis is computed on one process and shared. Suited to small and medium models. |
-| `2` | full | Forecasts, file I/O, and the analysis step are all parallel. Intended for large models and datasets. |
+| `2` | full | Forecasts, file I/O, and the analysis step are all parallel. Intended for large models and datasets. Writes through parallel HDF5. |
+| `3` | spatially distributed | Each model state is split across processes and the ensemble is kept as checkpoints. Only examples that ship a mode-3 runner (`mode3_runner.py`) support it. |
 
-**`parallel_flag`** — how the forecast model is run:
+**`parallel_flag`** is no longer read by ICESEE: the execution mode alone
+decides how the forecast model runs. Older `params.yaml` files that still
+set it (ISMIP_Choi does) run unchanged. A Remote submission without it adds
+`parallel_flag` (`serial` for `execution_mode: 0`, otherwise `MPI_model`), so
+ICESEE-Spack installs older than October 2026, which still read it, keep
+working.
 
-| Value | Meaning |
-|---|---|
-| `serial` | The forecast model runs without MPI. Used with `execution_mode: 0`. |
-| `MPI_model` | The forecast model is itself MPI-parallel: each model run gets its own group of **Model nprocs** processes. Used with `execution_mode: 1` or `2`. |
-| `MPI` | Listed in the menu, but the current ICESEE version has no separate code path for it: serial mode rejects it and the parallel modes only parallelize with `MPI_model`. Use `serial` or `MPI_model`. |
-
-The shipped defaults are `execution_mode: 0` with `serial` for Lorenz-96 and
-Flowline, and `execution_mode: 1` with `MPI_model` for ISSM and Icepack.
+The shipped defaults are `execution_mode: 2` for Lorenz-96, `1` for
+Icepack and ISSM, and `3` for Flowline.
 `execution_flag` (0 default, 1 sequential, 2 even distribution) controls how
 ensemble members are assigned to process groups; keep the example's value
 unless you know you need another.
 
-These settings only take effect with several processes: **Local** always runs
-one process, and **Cloud** is limited to one process today. On **Remote**,
+These settings only take effect with several processes: **Launcher Python**
+runs one process, and **Cloud** is limited to one process today. The
+**ICESEE container** cannot use `execution_mode: 2`, because its HDF5 library
+has no parallel I/O; use `0` with one MPI process, or `1`. Cloud runs use the
+ICESEE inside the Cloud image, which is verified only in serial mode, so a
+Cloud submission sets `execution_mode: 0` and `parallel_flag: serial` and
+says so in the run log. On **Remote**,
 **MPI np** sets the total number of processes and **Model nprocs** the
 processes per model run.
 
@@ -335,7 +386,7 @@ processes per model run.
 | Mode | Start | Monitor | Stop |
 |---|---|---|---|
 | Local | **Launch run** | State, elapsed time, stage and assimilation step in Review & launch and the top bar; live output in **Logs**. | **Cancel run** |
-| Remote | **Submit to cluster** | **Check status** (Run tab) updates the state from Slurm; **Tail log** in Logs › Launcher activity. The job keeps running if you close the browser. | **Cancel run** (`scancel`) |
+| Remote | **Submit to cluster** | While the selected run is active, its state is checked with Slurm every minute (over the SSH access configured on the Remote tab); after three failed checks they pause and **Check status** (Run tab) resumes them. **Tail log** in Logs › Launcher activity. The job keeps running if you close the browser. | **Cancel run** (`scancel`) |
 | Cloud | **Review cloud launch** → **Launch** in the cloud review | **Check status** (Run tab) updates the state from AWS Batch; **Logs hint**. ICESEE does not poll AWS in the background. | **Cancel run** (terminates the Batch job) |
 
 Every run moves through the same states — *preparing*, *submitted*,
@@ -349,6 +400,39 @@ completed with a note.
 The run output shows the parameter file used, the runner, ensemble and
 forecast progress, analysis steps, warnings and errors — it is the first
 place to look when a run fails.
+
+### Getting from a run to its logs and results
+
+Once a run starts, **Review & launch** becomes the active-run panel. Its
+**View logs** button opens the **Logs** tab of the Workspace on the right
+for that run, and **Open results** (shown as **Results** until the run
+completes) opens its **Results** tab. Both select the run if it is not
+already selected, refresh the tab, and scroll the page to the Workspace,
+which is briefly highlighted. On narrow screens, where the Workspace sits
+below the configuration, this is how you get there.
+
+The same applies to every button that sends you to the Workspace from
+elsewhere: **Open results** and **View logs** on the Run tab, **Edit
+params.yaml** (Scientific parameters) and **Edit my plotting code**
+(Results), which open the **Editor**, the **Monitor** and **Results** steps
+of the step bar, and launch messages that point to *Logs › Launcher
+activity*.
+
+### The life of a run
+
+1. **Review & launch** checks the configuration; **Launch run** (Local),
+   **Submit to cluster** (Remote) or the cloud review's **Launch** (Cloud)
+   starts it. The run gets its own folder in your workspace with the
+   `params.yaml` it runs with, a copy of the example, and
+   `provenance.json`.
+2. While it runs, the active-run panel and the top bar show its state and
+   progress, and **View logs** shows the model output.
+3. When it finishes (or fails), its outputs stay in its run folder. Remote
+   and Cloud outputs are fetched to the launcher when you open **Results**.
+4. **Open results** draws the example's figures from those outputs, or
+   your own plotting code's figures (see *Your own plotting code*).
+5. **Reuse configuration** (Run tab) loads the run's settings into the form
+   for the next run.
 
 ## Editing the configuration
 
@@ -384,11 +468,43 @@ defaults**; click a figure to enlarge it, **Download PNG** to save it.
 
 If something is missing, Results says what: *waiting for outputs* while the
 run is going, *no outputs* when it failed or nothing was fetched, *no result
-views* for an example without a contract (Flowline), or which file is
+views* for an example without a contract, *unsupported* for an example
+that declares it cannot produce results yet (Flowline), or which file is
 missing or damaged. Icepack maps need the mesh coordinates the ICESEE
 container exports after the run; without them the time-series views still
-work. Figures are drawn on the server in a separate process with time and
-memory limits, and cached in the run folder.
+work. Runs in `execution_mode: 3` that keep no ensemble file are read from
+their checkpoints (`_mode3_state_history/`); by default ICESEE keeps only the
+newest two, so the figures leave the other time steps blank and say so. Set
+`checkpoint_keep_last: 0` to keep every step. Figures are drawn on the
+server in a separate process with time and memory limits, and cached in the
+run folder.
+
+### Your own plotting code
+
+To change a figure or add your own, open **Results** for a run and choose
+**Copy plotting code to my workspace**. This copies the example's
+`results.yaml` and its plotting modules (for example `lorenz.py` and the
+shared `common.py`) into your own workspace
+(`.cryostack/icesee_plots/<example>/`). Then:
+
+1. **Edit my plotting code** opens your copy in the **Editor** (marked
+   *My plotting code*). Edit a view's `build` function to change its
+   figure, or register a new view with
+   `register(ViewSpec(id="my.view", ...))` and list `my.view` in your
+   `results.yaml`. **Save** checks the Python syntax first; a file with a
+   syntax error is not saved.
+2. In **Results**, switch between **ICESEE figures** and **My plotting
+   code**. Figures drawn from your copy are labelled *my plotting code*. If
+   your code fails, Results names the file and line.
+3. **Reset to example** in the Editor restores one file to ICESEE's
+   version; **Delete my copy** in Results removes the whole copy.
+
+Your plotting code reads the run's outputs but can never change them. It
+runs in a sandbox with no network access. Inside it, the run's outputs and
+your code are read-only, and the only place it can write is a separate
+figure cache for your copy (`.icesee-results/user/` in the run folder).
+ICESEE's own figures and the example's files are never modified. If the
+server cannot provide the sandbox, your copy is not run at all.
 
 For Lorenz-96 runs in the launcher's Python, **Also run read_results.ipynb**
 (Environment & resources) additionally executes the notebook into
@@ -408,8 +524,8 @@ the form for a new run.
 
 ## Auto-config · Beta
 
-Where the deployment enables it, expand **Auto-config · Beta** in Run settings
-and describe the experiment, for example:
+Where the deployment enables it, expand **Auto-config · Beta** in the
+**Mode** card (step 1) and describe the experiment, for example:
 
 > Prepare Lorenz96 locally with 20 ensemble members and DEnKF.
 
@@ -447,12 +563,13 @@ workflows.
   </details>
 
   <details>
-    <summary>A run fails with "Invalid parallel flag"</summary>
+    <summary>A run fails with "Invalid parallel flag" or "h5py was built without MPI support"</summary>
     <p>
-      <code>parallel_flag: MPI</code> has no separate code path in the current
-      ICESEE version. Use <code>serial</code> with
-      <code>execution_mode: 0</code>, or <code>MPI_model</code> with
-      <code>execution_mode: 1</code> or <code>2</code>.
+      ICESEE no longer reads <code>parallel_flag</code>; remove it or leave it
+      as it is. "h5py was built without MPI support" means
+      <code>execution_mode: 2</code> ran in an environment without parallel
+      HDF5 (the ICESEE container or the Cloud image): use the launcher's
+      Python environment, or <code>execution_mode</code> 0 or 1.
     </p>
   </details>
 
@@ -471,8 +588,8 @@ workflows.
     <p>
       The Experiment card says where the selected example can run. Icepack
       needs the <b>ICESEE container</b> environment; ISSM needs MATLAB and
-      ISSM, so it runs on Remote; Flowline is under development and does
-      not currently complete.
+      ISSM, so it runs on Remote; Flowline is under development: its run
+      finishes but the result is not usable yet.
     </p>
   </details>
 

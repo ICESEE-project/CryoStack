@@ -298,6 +298,9 @@ def developer_docs_middleware(auth, book_root: Path, *, html_pages: dict | None 
                         text=filter_html(text, request.path), content_type="text/html"))
                 return _private(response)
             source = target
+        if not source.is_file():
+            # aiohttp's static FileResponse reports 200 before it opens the file
+            raise web.HTTPNotFound()
         name = source.name
         if name == "searchindex.js":
             return _private(web.Response(

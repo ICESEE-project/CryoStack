@@ -137,6 +137,11 @@ CSS = r"""
 .icw-tabs .widget-toggle-button, .icw-segment .widget-toggle-button { display:inline-flex !important; flex-direction:row-reverse; align-items:center; gap:7px; }
 .icw-tabs .widget-toggle-button i { font-size:13px; opacity:.85; }
 .icw-mode-note { margin-top:2px; font-size:12.5px; line-height:1.5; color: var(--ic-muted); animation: icw-fade var(--ic-med) var(--ic-ease); }
+.icw-mode-assistant { margin-top:6px; border-top:1px solid var(--ic-border); padding-top:10px; }
+.icw .icw-mode-assistant .jupyter-widget-Collapse, .icw .icw-mode-assistant .lm-Collapse { border:1px solid var(--ic-border); border-radius:10px; overflow:hidden; }
+.icw .icw-mode-assistant .jupyter-widget-Collapse-header, .icw .icw-mode-assistant .lm-Collapse-header { background: var(--ic-surface); border:0; color: var(--ic-primary); font-weight:600; font-size:13px; padding:9px 12px; }
+.icw .icw-mode-assistant .jupyter-widget-Collapse-header:hover, .icw .icw-mode-assistant .lm-Collapse-header:hover { background: var(--ic-primary-soft); }
+.icw .icw-mode-assistant .jupyter-widget-Collapse-contents, .icw .icw-mode-assistant .lm-Collapse-contents { border:0; border-top:1px solid var(--ic-border); background: var(--ic-surface); }
 
 /* ── tabs (workspace) ──────────────────────────────────────────────── */
 .icw-tabs .widget-toggle-buttons > div { display:flex !important; gap:2px; border-bottom:1px solid var(--ic-border); width:100%; flex-wrap:wrap; }
@@ -242,8 +247,8 @@ CSS = r"""
 .icw-lightbox img { max-width: 96vw; max-height: 92vh; background:#fff; border-radius:8px; }
 
 /* ── accordion (params) ────────────────────────────────────────────── */
-.icw .lm-Collapse-contents, .icw .p-Collapse-contents { animation: icw-rise var(--ic-med) var(--ic-ease); }
-.icw .lm-Collapse-header, .icw .p-Collapse-header { border-radius: 8px; transition: background var(--ic-fast); }
+.icw .jupyter-widget-Collapse-contents, .icw .lm-Collapse-contents { animation: icw-rise var(--ic-med) var(--ic-ease); }
+.icw .jupyter-widget-Collapse-header, .icw .lm-Collapse-header { border-radius: 8px; transition: background var(--ic-fast); }
 
 /* ── motion ────────────────────────────────────────────────────────── */
 @keyframes icw-spin { to { transform: rotate(360deg); } }

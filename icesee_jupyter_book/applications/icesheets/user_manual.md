@@ -49,18 +49,23 @@ browser and gives you one consistent workflow for supported ice-sheet models:
 choose a model and example, configure it, submit it to a computing resource,
 monitor it, and explore the results.
 
-The interface has two areas:
+The interface has two areas. A step bar at the top (Mode, Experiment,
+Environment, Parameters, Review &amp; launch, Monitor, Results) jumps to each
+step.
 
 :::{raw} html
 <div class="cryostack-manual-grid">
 
   <article class="cryostack-manual-card">
     <div class="cryostack-manual-number">01</div>
-    <h3>Run settings</h3>
+    <h3>Run settings, step by step</h3>
     <p>
-      Model, example, Basic/Advanced mode, execution mode and backend, the
-      guided configuration panel, datasets, and the computing-resource
-      settings.
+      <b>1 Mode</b>: execution mode (Remote HPC or Cloud) and the interface
+      (Basic, Advanced or Auto-config). <b>2 Experiment</b>: model, example,
+      run target. <b>3 Environment &amp; resources</b>: connection, backend,
+      Slurm or cloud resources, datasets. <b>4 Parameters</b>: the guided
+      ISSM or Icepack configuration. <b>5 Review &amp; launch</b>: the run
+      plan, command preview and the run controls.
     </p>
   </article>
 
@@ -183,7 +188,7 @@ examples and files directly.
   mode — Basic mode's Workspace has no Editor tab. This is the same editor
   widget and controller either way; switching Basic↔Advanced only shows or
   hides the tab, it never recreates the editor or discards its content.
-- **Action.** Advanced mode adds an **Action** menu in Run settings that
+- **Action.** Advanced mode adds an **Action** menu in the Experiment step that
   decides what the run button does:
 
   | Action | What it does |
@@ -281,7 +286,7 @@ example**, in your personal dataset area.
 
 ## 8. Execution modes and backends
 
-**Execution mode** (in Run settings):
+**Execution mode** (in the Mode step):
 
 :::{raw} html
 <p>
@@ -344,7 +349,7 @@ directory, allocation, or key.
 
 ### Where you configure it
 
-**Run settings → Remote Connection**, laid out around your workflow:
+**Environment & resources → Remote Connection**, laid out around your workflow:
 
 | Group | Fields |
 |---|---|
@@ -735,9 +740,10 @@ Completed*), the AWS account and region, resources, elapsed time, estimated
 cost so far, and expected runtime. It updates in the background without
 blocking the interface.
 
-- **View log** opens the run's log in the Workspace **Run Log** tab.
-- **View results** (enabled on completion) opens the Workspace **Results**
-  tab.
+- **View log** selects the run, opens its log in the Workspace **Run Log**
+  tab and scrolls the page to the Workspace (briefly highlighted).
+- **View results** (enabled on completion) does the same for the Workspace
+  **Results** tab.
 - **Terminate** stops a running job, after a confirmation step.
 
 On completion CryoStack retrieves the run's outputs from S3 into your run
@@ -843,6 +849,24 @@ computing resource. See
 <a href="resources.html#video-tutorials">all CryoLauncher video tutorials</a>.
 
 ## 12. Run monitoring and history
+
+### The life of a run
+
+1. **Review & launch** (step 5) shows the run plan and the command; **Submit
+   job** submits it (Remote), or the Cloud review's **Launch** starts it
+   (Cloud). Each run gets its own record: example copy, parameters,
+   provenance, job id.
+2. The run appears in the Workspace **Runs** tab and becomes the selected
+   run. **Run Log** follows its log; a Cloud run's status is on the CLOUD
+   RUN card.
+3. When the job ends, **Results** fetches its outputs and shows the
+   exported fields and figures.
+
+The step bar's **Monitor** and **Results** steps, the CLOUD RUN card's
+**View log** / **View results**, and the Runs tab's **Tail Log** /
+**Figures** all open the matching Workspace tab for the selected run and
+scroll the page to it, so the Workspace is reached even when it sits below
+the configuration on a narrow screen.
 
 - **Runs tab.** Lists your run history with model, date, and status. Select
   a run to make it the active run for logs and results. **Refresh** re-reads
@@ -990,9 +1014,22 @@ existing controls, and applying a proposal changes configuration only — it
 never submits, launches, or provisions anything.
 
 When your deployment enables it, **Auto-config · Beta** appears as a third
-option beside Basic and Advanced. For example:
+Interface option beside Basic and Advanced in the **Mode** card (step 1); the
+assistant opens inside that card. For example:
 
 > Run SquareIceShelf with ISSM on PACE using 4 CPUs.
+
+The **Remote HPC** / **Cloud** buttons stay in the Mode card in every
+interface, and Auto-config plans for the mode they select: a Remote HPC plan
+can set the compute resource and Slurm settings (CPUs, nodes, tasks per node,
+memory, wall time, allocation) and is checked against the Remote access and
+Slurm rules; a Cloud plan never takes HPC values and is checked against the
+Cloud configuration. Auto-config never changes the execution mode. A request
+that names another mode ("on AWS" with Remote HPC selected, or a cluster such
+as PACE with Cloud selected) is reported with no Apply button; choose the mode
+first, then ask again. Switching between Basic, Advanced and Auto-config keeps
+the selected mode, so **Review in Advanced** shows the applied plan for the
+same mode.
 
 ### How requests are interpreted
 

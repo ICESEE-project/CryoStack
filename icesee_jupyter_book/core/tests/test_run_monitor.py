@@ -135,7 +135,7 @@ def test_interrupted_full_run_is_resumable_per_icesee_rules(tmp_path):
     assert report.resume.possible is True
     assert report.resume.next_step == 4
     assert "resume at k=4" in report.resume.reason
-    assert rm.FULL_PARALLEL_RESUME_CAVEAT in report.resume.notes
+    assert not report.resume.notes
 
 
 def test_missing_step_file_blocks_resume_like_enforce_contiguous_history(tmp_path):
@@ -384,6 +384,35 @@ def test_partial_driver_resume_is_conditional(tmp_path):
     assert report.ensemble_size()[0] == "4"
     value, source = report.members_completed()
     assert value == NOT_REPORTED and "4 member exchange files" in source
+
+
+def _spatial_run(tmp_path: Path, steps, nt=10) -> Path:
+    h5py = pytest.importorskip("h5py")
+    import numpy as np
+
+    run = tmp_path / "run"
+    data = run / "_modelrun_datasets"
+    data.mkdir(parents=True)
+    _params(run / "params.yaml", execution_mode=3)
+    with h5py.File(data / "true_nurged_states.h5", "w") as f:
+        f.create_dataset("true_state", data=np.zeros((3, nt + 1)))
+    for k, complete in steps:
+        ckpt = data / "_mode3_state_history" / "steps" / f"checkpoint_{k:08d}"
+        ckpt.mkdir(parents=True)
+        (ckpt / "manifest.json").write_text(json.dumps({"complete": complete}))
+    return run
+
+
+def test_spatial_driver_resumes_after_the_newest_complete_checkpoint(tmp_path):
+    report = inspect_run_progress(_spatial_run(tmp_path, [(3, True), (4, True), (5, False)]))
+    assert report.resume.driver == "spatial"
+    assert report.resume.possible is True and report.resume.next_step == 5
+    assert "checkpoint_00000004" in report.resume.reason
+
+
+def test_spatial_driver_finished_run_has_nothing_to_resume(tmp_path):
+    report = inspect_run_progress(_spatial_run(tmp_path, [(9, True)], nt=10))
+    assert report.resume.possible is False and "all 10 steps" in report.resume.reason
 
 
 def test_partial_driver_missing_member_blocks_resume(tmp_path):

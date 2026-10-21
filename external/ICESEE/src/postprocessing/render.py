@@ -11,7 +11,8 @@ The JSON written next to the image always describes the outcome -- the
 view's title, resolved options, notes, an optional table, or the error
 ``kind`` and message -- so a caller never has to parse a traceback. Exit
 status: 0 rendered, 2 outputs missing/incomplete, 3 outputs corrupt,
-4 invalid request (unknown view, bad option), 1 anything else.
+4 invalid request (unknown view, bad option), 5 the user's own view
+modules (``--user-views``) failed, 1 anything else.
 """
 from __future__ import annotations
 
@@ -24,9 +25,9 @@ from pathlib import Path
 
 from .contract import ResultsContract, load_contract
 from .outputs import DOF_COORDINATES, ResultsError, load_da_outputs, load_params
-from .views import ViewContext, ViewSpec, get_view
+from .views import USER_VIEWS, ViewContext, ViewSpec, get_view, load_user_views
 
-EXIT = {"missing": 2, "incomplete": 2, "corrupt": 3, "invalid": 4, "unsupported": 4}
+EXIT = {"missing": 2, "incomplete": 2, "corrupt": 3, "invalid": 4, "unsupported": 4, "user_code": 5}
 
 
 @dataclass
@@ -39,12 +40,14 @@ class Rendered:
     table: dict | None = None
     png: Path | None = None
     supplementary: bool = False
+    customized: bool = False
 
     def to_json(self) -> dict:
         return {
             "ok": True, "view": self.view, "title": self.title, "source": self.source,
             "options": self.options, "notes": self.notes, "table": self.table,
             "png": str(self.png) if self.png else None, "supplementary": self.supplementary,
+            "customized": self.customized,
         }
 
 
@@ -102,7 +105,7 @@ def render_view(ctx: ViewContext, view_id: str, options: dict | None = None, *,
     rendered = Rendered(view=spec.id, title=spec.title, source=spec.source,
                         options=_jsonable(resolved), notes=notes, table=result.table,
                         png=png if result.figure is not None else None,
-                        supplementary=spec.supplementary)
+                        supplementary=spec.supplementary, customized=spec.id in USER_VIEWS)
     return rendered, result.figure
 
 
@@ -126,7 +129,8 @@ def describe(ctx: ViewContext, contract: ResultsContract) -> dict:
                             "maximum": _jsonable(maximum), "choices": list(opt.choices), "help": opt.help})
         views.append({"id": spec.id, "title": spec.title, "description": spec.description,
                       "source": spec.source, "kind": spec.kind, "available": ok, "reason": why,
-                      "supplementary": spec.supplementary, "options": options})
+                      "supplementary": spec.supplementary, "customized": spec.id in USER_VIEWS,
+                      "options": options})
     o = ctx.outputs
     return {
         "ok": True, "views": views, "warnings": list(o.warnings),
@@ -191,6 +195,7 @@ def main(argv=None) -> int:
     p.add_argument("--png")
     p.add_argument("--json", required=True)
     p.add_argument("--dpi", type=int, default=110)
+    p.add_argument("--user-views", help="a directory of the user's own view modules, loaded after the built-in ones")
     args = p.parse_args(argv)
 
     out_json = Path(args.json)
@@ -207,6 +212,12 @@ def main(argv=None) -> int:
 
         matplotlib.use("Agg")
         logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
+        if args.user_views:
+            _USER_FILES.extend(str(p) for p in Path(args.user_views).glob("*.py"))
+            try:
+                load_user_views(args.user_views)
+            except Exception as exc:
+                return fail("user_code", "your plotting code could not be loaded: " + _user_error(exc), 5)
         contract_path = Path(args.contract)
         contract = load_contract(contract_path if contract_path.is_dir() else contract_path.parent)
         if contract is None:
@@ -241,7 +252,26 @@ def main(argv=None) -> int:
         return fail("invalid", f"options are not valid JSON ({exc})", 4)
     except Exception as exc:  # never a bare traceback to the caller
         traceback.print_exc(file=sys.stderr)
+        if args.user_views and _user_frames(exc):
+            return fail("user_code", "your plotting code failed: " + _user_error(exc), 5)
         return fail("error", f"{type(exc).__name__}: {exc}", 1)
+
+
+def _user_frames(exc: BaseException) -> list:
+    frames = traceback.extract_tb(exc.__traceback__)
+    return [f for f in frames if f.filename in _USER_FILES]
+
+
+_USER_FILES: list = []
+
+
+def _user_error(exc: BaseException) -> str:
+    """``file line N: Error: message`` pointing at the user's own code."""
+    frames = _user_frames(exc)
+    if isinstance(exc, SyntaxError) and exc.filename:
+        return f"{Path(exc.filename).name} line {exc.lineno}: SyntaxError: {exc.msg}"
+    where = f"{Path(frames[-1].filename).name} line {frames[-1].lineno}: " if frames else ""
+    return f"{where}{type(exc).__name__}: {exc}"[:600]
 
 
 if __name__ == "__main__":

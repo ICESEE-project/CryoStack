@@ -1957,9 +1957,9 @@ async def control_page(request: web.Request) -> web.Response:
       <div class="fl-form">
         <ol>
           <li>Choose a stable source ID and dataset, then select TIFF imagery, navigation CSVs, or a ZIP archive.</li>
-          <li>CryoStack writes resumable chunks directly to managed CEDAR storage and verifies each file before it is accepted.</li>
+          <li>CryoStack writes resumable chunks to local durable XFS staging and verifies each file before it is accepted.</li>
           <li>The completed intake stays private to maintainers and unpublished. Test it, index it, and inspect every failure.</li>
-          <li>Publish only after provenance and scientific review are complete. Indexing alone never makes results public.</li>
+          <li>An operator may promote a fully verified immutable release to CEDAR; publication still requires provenance and scientific review. Indexing alone never makes results public.</li>
         </ol>
         <p class="fl-notice info"><strong>Safe recovery:</strong> If a browser, laptop, or network connection stops, return here and re-select the same files. CryoStack resumes verified chunks instead of starting over. Server credentials, mount paths, and command-line access are not required.</p>
       </div>

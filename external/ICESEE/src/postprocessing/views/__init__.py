@@ -106,10 +106,16 @@ def _coerce(opt: Option, value, ctx: ViewContext):
 
 
 VIEWS: dict[str, ViewSpec] = {}
+#: ids registered (or replaced) by a user's own view modules (load_user_views)
+USER_VIEWS: set = set()
+_LOADING_USER = [False]
+USER_MODULE_PREFIX = "icesee_user_views"
 
 
 def register(spec: ViewSpec) -> ViewSpec:
     VIEWS[spec.id] = spec
+    if _LOADING_USER[0]:
+        USER_VIEWS.add(spec.id)
     return spec
 
 
@@ -127,4 +133,30 @@ def all_views() -> dict[str, ViewSpec]:
 
 
 def _load_builtin() -> None:
-    from . import common, icepack, issm, lorenz  # noqa: F401  (registration side effect)
+    from . import common, flowline, icepack, issm, lorenz  # noqa: F401  (registration side effect)
+
+
+def load_user_views(directory: Path | str) -> list[str]:
+    """Import every ``*.py`` of ``directory`` (a user's copy of view modules)
+    after the built-in views, so a view it registers under an existing id
+    replaces the built-in one and a new id adds a view. Returns the ids the
+    user's modules registered. The caller decides where this may run (the
+    launcher runs it only inside a sandbox); this function only imports."""
+    import importlib.util
+    import sys
+
+    _load_builtin()
+    directory = Path(directory)
+    _LOADING_USER[0] = True
+    try:
+        for path in sorted(directory.glob("*.py")):
+            if path.name.startswith("_"):
+                continue
+            name = f"{USER_MODULE_PREFIX}.{path.stem}"
+            spec = importlib.util.spec_from_file_location(name, path)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[name] = module
+            spec.loader.exec_module(module)
+    finally:
+        _LOADING_USER[0] = False
+    return sorted(USER_VIEWS)

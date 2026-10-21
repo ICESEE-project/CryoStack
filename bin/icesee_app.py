@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import secrets
 import signal
 import socket
@@ -32,7 +33,7 @@ from control_center import (
     install_control_center,
 )
 
-from aiohttp import ClientSession, WSMsgType, web
+from aiohttp import ClientSession, WSMsgType, WSServerHandshakeError, web
 
 from cryostack_src import perf
 from cryostack_src.service_warmup import (
@@ -622,6 +623,8 @@ class ICESEEState:
 
         self.client: ClientSession | None = None
         self._warmup_task: asyncio.Task | None = None
+        # (port, kernel id) pairs Voila reported as gone; see proxy_ws
+        self.ended_kernels: dict[tuple[int, str], None] = {}
 
     def start_mode(self) -> str:
         mode = os.environ.get("CRYOSTACK_APP_START_MODE", "background").strip().lower()
@@ -774,6 +777,10 @@ async def proxy_http(request: web.Request, upstream_port: int) -> web.StreamResp
         return out
 
 
+_KERNEL_CHANNELS = re.compile(r"/api/kernels/([0-9a-f-]{36})/channels$")
+_ENDED_KERNELS_MAX = 1024
+
+
 async def proxy_ws(request: web.Request, upstream_port: int) -> web.WebSocketResponse:
     state: ICESEEState = request.app["state"]
     assert state.client is not None
@@ -781,10 +788,26 @@ async def proxy_ws(request: web.Request, upstream_port: int) -> web.WebSocketRes
     upstream_url = f"http://127.0.0.1:{upstream_port}{request.rel_url}"
     headers = build_upstream_headers(request, upstream_port)
 
+    # A tab left open across a restart keeps reconnecting to its old kernel.
+    # Kernel ids are never reused, so once Voila says one is gone, answer
+    # here instead of asking Voila (which logs a long traceback each time).
+    kernel = _KERNEL_CHANNELS.search(request.path)
+    ended = (upstream_port, kernel.group(1)) if kernel else None
+    if ended in state.ended_kernels:
+        return web.Response(status=404, text="Kernel does not exist")
+    try:
+        upstream_ws = await state.client.ws_connect(upstream_url, headers=headers)
+    except WSServerHandshakeError as exc:
+        if exc.status == 404 and ended:
+            state.ended_kernels[ended] = None
+            if len(state.ended_kernels) > _ENDED_KERNELS_MAX:
+                del state.ended_kernels[next(iter(state.ended_kernels))]
+        return web.Response(status=exc.status or 502, text="Upstream refused the connection")
+
     browser_ws = web.WebSocketResponse()
     await browser_ws.prepare(request)
 
-    async with state.client.ws_connect(upstream_url, headers=headers) as upstream_ws:
+    async with upstream_ws:
 
         async def browser_to_upstream() -> None:
             async for msg in browser_ws:

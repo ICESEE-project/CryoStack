@@ -9,6 +9,7 @@ into the summary.
 """
 from __future__ import annotations
 
+import re
 import threading
 
 import ipywidgets as W
@@ -55,6 +56,13 @@ class ModeSelector:
     def _note(self) -> None:
         self.note.value = f'<div class="icw-mode-note">{esc(MODE_HELP[self.toggle.value])}</div>'
 
+    def attach_assistant(self, widget: W.Widget) -> None:
+        """Place the configuration assistant (Auto-config) inside the Mode card,
+        under the mode note: it fills in mode, experiment and resources, so it
+        belongs with the first decision rather than below Review & launch."""
+        widget.add_class("icw-mode-assistant")
+        self.container.children = (*self.container.children, widget)
+
 
 #: where each step lives on the page (card anchor class, or a workspace tab)
 STEP_TARGETS = {"Mode": ".icw-anchor-mode", "Experiment": ".icw-anchor-experiment",
@@ -62,12 +70,21 @@ STEP_TARGETS = {"Mode": ".icw-anchor-mode", "Experiment": ".icw-anchor-experimen
                 "Review & launch": ".icw-anchor-launch", "Monitor": "tab:Run", "Results": "tab:Results"}
 
 
+def tab_slug(title: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+
+
 class Stepper:
     """Sticky progress bar: where the user is in the workflow, what needs
     attention, and the active run's live state. Steps are links to their
     section."""
 
-    def __init__(self):
+    def __init__(self, steps=STEPS, targets=None):
+        """``steps`` and ``targets`` default to ICESEE's; another application
+        passes its own (a ``tab:<title>`` target also opens an ipywidgets Tab
+        of that title, for applications whose workspace is a W.Tab)."""
+        self.step_names = tuple(steps)
+        self.targets = dict(targets or STEP_TARGETS)
         self.steps = W.HTML()
         self.live = W.HTML()
         self.html = W.HBox([self.steps, self.live], layout=W.Layout(width="100%"))
@@ -76,13 +93,18 @@ class Stepper:
 
     def update(self, states: dict) -> None:
         items = []
-        for i, name in enumerate(STEPS, 1):
+        for i, name in enumerate(self.step_names, 1):
             cls = states.get(name, "")
             aria = ' aria-current="step"' if "current" in cls else ""
-            target = STEP_TARGETS[name]
+            target = self.targets[name]
             if target.startswith("tab:"):
-                js = ("var b=document.querySelector('.icw-tabs button[data-value=\\'" + target[4:] + "\\']');"
-                      "if(b){b.click();b.scrollIntoView({behavior:'smooth',block:'nearest'});}")
+                tab = target[4:]
+                # ICESEE's own tab bar, else a hidden jump button an application
+                # with an ipywidgets Tab provides (class icw-tabjump-<slug>)
+                js = ("var b=document.querySelector('.icw-tabs button[data-value=\\'" + tab + "\\']')"
+                      "||document.querySelector('.icw-tabjump-" + tab_slug(tab) + "');"
+                      "if(b){b.click();(document.querySelector('.cryostack-output-workspace,.icw-cl-workspace')||b)"
+                      ".scrollIntoView({behavior:'smooth',block:'nearest'});}")
             else:
                 js = f"var e=document.querySelector('{target}');if(e)e.scrollIntoView({{behavior:'smooth',block:'start'}});"
             label = {"attention": "needs attention", "done": "done", "current": "current step"}

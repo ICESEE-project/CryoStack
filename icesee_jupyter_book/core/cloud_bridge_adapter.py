@@ -31,7 +31,7 @@ from pathlib import Path
 from cryostack_src.cloud.bridge import CloudBridge
 from cryostack_src.execution.backend import ExecutionResult, ExecutionStatus
 
-from .cloud_runner import submit_cloud_example
+from .cloud_runner import cloud_max_np, submit_cloud_example  # noqa: F401  (cloud_max_np: the gateway's MPI bound)
 
 
 @dataclass(frozen=True)
@@ -73,6 +73,30 @@ def build_icesee_cloud_bridge(cfg: IceseeCloudBridgeConfig) -> CloudBridge:
         credentials=cfg.credentials,
         submitter=_icesee_submitter,
     )
+
+
+def cloud_runtime_config(config: dict, np: int = 1) -> tuple[dict, list[str]]:
+    """``config`` adjusted to what the cloud task can run with ``np`` MPI
+    processes, and one line per value that changed. The image's h5py has no
+    parallel I/O, so execution mode 2 becomes 1 (several processes) or 0
+    (one); mode 0 runs one process, so with several it becomes 1.
+    ``parallel_flag`` is filled in for ICESEE versions that still read it."""
+    enkf = dict(config.get("enkf-parameters") or {})
+    changes = []
+    mode = str(enkf.get("execution_mode", 1)).strip()
+    target = None
+    if mode == "2":
+        target = 1 if int(np) > 1 else 0
+    elif mode == "0" and int(np) > 1:
+        target = 1
+    if target is not None:
+        changes.append(f"execution_mode: {enkf.get('execution_mode')!r} -> {target!r}")
+        enkf["execution_mode"] = target
+    flag = "serial" if str(enkf.get("execution_mode", 1)).strip() == "0" else "MPI_model"
+    if enkf.get("parallel_flag") != flag:
+        changes.append(f"parallel_flag: {enkf.get('parallel_flag')!r} -> {flag!r}")
+        enkf["parallel_flag"] = flag
+    return {**config, "enkf-parameters": enkf}, changes
 
 
 def submit_icesee_cloud_run(

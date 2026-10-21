@@ -2087,6 +2087,12 @@ def build_icesheets_ui():
             # removes a relay HTTP round trip from the initial-load and
             # resource-switch paths (perf pass).
 
+            try:
+                if _cl_workflow["wf"] is not None:
+                    _cl_workflow["wf"].refresh(example_chosen=bool(example_picker.value), manual=not is_agent)
+            except NameError:
+                pass
+
             if is_remote:
                 log_runtime_controls.children = (
                     connect_btn,
@@ -3417,22 +3423,35 @@ def build_icesheets_ui():
         def _cloud_review_digest() -> str:
             _m = (model_dd.value or "issm").strip().lower()
             _img = _default_tested_image(_m)
+            account_id, connected_region = _cloud_review_identity()
+            cfg = _cloud_run_config()
+            if connected_region:
+                # _build_cloud_review runs a connected account's review in the
+                # connection's own region; the digest must use the same one, or
+                # every Launch would read as a configuration change.
+                cfg.region = connected_region
             return review_digest(
-                config=_cloud_run_config(),
+                config=cfg,
                 model=_m,
                 example=_cloud_example_name(),
                 run_target=(Path(run_target.value or "runme.m").name),
-                account_id=_cloud_account_id_for_review(),
+                account_id=account_id,
                 scientific_overrides=(md_panel.overrides() if model_dd.value == "issm" else {}),
                 image_digest=getattr(_img, "digest", "") or "",
             )
 
-        def _cloud_account_id_for_review() -> str:
+        def _cloud_review_identity() -> tuple[str, str]:
+            """(account id, region) of the connected AWS account, or ("", "")."""
             try:
                 s = _aws_onboarding_factory().summary()
-                return s.get("account_id", "") if s.get("status") == "connected" else ""
             except Exception:  # noqa: BLE001
-                return ""
+                return "", ""
+            if s.get("status") != "connected":
+                return "", ""
+            return s.get("account_id", "") or "", (s.get("region", "") or "").strip()
+
+        def _cloud_account_id_for_review() -> str:
+            return _cloud_review_identity()[0]
 
         def _build_cloud_review():
             _model = (model_dd.value or "issm").strip().lower()
@@ -4115,37 +4134,13 @@ def build_icesheets_ui():
 
         log_runtime_controls = build_workspace_toolbar([])
 
-        run_settings_panel = build_run_settings_panel(
-            # establish the execution environment first: identity/mode rows,
-            # then Remote/Cloud connection -- file/editor/dataset operations
-            # and model/run configuration move to `workspace_rows` (rendered
-            # AFTER remote_panel/cloud_panel), never here.
-            configuration_rows=[
-                ui_mode_row,
-                *([agent_panel.container] if agent_panel is not None else []),
-                mode_row,
-                model_row,
-                example_picker_row,
-                example_info_row,
-                example_row,
-                exec_row,
-                advanced_action_row,
-            ],
-            remote_panel=remote_box,
-            cloud_panel=cloud_box,
-            # Dataset upload/download (not the editor -- that is now tab 0
-            # ("Editor") of the RIGHT Workspace's Tab widget, see
-            # output_workspace/build_run_details below), then model/run
-            # configuration -- both depend on the execution environment
-            # (Remote/Cloud) already being established above.
-            workspace_rows=[
-                dataset_panel.container,
-                run_target_row,
-                md_config_panel,
-                icepack_config_panel,
-            ],
-            run_plan=run_plan.container,
-        )
+        # The page is arranged as a workflow (icesheets_workflow.py): Mode
+        # (execution mode + interface, with Auto-config inside it) ->
+        # Experiment -> Environment & resources -> Parameters -> Review &
+        # launch, the Workspace on the right. The rows below are the same
+        # widgets update_visibility() shows and hides; the workflow only
+        # places them (built after output_workspace, see below).
+        _cl_workflow = {"wf": None}
 
         runtime_panel = build_runtime_panel(
             status_widget=status_chip,
@@ -4215,7 +4210,21 @@ def build_icesheets_ui():
         _WS_TAB_TITLE = {"runs": "Runs", "files": "Files", "log": "Run Log",
                          "results": "Results"}
 
-        def _switch_workspace_tab(name):
+        _reveal_out = W.Output(layout=W.Layout(height="0px", overflow="hidden"))
+
+        def _reveal_workspace():
+            """Scroll the Workspace into view and highlight it -- for the
+            buttons that send the user from the left column to a tab."""
+            from icesee_jupyter_book.ui.icesee_workflow.components import run_js
+
+            run_js(_reveal_out, "var w=document.querySelector('.icw-cl-workspace')"
+                                "||document.querySelector('.cryostack-output-workspace');"
+                                "if(w){var t=w.querySelector('.lm-TabBar,.p-TabBar')||w;"
+                                "t.scrollIntoView({behavior:'smooth',block:'start'});"
+                                "w.classList.remove('icw-flash');void w.offsetWidth;w.classList.add('icw-flash');"
+                                "setTimeout(function(){w.classList.remove('icw-flash');},1700);}")
+
+        def _switch_workspace_tab(name, reveal=False):
             tab = _workspace_tabs["w"]
             title = _WS_TAB_TITLE.get(name)
             if tab is None or title is None:
@@ -4223,14 +4232,16 @@ def build_icesheets_ui():
             for index in range(len(tab.children)):
                 if tab.get_title(index) == title:
                     tab.selected_index = index
-                    return
+                    break
+            if reveal:
+                _reveal_workspace()
 
         def _runs_tail_log():
             rid = workspace_history_panel.runs.value
             if not rid:
                 return
             workspace_manager.select_run(rid)          # shared selected run
-            _switch_workspace_tab("log")
+            _switch_workspace_tab("log", reveal=True)
             workspace_manager.tail(rid)                # existing tail machinery
 
         def _runs_show_figures():
@@ -4238,7 +4249,7 @@ def build_icesheets_ui():
             if not rid:
                 return
             workspace_manager.select_run(rid)
-            _switch_workspace_tab("results")
+            _switch_workspace_tab("results", reveal=True)
             on_results_preview()                      # existing ResultPackage / Visualizer
 
         def _runs_download():
@@ -4338,7 +4349,7 @@ def build_icesheets_ui():
                 on_results_preview()
             # re-assert the destination tab: the data step above may have driven
             # widgets that could steal focus; the requested tab must stay active.
-            _switch_workspace_tab(tab)
+            _switch_workspace_tab(tab, reveal=True)
 
         _active_run = build_active_run_callbacks(
             widgets=cloud_environment,
@@ -4348,14 +4359,29 @@ def build_icesheets_ui():
         )
         _active_run_holder["render"] = _active_run.render
 
-        workspace_ui = build_workspace_explorer(
-            run_settings=run_settings_panel,
-            runtime=actions_card,
-            run_details=output_workspace.container,
-        )
+        from icesee_jupyter_book.ui.icesheets_workflow import CSS as CL_WORKFLOW_CSS
+        from icesee_jupyter_book.ui.icesheets_workflow import build_cryolauncher_workflow
+        from icesee_jupyter_book.ui.icesee_workflow.styles import stylesheet as workflow_stylesheet
+        from cryostack_src.frontend.cryolauncher.workspace.explorer import _VIEWER_JS
 
-        row = workspace_ui.container
-        workspace_height_sync = workspace_ui.height_sync
+        workflow = build_cryolauncher_workflow(
+            mode_dd=mode_dd,
+            ui_mode_dd=ui_mode_dd,
+            agent_panel=agent_panel,
+            # file/dataset operations come after the execution environment
+            # (Remote/Cloud) is established -- same order as before
+            experiment_rows=[model_row, example_picker_row, example_info_row, example_row,
+                             advanced_action_row, run_target_row],
+            environment_rows=[exec_row, remote_box, cloud_box, dataset_panel.container],
+            parameter_rows=[md_config_panel, icepack_config_panel],
+            review_rows=[run_plan.container, actions_card],
+            workspace=output_workspace.container,
+            workspace_tabs=output_workspace.tabs,
+        )
+        _cl_workflow["wf"] = workflow
+
+        row = workflow.shell
+        workspace_height_sync = W.HTML(f"<script>\n{_VIEWER_JS}\n</script>")
 
         auto_tail_btn.observe(on_auto_tail_change, names="value")
 
@@ -4396,21 +4422,26 @@ def build_icesheets_ui():
                 # W.HTML(css),
                 auto_scroll_script,
                 W.HTML(CRYOSTACK_FRONTEND_CSS),
+                workflow_stylesheet(),
+                W.HTML(CL_WORKFLOW_CSS),
                 W.HTML("<script>document.title = 'CryoLauncher';</script>"),
 
                 experiment_bridge.widget(),
                 workspace_bridge.widget(),
 
                 app_menu,
-                header,
+                workflow.hero,
+                workflow.stepper.html,
                 row,
                 workspace_height_sync,
+                _reveal_out,
                 # actions_card,
                 back_link,
             ],
             layout=W.Layout(width="100%"),
         )
         page.add_class("cryostack-application-page")
+        page.add_class("icw")
 
         image_panel.set_model(model_dd.value)
         image_panel.set_profile(software_panel.profile())

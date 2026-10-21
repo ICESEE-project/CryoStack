@@ -33,11 +33,8 @@ def error_and_spread(ctx: ViewContext, opts: dict) -> ViewResult:
 
     spread = None
     if o.ensemble_file is not None:
-        import h5py
-
         spread = np.zeros((nblocks, n))
-        with h5py.File(o.ensemble_file, "r") as f:
-            ds = f[o.ensemble_key]
+        with o.open_ensemble() as ds:
             chunk = max(1, int(2e7 // max(1, ds.shape[0] * ds.shape[1])))
             for start in range(0, n, chunk):
                 stop = min(n, start + chunk)

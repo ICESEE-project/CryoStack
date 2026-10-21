@@ -25,21 +25,25 @@ import yaml
 from icesee_jupyter_book.core import provenance as prov
 from icesee_jupyter_book.core import results_service as rs
 from icesee_jupyter_book.core import run_lifecycle as lc
+from icesee_jupyter_book.core import user_plots
 from icesee_jupyter_book.core.experiment_files import (
-    ExperimentFileError, ExperimentFiles, config_text, validate,
+    ExperimentFile, ExperimentFileError, ExperimentFiles, config_text, validate,
 )
 from icesee_jupyter_book.core.local_jobs import LOG_FILE, LocalJob, clean_log
 from icesee_jupyter_book.core.results_package import _categorize
 
 from .components import (
     BusyButton, ConfirmAction, badge, button, callout, code, empty_state, esc, human_duration, human_size,
-    image_html, issues_html, kv, offer_download, skeleton, state_badge,
+    image_html, issues_html, kv, offer_download, run_js, skeleton, state_badge,
 )
 
 TABS = ("Run", "Files", "Editor", "Logs", "Results")
 TAB_ICONS = ("play-circle", "folder-open", "pencil", "terminal", "line-chart")
 _MODE_LABEL = {"local": "Local", "remote": "Remote HPC", "cluster": "Remote HPC", "cloud": "Cloud"}
 _HIDDEN_FILES = {".icesee-results", "__pycache__", ".ipynb_checkpoints"}
+#: Editor values of the user's plotting files (core/user_plots.py)
+PLOT_PREFIX = "plot:"
+RES_SOURCES = (("ICESEE figures", "icesee"), ("My plotting code", "mine"))
 #: dataset roles from ICESEE's own dataset names (core/results_package.py)
 _DA_ROLE = {"forecast": "Forecast / truth", "ensemble": "Ensemble", "observations": "Observations",
             "model_native": "Other"}
@@ -75,6 +79,8 @@ class RunWorkspace:
         self._log_follow = True
         self._results = None
         self._result_gen = 0
+        self._res_source = "icesee"
+        self._plots_key = None          # example whose plotting files the Editor lists
         self._busy_threads: set = set()
 
         # ── context bar ──────────────────────────────────────────────────
@@ -102,10 +108,11 @@ class RunWorkspace:
         self.stack = W.Stack(panes, selected_index=0, layout=W.Layout(width="100%"))
         self.tabs.observe(self._on_tab, names="value")
         self.downloader = W.Output(layout=W.Layout(height="0px", overflow="hidden"))
+        self._js = W.Output(layout=W.Layout(height="0px", overflow="hidden"))
 
         head = W.HTML('<div class="icw-card-head"><div><div class="icw-card-title">Workspace</div>'
                       '<div class="icw-card-sub">Everything below follows the selected run.</div></div></div>')
-        self.container = W.VBox([head, self.context, tabbar, self.stack, self.downloader],
+        self.container = W.VBox([head, self.context, tabbar, self.stack, self.downloader, self._js],
                                 layout=W.Layout(width="100%", gap="10px"))
         self.container.add_class("icw-card")
         self.container.add_class("icw-right")
@@ -113,9 +120,34 @@ class RunWorkspace:
         self._render_context()
 
     # ── navigation ─────────────────────────────────────────────────────────
-    def show(self, tab: str) -> None:
-        if tab in TABS:
+    def show(self, tab: str, *, reveal: bool = False) -> None:
+        """Open ``tab``. With ``reveal`` the page also scrolls to the
+        workspace (the buttons that send the user here from the left column:
+        View logs, Open results, Edit ..., the launch messages)."""
+        if tab not in TABS:
+            return
+        if self.tabs.value == tab:
+            self._refresh_visible()          # already open: show the current content
+        else:
             self.tabs.value = tab
+        if reveal:
+            self.reveal()
+
+    def reveal(self) -> None:
+        """Scroll the workspace's tab bar into view and briefly highlight it."""
+        run_js(self._js, "var w=document.querySelector('.cryostack-output-workspace');"
+                         "if(w){var t=w.querySelector('.icw-tabs')||w;"
+                         "t.scrollIntoView({behavior:'smooth',block:'start'});"
+                         "w.classList.add('icw-flash');w.classList.remove('icw-flash');void w.offsetWidth;w.classList.add('icw-flash');setTimeout(function(){w.classList.remove('icw-flash');},1700);}")
+
+    def focus(self, run_id: str | None, tab: str) -> None:
+        """Select ``run_id`` (refreshing the run list if it is not in it yet),
+        open ``tab`` and scroll there."""
+        if run_id and run_id not in [v for _l, v in self.run_list.options]:
+            self.refresh_runs(select=run_id)
+        if run_id:
+            self.select_run(run_id)
+        self.show(tab, reveal=True)
 
     def _on_tab(self, change) -> None:
         self.stack.selected_index = TABS.index(change["new"])
@@ -214,9 +246,9 @@ class RunWorkspace:
         self.refresh_btn.on_click(lambda _b: self._refresh_statuses())
         self.details = W.HTML(skeleton(4))
         self.open_results_btn = button("Open results", icon="line-chart", kind="primary")
-        self.open_results_btn.on_click(lambda _b: self.show("Results"))
+        self.open_results_btn.on_click(lambda _b: self.show("Results", reveal=True))
         self.view_logs_btn = button("View logs", icon="terminal", kind="secondary")
-        self.view_logs_btn.on_click(lambda _b: self.show("Logs"))
+        self.view_logs_btn.on_click(lambda _b: self.show("Logs", reveal=True))
         #: the gateway's Remote / Cloud "Check status" buttons (they act on the selected run)
         self.backend_actions = W.HBox([])
         self.backend_actions.add_class("icw-actions")
@@ -569,6 +601,12 @@ class RunWorkspace:
         self.ed_head.value = (f'<div class="icw-card-sub" style="margin:0">Editing the <b>{esc(self.host.example_key())}</b> '
                               "experiment for your next run. params.yaml is the run configuration (the same values as "
                               "the form); edited inputs apply to Local runs.</div>")
+        plots = self._editor_plots()
+        if plots is not None and plots.exists:
+            for f in plots.files():
+                tag = {"contract": "plot list", "views": "plotting code", "readme": "notes"}[f.kind]
+                options.append((f"📈  my plots / {f.path}   ({tag}{' · edited' if f.modified else ''})",
+                                PLOT_PREFIX + f.path))
         current = self.ed_files.value
         self._ed_suppress = True
         try:
@@ -579,6 +617,13 @@ class RunWorkspace:
             self._ed_suppress = False
         if not self.editor_dirty():
             self._ed_load(self.ed_files.value)
+
+    def _editor_plots(self):
+        key = self._plots_key or self.host.example_key()
+        try:
+            return self.host.plot_workspace(key)
+        except Exception:  # noqa: BLE001 -- an example without a results contract has no plotting files
+            return None
 
     def _ed_on_pick(self, change) -> None:
         if self._ed_suppress:
@@ -598,13 +643,30 @@ class RunWorkspace:
             self.ed_text.value = ""
             self.ed_status.value = empty_state("No files", "This experiment has no editable files.")
             return
-        try:
-            opened = self.experiment.open(rel)
-        except ExperimentFileError as exc:
-            self.ed_status.value = callout(str(exc), "bad")
-            return
-        info = opened.file
-        if info.role == "config":
+        if rel.startswith(PLOT_PREFIX):
+            name = rel[len(PLOT_PREFIX):]
+            plots = self._editor_plots()
+            try:
+                text = plots.open(name)
+            except (user_plots.PlotFileError, AttributeError) as exc:
+                self.ed_status.value = callout(str(exc), "bad")
+                return
+            modified = next((f.modified for f in plots.files() if f.path == name), False)
+            opened = None
+            info = ExperimentFile(rel, "plot", True, len(text.encode()), drafted=modified,
+                                  reason="Your own copy. The Results tab draws your figures from it (My plotting code); "
+                                         "the run's outputs stay read-only.")
+            origin = "your plotting copy"
+        else:
+            try:
+                opened = self.experiment.open(rel)
+            except ExperimentFileError as exc:
+                self.ed_status.value = callout(str(exc), "bad")
+                return
+            info = opened.file
+        if info.role == "plot":
+            pass
+        elif info.role == "config":
             text = config_text(self.host.current_config())
             origin = "current run configuration (form)"
         else:
@@ -621,6 +683,10 @@ class RunWorkspace:
         else:
             self.ed_box.add_class("readonly")
         is_config = info.role == "config"
+        # inputs are drafts for the next run; plotting files are saved to the user's copy
+        self.ed_save_busy.label = self.ed_save.description = "Save" if info.role == "plot" else "Save draft"
+        self.ed_save.tooltip = ("Save to your plotting copy" if info.role == "plot"
+                                else "Keep this edited input for your next Local runs")
         self.ed_apply.layout.display = "" if is_config else "none"
         self.ed_save.layout.display = "" if (info.editable and not is_config) else "none"
         self.ed_validate.layout.display = "" if info.editable else "none"
@@ -633,12 +699,15 @@ class RunWorkspace:
         if info is None:
             return
         role = {"config": badge("Configuration", "info", dot=False), "input": badge("Editable input", "ok", dot=False),
+                "plot": badge("My plotting code", "ok", dot=False),
                 "source": badge("Read-only code", "neutral", dot=False),
                 "reference": badge("Read-only reference", "neutral", dot=False)}[info.role]
         state = ""
         if info.editable:
             state = badge("Unsaved changes", "warn") if self.editor_dirty() else badge("No changes", "neutral", dot=False)
-        if info.drafted and info.role != "config":
+        if info.drafted and info.role == "plot":
+            state += " " + badge("Edited", "info", dot=False)
+        elif info.drafted and info.role != "config":
             state += " " + badge("Using your draft", "info", dot=False)
         why = f'<div class="icw-card-sub">{esc(info.reason)}</div>' if info.reason else ""
         src = f'<div class="icw-card-sub">Showing {esc(origin)} · {human_size(info.size)}</div>' if origin else ""
@@ -653,7 +722,10 @@ class RunWorkspace:
         info = self._ed_info
         if info is None:
             return []
-        issues = validate(info.path, self.ed_text.value, template=self.host.template())
+        if info.role == "plot":
+            issues = user_plots.validate(info.path[len(PLOT_PREFIX):], self.ed_text.value)
+        else:
+            issues = validate(info.path, self.ed_text.value, template=self.host.template())
         if issues:
             self.ed_issues.value = issues_html(issues)
         else:
@@ -684,6 +756,8 @@ class RunWorkspace:
         info = self._ed_info
         if info is None:
             return False
+        if info.role == "plot":
+            return self._ed_save_plot(info)
         try:
             issues = self.experiment.save(info.path, self.ed_text.value, template=self.host.template())
         except ExperimentFileError as exc:
@@ -698,9 +772,34 @@ class RunWorkspace:
         self.ed_issues.value = callout(f"Draft saved. Local runs of this experiment will use your {info.path}.", "ok")
         return True
 
+    def _ed_save_plot(self, info) -> bool:
+        name = info.path[len(PLOT_PREFIX):]
+        try:
+            issues = self._editor_plots().save(name, self.ed_text.value)
+        except user_plots.PlotFileError as exc:
+            self.ed_issues.value = callout(str(exc), "bad")
+            return False
+        if any(i.level == "error" for i in issues):
+            self.ed_issues.value = issues_html(issues)
+            return False
+        self._ed_clean = self.ed_text.value
+        self.editor_refresh_list()
+        self._results = None            # figures are redrawn from the saved code
+        self.ed_issues.value = callout(f"Saved {name}. Open Results › My plotting code to draw with it.", "ok")
+        return True
+
     def _ed_reset(self) -> None:
         info = self._ed_info
         if info is None:
+            return
+        if info.role == "plot":
+            name = info.path[len(PLOT_PREFIX):]
+            self._editor_plots().reset(name)
+            self._ed_clean = ""
+            self._ed_info = None
+            self._results = None
+            self.editor_refresh_list()
+            self.ed_issues.value = callout(f"{name} is back to ICESEE's version.", "ok")
             return
         self.experiment.reset(info.path)
         self._ed_clean = ""
@@ -715,9 +814,22 @@ class RunWorkspace:
             self._ed_load(self._ed_info.path)
 
     def open_in_editor(self, rel: str = "params.yaml") -> None:
-        self.show("Editor")
+        self.show("Editor", reveal=True)
         if rel in [v for _l, v in self.ed_files.options] and not self.editor_dirty():
             self.ed_files.value = rel
+
+    def open_plots_in_editor(self, example_key: str) -> None:
+        """Edit the plotting copy of ``example_key`` (the selected run's example)."""
+        self._plots_key = example_key
+        plots = self._editor_plots()
+        first = (plots.main_module or next((f.path for f in plots.files() if f.kind == "views"), user_plots.CONTRACT)
+                 if plots else None)
+        self.show("Editor", reveal=True)
+        if first and not self.editor_dirty():
+            self.editor_refresh_list()
+            target = PLOT_PREFIX + first
+            if target in [v for _l, v in self.ed_files.options]:
+                self.ed_files.value = target
 
     # ═════════════════════════════════════════════════════════════════════
     # Logs pane
@@ -762,7 +874,7 @@ class RunWorkspace:
             self.refresh_log()
 
     def show_activity(self) -> None:
-        self.show("Logs")
+        self.show("Logs", reveal=True)
         self.log_kind.value = "Launcher activity"
 
     def refresh_log(self, *, status=None) -> None:
@@ -837,10 +949,95 @@ class RunWorkspace:
         self.res_footer = W.HTML()
         self._res_option_widgets = {}
         self._res_last = None
+        # where the figures come from: ICESEE's views or the user's own copy
+        self.res_source = W.ToggleButtons(options=list(RES_SOURCES), value="icesee", style={"button_width": "auto"},
+                                          tooltips=["The example's figures, as read_results.ipynb draws them",
+                                                    "Your own copy of the plotting code (editable, in your workspace)"])
+        self.res_source.observe(self._res_on_source, names="value")
+        self.res_copy = button("Copy plotting code to my workspace", icon="copy", kind="secondary",
+                               tooltip="Your own editable copy of this example's plotting code; the run's outputs are never changed")
+        self.res_copy_busy = BusyButton(self.res_copy)
+        self.res_copy.on_click(lambda _b: self.res_copy_busy.run(self._res_copy_plots, busy_label="Copying…",
+                                                                 done_label="Copied", fail_label="Not copied"))
+        self.res_edit = button("Edit my plotting code", icon="pencil", kind="secondary")
+        self.res_edit.on_click(lambda _b: self._res_edit_plots())
+        self.res_delete = button("Delete my copy", icon="trash", kind="danger")
+        self.res_delete_confirm = ConfirmAction(self.res_delete, self._res_delete_plots, confirm_label="Delete my plotting code")
+        self.res_source_note = W.HTML()
+        self.res_source_row = W.HBox([self.res_source, self.res_copy, self.res_edit, self.res_delete_confirm.box],
+                                     layout=W.Layout(gap="8px", align_items="center", flex_flow="row wrap"))
+        self.res_source_row.add_class("icw-actions")
         top = W.HBox([self.res_head, self.res_refresh], layout=W.Layout(justify_content="space-between",
                                                                        align_items="flex-start"))
-        return W.VBox([top, self.res_views_box, self.res_options, self.res_opts_row, self.res_body, self.res_footer],
+        return W.VBox([top, self.res_source_row, self.res_source_note, self.res_views_box, self.res_options,
+                       self.res_opts_row, self.res_body, self.res_footer],
                       layout=W.Layout(gap="10px"))
+
+    # ── the user's own plotting code ──────────────────────────────────────
+    def _run_plots(self, run=None):
+        """The selected run's example's plotting workspace (None if it has no results contract)."""
+        run = run or self.selected
+        if run is None:
+            return None
+        key = (run.metadata or {}).get("example") or ""
+        contract = rs.example_dir(run)
+        if not key or contract is None or not (contract / user_plots.CONTRACT).is_file():
+            return None
+        try:
+            return self.host.plot_workspace(key, contract_dir=contract)
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _res_source_controls(self) -> None:
+        plots = self._run_plots()
+        has_copy = plots is not None and plots.exists
+        self.res_source_row.layout.display = "" if plots is not None else "none"
+        self.res_copy.layout.display = "" if (plots is not None and not has_copy) else "none"
+        self.res_edit.layout.display = "" if has_copy else "none"
+        self.res_delete_confirm.box.layout.display = "" if has_copy else "none"
+        self.res_source.disabled = not has_copy
+        if not has_copy and self.res_source.value != "icesee":
+            self.res_source.value = "icesee"
+        if self.res_source.value == "mine":
+            edited = sum(1 for f in plots.files() if f.modified and f.kind != "readme")
+            self.res_source_note.value = (
+                f'<div class="icw-card-sub">Drawing with your copy in <code>My workspace › icesee_plots › {esc(plots.root.name)}</code>'
+                f'{f" ({edited} file(s) edited)" if edited else " (unchanged from ICESEE)"}. '
+                "It runs sandboxed: no network, and this run's outputs are read-only.</div>")
+        else:
+            self.res_source_note.value = ""
+
+    def _res_on_source(self, change) -> None:
+        self._res_source = change["new"]
+        self._results = None
+        self.refresh_results()
+
+    def _res_copy_plots(self):
+        plots = self._run_plots()
+        if plots is None:
+            return False
+        try:
+            plots.create()
+        except (user_plots.PlotFileError, OSError) as exc:
+            self.res_source_note.value = callout(f"Could not copy the plotting code: {exc}", "bad")
+            return False
+        self._res_source_controls()
+        self.res_source.value = "mine"
+        return True
+
+    def _res_edit_plots(self) -> None:
+        run = self.selected
+        if run is not None:
+            self.open_plots_in_editor((run.metadata or {}).get("example") or "")
+
+    def _res_delete_plots(self) -> None:
+        plots = self._run_plots()
+        if plots is not None:
+            plots.delete()
+        self.res_source.value = "icesee"
+        self._results = None
+        self._res_source_controls()
+        self.refresh_results()
 
     def _res_controls_visible(self, visible: bool) -> None:
         for w in (self.res_views_box, self.res_options, self.res_opts_row):
@@ -852,10 +1049,13 @@ class RunWorkspace:
         gen = self._result_gen
         if run is None:
             self._res_controls_visible(False)
+            self.res_source_row.layout.display = "none"
+            self.res_source_note.value = ""
             self.res_head.value = ""
             self.res_footer.value = ""
             self.res_body.value = empty_state("No run selected", "Select a completed run to see its scientific results.", "📈")
             return
+        self._res_source_controls()
         if self._results is not None and not force:
             return
         self._res_controls_visible(False)
@@ -865,10 +1065,13 @@ class RunWorkspace:
 
         def work():
             if force:
-                for f in (Path(run.workspace_directory) / rs.CACHE_DIR).glob("describe-*.json"):
+                for f in (Path(run.workspace_directory) / rs.CACHE_DIR).glob("**/describe-*.json"):
                     f.unlink(missing_ok=True)
+            plots = self._run_plots(run) if self.res_source.value == "mine" else None
+            if plots is not None and not plots.exists:
+                plots = None
             try:
-                results = rs.discover(run, lifecycle_state=lc.current_state(run))
+                results = rs.discover(run, lifecycle_state=lc.current_state(run), plots=plots)
             except Exception as exc:  # noqa: BLE001
                 results = rs.RunResults(rs.ERROR, f"Results could not be discovered: {exc}")
             if gen != self._result_gen or self.selected is None or self.selected.id != run.id:
@@ -999,7 +1202,12 @@ class RunWorkspace:
     def _figure_html(self, view: dict, outcome, seconds: float) -> str:
         if not outcome.ok:
             return callout(outcome.message or "The view could not be drawn.", "bad", title=view["title"] + ":")
-        badge_html = badge("supplementary", "warn", dot=False) if outcome.supplementary else badge("notebook view", "info", dot=False)
+        if outcome.customized:
+            badge_html = badge("my plotting code", "ok", dot=False)
+        elif outcome.supplementary:
+            badge_html = badge("supplementary", "warn", dot=False)
+        else:
+            badge_html = badge("notebook view", "info", dot=False)
         timing = "cached" if outcome.cached else f"drawn in {seconds:.1f} s"
         opts = ", ".join(f"{k} = {v}" for k, v in (outcome.options or {}).items())
         body = ""

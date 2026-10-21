@@ -627,6 +627,7 @@ def test_maintainer_access_is_checked_on_every_request(web_env):
         out["page"] = (page.status, "Last successful index" in page_text)
         out["intake_help"] = all(term in page_text for term in (
             "How dataset intake works", "resumes verified chunks",
+            "local durable XFS staging", "fully verified immutable release to CEDAR",
             "managed SMB gateway", "Indexing alone never makes results public"))
         # role revoked: the very next request is refused
         web_env["auth"].storage.revoke_role(user_id=maint_user.id, role="maintainer")

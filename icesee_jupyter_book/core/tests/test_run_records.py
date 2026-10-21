@@ -86,6 +86,12 @@ def test_summary_rows_omit_empty_values():
     labels = [label for label, _ in sparse.summary_rows()]
     assert "Ensemble size" not in labels
     assert "Observation window" not in labels
+    assert "Execution mode" not in labels
+
+
+def test_summary_rows_name_the_execution_mode():
+    ident = rr.da_identity_from_params({"enkf-parameters": {"execution_mode": 3}})
+    assert dict(ident.summary_rows())["Execution mode"] == "3 · spatially distributed"
 
 
 def test_build_run_metadata_carries_provider_and_da_identity_no_secrets():

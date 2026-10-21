@@ -226,25 +226,30 @@ navigation root configured, the endpoint returns an empty optional collection
 and the remainder of Frozen Legacies continues to operate. A misconfigured or
 unavailable root is not allowed to prevent the static datasets from loading.
 
-## Control Center intake on CEDAR
+## Control Center intake and CEDAR promotion
 
-Production configures the managed intake root on the writable CEDAR SMB mount:
+Production keeps resumable intake sessions on local durable XFS:
 
 ```text
 CRYOSTACK_FROZEN_LEGACIES_STORAGE_ROOTS=/srv/cryostack/workspace/datasets
-CRYOSTACK_FROZEN_LEGACIES_INTAKE_ROOT=/srv/cryostack/workspace/datasets/frozen-legacies/intakes
+CRYOSTACK_FROZEN_LEGACIES_INTAKE_ROOT=/home/bkyanjo3/cryostack-data/datasets/frozen-legacies/intakes
 ```
 
 Maintainers use **Control Center → Data → Frozen Legacies** to add TIFFs,
 navigation CSVs, or ZIP archives. Uploads are chunked, resumable, checksum
-verified, and written outside the source tree and VM root disk. Re-selecting
-the same files resumes an interrupted session. A finalized intake remains
+verified, and written outside the source tree on durable XFS. Re-selecting the
+same files resumes an interrupted session. A finalized intake remains
 maintainer-only and unpublished; the curator must test the source, index it,
 inspect failures, and complete scientific review before publication.
 
+CEDAR is a separate immutable dataset destination, not the resumable session
+store. An authorized operator may copy a completed intake into an unpublished
+release, verify the complete destination manifest, and atomically promote the
+release. The application CEDAR read path must remain read-only in steady state.
+
 The gateway keeps mount credentials and paths server-side. Do not give users
 shell access, Dropbox refresh credentials, or the SMB guest configuration.
-For a large operator-managed cloud migration, inventory first, copy into an
+For a large operator-managed migration, inventory first, copy into an
 unpublished immutable release, verify the complete manifest, then atomically
 promote and reindex. Never point the catalog at a partially populated release.
 

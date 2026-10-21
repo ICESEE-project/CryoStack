@@ -106,14 +106,10 @@ TIMING_LABELS = (
     "Analysis Ensemble Mean Computation",
 )
 
-_DRIVERS = {0: "serial", 1: "partial", 2: "full"}
+_DRIVERS = {0: "serial", 1: "partial", 2: "full", 3: "spatial"}
 
-#: pinned-ICESEE caveat for full-parallel checkpoint resume (see report)
-FULL_PARALLEL_RESUME_CAVEAT = (
-    "Pinned ICESEE: EnKF_fully_parallel_IO deletes icesee_enkf_*.h5 when it "
-    "is constructed, before the restart decision, and writes step files as "
-    "icesee_enkf_NNNN.h5 while the restart rule counts icesee_enkf_ens_NNNN.h5."
-)
+#: execution mode 3 keeps its restart state here (ICESEE mode3_checkpointing)
+MODE3_HISTORY = "_mode3_state_history"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -194,7 +190,7 @@ class PhaseTimings:
 
 @dataclass(frozen=True)
 class ResumeAssessment:
-    driver: str | None              # "serial" | "partial" | "full" | None
+    driver: str | None              # "serial" | "partial" | "full" | "spatial" | None
     possible: bool | None           # None = conditional / not determinable
     next_step: int | None
     reason: str
@@ -536,7 +532,7 @@ def _flag(params: dict, key: str, default: bool) -> bool:
 
 
 def _assess_full(primary: DatasetDir | None, params: dict) -> ResumeAssessment:
-    notes = (FULL_PARALLEL_RESUME_CAVEAT,)
+    notes = ()
     if not _flag(params, "restart_enabled", True):
         return ResumeAssessment("full", False, None, "restart_enabled is false in params.yaml", notes)
     if _flag(params, "force_fresh_start", False):
@@ -609,7 +605,33 @@ def _assess_partial(primary: DatasetDir | None, params: dict) -> ResumeAssessmen
     )
 
 
-def assess_resume(primary: DatasetDir | None, params: dict) -> ResumeAssessment:
+def _assess_spatial(root: Path | None, primary: DatasetDir | None, params: dict) -> ResumeAssessment:
+    """Mode 3 restores the newest complete ``steps/checkpoint_<k>`` and
+    continues with cycle ``k + 1`` when resume_from_checkpoint is set."""
+    how = "with resume_from_checkpoint: true"
+    if root is None or primary is None:
+        return ResumeAssessment("spatial", False, None, "no ICESEE data directory in this run")
+    steps = []
+    for d in (root / primary.path / MODE3_HISTORY / "steps").glob("checkpoint_*"):
+        try:
+            manifest = json.loads((d / "manifest.json").read_text())
+            if manifest.get("complete"):
+                steps.append(int(d.name.split("_")[-1]))
+        except (OSError, ValueError):
+            continue
+    if not steps:
+        return ResumeAssessment("spatial", False, 0, f"no complete {MODE3_HISTORY} step checkpoint: "
+                                "ICESEE would start at step 0")
+    k = max(steps) + 1
+    truth = _h5_shape(root / primary.path / "true_nurged_states.h5", "true_state")
+    nt = truth[1] - 1 if truth and len(truth) == 2 else _as_int(_param(params, "nt"))
+    if nt is not None and k >= nt:
+        return ResumeAssessment("spatial", False, None, f"all {nt} steps completed; nothing to resume")
+    return ResumeAssessment("spatial", True, k, f"ICESEE would resume at step {k} {how} "
+                            f"(newest checkpoint_{k - 1:08d})")
+
+
+def assess_resume(primary: DatasetDir | None, params: dict, root: Path | None = None) -> ResumeAssessment:
     mode = _as_int(_param(params, "execution_mode"))
     driver = _DRIVERS.get(mode) if mode is not None else None
     if driver is None and params:
@@ -622,6 +644,8 @@ def assess_resume(primary: DatasetDir | None, params: dict) -> ResumeAssessment:
         return _assess_full(primary, params)
     if driver == "partial":
         return _assess_partial(primary, params)
+    if driver == "spatial":
+        return _assess_spatial(root, primary, params)
     return ResumeAssessment(None, None, None, "driver not determinable (no params.yaml or checkpoint)")
 
 
@@ -693,6 +717,7 @@ def inspect_run_progress(run_dir: "Path | str") -> RunProgressReport:
         icesee_like = (
             ckpt_file or timing_file or ENSEMBLE_HISTORY_NAME in names
             or any(_RESUME_STEP_RE.match(n) or _IO_STEP_RE.match(n) for n in names)
+            or (directory / MODE3_HISTORY).is_dir()
         )
         if icesee_like:
             dataset_dirs.append(_dataset_dir(root, directory, here, ckpt_file, timing_file))
@@ -740,4 +765,4 @@ def inspect_run_progress(run_dir: "Path | str") -> RunProgressReport:
         resume=ResumeAssessment(None, None, None, ""), params=params,
         skipped=tuple(skipped), walk_truncated=truncated,
     )
-    return replace(report, resume=assess_resume(report.primary_dataset(), params))
+    return replace(report, resume=assess_resume(report.primary_dataset(), params, root))

@@ -150,9 +150,9 @@ A JOSS submission describing CryoStack's architecture and scope is at
 
 ## Citing CryoStack
 
-A citable release (Zenodo DOI and `CITATION.cff`) has not yet been issued.
-Until then, cite the JOSS paper above once published, or reference the
-repository URL and the commit/tag used.
+A tagged release and `CITATION.cff` are available, but an archival DOI has not
+yet been issued. Until then, cite the JOSS paper above once published, or
+reference the repository URL and the exact release or commit used.
 
 ## License
 
