@@ -1,7 +1,7 @@
 name: Update ICESEE submodule
 
 # external/ICESEE is a git submodule that follows the branch named in
-# .gitmodules (cryostack: ICESEE main plus what the launcher has validated).
+# .gitmodules (ICESEE main).
 # This moves the pin to that branch's latest commit; ICESEE's own CI tests the
 # branch, and tests.yml runs CryoStack's tests on the new pin.
 

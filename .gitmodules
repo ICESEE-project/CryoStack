@@ -7,4 +7,4 @@
 [submodule "external/ICESEE"]
 	path = external/ICESEE
 	url = https://github.com/ICESEE-project/ICESEE.git
-	branch = cryostack
+	branch = main
