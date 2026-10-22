@@ -23,7 +23,7 @@ for _p in (str(_REPO), str(_HERE)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from frozen_legacies_radar_fixtures import tiff_bytes, write_tiff
+from frozen_legacies_radar_fixtures import requires_astra, tiff_bytes, write_tiff
 from cryostack_src.workspace import WorkspaceUser, owner_root
 from icesee_jupyter_book.applications.frozen_legacies import server
 from icesee_jupyter_book.applications.frozen_legacies.radar import catalog as catalog_mod
@@ -674,6 +674,7 @@ def test_catalog_api_hides_storage_details_and_validates(web_env):
     assert len(segments["features"]) == 2 and "tiff/" not in json.dumps(segments)
 
 
+@requires_astra
 def test_my_picks_lifecycle_and_round_trip(web_env):
     _m, maint = _login(web_env, "maint@example.org", "maintainer")
     user_a, a = _login(web_env, "a@example.org")
@@ -757,6 +758,7 @@ def test_my_picks_lifecycle_and_round_trip(web_env):
     assert out["state_reset"]["total"] == 4
 
 
+@requires_astra
 def test_deleting_an_asset_clears_its_state_but_not_the_catalog(web_env):
     _m, maint = _login(web_env, "maint@example.org", "maintainer")
     _a, a = _login(web_env, "a@example.org")
@@ -781,6 +783,7 @@ def test_deleting_an_asset_clears_its_state_but_not_the_catalog(web_env):
     assert before["total"] == 1 and after["total"] == 0 and total["total"] == 4
 
 
+@requires_astra
 def test_missing_or_moved_catalog_files_keep_user_work(web_env):
     _m, maint = _login(web_env, "maint@example.org", "maintainer")
     _a, a = _login(web_env, "a@example.org")
@@ -820,6 +823,7 @@ def test_missing_or_moved_catalog_files_keep_user_work(web_env):
     assert out["observed"] == 2
 
 
+@requires_astra
 def test_observations_rebuild_and_reject_tampering(web_env):
     _m, maint = _login(web_env, "maint@example.org", "maintainer")
     user, a = _login(web_env, "a@example.org")

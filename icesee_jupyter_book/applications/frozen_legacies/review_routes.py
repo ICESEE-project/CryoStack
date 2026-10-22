@@ -100,7 +100,7 @@ async def _body(request) -> dict:
 def _eligibility(workspace, manifest) -> tuple[bool, str]:
     if manifest.get("origin") != "shared":
         return False, "Only results on shared radar can be submitted; uploaded radar is private."
-    from .pickers.astra import AstraGeometry
+    from .optional_pickers import AstraGeometry
 
     image = manifest.get("image") or {}
     geometry = AstraGeometry.for_image(int(image["width"]), int(image["height"]))
@@ -150,7 +150,7 @@ def _submit(request, user_id: str, note) -> dict:
     asset_id = manifest["asset_id"]
     if not manifest.get("image"):
         raise ReviewError("This asset has no manual result.")
-    from .pickers.astra import AstraGeometry
+    from .optional_pickers import AstraGeometry
 
     image = manifest["image"]
     geometry = AstraGeometry.for_image(int(image["width"]), int(image["height"]))

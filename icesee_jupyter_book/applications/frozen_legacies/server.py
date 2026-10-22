@@ -74,7 +74,7 @@ from .radar.assets import (
     remove_asset_dir,
     write_manifest,
 )
-from .pickers.astra import AstraError, AstraGeometry, AstraSession
+from .optional_pickers import AstraError, AstraGeometry, AstraSession, PickerUnavailable
 from .radar import manual
 from .radar.ingest import (
     MAX_NAV_BYTES,
@@ -239,6 +239,8 @@ def _api(auth, handler):
             return _error(409, "The shared radar source for this asset is not available.")
         except NoRadarImage:
             return _error(409, "This asset holds processed products only; it has no raw radar TIFF.")
+        except PickerUnavailable as error:
+            return _error(503, str(error))
         except (RadarValidationError, RenderRequestError, AstraError, CatalogError) as error:
             return _error(400, str(error))
         except manual.SessionInvalid:

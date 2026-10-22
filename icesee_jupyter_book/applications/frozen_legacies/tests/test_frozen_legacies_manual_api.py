@@ -23,7 +23,8 @@ for _p in (str(_REPO), str(_HERE)):
 from frozen_legacies_radar_fixtures import write_nav, write_registry, write_tiff
 from cryostack_src.workspace import WorkspaceUser, owner_root
 from icesee_jupyter_book.applications.frozen_legacies import server
-from icesee_jupyter_book.applications.frozen_legacies.pickers import astra as P
+P = pytest.importorskip("icesee_jupyter_book.applications.frozen_legacies.pickers.astra",
+                        reason="the ASTRA picker is distributed separately")
 from icesee_jupyter_book.applications.frozen_legacies.radar import manual
 from icesee_jupyter_book.applications.frozen_legacies.radar.sources import SOURCES_ENV
 

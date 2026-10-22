@@ -35,6 +35,7 @@ from urllib.parse import unquote
 
 from PIL import Image
 
+from ..optional_pickers import is_missing_picker
 from ..workspace import (
     ASSET_NAV_CSV,
     ASSET_PRODUCTS,
@@ -347,7 +348,13 @@ def summarize_csv(kind: str, path: Path) -> dict:
 def summarize_json(kind: str, path: Path) -> dict:
     """Validate an uploaded LYRA calibration-guidance file (LYRA's own format,
     checked by the runner's validators) and summarize it."""
-    from ..pickers.lyra_runner import GuidanceError, load_json, validate_derived, validate_picks
+    try:
+        from ..pickers.lyra_runner import GuidanceError, load_json, validate_derived, validate_picks
+    except ModuleNotFoundError as error:
+        if not is_missing_picker(error):
+            raise
+        raise ProductValidationError(
+            "LYRA files cannot be checked: the LYRA automatic picker is not installed on this server.")
 
     if path.stat().st_size > MAX_JSON_BYTES:
         raise ProductValidationError(

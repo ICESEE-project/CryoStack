@@ -34,7 +34,7 @@ for _p in (str(_REPO), str(_HERE)):
         sys.path.insert(0, _p)
 
 from frozen_legacies_fake_s3 import FakeS3
-from frozen_legacies_radar_fixtures import tiff_bytes
+from frozen_legacies_radar_fixtures import requires_astra, tiff_bytes
 from test_frozen_legacies_catalog import NAV, _json, _login, _strip, _wait_worker
 from icesee_jupyter_book.applications.frozen_legacies import catalog_routes, server
 from icesee_jupyter_book.applications.frozen_legacies.radar import catalog as catalog_mod
@@ -534,6 +534,7 @@ async def _manual_picks(client, ck, aid, n=2):
                                                            "action": "done"})).json()
 
 
+@requires_astra
 def test_s3_radar_runs_through_astra_to_my_picks_and_products(web_env):
     _m, maint = _login(web_env, "maint@example.org", "maintainer")
     _a, a = _login(web_env, "a@example.org")

@@ -26,7 +26,8 @@ for _p in (str(_REPO), str(_HERE)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from frozen_legacies_radar_fixtures import NAV_TEXT, tiff_bytes, write_nav, write_registry, write_tiff
+from frozen_legacies_radar_fixtures import (NAV_TEXT, requires_picker_runners,
+                                         tiff_bytes, write_nav, write_registry, write_tiff)
 from cryostack_src.workspace import WorkspaceUser, owner_root
 from icesee_jupyter_book.applications.frozen_legacies import server
 from icesee_jupyter_book.applications.frozen_legacies.radar import automatic
@@ -247,6 +248,7 @@ def test_missing_ursa_installation(monkeypatch, tmp_path):
                      "reason": "The URSA automatic picker is not installed on this server."}
 
 
+@requires_picker_runners
 def test_unavailable_ursa_never_starts_a_job(env, monkeypatch):
     monkeypatch.setattr(automatic, "URSA_DEPENDENCIES", ("module_that_does_not_exist",))
     automatic._availability_cache.clear()
@@ -267,6 +269,7 @@ def test_unavailable_ursa_never_starts_a_job(env, monkeypatch):
 
 
 # ── lifecycle ────────────────────────────────────────────────────────
+@requires_picker_runners
 def test_job_runs_ursa_and_registers_automatic_products(env, monkeypatch):
     # a gateway secret must never reach the URSA subprocess
     monkeypatch.setenv("CRYOSTACK_TEST_SECRET", "do-not-leak")
@@ -308,6 +311,7 @@ def test_job_runs_ursa_and_registers_automatic_products(env, monkeypatch):
     assert not (env["shared"] / "output").exists()          # URSA's cwd side effect contained
 
 
+@requires_picker_runners
 def test_rerun_replaces_the_previous_automatic_products(env):
     user, ck = _login(env, "a@example.org")
 
@@ -335,6 +339,7 @@ def test_rerun_replaces_the_previous_automatic_products(env):
     ("nothing", "URSA finished without producing picks."),
     ("crash", "URSA stopped with exit status 7."),
 ])
+@requires_picker_runners
 def test_failures_are_reported_without_results(env, monkeypatch, mode, message):
     (env["ursa"] / "mode.txt").write_text(mode)
     _u, ck = _login(env, "a@example.org")
@@ -349,6 +354,7 @@ def test_failures_are_reported_without_results(env, monkeypatch, mode, message):
     assert body["products"] == []
 
 
+@requires_picker_runners
 def test_ursa_import_failure(env):
     _u, ck = _login(env, "a@example.org")
 
@@ -367,6 +373,7 @@ def test_ursa_import_failure(env):
     assert body["job"]["message"] == "URSA could not be started in this environment."
 
 
+@requires_picker_runners
 def test_cancel_a_running_job(env, monkeypatch):
     (env["ursa"] / "mode.txt").write_text("slow")
     user, ck = _login(env, "a@example.org")
@@ -419,6 +426,7 @@ def test_warnings_for_names_and_navigation():
 
 
 # ── ownership and validation ─────────────────────────────────────────
+@requires_picker_runners
 def test_jobs_belong_to_their_owner(env):
     _a, cka = _login(env, "a@example.org")
     _b, ckb = _login(env, "b@example.org")
@@ -452,6 +460,7 @@ def test_invalid_automatic_actions(env, payload, status):
     assert session(env, script) == (status, 403)
 
 
+@requires_picker_runners
 def test_uploaded_radar_without_nav_warns_but_runs(env):
     _u, ck = _login(env, "a@example.org")
     from aiohttp import FormData
@@ -472,6 +481,7 @@ def test_uploaded_radar_without_nav_warns_but_runs(env):
 
 
 # ── health check, scientific status, publication ─────────────────────
+@requires_picker_runners
 def test_health_check_imports_ursa_in_the_job_environment(env, monkeypatch):
     monkeypatch.setenv("CRYOSTACK_TEST_SECRET", "do-not-leak")
     state = automatic.availability(refresh=True)
@@ -485,6 +495,7 @@ def test_health_check_imports_ursa_in_the_job_environment(env, monkeypatch):
     assert "CRYOSTACK_TEST_SECRET" not in automatic.ursa_environment()
 
 
+@requires_picker_runners
 def test_health_check_fails_when_ursa_cannot_be_imported(env):
     (env["ursa"] / "main.py").write_text("raise ImportError('broken install')\n")
     state = automatic.availability(refresh=True)
@@ -498,6 +509,7 @@ def test_scikit_image_is_a_checked_dependency():
     assert "skimage" in automatic.URSA_DEPENDENCIES and "cv2" in automatic.URSA_DEPENDENCIES
 
 
+@requires_picker_runners
 def test_runner_check_and_run_arguments():
     import subprocess as sp
     runner = str(automatic.RUNNER)
@@ -506,6 +518,7 @@ def test_runner_check_and_run_arguments():
     assert missing.returncode == 2 and "--tiff and --output are required" in missing.stderr
 
 
+@requires_picker_runners
 def test_automatic_results_are_unvalidated_and_never_publishable(env):
     """URSA output: labelled unvalidated everywhere, never a review snapshot."""
     from icesee_jupyter_book.applications.frozen_legacies.radar import review
@@ -539,6 +552,7 @@ def test_automatic_results_are_unvalidated_and_never_publishable(env):
     assert review.SNAPSHOT_PRODUCTS == ("astra-csv", "astra-qc") and review.WORKFLOW == "astra-manual"
 
 
+@requires_picker_runners
 def test_verification_plot_saved_in_ursas_working_directory_is_collected(env):
     (env["ursa"] / "mode.txt").write_text("cwd_verification")
     _u, ck = _login(env, "a@example.org")
@@ -573,6 +587,7 @@ def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+@requires_picker_runners
 def test_ursa_diagnostic_images_are_registered_per_frame(env):
     (env["ursa"] / "mode.txt").write_text("diagnostics")
     user, ck = _login(env, "a@example.org")
@@ -634,6 +649,7 @@ def test_ursa_diagnostic_images_are_registered_per_frame(env):
     assert all(i["preview_url"].endswith("/preview") for r in frames["rows"] for i in r["images"])
 
 
+@requires_picker_runners
 def test_automatic_provenance_records_ursa_inputs_parameters_and_diagnostics(env):
     (env["ursa"] / "mode.txt").write_text("diagnostics")
     (env["ursa"] / "config" / "default_config.json").write_text(
@@ -692,6 +708,7 @@ def test_ursa_commit_is_recorded_only_for_ursas_own_checkout(monkeypatch, tmp_pa
     assert automatic._git_commit(root) is None
 
 
+@requires_picker_runners
 def test_diagnostics_never_follow_links_or_take_non_png_files(env):
     (env["ursa"] / "mode.txt").write_text("hostile")
     user, ck = _login(env, "a@example.org")
@@ -722,6 +739,7 @@ def test_diagnostics_never_follow_links_or_take_non_png_files(env):
     ("MAX_DIAGNOSTIC_FILES", 2, {"ursa-diag-f01-picked", "ursa-diag-f02-picked"}),
     ("MAX_DIAGNOSTIC_FILE_BYTES", len(PNG), {"ursa-diag-f01-picked", "ursa-diag-f02-picked"}),
 ])
+@requires_picker_runners
 def test_diagnostics_are_bounded_keeping_every_frames_picks_plot_first(env, monkeypatch, limit, value, kept):
     (env["ursa"] / "mode.txt").write_text("diagnostics")
     monkeypatch.setattr(automatic, limit, value)
@@ -739,6 +757,7 @@ def test_diagnostics_are_bounded_keeping_every_frames_picks_plot_first(env, monk
     assert diagnostics["bytes"] <= automatic.MAX_DIAGNOSTIC_TOTAL_BYTES
 
 
+@requires_picker_runners
 def test_diagnostics_are_owner_scoped_and_contained(env):
     user, cka = _login(env, "a@example.org")
     _b, ckb = _login(env, "b@example.org")
@@ -783,6 +802,7 @@ def test_diagnostics_are_owner_scoped_and_contained(env):
                         "outside": 404}
 
 
+@requires_picker_runners
 def test_rerun_replaces_the_previous_runs_diagnostics(env):
     user, ck = _login(env, "a@example.org")
 
@@ -804,6 +824,7 @@ def test_rerun_replaces_the_previous_runs_diagnostics(env):
     assert second["frames"]["flagged"] == 0 and len(second["frames"]["rows"]) == 2
 
 
+@requires_picker_runners
 def test_diagnostics_never_make_automatic_results_reviewable(env):
     from icesee_jupyter_book.applications.frozen_legacies.radar import review
 

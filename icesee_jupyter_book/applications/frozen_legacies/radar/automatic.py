@@ -257,7 +257,7 @@ def _ursa_availability(*, refresh: bool = False) -> dict:
     result = {"available": True, "picker": "URSA", "reason": None}
     missing = [n for n in ("ascope_processor.py", "main.py", "config/default_config.json")
                if not (root / n).is_file()]
-    if missing:
+    if missing or not RUNNER.is_file():
         result = {"available": False, "picker": "URSA",
                   "reason": "The URSA automatic picker is not installed on this server."}
     else:
@@ -758,7 +758,8 @@ def lyra_availability(*, refresh: bool = False) -> dict:
     if cached and not refresh and time.time() - cached[0] < 300:
         return cached[1]
     unavailable = {"available": False, "picker": "LYRA"}
-    if any(not (root / "codes" / name).is_file() for name in LYRA_SCRIPTS):
+    if (not LYRA_RUNNER.is_file()
+            or any(not (root / "codes" / name).is_file() for name in LYRA_SCRIPTS)):
         result = {**unavailable,
                   "reason": "The LYRA automatic picker is not installed on this server."}
     else:

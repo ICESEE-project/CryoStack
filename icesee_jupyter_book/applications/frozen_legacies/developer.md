@@ -125,6 +125,8 @@ frozen_legacies/
 
 `Pickers/` holds the ASTRA reference script (`ASTRA_MAC.py`) and local test data; it is not imported by the application.
 
+**The picker implementations are not in the public repository.** `pickers/`, `Pickers/` and the ASTRA reference/golden tests are distributed separately and are gitignored; a deployment that holds them installs them at those paths. Application code imports ASTRA through `optional_pickers.py`, so without them the gateway still starts: manual-picking requests return `503` ("not installed on this server"), automatic picking reports LYRA/URSA as unavailable, and the picker tests skip.
+
 ## Dataset Registry
 
 Frozen Legacies discovers datasets through its dataset registry.

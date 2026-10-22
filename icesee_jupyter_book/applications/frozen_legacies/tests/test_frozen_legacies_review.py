@@ -20,6 +20,7 @@ for _p in (str(_REPO), str(_HERE)):
 
 from test_frozen_legacies_catalog import (  # noqa: F401  (fixtures)
     API, _login, _relogin, _run, _setup_source, archive, web_env)
+from frozen_legacies_radar_fixtures import requires_astra
 from icesee_jupyter_book.applications.frozen_legacies.radar import review as review_mod
 from icesee_jupyter_book.applications.frozen_legacies.radar import catalog as catalog_mod
 
@@ -73,6 +74,7 @@ async def _decide(client, ck, sid, decision, **extra):
     return resp.status, await resp.json()
 
 
+@requires_astra
 def test_manual_work_resumes_after_leaving_and_signing_in_again(web_env):
     _m, maint = _login(web_env, "maint@example.org", "maintainer")
     user, a = _login(web_env, "a@example.org")
@@ -104,6 +106,7 @@ def test_manual_work_resumes_after_leaving_and_signing_in_again(web_env):
     assert set(f["id"] for f in first["features"]) <= set(ids)
 
 
+@requires_astra
 def test_my_picks_are_served_from_an_owner_scoped_index(web_env):
     _m, maint = _login(web_env, "maint@example.org", "maintainer")
     user_a, a = _login(web_env, "a@example.org")
@@ -131,6 +134,7 @@ def test_my_picks_are_served_from_an_owner_scoped_index(web_env):
         assert db.execute("SELECT COUNT(*) FROM user_observations").fetchone()[0] == 0
 
 
+@requires_astra
 def test_review_lifecycle_publication_and_withdrawal(web_env, review_root):
     _m, maint = _login(web_env, "maint@example.org", "maintainer")
     user_a, a = _login(web_env, "a@example.org")
@@ -260,6 +264,7 @@ def test_review_lifecycle_publication_and_withdrawal(web_env, review_root):
          "observations.json", "provenance.json", "session.json"])
 
 
+@requires_astra
 def test_reviewers_cannot_decide_their_own_submissions(web_env):
     _m, maint = _login(web_env, "maint@example.org", "maintainer")
     _o, other_reviewer = _login(web_env, "owner@example.org", "owner")
@@ -285,6 +290,7 @@ def test_reviewers_cannot_decide_their_own_submissions(web_env):
     assert state["submissions"][0]["decision_note"].startswith("Bed pick")
 
 
+@requires_astra
 def test_resubmission_supersedes_and_rejection_is_final(web_env):
     _m, maint = _login(web_env, "maint@example.org", "maintainer")
     _a, a = _login(web_env, "a@example.org")
@@ -324,6 +330,7 @@ def test_resubmission_supersedes_and_rejection_is_final(web_env):
     assert rejected[1]["status"] == "rejected" and cancel_status == 409
 
 
+@requires_astra
 def test_pending_submissions_can_be_cancelled_by_their_owner(web_env):
     _m, maint = _login(web_env, "maint@example.org", "maintainer")
     _a, a = _login(web_env, "a@example.org")
@@ -348,6 +355,7 @@ def test_pending_submissions_can_be_cancelled_by_their_owner(web_env):
     assert bad == [409, 404] and foreign == 403
 
 
+@requires_astra
 def test_progress_shows_review_states_and_catalog_lookup_by_id(web_env):
     _m, maint = _login(web_env, "maint@example.org", "maintainer")
     _a, a = _login(web_env, "a@example.org")
@@ -439,6 +447,7 @@ def test_result_stage_never_reports_later_edits_as_reviewed():
     assert set(review_mod.STAGES.values()) == {"private", "reviewers", "public"}
 
 
+@requires_astra
 def test_a_reset_result_with_the_same_revision_count_can_be_submitted(web_env):
     _m, maint = _login(web_env, "maint@example.org", "maintainer")
     _a, a = _login(web_env, "a@example.org")
@@ -463,6 +472,7 @@ def test_a_reset_result_with_the_same_revision_count_can_be_submitted(web_env):
     assert status == 201 and second["status"] == "submitted"
 
 
+@requires_astra
 def test_my_picks_carry_the_review_stage_through_the_lifecycle(web_env):
     _m, maint = _login(web_env, "maint@example.org", "maintainer")
     _a, a = _login(web_env, "a@example.org")

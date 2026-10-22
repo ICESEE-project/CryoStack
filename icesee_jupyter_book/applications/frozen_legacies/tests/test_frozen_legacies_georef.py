@@ -25,6 +25,7 @@ for _p in (str(_REPO), str(_HERE)):
 
 from test_frozen_legacies_catalog import (  # noqa: F401  (fixtures)
     API, NAV, _json, _login, _setup_source, archive, web_env)
+from frozen_legacies_radar_fixtures import requires_astra
 from cryostack_src.workspace import WorkspaceUser
 from icesee_jupyter_book.applications.frozen_legacies import georef_routes, server
 from icesee_jupyter_book.applications.frozen_legacies.radar import georef
@@ -53,6 +54,7 @@ def asset(tmp_path):
     return ws, asset_id, records, nav
 
 
+@requires_astra
 def test_confirmed_film_cbds_are_not_assumed_sequential(asset):
     ws, aid, records, nav = asset
     before = json.dumps(records, sort_keys=True)
@@ -86,6 +88,7 @@ def test_missing_labels_are_never_filled_in(asset):
     assert georef.publication_check([])[0] is False
 
 
+@requires_astra
 def test_navigation_association_is_exact(asset, tmp_path):
     ws, aid, records, nav = asset
     georef.record_label(ws, aid, records, a_scope=1, action="confirm", film_cbd=900)
@@ -133,6 +136,7 @@ def test_unknown_actions_and_uncommitted_ascopes_are_refused(asset):
         georef.record_label(ws, aid, records, a_scope=1, action="confirm", film_cbd=471)
 
 
+@requires_astra
 def test_nonmonotonic_labels_are_flagged_not_corrected(asset):
     ws, aid, records, nav = asset
     for n, cbd in ((1, 480), (2, 471), (3, 482)):
@@ -142,6 +146,7 @@ def test_nonmonotonic_labels_are_flagged_not_corrected(asset):
     assert any("monotonically" in w for w in georef.warnings_for(out, {}))
 
 
+@requires_astra
 def test_georeferenced_product_is_separate_and_reproducible(asset):
     ws, aid, records, nav = asset
     georef.record_label(ws, aid, records, a_scope=2, action="confirm", film_cbd=478)
@@ -204,6 +209,7 @@ async def _commit(client, ck, aid, n):
     return rev
 
 
+@requires_astra
 def test_georeferencing_api_keeps_astra_outputs_and_is_owner_scoped(web_env):
     _m, maint = _login(web_env, "maint@example.org", "maintainer")
     _a, a = _login(web_env, "a@example.org")
@@ -308,6 +314,7 @@ def test_georeferencing_api_keeps_astra_outputs_and_is_owner_scoped(web_env):
 
 
 # ── georeferencing through review and publication ────────────────────
+@requires_astra
 def test_verified_georeferencing_reaches_the_published_product(web_env):
     _m, maint = _login(web_env, "maint@example.org", "maintainer")
     _r, reviewer = _login(web_env, "reviewer@example.org", "maintainer")

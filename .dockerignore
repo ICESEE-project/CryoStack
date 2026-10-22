@@ -104,3 +104,13 @@ external/living-ice-sheet-temperature/frontend/dist/
 # ---- the scientific HPC/cloud compute image build context is a separate,
 # non-public artifact -- not needed inside the platform/gateway image -----
 /tools/cloud/
+
+# ---- Frozen Legacies picker implementations: private, distributed
+# separately -- never in the public image (frozen_legacies/optional_pickers.py)
+/icesee_jupyter_book/applications/frozen_legacies/Pickers/
+/icesee_jupyter_book/applications/frozen_legacies/pickers/
+/icesee_jupyter_book/applications/frozen_legacies/tests/astra_golden.json
+/icesee_jupyter_book/applications/frozen_legacies/tests/frozen_legacies_astra_golden.py
+/icesee_jupyter_book/applications/frozen_legacies/tests/frozen_legacies_astra_reference.py
+/icesee_jupyter_book/applications/frozen_legacies/tests/test_frozen_legacies_astra_golden.py
+/icesee_jupyter_book/applications/frozen_legacies/tests/test_frozen_legacies_astra_parity.py

@@ -15,13 +15,16 @@ icesee_jupyter_book/icesee_jupyter_notebooks/users/
 # Frozen Legacies and other gateway-side apps resolve <cwd>/users/<safe-id>)
 /users/
 
-# Frozen Legacies local picker test data and outputs (picker code is kept)
-icesee_jupyter_book/applications/frozen_legacies/Pickers/Ascope/tiff/
-icesee_jupyter_book/applications/frozen_legacies/Pickers/Ascope/output/
-icesee_jupyter_book/applications/frozen_legacies/Pickers/OUTPUT/
-icesee_jupyter_book/applications/frozen_legacies/Pickers/**/*.tif
-icesee_jupyter_book/applications/frozen_legacies/Pickers/**/*.tiff
-icesee_jupyter_book/applications/frozen_legacies/Pickers/**/*_QC.png
+# Frozen Legacies picker implementations: private, never committed. They are
+# installed locally at these paths (see frozen_legacies/optional_pickers.py).
+icesee_jupyter_book/applications/frozen_legacies/Pickers/
+icesee_jupyter_book/applications/frozen_legacies/pickers/
+icesee_jupyter_book/applications/frozen_legacies/tests/astra_golden.json
+icesee_jupyter_book/applications/frozen_legacies/tests/frozen_legacies_astra_golden.py
+icesee_jupyter_book/applications/frozen_legacies/tests/frozen_legacies_astra_reference.py
+icesee_jupyter_book/applications/frozen_legacies/tests/test_frozen_legacies_astra_golden.py
+icesee_jupyter_book/applications/frozen_legacies/tests/test_frozen_legacies_astra_parity.py
+
 # Local (development) shared radar source registry; deployments configure
 # $CRYOSTACK_FROZEN_LEGACIES_RADAR_SOURCES instead
 icesee_jupyter_book/applications/frozen_legacies/radar_sources.local.yaml

@@ -518,7 +518,7 @@ def rebuild_observations(workspace, manifest, sources, manual_mod, asset_image_p
     aid = manifest["asset_id"]
     try:
         image = manifest.get("image") or {}
-        from .pickers.astra import AstraGeometry
+        from .optional_pickers import AstraGeometry
         geometry = AstraGeometry.for_image(int(image["width"]), int(image["height"]))
         filename = manifest.get("filename") or ""
         doc = manual_mod.load_document(workspace, aid, geometry, filename)

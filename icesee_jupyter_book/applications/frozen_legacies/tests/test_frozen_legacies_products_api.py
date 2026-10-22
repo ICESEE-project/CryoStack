@@ -20,7 +20,8 @@ for _p in (str(_REPO), str(_HERE)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from frozen_legacies_radar_fixtures import NAV_TEXT, tiff_bytes, write_nav, write_registry, write_tiff
+from frozen_legacies_radar_fixtures import (NAV_TEXT, requires_astra,
+                                         tiff_bytes, write_nav, write_registry, write_tiff)
 from cryostack_src.workspace import WorkspaceUser, owner_root
 from icesee_jupyter_book.applications.frozen_legacies import server
 from icesee_jupyter_book.applications.frozen_legacies.radar import products
@@ -184,6 +185,7 @@ def test_shared_radar_is_listed_but_not_downloadable(env):
     assert call(env, ck, "GET", f"{API}/assets/{asset_id}/products/raw-radar")[0] == 403
 
 
+@requires_astra
 def test_astra_outputs_appear_as_generated_products(env):
     _u, ck = _login(env, "a@example.org")
     asset_id = _shared(env, ck)
@@ -454,6 +456,7 @@ def test_tampered_products_manifest_cannot_reach_other_files(env):
         assert call(env, ck, "GET", f"{API}/assets/{asset_id}/products/{pid}")[0] == 404
 
 
+@requires_astra
 def test_bundle_contains_products_and_safe_index_only(env):
     _u, ck = _login(env, "a@example.org")
     asset_id = _upload_radar(env, ck)

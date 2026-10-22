@@ -30,7 +30,7 @@ import json
 import math
 import time
 
-from ..pickers.astra import astra_dataframe, load_flight_coordinates
+from ..optional_pickers import astra_dataframe, load_flight_coordinates
 from ..workspace import ASSET_OBSERVATIONS, ASSET_SESSION, FrozenLegaciesWorkspace
 from . import manual
 

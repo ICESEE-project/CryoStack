@@ -9,7 +9,21 @@ import io
 from pathlib import Path
 
 import numpy as np
+import pytest
 from PIL import Image
+
+from icesee_jupyter_book.applications.frozen_legacies import optional_pickers
+
+_APP = Path(__file__).resolve().parent.parent
+
+# The picker implementations are distributed separately (optional_pickers.py);
+# tests that drive a real ASTRA session or the real LYRA/URSA runners skip
+# without them.
+requires_astra = pytest.mark.skipif(
+    not optional_pickers.ASTRA_AVAILABLE, reason="the ASTRA picker is distributed separately")
+requires_picker_runners = pytest.mark.skipif(
+    not all((_APP / "pickers" / name).is_file() for name in ("ursa_runner.py", "lyra_runner.py")),
+    reason="the LYRA/URSA runners are distributed separately")
 
 
 def radar_array(width: int = 300, height: int = 40) -> np.ndarray:

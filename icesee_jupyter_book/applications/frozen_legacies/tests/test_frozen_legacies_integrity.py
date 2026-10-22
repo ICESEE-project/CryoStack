@@ -22,7 +22,7 @@ for _p in (str(_REPO), str(_HERE)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from frozen_legacies_radar_fixtures import write_tiff
+from frozen_legacies_radar_fixtures import requires_astra, write_tiff
 from test_frozen_legacies_catalog import (  # noqa: F401  (fixtures)
     API, _login, _run, _setup_source, _strip, archive, web_env)
 from test_frozen_legacies_review import _decide, _done, _open, _submit
@@ -31,6 +31,8 @@ from icesee_jupyter_book.applications.frozen_legacies.radar import catalog as ca
 from icesee_jupyter_book.applications.frozen_legacies.radar import review as review_mod
 from icesee_jupyter_book.applications.frozen_legacies.radar.indexer import index_source
 from icesee_jupyter_book.applications.frozen_legacies.radar.storage import LocalProvider
+
+pytestmark = requires_astra
 
 
 @pytest.fixture(autouse=True)

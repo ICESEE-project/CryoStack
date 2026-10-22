@@ -204,12 +204,12 @@ class _Navigation:
     """ASTRA's exact-CBD navigation lookup (same semantics as its CSV)."""
 
     def __init__(self, nav_path):
-        from ..pickers.astra import load_flight_coordinates
+        from ..optional_pickers import load_flight_coordinates
 
         self.frame = load_flight_coordinates(str(nav_path)) if nav_path else None
 
     def position(self, cbd):
-        from ..pickers.astra import get_coordinates_for_cbd
+        from ..optional_pickers import get_coordinates_for_cbd
 
         if cbd is None or self.frame is None:
             return None

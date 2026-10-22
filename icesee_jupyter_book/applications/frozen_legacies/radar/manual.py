@@ -30,7 +30,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from ..pickers.astra import (
+from ..optional_pickers import (
     CSV_COLUMNS,
     FEATURES,
     STATE_FIELDS,
