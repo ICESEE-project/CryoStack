@@ -140,7 +140,8 @@ def _gateway_parts(page):
             if workflow.stepper.steps is stepper:
                 followed = _cell(progress, "_cl_followed_run")
                 return SimpleNamespace(page=page, manager=manager, stepper=stepper, workflow=workflow,
-                                       picker=_cell(followed, "example_picker"), mode=_cell(followed, "mode_dd"))
+                                       picker=_cell(followed, "example_picker"), mode=_cell(followed, "mode_dd"),
+                                       model=_cell(followed, "model_dd"))
     raise AssertionError("stepper listener not found")
 
 
@@ -160,7 +161,7 @@ def _walk(w):
 def _register(cl, status="submitted", example=None, minutes=0):
     from cryostack_src.workspace.models import RunInfo
 
-    run = RunInfo(id=f"run-{status}-{minutes}", name="r", model="icepack", backend="spack",
+    run = RunInfo(id=f"run-{status}-{minutes}", name="r", model=cl.model.value, backend="spack",
                   execution_mode=cl.mode.value, status=status,
                   metadata={"example": cl.picker.value if example is None else example},
                   created=datetime.now() + timedelta(minutes=minutes))
@@ -185,6 +186,21 @@ def test_cryolauncher_stepper_follows_submit_monitor_results(cryolauncher):
     cl.manager.update_run_status(run.id, "completed")
     assert current(cl.stepper.value) == ["Results"]
     assert "done" in step_classes(cl.stepper.value)["Monitor"]
+
+
+def test_cryolauncher_other_model_does_not_advance_stepper(cryolauncher):
+    from cryostack_src.workspace.models import RunInfo
+
+    cl = cryolauncher
+    _first_example(cl)
+    selected_model = cl.model.value
+    other_model = "icepack" if selected_model == "issm" else "issm"
+    run = RunInfo(id="other-model-running", name="other", model=other_model,
+                  backend="spack", execution_mode=cl.mode.value, status="running",
+                  metadata={"example": cl.picker.value})
+    cl.manager.register_run(run)
+    assert cl.model.value == selected_model
+    assert current(cl.stepper.value) == ["Review & launch"]
 
 
 @pytest.mark.parametrize("state,mark", [("failed", "attention"), ("cancelled", "stopped")])
