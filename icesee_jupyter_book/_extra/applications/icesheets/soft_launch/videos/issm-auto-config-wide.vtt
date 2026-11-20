@@ -1,0 +1,103 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:12.000
+Set one ISSM solver limit, review it, then launch explicitly.
+Why: Use the reviewed BYO workflow for one native ISSM solver change.
+Look for: Example: canonical SquareIceShelf; stressbalance iteration cap 120.
+
+2
+00:00:12.000 --> 00:00:24.000
+Describe the change: Set stressbalance max iterations to 120.
+Why: A narrow request makes the proposed change easy to verify.
+Look for: Keep the model, example and Cloud execution mode.
+
+3
+00:00:24.000 --> 00:00:37.000
+Choose Create plan. Read the proposed value of 120.
+Why: A plan proposes a change; it does not start the solver.
+Look for: Expected: one change; no override → 120.
+
+4
+00:00:37.000 --> 00:00:49.000
+Apply the reviewed 120 limit to the launch form.
+Why: Apply only after confirming 120 and the retained experiment.
+Look for: Expected: Configuration updated · 1 setting changed.
+
+5
+00:00:49.000 --> 00:00:59.000
+Choose Review in Advanced to inspect the native controls.
+Why: The native form is where you review execution controls.
+Look for: Continue to the normal launch form.
+
+6
+00:00:59.000 --> 00:01:07.000
+Confirm ISSM → SquareIceShelf.
+Why: The change should not select a different scientific example.
+Look for: The canonical example is retained.
+
+7
+00:01:07.000 --> 00:01:15.000
+Confirm Action Run and target runme.m.
+Why: runme.m retains the canonical scientific entrypoint.
+Look for: The native canonical entrypoint is retained.
+
+8
+00:01:15.000 --> 00:01:26.000
+Read the native review: ISSM · SquareIceShelf.
+Why: Review before submitting so the new run uses the intended example.
+Look for: Check the reviewed model and example before submission.
+
+9
+00:01:26.000 --> 00:01:36.000
+Scroll to Infrastructure. Check that every row is Ready.
+Why: Storage, image, license and compute must be ready before submission.
+Look for: Account, storage, image and compute must be ready.
+
+10
+00:01:36.000 --> 00:01:49.000
+Choose Launch cloud run only after the final review.
+Why: This explicit action starts the native cloud execution.
+Look for: This explicit action submits the native job.
+
+11
+00:01:49.000 --> 00:01:58.000
+Wait for the new SquareIceShelf run to submit.
+Why: Follow the new run before inspecting its outputs.
+Look for: The current run changes from staging to submitting.
+
+12
+00:01:58.000 --> 00:02:09.000
+Open Results. Choose StressbalanceSolution and Vel.
+Why: The selected field must belong to the completed run.
+Look for: The completed native result contains 91 nodal velocity values.
+
+13
+00:02:09.000 --> 00:02:22.000
+Choose Render.
+Why: Render updates the displayed field; it does not rerun the solver.
+Look for: Expected: native velocity field, 0–9034.39 m/year.
+
+14
+00:02:22.000 --> 00:02:36.000
+Choose Download results. Wait for the new archive link.
+Why: Package the mesh, fields, figure and runtime provenance together.
+Look for: A fresh results_bundle link appears for this run.
+
+15
+00:02:36.000 --> 00:02:49.000
+Choose the fresh results_bundle link to save it.
+Why: The fresh link saves the archive prepared for this run.
+Look for: Keep the native outputs and runtime provenance together.
+
+16
+00:02:49.000 --> 00:03:01.000
+Inspect the saved native velocity figure.
+Why: The colorbar and solver record explain the result in physical units.
+Look for: ISSM converged in 23 iterations, below both caps of 100 and 120.
+
+17
+00:03:01.000 --> 00:03:14.000
+Compare the retained mesh and fields with the Basic result.
+Why: Convergence below both caps explains this unchanged recorded result.
+Look for: For this changed-cap case, every compared numeric value was exactly equal.

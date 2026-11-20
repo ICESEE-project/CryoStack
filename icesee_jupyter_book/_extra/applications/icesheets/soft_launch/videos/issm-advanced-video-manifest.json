@@ -1,0 +1,53 @@
+{
+  "status": "accepted_for_publication",
+  "root_visual_review": "Accepted11-scene contact sheet and exact native PNG",
+  "duration_seconds": 173,
+  "scope": "ISSM Advanced owned clone; only Square.par hmax1000\u21921010m, hmin300 unchanged, GUI replacement import",
+  "files": [
+    {
+      "path": "issm-advanced-run-manifest.json",
+      "bytes": 9801,
+      "sha256": "ee4ea46c7500f321c15b8f1dd3c166e4f79ef2882c0fe22f34e650e3b8d5e24d"
+    },
+    {
+      "path": "issm-advanced-velocity.png",
+      "bytes": 87379,
+      "sha256": "a0cf078843500354a1eb71d74b8254ac3ed7ba867983d51fb7c7def6ffb07f0e"
+    },
+    {
+      "path": "issm-advanced.mp4",
+      "bytes": 2981368,
+      "sha256": "2266d84c2f428cae50ff434d41573606991c672f4d2446d3dd505f28ca441ac3"
+    },
+    {
+      "path": "issm-advanced.vtt",
+      "bytes": 3772,
+      "sha256": "07cdd7114b34830824c7fa0885474d14b318a2f1fb6596ee3d1dd416bbfbc1cd"
+    }
+  ],
+  "archive": {
+    "sha256": "440ada602f9029c18c5f36446e121c9dd0d5632105a56fc682ba75e3ac24daba",
+    "bytes": 182898,
+    "members": 11,
+    "crc_valid": true
+  },
+  "native_summary": "91vertices/148triangles; Vx/Vy/Vel/Pressure each91finite nodal values; convergence count23 is one scalar. Diagnostic SSA, no transient time axis. Vel agrees with hypot(Vx,Vy).",
+  "model_geometry_limit": "Source-confirmed parameter values; opaque MCOS model not decoded.",
+  "comparison_scope": "Basic mesh/max-speed are descriptive context for different inputs, no repeat or accuracy claim.",
+  "privacy": {
+    "full_decode": "passed",
+    "OCR_frames": 58,
+    "findings": 0,
+    "root_contact_review": "accepted"
+  },
+  "timings": {
+    "times_utc": {
+      "submitted": "2026-11-19T03:52:28.402000+00:00",
+      "batch_started": "2026-11-19T03:55:32.044000+00:00",
+      "batch_stopped": "2026-11-19T03:56:08.875000+00:00"
+    },
+    "submission_to_batch_start_seconds": 183.642,
+    "batch_running_seconds": 36.831,
+    "submission_to_stop_seconds": 220.473
+  }
+}

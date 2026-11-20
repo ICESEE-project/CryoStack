@@ -16,7 +16,7 @@ flowchart TB
     Snapshot --> Activity[Activity]
     Snapshot --> Tests[Test reservations]
     Overview --> Composition[Per-pool budget composition]
-    Overview --> Capacity[Future registration grant capacity]
+    Overview --> Capacity[Future eligible first-approval grant capacity]
     Users --> Search[Admin-only user search]
     Users --> Export[Admin-only balance CSV]
     Policy --> Preview[Saved-policy preview without grants]
@@ -30,13 +30,14 @@ current snapshot, not an invented historical usage chart or AWS billing feed.
 The four segments sum to the pool budget. Labels and numeric values accompany
 colors for accessibility.
 
-The funding-readiness panel reports how many future registration grants the
-unallocated pool budget can support at the configured amount. Zero-credit
+The funding-readiness panel divides unallocated funds by the configured
+whole-grant amount. When CryoStack registration approval is enabled, those grants are evaluated
+at first approval after the account and policy eligibility checks. Zero-credit
 policies show no numerical capacity. An enabled exhausted pool explicitly warns
 that another grant cannot be funded. Readiness does not imply provider funding.
 
 Saved-policy preview reports how many existing accounts match the current
-filters and the capacity for future registrations. It is a read-only operation;
+email-domain/institution filters and the capacity for future eligible grants. It is a read-only operation;
 no introductory grants are issued and existing users remain ineligible for
 retroactive awards. It previews saved settings, not unsubmitted form changes.
 
@@ -89,8 +90,11 @@ flowchart LR
     Reconcile --> Finalize[Ledger settlement and audit]
 ```
 
-This last flow is a future design, not implemented functionality. Receiving an
-award or creating an internal pool must not switch on paid workloads. BYO
+This diagram specifies the release requirements for provider-funded execution.
+The deployed dashboard still refuses live managed reservations. A separate
+isolated hosted-pilot candidate contains funding and broker components; it is
+not activated by creating a pool or receiving an award. Production activation
+requires the <a href="/applications/icesheets/soft_launch/pilot_readiness">pilot release checks</a>. BYO
 execution stays a separate user-owned-account path. Google/Azure support needs
 provider adapters; ACCESS requires scheduler/resource integration and its own
 units, not a conversion to AWS dollars.

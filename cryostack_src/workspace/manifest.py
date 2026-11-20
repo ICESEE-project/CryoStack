@@ -14,6 +14,8 @@ SUPPORTED_VERSIONS = (1, 2)
 
 
 def write_manifest(run: RunInfo, workspace: Path) -> Path:
+    from .storage_mount import require_workspace_storage
+    require_workspace_storage(workspace)
     workspace.mkdir(parents=True, exist_ok=True)
     path = workspace / MANIFEST_NAME
     payload = {

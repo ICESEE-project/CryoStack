@@ -51,7 +51,7 @@
         <h3>CryoLauncher <span class="cryostack-status supported">Supported</span></h3>
         <p>Configure and run supported ice-sheet models in the browser.</p>
         <div class="cryostack-resource-inline-links">
-          <a href="/icesheets/">Open</a>
+          <a href="/cryolauncher/">Open</a>
           <a href="applications/icesheets/getting_started.html">Getting Started</a>
           <a href="applications/icesheets/user_manual.html">User Manual</a>
         </div>
@@ -62,7 +62,7 @@
         <h3>ICESEE</h3>
         <p>Ensemble state estimation and parameter inference with supported models.</p>
         <div class="cryostack-resource-inline-links">
-          <a href="/icesee-gui/">Open</a>
+          <a href="/icesee/">Open</a>
           <a href="applications/icesee/getting_started.html">Getting Started</a>
           <a href="applications/icesee/user_manual.html">User Manual</a>
         </div>
@@ -191,7 +191,7 @@
       <article class="cryostack-resource-card">
         <div class="cryostack-resource-tag">Execution</div>
         <h3>Cloud <span class="cryostack-status supported">Supported</span></h3>
-        <p>Bring-your-own AWS account via CloudFormation, on AWS Batch (Fargate default, EC2 Advanced). CryoLauncher's ISSM and Icepack workflows have each completed end-to-end execution on both Fargate and EC2 On-Demand (single node, CPU), including institutional MATLAB licensing through Connector/Relay for ISSM; ICESEE's Lorenz-96 example has done the same on Fargate. EC2 Spot/GPU/multi-node and ICESEE's own Cloud/ISSM workflows remain unvalidated.</p>
+        <p>Bring-your-own AWS account via CloudFormation, on AWS Batch (Fargate default, EC2 Advanced). CryoLauncher's ISSM and Icepack workflows have each completed end-to-end execution on both Fargate and EC2 On-Demand (single node, CPU), including institutional MATLAB licensing through Connector/Relay for ISSM; ICESEE's earlier live-AWS reference is Lorenz-96 on Fargate. CryoLauncher EC2 Spot/custom networking have no qualified run here; GPU/multi-node scientific submission and ICESEE Cloud/ISSM are blocked. The Cloud Run Guide names ICESEE's current staged examples and process bound separately.</p>
         <a href="docs/hpc_cloud.html">Cloud Run Guide &rarr;</a>
       </article>
 

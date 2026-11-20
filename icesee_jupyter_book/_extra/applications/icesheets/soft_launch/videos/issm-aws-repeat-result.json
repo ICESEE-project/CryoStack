@@ -1,0 +1,269 @@
+{
+  "schema": "cryostack.repeatability-result.v1",
+  "criteria_sha256": "dcf0a523552ec1d1d39c0c20ff90c5e1d0c916d8b3bda2fea6b1854f07352a32",
+  "criteria_declared_at_utc": "2026-11-18 19:32:26 UTC",
+  "comparison": "AWS-to-AWS; not PC/AWS",
+  "criteria_precedes_candidate_submission": true,
+  "input_hash_matches": {
+    "runme.m": true,
+    "Square.par": true,
+    "DomainOutline.exp": true,
+    "Front.exp": true
+  },
+  "image_digest_matches": true,
+  "actual_job_input_binding_verified": true,
+  "reference_archive": {
+    "sha256": "c2b0979288f1f51cc8339e68ea4a08efa6effa7ca79e84a3e28410e4a2251fdd",
+    "bytes": 178785
+  },
+  "candidate_archive": {
+    "sha256": "be5223513d0b5374baddbe1f9624e18fc6e420cabe5f5c88991fbd897fbd8c52",
+    "bytes": 182569
+  },
+  "archive_bytes_identical": false,
+  "native_layout_matches": true,
+  "native_layout": {
+    "reference": {
+      "solution": {
+        "name": "StressbalanceSolution",
+        "transient": false,
+        "timesteps": 1,
+        "time": 0,
+        "step": 0
+      },
+      "fields": {
+        "Pressure": {
+          "location": "nodal",
+          "shape": 91,
+          "path": "fields/StressbalanceSolution/Pressure.h5"
+        },
+        "Vel": {
+          "location": "nodal",
+          "shape": 91,
+          "path": "fields/StressbalanceSolution/Vel.h5"
+        },
+        "Vx": {
+          "location": "nodal",
+          "shape": 91,
+          "path": "fields/StressbalanceSolution/Vx.h5"
+        },
+        "Vy": {
+          "location": "nodal",
+          "shape": 91,
+          "path": "fields/StressbalanceSolution/Vy.h5"
+        }
+      },
+      "mesh": {
+        "numberofvertices": 91,
+        "numberofelements": 148,
+        "dimension": 2,
+        "element_columns": 3,
+        "connectivity_indexing": "1-based"
+      }
+    },
+    "candidate": {
+      "solution": {
+        "name": "StressbalanceSolution",
+        "transient": false,
+        "timesteps": 1,
+        "time": 0,
+        "step": 0
+      },
+      "fields": {
+        "Pressure": {
+          "location": "nodal",
+          "shape": 91,
+          "path": "fields/StressbalanceSolution/Pressure.h5"
+        },
+        "Vel": {
+          "location": "nodal",
+          "shape": 91,
+          "path": "fields/StressbalanceSolution/Vel.h5"
+        },
+        "Vx": {
+          "location": "nodal",
+          "shape": 91,
+          "path": "fields/StressbalanceSolution/Vx.h5"
+        },
+        "Vy": {
+          "location": "nodal",
+          "shape": 91,
+          "path": "fields/StressbalanceSolution/Vy.h5"
+        }
+      },
+      "mesh": {
+        "numberofvertices": 91,
+        "numberofelements": 148,
+        "dimension": 2,
+        "element_columns": 3,
+        "connectivity_indexing": "1-based"
+      }
+    }
+  },
+  "units": {
+    "coordinates": "m",
+    "Pressure": "Pa",
+    "Vel": "m/year",
+    "Vx": "m/year",
+    "Vy": "m/year",
+    "basis": "Fixed native ISSM field definitions from exact scientific input and image matches; archive metadata does not itself embed unit labels."
+  },
+  "mesh": {
+    "x": {
+      "passed": true,
+      "exact_array_equality": true,
+      "maximum_absolute_difference": 0.0,
+      "maximum_relative_difference_at_nonzero_reference": 0.0,
+      "nonzero_differences_at_zero_reference": 0,
+      "absolute_tolerance": 1e-08,
+      "relative_tolerance": 0
+    },
+    "y": {
+      "passed": true,
+      "exact_array_equality": true,
+      "maximum_absolute_difference": 0.0,
+      "maximum_relative_difference_at_nonzero_reference": 0.0,
+      "nonzero_differences_at_zero_reference": 0,
+      "absolute_tolerance": 1e-08,
+      "relative_tolerance": 0
+    },
+    "elements": {
+      "passed": true,
+      "exact_array_equality": true
+    }
+  },
+  "physical_fields": {
+    "Pressure": {
+      "passed": true,
+      "exact_array_equality": true,
+      "maximum_absolute_difference": 0.0,
+      "maximum_relative_difference_at_nonzero_reference": 0.0,
+      "nonzero_differences_at_zero_reference": 0,
+      "absolute_tolerance": 1e-08,
+      "relative_tolerance": 1e-10
+    },
+    "Vel": {
+      "passed": true,
+      "exact_array_equality": true,
+      "maximum_absolute_difference": 0.0,
+      "maximum_relative_difference_at_nonzero_reference": 0.0,
+      "nonzero_differences_at_zero_reference": 0,
+      "absolute_tolerance": 1e-08,
+      "relative_tolerance": 1e-10
+    },
+    "Vx": {
+      "passed": true,
+      "exact_array_equality": true,
+      "maximum_absolute_difference": 0.0,
+      "maximum_relative_difference_at_nonzero_reference": 0.0,
+      "nonzero_differences_at_zero_reference": 0,
+      "absolute_tolerance": 1e-08,
+      "relative_tolerance": 1e-10
+    },
+    "Vy": {
+      "passed": true,
+      "exact_array_equality": true,
+      "maximum_absolute_difference": 0.0,
+      "maximum_relative_difference_at_nonzero_reference": 0.0,
+      "nonzero_differences_at_zero_reference": 0,
+      "absolute_tolerance": 1e-08,
+      "relative_tolerance": 1e-10
+    }
+  },
+  "convergence_steps": {
+    "reference": [
+      23.0
+    ],
+    "candidate": [
+      23.0
+    ]
+  },
+  "reference_members": {
+    "fields/StressbalanceSolution/Pressure.h5": {
+      "bytes": 1880,
+      "sha256": "3d8c3f52f8f514d7a9dfb06cf3708fd35cd3ccb98494911fc3630a2c7a268e61"
+    },
+    "fields/StressbalanceSolution/StressbalanceConvergenceNumSteps.h5": {
+      "bytes": 1160,
+      "sha256": "c8cb52cccb7001f260c2793106532c53b69d9b408b1a5134c28aa6a8aee07f5f"
+    },
+    "fields/StressbalanceSolution/Vel.h5": {
+      "bytes": 1880,
+      "sha256": "619a0472e77b09bb84416cfe84a022b50bbdf7126375212f9f3d5b81217c8983"
+    },
+    "fields/StressbalanceSolution/Vx.h5": {
+      "bytes": 1880,
+      "sha256": "ceb0d41419e2bbe248c45041211cbd71a55a4a3f13c10de4dc644d182fb90d78"
+    },
+    "fields/StressbalanceSolution/Vy.h5": {
+      "bytes": 1880,
+      "sha256": "72330d380a4cb9b3de1b321a224f3ad29aae33b33438c2f1597fc13c60180c64"
+    },
+    "figures/StressbalanceSolution_Vel.png": {
+      "bytes": 87143,
+      "sha256": "a05b4d0a03e78ecd404dbe7adaf9c7453140e9fc69c6b7c8b55e525f71dfe761"
+    },
+    "mesh/mesh.h5": {
+      "bytes": 6800,
+      "sha256": "7bdb308150efd039ba2a8b52a06fe0d03907cbb80ee3771eb5c3ad3b2bcafa19"
+    },
+    "metadata.json": {
+      "bytes": 991,
+      "sha256": "de9ff72e7f576c471a951a83ae3e4fb4f18421377bb1bf1f78b6830241e29662"
+    },
+    "model/md_final.mat": {
+      "bytes": 515492,
+      "sha256": "d34ffb369d58c63232abccb50f47136d8ba455bbd9df375c792cdcc741d516f7"
+    }
+  },
+  "candidate_members": {
+    "fields/StressbalanceSolution/Pressure.h5": {
+      "bytes": 1880,
+      "sha256": "a5f1ded0bd5fd0fba1b83ddd422c7b047a3d7368938d6b2f94e82cf0ec4598de"
+    },
+    "fields/StressbalanceSolution/StressbalanceConvergenceNumSteps.h5": {
+      "bytes": 1160,
+      "sha256": "e54baebeb6b7790ca080ea01ffea59435e65212f417afdaad270379c1e934c0e"
+    },
+    "fields/StressbalanceSolution/Vel.h5": {
+      "bytes": 1880,
+      "sha256": "3b41874d59299491aa5b87d216bd3407c38f7665f9820da190d18e88c04ca288"
+    },
+    "fields/StressbalanceSolution/Vx.h5": {
+      "bytes": 1880,
+      "sha256": "9bafe425f6bd882211c47df1b667325ec9371c64d054fd843cb56df593569b4b"
+    },
+    "fields/StressbalanceSolution/Vy.h5": {
+      "bytes": 1880,
+      "sha256": "ec676fc695008e2d432c851be955d8db0f4d04456dab979f7f0e35860c0f6311"
+    },
+    "figures/StressbalanceSolution_Vel.png": {
+      "bytes": 87143,
+      "sha256": "a05b4d0a03e78ecd404dbe7adaf9c7453140e9fc69c6b7c8b55e525f71dfe761"
+    },
+    "mesh/mesh.h5": {
+      "bytes": 6800,
+      "sha256": "02ad97046e81bb39108324854e59dba4d1e44b700a46a7aba81bb76e2004492c"
+    },
+    "metadata.json": {
+      "bytes": 991,
+      "sha256": "b92a611abc510e303669e4ec2242dd72e69e2e4d1fa95aba6c8f8542ed239f7d"
+    },
+    "model/md_final.mat": {
+      "bytes": 515492,
+      "sha256": "7ea3f54cff0147857fc5eff6a8deaa39c8db2887afc30bc70c53d41e9c4bb831"
+    },
+    "rng-before.mat": {
+      "bytes": 2823,
+      "sha256": "3c933d74cfe2f886d3b7428b7d29200812cd662fe559934287f7be958ffd958a"
+    },
+    "runtime-provenance.json": {
+      "bytes": 1798,
+      "sha256": "ea0fdfea75708eeee0044463b0cfb242170731bd60afff9280e67c26293474e7"
+    }
+  },
+  "failures": [],
+  "passed": true,
+  "thresholds_changed": false,
+  "solver_executed": false
+}

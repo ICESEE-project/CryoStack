@@ -1,0 +1,157 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:11.000
+Ask: how does +15 m thickness change this native shelf result?
+Why: Answer a controlled question with fixed scripts, mesh and runtime controls.
+Look for: Keep scripts and controls fixed; change the full synthetic thickness input.
+
+2
+00:00:11.000 --> 00:00:23.000
+Name a separate workspace example. Choose New example.
+Why: Keep baseline and variant examples separate for comparison.
+Look for: Expected: a new owned Icepack example.
+
+3
+00:00:23.000 --> 00:00:35.000
+Choose the two scripts: run.py and initial_fields.py.
+Why: Both files validate and initialize the native model fields.
+Look for: Check Choose script files (2) before importing.
+
+4
+00:00:35.000 --> 00:00:49.000
+Enable Replace existing script files, then Import script files.
+Why: Replace prevents a starter or older entrypoint from taking precedence.
+Look for: Expected: both filenames imported and saved.
+
+5
+00:00:49.000 --> 00:00:57.000
+Read the saved confirmation for both filenames.
+Why: The saved source bytes are what the next run stages.
+Look for: Set Run target to run.py.
+
+6
+00:00:57.000 --> 00:01:12.000
+In Datasets choose icepack-shelf-initial-plus15m.h5.
+Why: Select the full +15 m field dataset rather than editing one mesh node.
+Look for: Check that one data file is selected.
+
+7
+00:01:12.000 --> 00:01:24.000
+Choose Upload to store the selected variant.
+Why: Uploading stores the variant in your workspace dataset library.
+Look for: Expected: Uploaded: icepack-shelf-initial-plus15m.h5.
+
+8
+00:01:24.000 --> 00:01:32.000
+Select the uploaded +15 m variant.
+Why: Choosing the variant keeps the accepted baseline input unchanged.
+Look for: Keep the baseline file separate.
+
+9
+00:01:32.000 --> 00:01:42.000
+Enter the alias icepack-shelf-initial.h5.
+Why: An alias lets unchanged run.py read the new dataset at its fixed path.
+Look for: The fixed script reads data/icepack-shelf-initial.h5.
+
+10
+00:01:42.000 --> 00:01:56.000
+Choose Reference in example to attach the variant.
+Why: The attachment binds this variant to the current owned example.
+Look for: Bind the selected variant to this owned example.
+
+11
+00:01:56.000 --> 00:02:06.000
+Read the reference confirmation and exact script path.
+Why: The exact path proves what will be copied at the next staging step.
+Look for: Expected: variant → data/icepack-shelf-initial.h5.
+
+12
+00:02:06.000 --> 00:02:18.000
+Open Review & Launch.
+Why: The review is the final check before an explicit paid submission.
+Look for: Review this Icepack example and your resource settings.
+
+13
+00:02:18.000 --> 00:02:27.000
+Confirm Icepack and the new Own Problem example.
+Why: This prevents a previous example from being mistaken for the new plan.
+Look for: The review is bound to this example before explicit submission.
+
+14
+00:02:27.000 --> 00:02:36.000
+Scroll through the review. All infrastructure rows must be Ready.
+Why: Ready checks confirm storage, image and compute can support the run.
+Look for: Keep the explicit launch action separate from review.
+
+15
+00:02:36.000 --> 00:02:51.000
+Choose Launch cloud run.
+Why: This action stages the bound data and starts one native execution.
+Look for: The reviewed variant is staged for one native execution.
+
+16
+00:02:51.000 --> 00:03:00.000
+Follow the new Icepack run until Completed.
+Why: The new run is the record to follow through startup and completion.
+Look for: Startup and Batch task time are recorded separately.
+
+17
+00:03:00.000 --> 00:03:14.000
+In Results choose thickness.
+Why: Selecting a field does not itself update the displayed plot.
+Look for: Choose the field before rendering it.
+
+18
+00:03:14.000 --> 00:03:29.000
+Choose Render for thickness.
+Why: Render displays the final thickness exported by the native solver.
+Look for: Expected: 25 native values, about 315–515 m.
+
+19
+00:03:29.000 --> 00:03:43.000
+Select velocity to inspect the native flow field.
+Why: Use velocity to inspect the response to the thickness change.
+Look for: The plot changes only after Render.
+
+20
+00:03:43.000 --> 00:03:59.000
+Choose Render for the selected velocity field.
+Why: Render updates the plot to the selected native velocity field.
+Look for: Expected: native speed 100–158.61 m/year.
+
+21
+00:03:59.000 --> 00:04:13.000
+Choose Download results. Wait for a fresh archive link.
+Why: Preserve the fields and initialization evidence with runtime metadata.
+Look for: Keep the mesh, fields and provenance together.
+
+22
+00:04:13.000 --> 00:04:28.000
+Choose the fresh results_bundle link to save it.
+Why: Both archives are needed for the baseline-versus-variant comparison.
+Look for: Retain both baseline and variant archives.
+
+23
+00:04:28.000 --> 00:04:40.000
+Inspect initial-conditions.png from the saved run.
+Why: Check that the uploaded full fields actually initialized the native mesh.
+Look for: All five initial fields matched interpolation at all 25 native vertices.
+
+24
+00:04:40.000 --> 00:04:55.000
+Derived from saved numeric fields: compare final thickness.
+Why: Shared scales show the two fields; the separate delta scale shows their difference.
+Look for: Area-mean thickness: 403.64986 → 418.64758 m.
+
+25
+00:04:55.000 --> 00:05:10.000
+Derived from saved numeric fields: compare final speed.
+Why: Area-weighted metrics compare the full field rather than one selected node.
+Look for: Area-RMS speed: 133.90846 → 137.17064 m/year.
+
+26
+00:05:10.000 --> 00:05:22.000
+Keep the input change and controls with your comparison.
+Why: Retain the coupled input change so the scientific question stays clear.
+Look for: This pair changes interior and inflow thickness together.

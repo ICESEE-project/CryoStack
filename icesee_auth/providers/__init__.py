@@ -5,6 +5,7 @@ from .base import (
 )
 
 from .github import GitHubProvider
+from .google import GoogleProvider, GoogleTokenError
 from .orcid import ORCIDProvider
 
 
@@ -13,5 +14,7 @@ __all__ = [
     "OAuthAuthentication",
     "OAuthProvider",
     "GitHubProvider",
+    "GoogleProvider",
+    "GoogleTokenError",
     "ORCIDProvider",
 ]

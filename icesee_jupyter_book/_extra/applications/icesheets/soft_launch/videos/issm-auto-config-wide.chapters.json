@@ -1,0 +1,310 @@
+{
+  "video_sha256": "35649c43dff0a5e1a479c4167642945ee6e2db51cca0f345d228099a05891d54",
+  "duration_seconds": 194.0,
+  "chapters": [
+    {
+      "id": "goal",
+      "step": "Goal",
+      "start_seconds": 0,
+      "end_seconds": 12.0,
+      "screenText": "Set one ISSM solver limit, review it, then launch explicitly.",
+      "screenWhy": "Use the reviewed BYO workflow for one native ISSM solver change.",
+      "expectedResult": "Example: canonical SquareIceShelf; stressbalance iteration cap 120.",
+      "logical_step_id": "orientation",
+      "pause_after": false,
+      "title": "Goal and prerequisites",
+      "instructions": [
+        "Open CryoLauncher with a verified BYO AWS connection. Configure your MATLAB license and connect the same-owner Connector.",
+        "Choose Cloud and ISSM SquareIceShelf. This guide changes only the stressbalance maximum-iteration setting."
+      ],
+      "note": "Auto-config prepares a configuration; Create plan and Apply to configuration do not submit a native job.",
+      "why": "Use the reviewed BYO workflow for one native ISSM solver change."
+    },
+    {
+      "id": "prompt",
+      "step": 1,
+      "start_seconds": 12.0,
+      "end_seconds": 24.0,
+      "screenText": "Describe the change: Set stressbalance max iterations to 120.",
+      "screenWhy": "A narrow request makes the proposed change easy to verify.",
+      "expectedResult": "Keep the model, example and Cloud execution mode.",
+      "logical_step_id": "request",
+      "pause_after": true,
+      "title": "1. Describe a single change",
+      "instructions": [
+        "Choose Auto-config \u00b7 Beta.",
+        "Enter exactly: Set stressbalance max iterations to 120."
+      ],
+      "note": "",
+      "why": "A narrow request makes the proposed change easy to verify."
+    },
+    {
+      "id": "create-plan",
+      "step": 2,
+      "start_seconds": 24.0,
+      "end_seconds": 37.0,
+      "screenText": "Choose Create plan. Read the proposed value of 120.",
+      "screenWhy": "A plan proposes a change; it does not start the solver.",
+      "expectedResult": "Expected: one change; no override \u2192 120.",
+      "logical_step_id": "proposal",
+      "pause_after": true,
+      "title": "2. Create and review the proposal",
+      "instructions": [
+        "Choose Create plan.",
+        "Review the Stressbalance max iterations row. Proposed must be 120; retain ISSM \u00b7 SquareIceShelf \u00b7 Cloud."
+      ],
+      "note": "No native execution has started.",
+      "why": "A plan proposes a change; it does not start the solver."
+    },
+    {
+      "id": "apply",
+      "step": 3,
+      "start_seconds": 37.0,
+      "end_seconds": 49.0,
+      "screenText": "Apply the reviewed 120 limit to the launch form.",
+      "screenWhy": "Apply only after confirming 120 and the retained experiment.",
+      "expectedResult": "Expected: Configuration updated \u00b7 1 setting changed.",
+      "logical_step_id": "apply",
+      "pause_after": true,
+      "title": "3. Apply the reviewed setting",
+      "instructions": [
+        "Scroll to the proposal and choose Apply to configuration.",
+        "Wait for Configuration updated and 1 setting changed."
+      ],
+      "note": "The accepted staged helper later set md.stressbalance.maxiter = 120 before the native solve.",
+      "why": "Apply only after confirming 120 and the retained experiment."
+    },
+    {
+      "id": "review-advanced",
+      "step": 4,
+      "start_seconds": 49.0,
+      "end_seconds": 59.0,
+      "screenText": "Choose Review in Advanced to inspect the native controls.",
+      "screenWhy": "The native form is where you review execution controls.",
+      "expectedResult": "Continue to the normal launch form.",
+      "logical_step_id": "native-review",
+      "pause_after": false,
+      "title": "4. Return to the native form",
+      "instructions": [
+        "Choose Review in Advanced to inspect the native controls.",
+        "Review the existing model and run controls before launching."
+      ],
+      "note": "",
+      "why": "The native form is where you review execution controls."
+    },
+    {
+      "id": "retained-example",
+      "step": 5,
+      "start_seconds": 59.0,
+      "end_seconds": 67.0,
+      "screenText": "Confirm ISSM \u2192 SquareIceShelf.",
+      "screenWhy": "The change should not select a different scientific example.",
+      "expectedResult": "The canonical example is retained.",
+      "logical_step_id": "native-review",
+      "pause_after": false,
+      "title": "5. Check the retained example",
+      "instructions": [
+        "In Experiment confirm Model ISSM and Examples SquareIceShelf."
+      ],
+      "note": "Canonical Square.par remains unchanged: hmax 1000 m and hmin 300 m.",
+      "why": "The change should not select a different scientific example."
+    },
+    {
+      "id": "retained-entry",
+      "step": 6,
+      "start_seconds": 67.0,
+      "end_seconds": 75.0,
+      "screenText": "Confirm Action Run and target runme.m.",
+      "screenWhy": "runme.m retains the canonical scientific entrypoint.",
+      "expectedResult": "The native canonical entrypoint is retained.",
+      "logical_step_id": "native-review",
+      "pause_after": true,
+      "title": "6. Check the run target",
+      "instructions": [
+        "Keep Action Run and Run target runme.m."
+      ],
+      "note": "The recorded case retained two requested MPI processes and the qualified image pin.",
+      "why": "runme.m retains the canonical scientific entrypoint."
+    },
+    {
+      "id": "cloud-review",
+      "step": 7,
+      "start_seconds": 75.0,
+      "end_seconds": 86.0,
+      "screenText": "Read the native review: ISSM \u00b7 SquareIceShelf.",
+      "screenWhy": "Review before submitting so the new run uses the intended example.",
+      "expectedResult": "Check the reviewed model and example before submission.",
+      "logical_step_id": "cloud-review",
+      "pause_after": false,
+      "title": "7. Review the native cloud plan",
+      "instructions": [
+        "Open Review & Launch. Confirm ISSM and SquareIceShelf.",
+        "Review your resource and time-limit settings and the cost estimate in your own account."
+      ],
+      "note": "The accepted run used 2 vCPU and 8 GiB. An estimate is not an invoice or a spending cap.",
+      "why": "Review before submitting so the new run uses the intended example."
+    },
+    {
+      "id": "ready",
+      "step": 8,
+      "start_seconds": 86.0,
+      "end_seconds": 96.0,
+      "screenText": "Scroll to Infrastructure. Check that every row is Ready.",
+      "screenWhy": "Storage, image, license and compute must be ready before submission.",
+      "expectedResult": "Account, storage, image and compute must be ready.",
+      "logical_step_id": "cloud-review",
+      "pause_after": true,
+      "title": "8. Check readiness",
+      "instructions": [
+        "In the expanded review, scroll to Infrastructure.",
+        "Check Account, Storage, Container image and Compute readiness."
+      ],
+      "note": "Read the review before the separate explicit launch action.",
+      "why": "Storage, image, license and compute must be ready before submission."
+    },
+    {
+      "id": "launch",
+      "step": 9,
+      "start_seconds": 96.0,
+      "end_seconds": 109.0,
+      "screenText": "Choose Launch cloud run only after the final review.",
+      "screenWhy": "This explicit action starts the native cloud execution.",
+      "expectedResult": "This explicit action submits the native job.",
+      "logical_step_id": "submit",
+      "pause_after": false,
+      "title": "9. Submit explicitly",
+      "instructions": [
+        "Scroll to the bottom of the review. Read the final notice.",
+        "Choose Launch cloud run. Stay on the page while staging begins."
+      ],
+      "note": "Create plan and Apply did not submit this job.",
+      "why": "This explicit action starts the native cloud execution."
+    },
+    {
+      "id": "submitting",
+      "step": 10,
+      "start_seconds": 109.0,
+      "end_seconds": 118.0,
+      "screenText": "Wait for the new SquareIceShelf run to submit.",
+      "screenWhy": "Follow the new run before inspecting its outputs.",
+      "expectedResult": "The current run changes from staging to submitting.",
+      "logical_step_id": "submit",
+      "pause_after": true,
+      "title": "10. Follow the selected run",
+      "instructions": [
+        "Check that the new Cloud run names SquareIceShelf.",
+        "Follow this selected run until Completed; startup and model execution are separate periods."
+      ],
+      "note": "Recorded startup 212.717 s; Batch task 41.369 s; total submission-to-stop 254.086 s.",
+      "why": "Follow the new run before inspecting its outputs."
+    },
+    {
+      "id": "results",
+      "step": 11,
+      "start_seconds": 118.0,
+      "end_seconds": 129.0,
+      "screenText": "Open Results. Choose StressbalanceSolution and Vel.",
+      "screenWhy": "The selected field must belong to the completed run.",
+      "expectedResult": "The completed native result contains 91 nodal velocity values.",
+      "logical_step_id": "render",
+      "pause_after": false,
+      "title": "11. Select the native field",
+      "instructions": [
+        "For the completed Auto-config run open View results or Results.",
+        "Select StressbalanceSolution and field Vel."
+      ],
+      "note": "The result belongs to the selected run, rather than the current experiment controls on the left.",
+      "why": "The selected field must belong to the completed run."
+    },
+    {
+      "id": "render",
+      "step": 12,
+      "start_seconds": 129.0,
+      "end_seconds": 142.0,
+      "screenText": "Choose Render.",
+      "screenWhy": "Render updates the displayed field; it does not rerun the solver.",
+      "expectedResult": "Expected: native velocity field, 0\u20139034.39 m/year.",
+      "logical_step_id": "render",
+      "pause_after": true,
+      "title": "12. Render the field",
+      "instructions": [
+        "Choose Render after selecting Vel.",
+        "Read the field summary and colorbar; the accepted mesh has 91 vertices and 148 triangles."
+      ],
+      "note": "",
+      "why": "Render updates the displayed field; it does not rerun the solver."
+    },
+    {
+      "id": "download",
+      "step": 13,
+      "start_seconds": 142.0,
+      "end_seconds": 156.0,
+      "screenText": "Choose Download results. Wait for the new archive link.",
+      "screenWhy": "Package the mesh, fields, figure and runtime provenance together.",
+      "expectedResult": "A fresh results_bundle link appears for this run.",
+      "logical_step_id": "download",
+      "pause_after": false,
+      "title": "13. Prepare the result archive",
+      "instructions": [
+        "Scroll below the rendered field and choose Download results.",
+        "Wait for a newly prepared results_bundle link. Keep the run selected while packaging."
+      ],
+      "note": "",
+      "why": "Package the mesh, fields, figure and runtime provenance together."
+    },
+    {
+      "id": "save-link",
+      "step": 14,
+      "start_seconds": 156.0,
+      "end_seconds": 169.0,
+      "screenText": "Choose the fresh results_bundle link to save it.",
+      "screenWhy": "The fresh link saves the archive prepared for this run.",
+      "expectedResult": "Keep the native outputs and runtime provenance together.",
+      "logical_step_id": "download",
+      "pause_after": true,
+      "title": "14. Save the result archive",
+      "instructions": [
+        "Choose the fresh download link. Save the ZIP with your run record.",
+        "The accepted archive contains the neutral mesh, native fields, exact figure and runtime/RNG provenance."
+      ],
+      "note": "",
+      "why": "The fresh link saves the archive prepared for this run."
+    },
+    {
+      "id": "native-figure",
+      "step": 15,
+      "start_seconds": 169.0,
+      "end_seconds": 181.0,
+      "screenText": "Inspect the saved native velocity figure.",
+      "screenWhy": "The colorbar and solver record explain the result in physical units.",
+      "expectedResult": "ISSM converged in 23 iterations, below both caps of 100 and 120.",
+      "logical_step_id": "interpret",
+      "pause_after": true,
+      "title": "15. Interpret this result",
+      "instructions": [
+        "Open figures/StressbalanceSolution_Vel.png from the saved archive.",
+        "This recorded solve converged in 23 iterations; 120 is an upper limit, not a request for 120 iterations."
+      ],
+      "note": "Actual runtime: MATLAB R2024b Update 7; ISSM 2026.1. The canonical domain is 1000 km \u00d7 1000 km.",
+      "why": "The colorbar and solver record explain the result in physical units."
+    },
+    {
+      "id": "comparison",
+      "step": 16,
+      "start_seconds": 181.0,
+      "end_seconds": 194.0,
+      "screenText": "Compare the retained mesh and fields with the Basic result.",
+      "screenWhy": "Convergence below both caps explains this unchanged recorded result.",
+      "expectedResult": "For this changed-cap case, every compared numeric value was exactly equal.",
+      "logical_step_id": "qualification",
+      "pause_after": true,
+      "title": "16. Read the qualification",
+      "instructions": [
+        "The staged override and native log prove that 120 was applied before solve.",
+        "The mesh, Pressure, Vel, Vx, Vy and iteration count exactly matched the accepted Basic retake."
+      ],
+      "note": "This is one changed-cap comparison, consistent with convergence below either cap; it is not a general accuracy or reproducibility claim.",
+      "why": "Convergence below both caps explains this unchanged recorded result."
+    }
+  ]
+}

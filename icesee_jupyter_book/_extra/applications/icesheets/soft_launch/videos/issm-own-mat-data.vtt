@@ -1,0 +1,154 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:15.000
+1. Prepare your files and access
+Open Pilot Tutorials → Upload a dataset → download the native initial-condition packet. Extract it.
+
+Have an approved login, connected AWS resources and configured MATLAB/Connector. Choose Cloud → Advanced → ISSM.
+Scripts: native-data-issm-mat/ (all four files). Data: datasets/issm-shelf-initial.mat. Prerequisites are linked on the tutorial page.
+
+2
+00:00:15.000 --> 00:00:27.000
+2. Create an owned example
+In Editor, enter a new name and choose New example.
+
+This recording uses pilot-issm-mat-1119. A new ISSM example can include a seeded runme.m that must be replaced with your real script.
+A seeded runme.m must be replaced by the supplied MAT run script before launch.
+
+3
+00:00:27.000 --> 00:00:35.000
+2. Confirm the owned workspace
+The blue confirmation says the workspace example was created.
+
+Keep this owned example selected while uploading and referencing the input. Source files and datasets use different controls.
+This is an editable workspace example, separate from the read-only application examples.
+
+4
+00:00:35.000 --> 00:00:53.874
+3. Upload the MAT file
+Scroll below Environment & resources in the left column to Datasets. Choose issm-shelf-initial.mat, then choose Upload. The selected-file count changes from 1 to 0 after upload.
+
+This is a synthetic 5×9 gridded field file for a 10 km square shelf.
+Upload stores the file. The script and schema-specific reader must still load it.
+
+5
+00:00:53.874 --> 00:01:10.623
+4. Reference the staged filename
+Select issm-shelf-initial.mat and choose Reference in example. Keep the baseline filename.
+
+The confirmation gives data/issm-shelf-initial.mat. The run script must read that exact relative path.
+Do not add data/ twice. Referencing makes the bytes available; it does not start the model.
+
+6
+00:01:10.623 --> 00:01:27.623
+5. Import all four source files
+Choose runme.m, Launch.par, validate_launch_dataset.m and load_initial_conditions.m together.
+
+Check Replace existing script files for the seeded runme.m, then choose Import script files.
+The actual continuous take shows selected count 4, replacement enabled, the import action and then count 0.
+
+7
+00:01:27.623 --> 00:01:39.623
+6. Check the saved-file confirmation
+The confirmation names all four imported files and says Files are saved.
+
+The imported runme.m is now the actual MAT reader/ISSM workflow. All four script hashes were verified before launch and in the submitted snapshot.
+All four filenames must appear in the saved-file confirmation before you continue.
+
+8
+00:01:39.623 --> 00:01:48.623
+6. Confirm the entry script
+In Experiment, confirm Action = Run and Run target = runme.m.
+
+Importing source files does not select a different target or submit an AWS job.
+The four saved scripts and the referenced MAT file must all be present before review.
+
+9
+00:01:48.623 --> 00:02:00.623
+7. Review the MAT experiment
+Choose Review & Launch. Confirm model ISSM and example pilot-issm-mat-1119, readiness and resources.
+
+Scroll to the bottom of the review and choose Launch cloud run explicitly.
+Check 2 vCPU / 8 GiB and the existing license/Connector. Measured execution times appear in the completion card.
+
+10
+00:02:00.623 --> 00:02:10.623
+7. Watch the new submission
+Confirm Launch cloud run at the bottom of the review.
+
+Watch the MAT experiment progress through Staging/Submitting, then wait for Queued, Running and Completed.
+The manifest links the actual saved source/data, pinned image, job and retained archive.
+
+11
+00:02:10.623 --> 00:02:15.623
+8a. Initial thickness
+Initial thickness is 300–500 m.
+
+The axes span a 10 km square in metres.
+Saved native PNG, zoomed to the thickness panel.
+
+12
+00:02:15.623 --> 00:02:20.623
+8b. Initial surface
+Surface elevation is in metres.
+
+This floating shelf uses consistent thickness, base and surface.
+Saved native PNG, zoomed to the surface panel.
+
+13
+00:02:20.623 --> 00:02:25.623
+8c. Initial speed
+Initial speed is in metres/year.
+
+The next diagnostic solve computes the native velocity field.
+Saved native PNG, zoomed to the initial-speed panel.
+
+14
+00:02:25.623 --> 00:02:39.623
+9. Verify initialization and completion
+Initialized thickness, base, surface, vx and vy match the uploaded file at all 13 native vertices, with maximum error 0.
+
+One diagnostic SSA Stressbalance solve completed; no physical time advances.
+Startup 220.723 s · AWS task 51.018 s · script 9.568328 s, including setup, mesh, initial plotting and solving.
+
+15
+00:02:39.623 --> 00:02:53.623
+10. Render the current velocity field
+Open Workspace → Results for the completed MAT run. Confirm StressbalanceSolution and Vel, then choose Render.
+
+The enabled button changes while the retained native velocity field is rendered.
+This Results identity belongs to the accepted MAT run; the final native field contains 13 vertices and 16 triangles.
+
+16
+00:02:53.623 --> 00:03:09.623
+11. Inspect final native velocity
+This is the unchanged native PNG from the accepted archive, with full axes and colour bar.
+
+Speed is 100–180 m/year, and Vel agrees with hypot(Vx,Vy). The initial and solved velocities need not match in the interior.
+The mesh spans 10 km × 10 km. This diagnostic run has no transient time axis.
+
+17
+00:03:09.623 --> 00:03:25.623
+12. Interpret the checks precisely
+Arithmetic-node mean thickness is 402.307692 m. Node-RMS speed sqrt(mean(Vel²)) is 142.564238 m/year; convergence count is the scalar 12.
+
+These metrics are not area-weighted.
+Five inferred non-front boundary vertices match input vx/vy. Saved spc arrays remain opaque; this boundary check is an inference, not direct decoding.
+
+18
+00:03:25.623 --> 00:03:39.623
+13. Prepare the archive download
+Choose Download results. When the fresh HTTPS link appears, use it to save this run’s archive.
+
+The next step follows that link; the archive contains the native fields, figures, initialized arrays and provenance.
+Download preparation uses the completed run’s retained results.
+
+19
+00:03:39.623 --> 00:03:54.623
+14. Save and check your archive
+Click the fresh download link. The browser saved a 15-member ZIP with valid CRC.
+
+Every file is byte-identical to the originally checked MAT archive. Keep the archive with its input, image and output hashes.
+One native execution; this cached download does not rerun the solver. Repeatability and accuracy require separate checks.
+

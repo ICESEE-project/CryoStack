@@ -546,7 +546,7 @@ log "diagnostics: begin (CPU/topology/PRRTE, informational only)"
 log "diagnostics: end"
 
 with-issm matlab -nodesktop -nosplash -batch \
-  "ICESEE_RUN_DIR='${WORKDIR}'; setenv('ICESEE_RUN_DIR','${WORKDIR}'); run('${RUN_TARGET}'); run('${WORKDIR}/postprocess_icesee.m');"
+  "ICESEE_RUN_DIR='${WORKDIR}'; setenv('ICESEE_RUN_DIR','${WORKDIR}'); try, cryostack_runtime_provenance('${WORKDIR}','before'); catch, end; run('${RUN_TARGET}'); try, if exist('md','var'), cryostack_runtime_provenance('${WORKDIR}','after',md); else, cryostack_runtime_provenance('${WORKDIR}','after'); end; catch, end; run('${WORKDIR}/postprocess_icesee.m');"
 """
 
 
@@ -592,6 +592,100 @@ def icepack_postprocess_extra_files() -> dict[str, str]:
     }
 
 
+_ISSM_RUNTIME_PROVENANCE = r"""
+function cryostack_runtime_provenance(run_dir,phase,model)
+% Read-only observations. No RNG reset, random draw, solver or license query.
+try
+    out=fullfile(run_dir,'outputs'); if ~isfolder(out), mkdir(out); end
+    filename=fullfile(out,'runtime-provenance.json'); p=struct;
+    if ~strcmp(phase,'before') && isfile(filename)
+        try, p=jsondecode(fileread(filename)); catch, end
+    end
+    p.schema='cryostack.runtime-provenance.v1'; p.model='issm'; p.phase=phase;
+    p.capture_time_utc=char(datetime('now','TimeZone','UTC','Format','yyyy-MM-dd''T''HH:mm:ss.SSS''Z'''));
+    p.([phase '_capture_time_utc'])=p.capture_time_utc;
+    p.architecture=computer('arch');
+    p.versions.matlab=struct('value',version,'source','running MATLAB version');
+    p.versions.matlab_release=struct('value',version('-release'),'source','running MATLAB release');
+    p.versions.issm=struct('value',[],'source','ISSM version not observed');
+    try
+        v=issmversion(); % Output argument returns compiled version, not the user/host banner.
+        if isstring(v) && isscalar(v), v=char(v); end
+        if ischar(v) && ~isempty(regexp(v,'^[A-Za-z0-9][A-Za-z0-9._+!~-]{0,160}$','once'))
+            p.versions.issm=struct('value',v,'source','issmversion() output argument / compiled IssmConfig');
+        end
+    catch, end
+    names={'OMP_NUM_THREADS','OPENBLAS_NUM_THREADS','MKL_NUM_THREADS','NUMEXPR_NUM_THREADS'};
+    for k=1:numel(names)
+        v=getenv(names{k});
+        if numel(v)<=64 && ~isempty(regexp(v,'^[0-9]+(,[0-9]+)*$','once'))
+            p.threads.(names{k})=v;
+        else
+            p.threads.(names{k})='unset or nonnumeric; value not recorded';
+        end
+    end
+    p.observed_thread_counts=struct('matlab_max_compute_threads',[],'source','query unavailable');
+    try
+        p.observed_thread_counts.matlab_max_compute_threads=maxNumCompThreads;
+        p.observed_thread_counts.source='maxNumCompThreads() query; not active MPI worker count';
+    catch, end
+    if ~isfield(p,'mpi')
+        p.mpi=struct('requested_processes',[],'requested_source','model cluster not observed yet',...
+            'observed_world_size',[],'observed_rank',[],'observed_source','MPI child processes not observed in MATLAB parent');
+    end
+    world=getenv('OMPI_COMM_WORLD_SIZE'); rank=getenv('OMPI_COMM_WORLD_RANK');
+    if ~isempty(regexp(world,'^[0-9]+$','once')) && ~isempty(regexp(rank,'^[0-9]+$','once'))
+        p.mpi.observed_world_size=str2double(world); p.mpi.observed_rank=str2double(rank);
+        p.mpi.observed_source='MATLAB parent OMPI_COMM_WORLD_SIZE/RANK; does not infer solver child ranks';
+    end
+    if nargin>=3
+        try
+            np=model.cluster.np;
+            if isnumeric(np) && isscalar(np) && isfinite(np) && np>=1
+                p.mpi.requested_processes=np; p.mpi.requested_source='completed native model.cluster.np';
+            end
+        catch, end
+    end
+    if strcmp(phase,'before')
+        p.before_versions=p.versions; p.before_threads=p.threads;
+        p.rng=struct('matlab_global',struct('captured',false,'algorithm',[],'seed',[]),...
+            'artifact','rng-before.mat','sha256',[],'state_reset_or_advanced_by_capture',false,...
+            'unobserved',{{'Triangle internal RNG','script-owned generators','other solver-library generators'}});
+        try
+            state=rng; % Getter only: neither reset nor advance the global stream.
+            state_file=fullfile(out,'rng-before.mat'); save(state_file,'state','-v7');
+            p.rng.matlab_global.captured=true; p.rng.matlab_global.algorithm=state.Type;
+            if isnumeric(state.Seed) && isscalar(state.Seed) && isfinite(state.Seed)
+                p.rng.matlab_global.seed=state.Seed;
+            else
+                p.rng.matlab_global.seed_status='not inferable from current state';
+            end
+            p.rng.sha256=cryostack_file_sha256(state_file);
+        catch, end
+    end
+    fid=fopen(filename,'w'); if fid<0, return; end
+    cleanup=onCleanup(@() fclose(fid)); fprintf(fid,'%s\n',jsonencode(p)); clear cleanup;
+    % The JSON has only whitelisted observations and relative artifact names.
+    fprintf('[cryostack][runtime-provenance] %s\n',jsonencode(p));
+catch
+    fprintf('[cryostack][warn] runtime provenance unavailable\n');
+end
+end
+
+function result=cryostack_file_sha256(filename)
+result=[];
+try
+    fid=fopen(filename,'rb'); if fid<0, return; end
+    cleanup=onCleanup(@() fclose(fid)); bytes=fread(fid,Inf,'*uint8'); clear cleanup;
+    hasher=java.security.MessageDigest.getInstance('SHA-256'); hasher.update(bytes);
+    digest=typecast(hasher.digest(),'uint8'); result=lower(reshape(dec2hex(digest,2).',1,[]));
+catch
+end
+end
+
+"""
+
+
 def issm_postprocess_extra_files() -> dict[str, str]:
     """The ``extra_files`` a cloud-run caller merges into
     ``WorkspaceManager.stage_example_for_run`` so ISSM's
@@ -606,7 +700,8 @@ def issm_postprocess_extra_files() -> dict[str, str]:
     filename after phase 1 downloads it from ``<s3-run>/input/``."""
     from cryostack_src.models.issm.postprocess import build_postprocess
 
-    return {"postprocess_icesee.m": build_postprocess()}
+    return {"postprocess_icesee.m": build_postprocess(),
+            "cryostack_runtime_provenance.m": _ISSM_RUNTIME_PROVENANCE}
 
 
 #: dedicated runtime-support directory the tunnel client's own dependency

@@ -1,0 +1,10 @@
+{
+  "CRYOSTACK_MAIL_MODE": "smtp",
+  "CRYOSTACK_MAIL_FROM": "REPLACE_WITH_VERIFIED_SENDER",
+  "CRYOSTACK_PUBLIC_BASE_URL": "https://cryostack.eas.gatech.edu",
+  "CRYOSTACK_SMTP_HOST": "mail.smtp2go.com",
+  "CRYOSTACK_SMTP_PORT": "587",
+  "CRYOSTACK_SMTP_SECURITY": "starttls",
+  "CRYOSTACK_SMTP_USERNAME": "REPLACE_WITH_DEDICATED_SMTP_USERNAME",
+  "CRYOSTACK_SMTP_PASSWORD_FILE": "/home/bkyanjo3/.config/cryostack/smtp2go.password"
+}

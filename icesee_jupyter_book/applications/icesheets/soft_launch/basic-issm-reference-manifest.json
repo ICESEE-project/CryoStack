@@ -1,0 +1,637 @@
+{
+  "schema": "cryostack.reproducibility.v1",
+  "clip_id": "IS-BASIC-20261118",
+  "collected_at": "2026-11-18T19:20:28.446581+00:00",
+  "model": "issm",
+  "example": "SquareIceShelf",
+  "job_reference_sha256": "969239a6ea523d5197772d865bbf42da2e623424d8a9c460c16e3b5f7c49c7b8",
+  "job_status": "SUCCEEDED",
+  "job_times_ms": {
+    "createdAt": 1795027185254,
+    "startedAt": 1795027417215,
+    "stoppedAt": 1795027459443
+  },
+  "private_input_archive_sha256": "09166ed71a3b4ce264317f0bf9b0f2565ff8528836db580a0f885d8d57f002e8",
+  "input_archive_access": "Sealed input bytes and raw object provenance retained privately on host; no raw desktop export.",
+  "input_evidence": "Actual run-scoped S3 objects read through verified owner BYO role; raw objects/keys/logs remain private on the host.",
+  "inputs": [
+    {
+      "relative_path": ".cryostack-example.json",
+      "bytes": 328,
+      "sha256": "021a4ab834629b3c2baf7ef5dc3c2d31fe372e4d33b2d50c94bd03abe6cfff8b",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": ".cryostack_runtime/websockets/LICENSE",
+      "bytes": 1514,
+      "sha256": "3d6a0c050d8bec52fabad502e45fb25bd02bcadbd70dea34d447b6a0ff4e6da8",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": ".cryostack_runtime/websockets/__init__.py",
+      "bytes": 7058,
+      "sha256": "002d87abddae49cfd63a8f7fc6f213a46b2127b0f2d0c7799b6ff2c2c752b7f6",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": ".cryostack_runtime/websockets/asyncio/__init__.py",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": ".cryostack_runtime/websockets/asyncio/client.py",
+      "bytes": 30850,
+      "sha256": "7b8c6582dcdbdefdbd336bcdf940e2ca852d4e183ef9de46a8a83796dda90dd1",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": ".cryostack_runtime/websockets/asyncio/compatibility.py",
+      "bytes": 786,
+      "sha256": "8247a70c387335b9bafe25d5e4476f6efa7ab8765876b4ef18d8edf0ffc9b724",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": ".cryostack_runtime/websockets/asyncio/connection.py",
+      "bytes": 49099,
+      "sha256": "f3b45d5544628c993c57e4a158059f4c4ca15b96756145ca57c7b3533c6de4bd",
+      "last_modified": "2026-11-18T18:39:44+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": ".cryostack_runtime/websockets/asyncio/messages.py",
+      "bytes": 11129,
+      "sha256": "bb633958a63dc4fcb0f06de72a85df74ee4ae3586b4e77f831d8b3547ce074ce",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": ".cryostack_runtime/websockets/client.py",
+      "bytes": 13789,
+      "sha256": "7e58c8e64e6843e49f9b9dcc0a8c9396bda316d38e22e3b5dc7f5b6eda413deb",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": ".cryostack_runtime/websockets/datastructures.py",
+      "bytes": 5518,
+      "sha256": "52ad82a639976a4f7fa4f59c3aa877eabcc9328f1e0a2da554f4c5583bcae6c0",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": ".cryostack_runtime/websockets/exceptions.py",
+      "bytes": 12859,
+      "sha256": "6e068c76a406199a2c00450b782077d175b6627c289966b773c60eac47de3a86",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": ".cryostack_runtime/websockets/extensions/__init__.py",
+      "bytes": 98,
+      "sha256": "42466cc5a255965552a75ba1743e6e3c689b75bc7fd3dd46ad555f4b92d7729c",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": ".cryostack_runtime/websockets/extensions/base.py",
+      "bytes": 2903,
+      "sha256": "24d7f2939e370bb56e3c7d103a86e2a8aa06af38c920b8deeaccf920bbce3e5e",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": ".cryostack_runtime/websockets/extensions/permessage_deflate.py",
+      "bytes": 25770,
+      "sha256": "024ba1900285a3996a2503179dc91b4acf5bd8a041ace16c1350c721c6cb2f79",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": ".cryostack_runtime/websockets/frames.py",
+      "bytes": 12889,
+      "sha256": "e482b8199a65f2e92bd1b67f500fe38e3ced2b4f72610025f66e4d56618b88ad",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": ".cryostack_runtime/websockets/headers.py",
+      "bytes": 16046,
+      "sha256": "c909cf963559c15d7f57ea4e49128d2c6feef36ef0142d61ef671c8a88dc43c3",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": ".cryostack_runtime/websockets/http11.py",
+      "bytes": 15619,
+      "sha256": "4fc6a2e417011a45749fd22deb7a0378da66b5033283c0a96afe6b7ffc93d2be",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": ".cryostack_runtime/websockets/imports.py",
+      "bytes": 2795,
+      "sha256": "4ff07d4d4987a1c78a310f8f36985d410007d97771031c1240d790120a882e41",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": ".cryostack_runtime/websockets/protocol.py",
+      "bytes": 27247,
+      "sha256": "bd3aa33c88361e63be6d2c6c733b849963313d3c4f5d4d61995523aa76a1578e",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": ".cryostack_runtime/websockets/proxy.py",
+      "bytes": 4969,
+      "sha256": "a05adb118b5ab185aff960dc9e239b0fd9c1479439aa41e9c8254b9e0c7b58c4",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": ".cryostack_runtime/websockets/server.py",
+      "bytes": 21790,
+      "sha256": "138496040f166519803a9b149bea02a9a701199adef5ed220e60c8adfa55db54",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": ".cryostack_runtime/websockets/streams.py",
+      "bytes": 4071,
+      "sha256": "a57aa06bbb6d8ee17a94285662258b49f525b77142690a445f569efe3bdc09e4",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": ".cryostack_runtime/websockets/typing.py",
+      "bytes": 1946,
+      "sha256": "03ac61e26eb9a51cca01bb8eb34905b8684be03588224a3ea694b8c2f2557344",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": ".cryostack_runtime/websockets/uri.py",
+      "bytes": 3125,
+      "sha256": "d9f14cc3e01b289e47547342bb0d51c7532790290d591a688315a184cdf4114e",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": ".cryostack_runtime/websockets/utils.py",
+      "bytes": 1197,
+      "sha256": "030852e149a56cabfb99e01a47b58d6d4a83e491684ad38fd5b032a3db1132eb",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": ".cryostack_runtime/websockets/version.py",
+      "bytes": 3202,
+      "sha256": "2216b3b56c72b1d63ea5dfb49ceb9b9e73ddbafc924af768070ad07492ad6768",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": "DomainOutline.exp",
+      "bytes": 123,
+      "sha256": "3093d41076be127884136aded8a906f9ddd97dec250c7db67ab2fac8c01f7b30",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": "Front.exp",
+      "bytes": 139,
+      "sha256": "275790e3caf22144d05b41f768bb2cb362b651d8092de10bc1fc61a621bd515a",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": "Square.par",
+      "bytes": 1177,
+      "sha256": "fb5bad3dfbe1dd25d7fbf1e0050dd8ce205037a92c6cbd6d3e31a5e800713f28",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": "Square.py",
+      "bytes": 1284,
+      "sha256": "ed1c0502d57b074d06f723c059a725fc41310fbe485fb94d4a81499378e696da",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": "_icesee_remote_runs/issm_spack/results_bundle.zip",
+      "bytes": 221668,
+      "sha256": "d3f8d365cae2f317a088ab5e7b81547a257a4f5c51276aa78711f72be9d11f45",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": "cryostack-run.json",
+      "bytes": 159,
+      "sha256": "516f121e22d04996d040e280d22cde259e5f9d765e3175cda904fd6a44b42377",
+      "last_modified": "2026-11-18T18:39:45+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": "cryostack_issm_cloud_runner.sh",
+      "bytes": 13156,
+      "sha256": "727bacdaa88af972e44dde9a958c9bf546cb1e716cb99cebc4fa0f6949a06bc7",
+      "last_modified": "2026-11-18T18:39:43+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": "cryostack_license_tunnel_client.py",
+      "bytes": 17822,
+      "sha256": "75fed63f3202c37fb7fdfe7668a74b9610783d509ec35a82f8575b1dd8b11735",
+      "last_modified": "2026-11-18T18:39:44+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": "postprocess_icesee.m",
+      "bytes": 10888,
+      "sha256": "28a70f25be7b537984530735be48dda8dfafb49218e2c1a8768b803a442d8ef0",
+      "last_modified": "2026-11-18T18:39:44+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": "runme.m",
+      "bytes": 225,
+      "sha256": "ba33248542d76c0fd4d7c2430d4ab015572c7188560640d31c9157686c9c82b1",
+      "last_modified": "2026-11-18T18:39:44+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": "runme.py",
+      "bytes": 491,
+      "sha256": "84604cc963bdfe3fd00a4d2a3972a6b2b114b48bba03982a62236e1dff32fd6b",
+      "last_modified": "2026-11-18T18:39:44+00:00",
+      "last_modified_no_later_than_submission": true
+    }
+  ],
+  "inputs_manifest_sha256": "b97e7fab84c079cc789f36728e7cef1b396d7577f5523906a6762c40906f4bca",
+  "actual_image_digests": [
+    "sha256:d68d88dcb7047f29d6e277a45710f50f1bf3023566e0472f07a7dd75ffbcd170"
+  ],
+  "versions": {
+    "issm": {
+      "value": "2026.1",
+      "evidence": "actual-job-log"
+    }
+  },
+  "scientific_source_statements": [
+    {
+      "source": "Square.par",
+      "statement": "md.geometry.thickness = hmax+(hmin-hmax)*(md.mesh.y-ymin)/(ymax-ymin);"
+    },
+    {
+      "source": "Square.par",
+      "statement": "md.geometry.base      = -md.materials.rho_ice/md.materials.rho_water*md.geometry.thickness;"
+    },
+    {
+      "source": "Square.par",
+      "statement": "md.geometry.surface   = md.geometry.base+md.geometry.thickness;"
+    },
+    {
+      "source": "Square.par",
+      "statement": "md.initialization.vx=zeros(md.mesh.numberofvertices,1);"
+    },
+    {
+      "source": "Square.par",
+      "statement": "md.initialization.vy=zeros(md.mesh.numberofvertices,1);"
+    },
+    {
+      "source": "Square.par",
+      "statement": "md.initialization.vz=zeros(md.mesh.numberofvertices,1);"
+    },
+    {
+      "source": "Square.par",
+      "statement": "md.initialization.vel=zeros(md.mesh.numberofvertices,1);"
+    },
+    {
+      "source": "runme.m",
+      "statement": "md=triangle(md,'DomainOutline.exp',100000);"
+    },
+    {
+      "source": "runme.m",
+      "statement": "md=setflowequation(md,'SSA','all');"
+    },
+    {
+      "source": "runme.m",
+      "statement": "md=solve(md,'Stressbalance');"
+    }
+  ],
+  "resources": {
+    "VCPU": "2",
+    "MEMORY": "8192"
+  },
+  "timeout_seconds": 3600,
+  "randomness": {
+    "explicit_user_seed": null,
+    "explicit_random_forcing": "None in the four byte-matched scientific files.",
+    "mesh_generator_seed": "Not independently captured; mesh generation and software defaults are fixed by the image, and actual mesh bytes are retained.",
+    "status": "internal-seed provenance incomplete"
+  },
+  "missing_evidence": [
+    "MATLAB software version not captured in actual job log",
+    "Mesh-generator internal seed not captured; actual mesh bytes retained"
+  ],
+  "reproducibility_accepted": false,
+  "raw_payload_exported": false,
+  "read_only_aws": true,
+  "secret_values_read": false,
+  "image_digest_evidence": "Exact actual AWS Batch job definition revision pins image@sha256; ECS runtime observation was unavailable to the existing BYO role.",
+  "recording_status": "No accepted video attached; this is a native execution reference.",
+  "outputs": {
+    "archive_sha256": "c2b0979288f1f51cc8339e68ea4a08efa6effa7ca79e84a3e28410e4a2251fdd",
+    "archive_bytes": 178785,
+    "crc_valid": true,
+    "members": [
+      {
+        "path": "fields/StressbalanceSolution/Pressure.h5",
+        "bytes": 1880,
+        "sha256": "3d8c3f52f8f514d7a9dfb06cf3708fd35cd3ccb98494911fc3630a2c7a268e61",
+        "datasets": {
+          "values": {
+            "shape": [
+              91
+            ],
+            "dtype": "float64",
+            "finite": true,
+            "min": 2698731.0,
+            "max": 8995770.0
+          }
+        }
+      },
+      {
+        "path": "fields/StressbalanceSolution/StressbalanceConvergenceNumSteps.h5",
+        "bytes": 1160,
+        "sha256": "c8cb52cccb7001f260c2793106532c53b69d9b408b1a5134c28aa6a8aee07f5f",
+        "datasets": {
+          "values": {
+            "shape": [
+              1
+            ],
+            "dtype": "float64",
+            "finite": true,
+            "min": 23.0,
+            "max": 23.0
+          }
+        }
+      },
+      {
+        "path": "fields/StressbalanceSolution/Vel.h5",
+        "bytes": 1880,
+        "sha256": "619a0472e77b09bb84416cfe84a022b50bbdf7126375212f9f3d5b81217c8983",
+        "datasets": {
+          "values": {
+            "shape": [
+              91
+            ],
+            "dtype": "float64",
+            "finite": true,
+            "min": 0.0,
+            "max": 9034.387288463504
+          }
+        }
+      },
+      {
+        "path": "fields/StressbalanceSolution/Vx.h5",
+        "bytes": 1880,
+        "sha256": "ceb0d41419e2bbe248c45041211cbd71a55a4a3f13c10de4dc644d182fb90d78",
+        "datasets": {
+          "values": {
+            "shape": [
+              91
+            ],
+            "dtype": "float64",
+            "finite": true,
+            "min": -1152.2731208904463,
+            "max": 1159.5649136296163
+          }
+        }
+      },
+      {
+        "path": "fields/StressbalanceSolution/Vy.h5",
+        "bytes": 1880,
+        "sha256": "72330d380a4cb9b3de1b321a224f3ad29aae33b33438c2f1597fc13c60180c64",
+        "datasets": {
+          "values": {
+            "shape": [
+              91
+            ],
+            "dtype": "float64",
+            "finite": true,
+            "min": 0.0,
+            "max": 9034.37118216809
+          }
+        }
+      },
+      {
+        "path": "figures/StressbalanceSolution_Vel.png",
+        "bytes": 87143,
+        "sha256": "a05b4d0a03e78ecd404dbe7adaf9c7453140e9fc69c6b7c8b55e525f71dfe761",
+        "png_dimensions": [
+          554,
+          470
+        ]
+      },
+      {
+        "path": "mesh/mesh.h5",
+        "bytes": 6800,
+        "sha256": "7bdb308150efd039ba2a8b52a06fe0d03907cbb80ee3771eb5c3ad3b2bcafa19",
+        "datasets": {
+          "elements": {
+            "shape": [
+              148,
+              3
+            ],
+            "dtype": "int64",
+            "finite": true,
+            "min": 1.0,
+            "max": 91.0
+          },
+          "x": {
+            "shape": [
+              91
+            ],
+            "dtype": "float64",
+            "finite": true,
+            "min": 0.0,
+            "max": 1000000.0
+          },
+          "y": {
+            "shape": [
+              91
+            ],
+            "dtype": "float64",
+            "finite": true,
+            "min": 0.0,
+            "max": 1000000.0
+          }
+        }
+      },
+      {
+        "path": "metadata.json",
+        "bytes": 991,
+        "sha256": "de9ff72e7f576c471a951a83ae3e4fb4f18421377bb1bf1f78b6830241e29662"
+      },
+      {
+        "path": "model/md_final.mat",
+        "bytes": 515492,
+        "sha256": "d34ffb369d58c63232abccb50f47136d8ba455bbd9df375c792cdcc741d516f7",
+        "mat_header_prefix": "MATLAB 7.3 MAT-file,"
+      }
+    ],
+    "checks": [
+      {
+        "name": "metadata identifies native ISSM StressbalanceSolution and status ok",
+        "pass_": true
+      },
+      {
+        "name": "all HDF5 arrays finite",
+        "pass_": true
+      },
+      {
+        "name": "all four nodal physical fields have 91 entries",
+        "pass_": true
+      },
+      {
+        "name": "Vel equals sqrt(Vx^2+Vy^2)",
+        "max_absolute_difference": 1.8189894035458565e-12,
+        "tolerance": 1e-10,
+        "pass_": true
+      },
+      {
+        "name": "1-based triangle connectivity in range",
+        "shape": [
+          148,
+          3
+        ],
+        "pass_": true
+      }
+    ],
+    "all_checks_pass": true,
+    "convergence_num_steps": [
+      23.0
+    ],
+    "physical_field_ranges": {
+      "Pressure": {
+        "minimum": 2698731.0,
+        "maximum": 8995770.0,
+        "unit": "Pa"
+      },
+      "Vel": {
+        "minimum": 0.0,
+        "maximum": 9034.387288463504,
+        "unit": "m/year"
+      },
+      "Vx": {
+        "minimum": -1152.2731208904463,
+        "maximum": 1159.5649136296163,
+        "unit": "m/year"
+      },
+      "Vy": {
+        "minimum": 0.0,
+        "maximum": 9034.37118216809,
+        "unit": "m/year"
+      }
+    }
+  },
+  "scientific_configuration": {
+    "domain": {
+      "x_min": 0,
+      "x_max": 1000000,
+      "y_min": 0,
+      "y_max": 1000000,
+      "units": "m"
+    },
+    "nominal_triangle_size": {
+      "value": 100000,
+      "units": "m"
+    },
+    "thickness": {
+      "min": 300,
+      "max": 1000,
+      "units": "m",
+      "axis": "linear along y"
+    },
+    "base_surface": "hydrostatic flotation using md.materials density defaults",
+    "initial_velocity": {
+      "vx": 0,
+      "vy": 0,
+      "vz": 0,
+      "units": "m/year"
+    },
+    "rheology_temperature": {
+      "value": 253,
+      "units": "K",
+      "expression": "273-20"
+    },
+    "flow_equation": "SSA",
+    "solution": "Stressbalance",
+    "time_advancing": false,
+    "mpi_processes_requested_by_source": 2,
+    "model_defaults": "ISSM 2026.1 in the actual digest-pinned image; full final model is retained in the hashed results archive."
+  },
+  "units": {
+    "coordinates": "m",
+    "geometry": "m",
+    "velocity": "m/year",
+    "pressure": "Pa",
+    "evidence": "ISSM native model conventions; exported plot omits axis/colorbar unit labels.",
+    "sources": [
+      "https://raw.githubusercontent.com/ISSMteam/ISSM/main/src/m/classes/mesh2d.m",
+      "https://raw.githubusercontent.com/ISSMteam/ISSM/main/src/m/classes/initialization.m"
+    ]
+  },
+  "known_public_scientific_matches": [
+    {
+      "submitted_path": "DomainOutline.exp",
+      "sha256": "3093d41076be127884136aded8a906f9ddd97dec250c7db67ab2fac8c01f7b30",
+      "known_paths": [
+        "existing-native-inputs/canonical/issm/SquareIceShelf/DomainOutline.exp"
+      ]
+    },
+    {
+      "submitted_path": "Front.exp",
+      "sha256": "275790e3caf22144d05b41f768bb2cb362b651d8092de10bc1fc61a621bd515a",
+      "known_paths": [
+        "existing-native-inputs/canonical/issm/SquareIceShelf/Front.exp"
+      ]
+    },
+    {
+      "submitted_path": "Square.par",
+      "sha256": "fb5bad3dfbe1dd25d7fbf1e0050dd8ce205037a92c6cbd6d3e31a5e800713f28",
+      "known_paths": [
+        "existing-native-inputs/canonical/issm/SquareIceShelf/Square.par"
+      ]
+    },
+    {
+      "submitted_path": "runme.m",
+      "sha256": "ba33248542d76c0fd4d7c2430d4ab015572c7188560640d31c9157686c9c82b1",
+      "known_paths": [
+        "existing-native-inputs/canonical/issm/SquareIceShelf/runme.m"
+      ]
+    }
+  ],
+  "public_scientific_packet": {
+    "file": "basic-issm-matched-source.zip",
+    "sha256": "bf2e6a47af8b17b1d6b6cd1c9add900ffaba61905e8176095b8c54adca8607fc",
+    "bytes": 2145,
+    "scientific_files": 4,
+    "source": "Already-public copied canonical files, independently byte-matched to actual submitted hashes; no raw private export."
+  },
+  "job_environment_binds_expected_run_root": true,
+  "actual_job_model_and_target": {
+    "CRYOSTACK_MODEL": "issm",
+    "CRYOSTACK_RUN_TARGET": "runme.m"
+  },
+  "job_input_binding_contract": "Actual CRYOSTACK_S3_RUN job environment equals the checked run root; the native runner downloads its input/ subdirectory."
+}

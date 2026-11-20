@@ -1,10 +1,36 @@
 format: jb-book
+root: applications/icesheets/index
 
-root: index
-
-parts:
-  - caption: CryoLauncher
-    chapters:
-      - file: applications/icesheets/getting_started
-      - file: applications/icesheets/user_manual
-      - file: applications/icesheets/resources
+chapters:
+  - file: applications/icesheets/getting_started
+    title: Getting Started
+  - file: applications/icesheets/user_manual
+    title: User Manual
+  - file: applications/icesheets/resources
+    title: Resources
+  - file: applications/icesheets/soft_launch
+    title: Pilot Tutorials
+    sections:
+      - file: applications/icesheets/soft_launch/basic_icepack
+      - file: applications/icesheets/soft_launch/basic_issm
+      - file: applications/icesheets/soft_launch/advanced_icepack
+      - file: applications/icesheets/soft_launch/advanced_issm
+      - file: applications/icesheets/soft_launch/bring_script
+      - file: applications/icesheets/soft_launch/issm_own_script
+      - file: applications/icesheets/soft_launch/upload_dataset
+      - file: applications/icesheets/soft_launch/issm_mat_data
+      - file: applications/icesheets/soft_launch/auto_issm
+      - file: applications/icesheets/soft_launch/own_problem_icepack
+      - file: applications/icesheets/soft_launch/byo_aws_setup
+      - file: applications/icesheets/soft_launch/matlab_byo_setup
+      - file: applications/icesheets/soft_launch/reproducibility
+      - file: applications/icesheets/soft_launch/basic_issm_reference
+      - file: applications/icesheets/soft_launch/troubleshooting
+  - file: applications/icesheets/soft_launch/comparison
+    title: Historical reference · Icepack PC/AWS comparisons
+  - file: applications/icesheets/soft_launch/auto_icepack
+    title: Written reference · Icepack Auto-config
+  - file: applications/icesheets/soft_launch/recording_matrix
+    title: Organizer reference · recordings and run evidence
+  - file: applications/icesheets/soft_launch/pilot_readiness
+    title: Organizer reference · funding and release checks

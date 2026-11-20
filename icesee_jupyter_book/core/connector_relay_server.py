@@ -217,6 +217,7 @@ class TunnelGrant:
     created_at: float
     expires_at: float
     revoked: bool = False
+    reservation_id: str = ""
 
     @property
     def expired(self) -> bool:
@@ -545,6 +546,11 @@ async def revoke_tunnel_grant(
     if grant is None:
         raise HTTPException(status_code=404, detail="Unknown tunnel grant.")
 
+    return await _revoke_grant(grant)
+
+
+async def _revoke_grant(grant):
+    session_id = grant.session_id
     grant.revoked = True
 
     # Close any tunnels currently open (or still attaching) under this grant
@@ -566,6 +572,60 @@ async def revoke_tunnel_grant(
             await _safe_close(cloud_ws, 4410)
 
     return {"ok": True, "grant_id": grant.grant_id, "revoked": True}
+
+
+class HostedLicenseRequest(BaseModel):
+    owner_user_id: str
+    action: str
+    reservation_id: str = ""
+    ttl_seconds: int = 480
+
+
+@app.post("/connector/hosted-license")
+async def hosted_license(req: HostedLicenseRequest, authorization: str | None = Header(default=None)):
+    # Separately off until the gateway and trusted worker review is deployed.
+    if os.environ.get("CRYOSTACK_HOSTED_LICENSE_ENABLED") != "1":
+        raise HTTPException(status_code=404, detail="Hosted license bridge is disabled.")
+    owner = (req.owner_user_id or "").strip()
+    key = deployment_token()
+    presented = authorization[7:].strip() if (authorization or "").startswith("Bearer ") else ""
+    from cryostack_src.cloud.pilot.connector_license import gateway_owner_credential
+    if not key or not owner or len(owner)>200 or not constant_time_equal(presented, gateway_owner_credential(owner, key)):
+        raise HTTPException(status_code=401, detail="Owner-scoped authorization is required.")
+    if req.action not in ("status", "grant", "revoke"):
+        raise HTTPException(status_code=400, detail="Unknown license action.")
+    sessions = [s for s in _SESSIONS.values() if s.owner_user_id == owner
+                and not s.expired and not s.superseded and s.connected and s.session_id in _LIVE_WS]
+    if req.action == "status":
+        return {"ok": True, "connected": len(sessions) == 1}
+    import re
+    if not re.fullmatch(r"[a-f0-9]{32}", req.reservation_id):
+        raise HTTPException(status_code=400, detail="A canonical hosted reservation is required.")
+    matches = [g for g in _TUNNEL_GRANTS.values() if g.owner_user_id == owner
+               and g.reservation_id == req.reservation_id and g.purpose == "matlab-license"]
+    if req.action == "revoke":
+        for grant in matches:
+            await _revoke_grant(grant)
+        return {"ok": True, "revoked": True}
+    if len(sessions) != 1:
+        raise HTTPException(status_code=409, detail="Connect your institutional Connector before this run.")
+    if not 60 <= req.ttl_seconds <= 900:
+        raise HTTPException(status_code=400, detail="License lifetime exceeds the reviewed task bound.")
+    sess = sessions[0]
+    if matches:
+        grant = matches[0]
+        if not grant.usable or grant.session_id != sess.session_id:
+            raise HTTPException(status_code=409, detail="This run's institutional connection has ended.")
+    else:
+        now = time.time()
+        grant = TunnelGrant(grant_id=uuid.uuid4().hex, session_id=sess.session_id,
+                            owner_user_id=owner, purpose="matlab-license", token=new_secret(32),
+                            created_at=now, expires_at=now+req.ttl_seconds,
+                            reservation_id=req.reservation_id)
+        _TUNNEL_GRANTS[grant.token] = grant
+    return {"ok": True, "owner_user_id": owner, "reservation_id": req.reservation_id,
+            "session_id": grant.session_id, "token": grant.token, "purpose": grant.purpose,
+            "expires_at": grant.expires_at}
 
 
 # ---------------------------------------------------------------------------

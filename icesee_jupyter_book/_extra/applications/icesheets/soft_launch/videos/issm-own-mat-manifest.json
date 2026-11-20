@@ -1,0 +1,379 @@
+{
+  "status": "accepted_for_publication",
+  "video_seconds": 234.64,
+  "video_sha256": "2cc413f163701f0545aadf9e813417a48e0ec4ca0f98ed78644918f89afd55ce",
+  "scope": "Separate beginner ISSM MAT initial-fields tutorial; one verified native diagnostic run.",
+  "files": [
+    {
+      "path": "issm-mat-final-velocity.png",
+      "bytes": 83934,
+      "sha256": "3eb634fe64b31c5faaece4d615e717bb8586f4c703a534a09069b66840e62f2a"
+    },
+    {
+      "path": "issm-mat-initial-conditions.png",
+      "bytes": 25637,
+      "sha256": "29e0613f0cc255e2dcf9bb7b608c8486daa3ddc8307de91ecf34125113b0c300"
+    },
+    {
+      "path": "issm-own-mat-data.mp4",
+      "bytes": 4052875,
+      "sha256": "2cc413f163701f0545aadf9e813417a48e0ec4ca0f98ed78644918f89afd55ce"
+    },
+    {
+      "path": "issm-own-mat-data.vtt",
+      "bytes": 6388,
+      "sha256": "bfc68768898252e9311f46008af1e5ebfa4b64a42e6e92e034adef00aeec5d2b"
+    }
+  ],
+  "scientific_run_reference_sha256": "efe071ac9a5addcc45d5ae3b6fb188d1832b093c10e49a1c6e0c06762dbaa6ba",
+  "actual_outcome": {
+    "status": "SUCCEEDED",
+    "exit_code": 0,
+    "submitted_utc": "2026-11-19T04:31:30.182Z",
+    "started_utc": "2026-11-19T04:35:10.905Z",
+    "stopped_utc": "2026-11-19T04:36:01.923Z"
+  },
+  "source_and_data": [
+    {
+      "relative_path": "runme.m",
+      "expected_sha256": "0aeda3bb5b0d3d74f531e35463d9c0c1cfe2f9c1468ba2cfdabaecafb3760ad2",
+      "actual_sha256": "0aeda3bb5b0d3d74f531e35463d9c0c1cfe2f9c1468ba2cfdabaecafb3760ad2",
+      "bytes": 3199,
+      "match": true
+    },
+    {
+      "relative_path": "Launch.par",
+      "expected_sha256": "65585ecc35704fa180fad5cf048ce21a9cbacd162edc55f2ca29037753db0388",
+      "actual_sha256": "65585ecc35704fa180fad5cf048ce21a9cbacd162edc55f2ca29037753db0388",
+      "bytes": 1717,
+      "match": true
+    },
+    {
+      "relative_path": "validate_launch_dataset.m",
+      "expected_sha256": "0ad08139732b621384c7736e30dd3bca39aca70f12fde2216dcbf9115e280d6f",
+      "actual_sha256": "0ad08139732b621384c7736e30dd3bca39aca70f12fde2216dcbf9115e280d6f",
+      "bytes": 1496,
+      "match": true
+    },
+    {
+      "relative_path": "load_initial_conditions.m",
+      "expected_sha256": "89c2d876326d9546034411e44473da41b7e14e43173f11a0ffa61d8c868c4538",
+      "actual_sha256": "89c2d876326d9546034411e44473da41b7e14e43173f11a0ffa61d8c868c4538",
+      "bytes": 3236,
+      "match": true
+    },
+    {
+      "relative_path": "data/issm-shelf-initial.mat",
+      "expected_sha256": "529b19e274b4b754c679c30e80bd9abc263342bb09fd3e64317d60659af8f3cb",
+      "actual_sha256": "529b19e274b4b754c679c30e80bd9abc263342bb09fd3e64317d60659af8f3cb",
+      "bytes": 1471,
+      "match": true
+    }
+  ],
+  "all_scientific_hashes_exact": true,
+  "all_inputs_predate_submission": true,
+  "job_input_binding": true,
+  "actual_image_digests": [
+    "sha256:d68d88dcb7047f29d6e277a45710f50f1bf3023566e0472f07a7dd75ffbcd170"
+  ],
+  "model_and_target": {
+    "CRYOSTACK_MODEL": "issm",
+    "CRYOSTACK_RUN_TARGET": "runme.m"
+  },
+  "native_checks": {
+    "schema": "cryostack.issm-mat-local-check.v1",
+    "native_scientific_artifact_check_passed": true,
+    "archive": {
+      "sha256": "0f54f3fd12221a4c833f316e73e6a96ef7b36d6c229dde6d3c461699c3dc0c33",
+      "bytes": 268858,
+      "members": 15,
+      "crc_valid": true
+    },
+    "all_five_submitted_input_hashes_exact": true,
+    "mesh": {
+      "vertices": 13,
+      "triangles": 16,
+      "total_area_m2": 100000000.0,
+      "nondegenerate": true,
+      "x_range_m": [
+        0.0,
+        10000.0
+      ],
+      "y_range_m": [
+        0.0,
+        10000.0
+      ]
+    },
+    "uploaded_initialization_at_every_native_vertex": [
+      {
+        "field": "thickness",
+        "nodes": 13,
+        "max_abs_error": 0.0,
+        "absolute_tolerance": 1e-08,
+        "units": "m",
+        "passed": true
+      },
+      {
+        "field": "base",
+        "nodes": 13,
+        "max_abs_error": 0.0,
+        "absolute_tolerance": 1e-08,
+        "units": "m",
+        "passed": true
+      },
+      {
+        "field": "surface",
+        "nodes": 13,
+        "max_abs_error": 0.0,
+        "absolute_tolerance": 1e-08,
+        "units": "m",
+        "passed": true
+      },
+      {
+        "field": "vx",
+        "nodes": 13,
+        "max_abs_error": 0.0,
+        "absolute_tolerance": 1e-08,
+        "units": "m/year",
+        "passed": true
+      },
+      {
+        "field": "vy",
+        "nodes": 13,
+        "max_abs_error": 0.0,
+        "absolute_tolerance": 1e-08,
+        "units": "m/year",
+        "passed": true
+      }
+    ],
+    "floating_geometry": {
+      "positive_thickness": true,
+      "floating_mask_all_one_on_uploaded_grid": true,
+      "base_hydrostatic_max_abs_error_m": 0.0,
+      "surface_closure_max_abs_error_m": 0.0
+    },
+    "all_exported_scientific_numeric_arrays_finite": true,
+    "field_statistics": {
+      "Pressure": {
+        "count": 13,
+        "min": 2698731.0,
+        "max": 4497885.0,
+        "arithmetic_node_mean": 3619067.469230769,
+        "arithmetic_node_rms": 3678886.697345179
+      },
+      "StressbalanceConvergenceNumSteps": {
+        "count": 1,
+        "min": 12.0,
+        "max": 12.0,
+        "arithmetic_node_mean": 12.0,
+        "arithmetic_node_rms": 12.0
+      },
+      "Vel": {
+        "count": 13,
+        "min": 100.0,
+        "max": 180.0,
+        "arithmetic_node_mean": 140.0264738702951,
+        "arithmetic_node_rms": 142.56423824229577
+      },
+      "Vx": {
+        "count": 13,
+        "min": 100.0,
+        "max": 180.0,
+        "arithmetic_node_mean": 140.02408226455788,
+        "arithmetic_node_rms": 142.56158127881451
+      },
+      "Vy": {
+        "count": 13,
+        "min": -2.2190616377871684,
+        "max": 2.2190448954823614,
+        "arithmetic_node_mean": -1.440174356727762e-06,
+        "arithmetic_node_rms": 0.8703843346638449
+      }
+    },
+    "velocity_magnitude_max_abs_error_m_per_year": 2.842170943040401e-14,
+    "convergence_steps": 12,
+    "reference_metrics": {
+      "model": "issm",
+      "case": "synthetic-shelf-v1",
+      "steps": 1,
+      "thickness_min": 300,
+      "thickness_max": 500,
+      "thickness_mean": 402.3076923076923,
+      "speed_l2": 142.56423824229577,
+      "runtime_seconds": 9.568328
+    },
+    "independent_metric_checks": {
+      "thickness_min": {
+        "reported": 300,
+        "recomputed": 300.0,
+        "abs_error": 0.0,
+        "passed": true
+      },
+      "thickness_max": {
+        "reported": 500,
+        "recomputed": 500.0,
+        "abs_error": 0.0,
+        "passed": true
+      },
+      "thickness_mean": {
+        "reported": 402.3076923076923,
+        "recomputed": 402.3076923076923,
+        "abs_error": 0.0,
+        "passed": true
+      },
+      "speed_l2": {
+        "reported": 142.56423824229577,
+        "recomputed": 142.56423824229577,
+        "abs_error": 0.0,
+        "passed": true
+      }
+    },
+    "metric_definition": "Arithmetic node mean(thickness), sqrt(mean(Vel.^2)); neither is triangle-area weighted, matching submitted ISSM runme.m.",
+    "boundary_velocity_check": {
+      "method": "Infer topological boundary vertices from single-incidence triangle edges, exclude every x=L front vertex, compare solved components with uploaded/interpolated initial velocities.",
+      "boundary_vertices": 8,
+      "checked_nonfront_vertices": 5,
+      "max_abs_error_m_per_year": {
+        "Vx": 0.0,
+        "Vy": 0.0
+      },
+      "passed": true,
+      "limitation": "Inferred observable field check; actual saved spc arrays are not decoded. Front corners are conservatively excluded too."
+    },
+    "model_representation": {
+      "md_dtype": "uint32",
+      "md_shape": [
+        1,
+        6
+      ],
+      "limitation": "Saved MATLAB MCOS object is opaque to these local readers; boundary constraints are not directly decoded."
+    },
+    "safe_runtime_versions": {
+      "matlab": "24.2.0.3070828 (R2024b) Update 7",
+      "matlab_release": "2024b",
+      "issm": "2026.1"
+    },
+    "whitelisted_thread_settings": {
+      "OMP_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1"
+    },
+    "rng": {
+      "artifact": "rng-before.mat",
+      "sha256": "376ec83b1ddbcbac2bbaebc177c8a423c0f7f71d9d3ba39a7f376b15e6595fcf",
+      "artifact_hash_verified": true,
+      "capture_reset_or_advanced_state": false,
+      "limitation": "MATLAB global state capture does not establish Triangle internal seed or script-owned generators."
+    },
+    "provenance_member_hashes": {
+      "metadata.json": "817d48ef791bc83663173fbb06472a03b2677a717efc2d4ad9fc2d6f4ff033d0",
+      "runtime-provenance.json": "744738d999000ef0a2e43b582f9778a981e50ac052c5bd60c08db4c8d93551aa",
+      "rng-before.mat": "376ec83b1ddbcbac2bbaebc177c8a423c0f7f71d9d3ba39a7f376b15e6595fcf",
+      "initial-fields-on-native-mesh.mat": "784007b891cfac82c63eb980fb41518cfefdc86ceacbd54754fa935f176f95af",
+      "reference-metrics.json": "1cd97d60ef48aacaf98c1ced3f4c5335a0a70a5bddc4c36c128d634df57be18a"
+    },
+    "figures": [
+      {
+        "archive_member": "initial-conditions.png",
+        "saved_file": "figures/issm-mat-initial-conditions.png",
+        "bytes": 25637,
+        "sha256": "29e0613f0cc255e2dcf9bb7b608c8486daa3ddc8307de91ecf34125113b0c300",
+        "native_png_unchanged": true,
+        "visual_privacy_review": "Scientific axes, initial thickness/surface/speed or final velocity colorbar only; no identity, private path, license or credential text."
+      },
+      {
+        "archive_member": "figures/StressbalanceSolution_Vel.png",
+        "saved_file": "figures/issm-mat-final-velocity.png",
+        "bytes": 83934,
+        "sha256": "3eb634fe64b31c5faaece4d615e717bb8586f4c703a534a09069b66840e62f2a",
+        "native_png_unchanged": true,
+        "visual_privacy_review": "Scientific axes, initial thickness/surface/speed or final velocity colorbar only; no identity, private path, license or credential text."
+      }
+    ],
+    "timing_receipt": "timing-and-input-receipt.json",
+    "repeat_comparison_performed": false,
+    "accuracy_comparison_performed": false,
+    "network_or_solver_executed": false,
+    "raw_model_or_rng_exported": false
+  },
+  "public_scientific_download_binding": {
+    "curated_zip_sha256": "4bea23cdd9dcd38060ae52af8ef8fa457cdf7371bdcf710d56f4ab5943c8ecf7",
+    "all_five_exact": true,
+    "inputs": [
+      {
+        "input": "runme.m",
+        "public_member": "native-data-issm-mat/runme.m",
+        "sha256": "0aeda3bb5b0d3d74f531e35463d9c0c1cfe2f9c1468ba2cfdabaecafb3760ad2",
+        "exact_match": true
+      },
+      {
+        "input": "Launch.par",
+        "public_member": "native-data-issm-mat/Launch.par",
+        "sha256": "65585ecc35704fa180fad5cf048ce21a9cbacd162edc55f2ca29037753db0388",
+        "exact_match": true
+      },
+      {
+        "input": "validate_launch_dataset.m",
+        "public_member": "native-data-issm-mat/validate_launch_dataset.m",
+        "sha256": "0ad08139732b621384c7736e30dd3bca39aca70f12fde2216dcbf9115e280d6f",
+        "exact_match": true
+      },
+      {
+        "input": "load_initial_conditions.m",
+        "public_member": "native-data-issm-mat/load_initial_conditions.m",
+        "sha256": "89c2d876326d9546034411e44473da41b7e14e43173f11a0ffa61d8c868c4538",
+        "exact_match": true
+      },
+      {
+        "input": "data/issm-shelf-initial.mat",
+        "public_member": "datasets/issm-shelf-initial.mat",
+        "sha256": "529b19e274b4b754c679c30e80bd9abc263342bb09fd3e64317d60659af8f3cb",
+        "exact_match": true
+      }
+    ],
+    "new_network_or_native_calls": false
+  },
+  "recording": {
+    "raw_source_receipts_verified": true,
+    "continuous_actions": [
+      "New example",
+      "Upload MAT",
+      "Reference in example",
+      "Corrected four-file import and saved confirmation",
+      "Cached Render enabled\u2192disabled",
+      "Download results\u2192fresh link\u2192actual browser download"
+    ],
+    "initial_panels": "Three 5-second crops from exact native PNG, retaining each title/axes/colorbar",
+    "Render_capture": "Cached correct-MAT Results enabled Render\u2192disabled transition retained; exact15-member equality to original checked archive",
+    "Launch_capture": "Instructions name actual Launch cloud run button; final confirmation click below crop",
+    "cached_archive_check": {
+      "original_archive_sha256": "0f54f3fd12221a4c833f316e73e6a96ef7b36d6c229dde6d3c461699c3dc0c33",
+      "cached_archive_sha256": "b26363bb8fcad85bfb80eb35c32a7b50a0a8b0371013830f5d9eb3bc712615b7",
+      "members_identical": true,
+      "member_count": 15,
+      "differing_members": []
+    },
+    "native_reruns_by_editor": 0,
+    "scientific_figures_changed": false,
+    "visual_review": "accepted"
+  },
+  "privacy": {
+    "video_sha256": "2cc413f163701f0545aadf9e813417a48e0ec4ca0f98ed78644918f89afd55ce",
+    "sampled_frames": 78,
+    "sample_interval_seconds": 3,
+    "actual_private_findings": [],
+    "adjudicated_flags": [
+      {
+        "frame": "0045.jpg",
+        "reason": "Native thickness-panel axis tick concatenation; manually inspected, no identity/account value."
+      }
+    ],
+    "full_decode": "passed",
+    "all19scene_contacts": "visually accepted",
+    "navigation": "Arrows/badges outside protected controls/plots; science fields unaltered",
+    "publication_hold": null
+  },
+  "native_acceptance": "passed; both exact native figures visually reviewed",
+  "new_AWS_calls": false,
+  "production_changes": false,
+  "final_video_acceptance": "accepted final19-scene contacts and actual cached controls"
+}

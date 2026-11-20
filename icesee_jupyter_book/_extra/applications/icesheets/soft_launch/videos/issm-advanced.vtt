@@ -1,0 +1,78 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:14.000
+1. Choose Advanced and SquareIceShelf
+Select Cloud → Advanced → ISSM → SquareIceShelf.
+This diagnostic experiment changes the upstream thickness parameter while retaining the native SSA setup.
+The application example remains read-only until cloned.
+
+2
+00:00:14.000 --> 00:00:29.000
+2. Clone to an editable workspace
+Enter a new name and choose Clone to My Workspace.
+The recorded confirmation creates pilot-issm-advanced-1119, retaining the native example files.
+This owned clone is separate from the canonical application example.
+
+3
+00:00:29.000 --> 00:00:47.000
+3. Import the changed parameter file
+Prepare Square.par with only hmax changed from 1000 to 1010 m. Choose script files, select Square.par, enable Replace existing script files, then Import script files.
+The recorded confirmation says Square.par is saved.
+The GUI import is shown. Inline editing of the parameter was not completed.
+
+4
+00:00:47.000 --> 00:01:05.000
+4. Interpret the scientific change
+hmin stays 300 m. The +10 m change at hmax tapers along the y-dependent thickness profile; it is not a uniform +10 m addition.
+Keep runme.m as the Run target. Its canonical SSA setup requests two MPI processes.
+All four submitted example-file hashes match the expected source; only Square.par carries the intended parameter change.
+
+5
+00:01:05.000 --> 00:01:20.000
+5. Review the native cloud run
+Review & Launch identifies ISSM and the owned Advanced example.
+The job used 2 vCPU / 8 GiB with the existing licensed MATLAB workflow, then succeeded with exit code 0.
+The displayed ~60 min estimate is separate from actual model timing.
+
+6
+00:01:20.000 --> 00:01:36.000
+6. Select the accepted native fields
+In Results, choose StressbalanceSolution and Vel.
+This accepted Advanced run contains 91 mesh vertices and 148 triangles. Vx, Vy, Vel and Pressure are finite at all 91 nodes.
+Result identity is bound to this run’s downloaded archive; the launch-form selector is excluded.
+
+7
+00:01:36.000 --> 00:01:54.000
+7. Inspect the full saved velocity figure
+This is the unchanged native PNG from the accepted Advanced archive, with its full title, axes and colour bar.
+Speed spans 0–9272.778005 m/year. The x and y axes are metres.
+The plotted Vel values agree with hypot(Vx, Vy) in the exported numeric fields.
+
+8
+00:01:54.000 --> 00:02:09.000
+8. Read the convergence count correctly
+The saved StressbalanceConvergenceNumSteps scalar is 23.
+This is the diagnostic SSA stress-balance convergence count. The run does not have a transient time axis.
+The other four saved fields are nodal arrays; the convergence count is a single scalar.
+
+9
+00:02:09.000 --> 00:02:24.000
+9. Keep the changed-case comparison scoped
+The exported mesh exactly matches the accepted Basic mesh.
+Advanced maximum speed is 9272.778005 m/year; Basic was 9034.387288 m/year. These are descriptive results for different thickness inputs.
+No repeat-equality or accuracy claim is made. The hmax/hmin values are source-confirmed; the opaque saved MATLAB model was not decoded.
+
+10
+00:02:24.000 --> 00:02:39.000
+10. Separate readiness from actual runtime
+The native job succeeded with exit code 0. Submission → Batch start took 183.642 s; the Batch task took 36.831 s.
+Runtime provenance records MATLAB R2024b Update 7 and ISSM 2026.1.
+The unchanged runme.m requests two MPI processes. Setup/editing waits are omitted from this tutorial.
+
+11
+00:02:39.000 --> 00:02:53.000
+11. Save the current Advanced archive
+Download results produced this run’s fresh HTTPS link. The browser saved an 11-member ZIP with valid CRC.
+It contains the mesh, numeric fields, native PNG, final MATLAB model and runtime/RNG provenance.
+The ZIP hash and all member hashes are retained in the reproducibility receipt.

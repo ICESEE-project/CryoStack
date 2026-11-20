@@ -1,0 +1,436 @@
+{
+  "video_sha256": "9ee89c1244c83f4a8dda0f343e0e110993d795036ef8414c10e4f2129c386225",
+  "duration_seconds": 248.0,
+  "chapters": [
+    {
+      "id": "step-00",
+      "step": "Goal",
+      "start_seconds": 0,
+      "end_seconds": 14.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Run an owned ISSM clone with a changed thickness profile.",
+      "screenWhy": "Keep the source inputs, inspect native fields, and save a complete result package.",
+      "expectedResult": "Prepare Square.par with only hmax 1000\u21921010 m; keep hmin = 300 m.",
+      "logical_step_id": "orientation",
+      "pause_after": false,
+      "title": "Your goal: change the shelf thickness profile",
+      "instructions": [
+        "Run an owned SquareIceShelf clone with hmax = 1010 m while keeping hmin = 300 m.",
+        "Prepare Square.par with only hmax changed from 1000 to 1010 m."
+      ],
+      "note": "Use an already connected cloud account, configured MATLAB license and any required Connector.",
+      "why": "Keep the source inputs, inspect native fields, and save a complete result package."
+    },
+    {
+      "id": "start",
+      "step": "Start",
+      "start_seconds": 14.0,
+      "end_seconds": 24.0,
+      "where": "Mode and Experiment",
+      "screenText": "Start here in CryoLauncher. Choose Cloud for this tutorial.",
+      "screenWhy": "Your workspace keeps scripts, dataset references and results together.",
+      "expectedResult": "Your workspace keeps scripts, datasets, run history and results together.",
+      "logical_step_id": "orientation",
+      "pause_after": false,
+      "title": "Start here",
+      "instructions": [
+        "Open CryoLauncher and sign in. Use an approved connected cloud account with its resources prepared.",
+        "The following steps select this tutorial\u2019s model and example."
+      ],
+      "note": "Shared application orientation; the case-specific configuration follows.",
+      "why": "Your workspace keeps scripts, dataset references and results together."
+    },
+    {
+      "id": "step-01",
+      "step": "1",
+      "start_seconds": 24.0,
+      "end_seconds": 34.0,
+      "where": "Mode and Experiment",
+      "screenText": "Choose Cloud \u2192 Advanced \u2192 ISSM \u2192 SquareIceShelf.",
+      "screenWhy": "Choose the intended interface, model and example before editing or launching a run.",
+      "expectedResult": "Retain your configured MATLAB license and required Connector.",
+      "logical_step_id": "step-1",
+      "pause_after": true,
+      "title": "1. Choose the native Advanced case",
+      "instructions": [
+        "Choose Cloud \u2192 Advanced \u2192 ISSM \u2192 SquareIceShelf.",
+        "Keep the application source intact and work in an owned clone."
+      ],
+      "note": "The native run uses diagnostic SSA stress balance.",
+      "why": "Choose the intended interface, model and example before editing or launching a run."
+    },
+    {
+      "id": "step-02",
+      "step": "2",
+      "start_seconds": 34.0,
+      "end_seconds": 43.0,
+      "where": "Workspace \u2192 Editor",
+      "screenText": "Enter a new name and choose Clone to My Workspace.",
+      "screenWhy": "Cloning gives you an editable copy while preserving the supplied application source.",
+      "expectedResult": "The canonical example remains read-only.",
+      "logical_step_id": "step-2",
+      "pause_after": true,
+      "title": "2. Clone to your workspace",
+      "instructions": [
+        "Enter a new example name and choose Clone to My Workspace."
+      ],
+      "note": "The canonical example remains read-only.",
+      "why": "Cloning gives you an editable copy while preserving the supplied application source."
+    },
+    {
+      "id": "step-03",
+      "step": "2",
+      "start_seconds": 43.0,
+      "end_seconds": 55.0,
+      "where": "Workspace \u2192 Editor",
+      "screenText": "Wait for the cloned-workspace confirmation.",
+      "screenWhy": "Cloning gives you an editable copy while preserving the supplied application source.",
+      "expectedResult": "Keep the native example files in your owned clone.",
+      "logical_step_id": "step-2",
+      "pause_after": true,
+      "title": "2. Confirm the cloned example",
+      "instructions": [
+        "Wait for the cloned-workspace confirmation.",
+        "The new example is pilot-issm-advanced-1119 and keeps the native example files."
+      ],
+      "note": "You can now replace the parameter file in your own copy.",
+      "why": "Cloning gives you an editable copy while preserving the supplied application source."
+    },
+    {
+      "id": "step-04",
+      "step": "3",
+      "start_seconds": 55.0,
+      "end_seconds": 65.0,
+      "where": "Workspace \u2192 Editor",
+      "screenText": "Choose the changed Square.par in your file picker; Open.",
+      "screenWhy": "Selecting local files prepares them for import; importing saves them in this example.",
+      "expectedResult": "Keep runme.m, DomainOutline.exp and Front.exp unchanged.",
+      "logical_step_id": "step-3",
+      "pause_after": true,
+      "title": "3. Select the changed parameter file",
+      "instructions": [
+        "Choose script files. In your file picker select Square.par and choose Open."
+      ],
+      "note": "Your copy changes only hmax to 1010 m.",
+      "why": "Selecting local files prepares them for import; importing saves them in this example."
+    },
+    {
+      "id": "step-05",
+      "step": "3",
+      "start_seconds": 65.0,
+      "end_seconds": 75.0,
+      "where": "Workspace \u2192 Editor",
+      "screenText": "Check that one script file is selected.",
+      "screenWhy": "Selecting local files prepares them for import; importing saves them in this example.",
+      "expectedResult": "You are replacing Square.par in the owned clone.",
+      "logical_step_id": "step-3",
+      "pause_after": true,
+      "title": "3. Check one file is selected",
+      "instructions": [
+        "The picker changes from zero to one selected script file.",
+        "You are replacing Square.par in the owned clone."
+      ],
+      "note": "Keep runme.m, DomainOutline.exp and Front.exp unchanged.",
+      "why": "Selecting local files prepares them for import; importing saves them in this example."
+    },
+    {
+      "id": "step-06",
+      "step": "4",
+      "start_seconds": 75.0,
+      "end_seconds": 84.0,
+      "where": "Workspace \u2192 Editor",
+      "screenText": "Enable Replace existing script files.",
+      "screenWhy": "Replacement explicitly allows an imported file to overwrite the same name in this clone.",
+      "expectedResult": "The clone already contains Square.par.",
+      "logical_step_id": "step-4",
+      "pause_after": true,
+      "title": "4. Enable intentional replacement",
+      "instructions": [
+        "Enable Replace existing script files.",
+        "The clone already contains Square.par, so the replacement must be explicit."
+      ],
+      "note": "Check the selected filename before importing.",
+      "why": "Replacement explicitly allows an imported file to overwrite the same name in this clone."
+    },
+    {
+      "id": "step-07",
+      "step": "4",
+      "start_seconds": 84.0,
+      "end_seconds": 94.0,
+      "where": "Workspace \u2192 Editor",
+      "screenText": "Choose Import script files.",
+      "screenWhy": "Import saves the selected source files in this example; it does not launch the model.",
+      "expectedResult": "Import the intended hmax = 1010 m parameter file.",
+      "logical_step_id": "step-4",
+      "pause_after": true,
+      "title": "4. Import and save Square.par",
+      "instructions": [
+        "Choose Import script files."
+      ],
+      "note": "The replacement checkbox is enabled for this existing file.",
+      "why": "Import saves the selected source files in this example; it does not launch the model."
+    },
+    {
+      "id": "step-08",
+      "step": "4",
+      "start_seconds": 94.0,
+      "end_seconds": 106.0,
+      "where": "Workspace \u2192 Editor",
+      "screenText": "Check Imported Square.par. Files are saved.",
+      "screenWhy": "Import saves the selected source files in this example; it does not launch the model.",
+      "expectedResult": "The submitted parameter file was checked against the intended copy.",
+      "logical_step_id": "step-4",
+      "pause_after": true,
+      "title": "4. Confirm the imported file",
+      "instructions": [
+        "Wait for Imported Square.par. Files are saved.",
+        "The submitted file was checked against the intended hmax = 1010 m copy."
+      ],
+      "note": "The import replaces the file; an inline edit is not needed.",
+      "why": "Import saves the selected source files in this example; it does not launch the model."
+    },
+    {
+      "id": "step-09",
+      "step": "5",
+      "start_seconds": 106.0,
+      "end_seconds": 118.0,
+      "where": "Experiment \u2192 Run target",
+      "screenText": "Keep runme.m as the Run target.",
+      "screenWhy": "Run target selects the entry script; other imported files can act as helpers.",
+      "expectedResult": "The +10 m change at hmax tapers along y; it is not a uniform addition.",
+      "logical_step_id": "step-5",
+      "pause_after": true,
+      "title": "5. Keep the native run target",
+      "instructions": [
+        "Keep runme.m as the Run target. It requests two MPI processes.",
+        "hmin stays 300 m. The +10 m change at hmax tapers along the y-dependent thickness profile."
+      ],
+      "note": "The thickness addition is not uniform over the shelf.",
+      "why": "Run target selects the entry script; other imported files can act as helpers."
+    },
+    {
+      "id": "step-10",
+      "step": "6",
+      "start_seconds": 118.0,
+      "end_seconds": 126.0,
+      "where": "Environment \u2192 Review & Launch",
+      "screenText": "Choose Review & Launch.",
+      "screenWhy": "Review confirms the intended model, source, resources and charges before submission.",
+      "expectedResult": "Retain the existing licensed MATLAB workflow.",
+      "logical_step_id": "step-6",
+      "pause_after": true,
+      "title": "6. Review the native run",
+      "instructions": [
+        "Choose Review & Launch and check ISSM, the owned example and runme.m."
+      ],
+      "note": "Retain the existing licensed MATLAB workflow.",
+      "why": "Review confirms the intended model, source, resources and charges before submission."
+    },
+    {
+      "id": "step-11",
+      "step": "6",
+      "start_seconds": 126.0,
+      "end_seconds": 134.0,
+      "where": "Environment \u2192 Review & Launch",
+      "screenText": "Confirm ISSM and pilot-issm-advanced-1119.",
+      "screenWhy": "Review confirms the intended model, source, resources and charges before submission.",
+      "expectedResult": "The native job used 2 vCPU and 8 GiB.",
+      "logical_step_id": "step-6",
+      "pause_after": true,
+      "title": "6. Check the model and example",
+      "instructions": [
+        "Confirm Model: ISSM and Example: pilot-issm-advanced-1119.",
+        "Check the readiness results before submitting."
+      ],
+      "note": "The native job used 2 vCPU and 8 GiB.",
+      "why": "Review confirms the intended model, source, resources and charges before submission."
+    },
+    {
+      "id": "step-12",
+      "step": "6",
+      "start_seconds": 134.0,
+      "end_seconds": 145.0,
+      "where": "Environment \u2192 Review & Launch",
+      "screenText": "Control guide: confirm Launch cloud run when checks are Ready.",
+      "screenWhy": "This confirmation stages the reviewed inputs and starts a paid cloud job.",
+      "expectedResult": "The following card belongs to this tutorial\u2019s original native run.",
+      "logical_step_id": "step-6",
+      "pause_after": true,
+      "title": "6. Confirm the launch",
+      "instructions": [
+        "Choose Launch cloud run when the readiness checks are ready.",
+        "This confirmation starts the run."
+      ],
+      "note": "Control guide; the following card belongs to this tutorial\u2019s original native run.",
+      "why": "This confirmation stages the reviewed inputs and starts a paid cloud job."
+    },
+    {
+      "id": "step-13",
+      "step": "6",
+      "start_seconds": 145.0,
+      "end_seconds": 154.0,
+      "where": "Cloud run status",
+      "screenText": "Wait for the new ISSM Advanced run card.",
+      "screenWhy": "The previous card remains visible while the new run is registered.",
+      "expectedResult": "ISSM \u00b7 pilot-issm-advanced-1119, then Submitting.",
+      "logical_step_id": "step-6",
+      "pause_after": true,
+      "title": "6. Follow the submitted run",
+      "instructions": [
+        "Wait for the new ISSM Advanced card to replace the previous run card. Confirm pilot-issm-advanced-1119 before following its status.",
+        "Wait for completion, then open its results."
+      ],
+      "note": "Setup and editing time are separate from model runtime.",
+      "why": "The previous card remains visible while the new run is registered."
+    },
+    {
+      "id": "step-14",
+      "step": "7",
+      "start_seconds": 154.0,
+      "end_seconds": 163.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Select StressbalanceSolution \u2192 Vel; Render when needed.",
+      "screenWhy": "The solution, field name, units and mesh counts identify what you are viewing.",
+      "expectedResult": "The first field may preview automatically.",
+      "logical_step_id": "step-7",
+      "pause_after": true,
+      "title": "7. Render the stress-balance result",
+      "instructions": [
+        "The first field is previewed automatically. Select StressbalanceSolution \u2192 Vel and use Render when needed."
+      ],
+      "note": "Read the field units and use the saved full figure for detail.",
+      "why": "The solution, field name, units and mesh counts identify what you are viewing."
+    },
+    {
+      "id": "step-15",
+      "step": "7",
+      "start_seconds": 163.0,
+      "end_seconds": 180.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Read the native field summary.",
+      "screenWhy": "The solution, field name, units and mesh counts identify what you are viewing.",
+      "expectedResult": "Vx, Vy, Vel and Pressure are finite at all 91 nodes; 148 triangles.",
+      "logical_step_id": "step-7",
+      "pause_after": true,
+      "title": "7. Confirm the native field data",
+      "instructions": [
+        "Vx, Vy, Vel and Pressure are finite at all 91 nodes.",
+        "The native mesh has 91 vertices and 148 triangles."
+      ],
+      "note": "Result identity comes from this run\u2019s archive, rather than the launch-form selector.",
+      "why": "The solution, field name, units and mesh counts identify what you are viewing."
+    },
+    {
+      "id": "step-16",
+      "step": "8",
+      "start_seconds": 180.0,
+      "end_seconds": 192.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Open the full unchanged saved velocity PNG.",
+      "screenWhy": "The unchanged saved figure preserves the complete map, axes and colour scale.",
+      "expectedResult": "Speed: 0\u20139272.778005 m/year; x and y are metres.",
+      "logical_step_id": "step-8",
+      "pause_after": true,
+      "title": "8. Inspect the full velocity map",
+      "instructions": [
+        "Open the unchanged saved velocity PNG.",
+        "Speed spans 0\u20139272.778005 m/year. The x and y axes are metres."
+      ],
+      "note": "The saved Vel agrees with hypot(Vx, Vy).",
+      "why": "The unchanged saved figure preserves the complete map, axes and colour scale."
+    },
+    {
+      "id": "step-17",
+      "step": "9",
+      "start_seconds": 192.0,
+      "end_seconds": 204.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Read convergence as a diagnostic, rather than transient time.",
+      "screenWhy": "A steady diagnostic convergence count is different from a transient time axis.",
+      "expectedResult": "23 steps is a scalar stress-balance convergence count.",
+      "logical_step_id": "step-9",
+      "pause_after": true,
+      "title": "9. Read convergence correctly",
+      "instructions": [
+        "StressbalanceConvergenceNumSteps is a scalar value of 23.",
+        "It reports diagnostic stress-balance convergence, not a transient time axis."
+      ],
+      "note": "The other four exported fields are 91-node arrays.",
+      "why": "A steady diagnostic convergence count is different from a transient time axis."
+    },
+    {
+      "id": "step-18",
+      "step": "10",
+      "start_seconds": 204.0,
+      "end_seconds": 216.0,
+      "where": "Cloud run status",
+      "screenText": "Keep the native completion and runtime provenance.",
+      "screenWhy": "Submission, queue/startup and native model execution are separate stages.",
+      "expectedResult": "Submission \u2192 start: 183.642 s; Batch task: 36.831 s.",
+      "logical_step_id": "step-10",
+      "pause_after": true,
+      "title": "10. Separate readiness and measured runtime",
+      "instructions": [
+        "The native job succeeded with exit code 0.",
+        "Submission \u2192 Batch start: 183.642 s. Batch task: 36.831 s."
+      ],
+      "note": "Runtime provenance records MATLAB R2024b Update 7 and ISSM 2026.1.",
+      "why": "Submission, queue/startup and native model execution are separate stages."
+    },
+    {
+      "id": "step-19",
+      "step": "11",
+      "start_seconds": 216.0,
+      "end_seconds": 224.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Choose Download results.",
+      "screenWhy": "The archive keeps this run\u2019s numeric outputs, figures and provenance together.",
+      "expectedResult": "Wait for this run\u2019s fresh HTTPS link.",
+      "logical_step_id": "step-11",
+      "pause_after": true,
+      "title": "11. Save this run\u2019s archive",
+      "instructions": [
+        "Choose Download results, then open the fresh HTTPS link."
+      ],
+      "note": "Keep the archive with your modified Square.par.",
+      "why": "The archive keeps this run\u2019s numeric outputs, figures and provenance together."
+    },
+    {
+      "id": "step-20",
+      "step": "11",
+      "start_seconds": 224.0,
+      "end_seconds": 234.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Open the new link and save the 11-member ZIP.",
+      "screenWhy": "The archive keeps this run\u2019s numeric outputs, figures and provenance together.",
+      "expectedResult": "Keep it with your modified Square.par and native source files.",
+      "logical_step_id": "step-11",
+      "pause_after": true,
+      "title": "11. Keep the native result package",
+      "instructions": [
+        "Save the 11-member ZIP: numeric fields, mesh, native PNG, final MATLAB model and runtime/RNG provenance."
+      ],
+      "note": "The ZIP and member hashes are retained with this case.",
+      "why": "The archive keeps this run\u2019s numeric outputs, figures and provenance together."
+    },
+    {
+      "id": "step-21",
+      "step": "Keep",
+      "start_seconds": 234.0,
+      "end_seconds": 248.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Retain the changed-input context with your result.",
+      "screenWhy": "Keep the scientific input definitions and numerical qualifications with the result.",
+      "expectedResult": "The Basic mesh matches; the changed speed is descriptive context, not accuracy validation.",
+      "logical_step_id": "step-Keep",
+      "pause_after": true,
+      "title": "What this changed case establishes",
+      "instructions": [
+        "The mesh matches Basic exactly; changed maximum speed is descriptive context for the changed thickness input.",
+        "The hmax/hmin values are source-confirmed. The opaque saved MATLAB model was not decoded, and this experiment is not a repeat-equality or accuracy test."
+      ],
+      "note": "Advanced maximum: 9272.778005 m/year; Basic: 9034.387288 m/year.",
+      "why": "Keep the scientific input definitions and numerical qualifications with the result."
+    }
+  ]
+}

@@ -87,6 +87,10 @@ export CRYOSTACK_CF_TEMPLATE_URL="${CRYOSTACK_CF_TEMPLATE_URL:-https://cryostack
 # Frozen Legacies automatic picker. Keep this explicit in production so a
 # launcher or inherited shell cannot silently select the historical backend.
 # URSA remains available as the rollback value.
+# Immutable supplied measurements: all collections use one verified CEDAR release.
+export CRYOSTACK_FROZEN_LEGACIES_RELEASE_ROOT="${CRYOSTACK_FROZEN_LEGACIES_RELEASE_ROOT:-/srv/cryostack/workspace/datasets/frozen-legacies/measurements/releases}"
+export CRYOSTACK_FROZEN_LEGACIES_RELEASE_ID="${CRYOSTACK_FROZEN_LEGACIES_RELEASE_ID:-404a7aca22c9e4ea9db720ec574e28bbdd8c9571d3f5504101b0f597ea31fc03}"
+
 export CRYOSTACK_FROZEN_LEGACIES_AUTOMATIC_PICKER="${CRYOSTACK_FROZEN_LEGACIES_AUTOMATIC_PICKER:-lyra}"
 export CRYOSTACK_FROZEN_LEGACIES_URSA_CONCURRENCY="${CRYOSTACK_FROZEN_LEGACIES_URSA_CONCURRENCY:-1}"
 
@@ -120,6 +124,54 @@ export CRYOSTACK_FROZEN_LEGACIES_RIGGS_MANIFEST="${CRYOSTACK_FROZEN_LEGACIES_RIG
 export CRYOSTACK_DATA_ROOT="${CRYOSTACK_DATA_ROOT:-/home/bkyanjo3/cryostack-data}"
 export CRYOSTACK_REQUIRE_DURABLE_STORAGE="${CRYOSTACK_REQUIRE_DURABLE_STORAGE:-1}"
 
+# New accounts wait for administrator approval (Control Center ->
+# Registrations). Existing accounts were baselined as approved with
+# deployment/auth_db_migrate.py approval-baseline. Mail stays queued
+# (disabled) until a relay is configured; links use the public origin.
+export CRYOSTACK_REGISTRATION_APPROVAL="${CRYOSTACK_REGISTRATION_APPROVAL:-1}"
+export CRYOSTACK_MAIL_MODE="${CRYOSTACK_MAIL_MODE:-disabled}"
+# Owner-only approval pilot; no other Control Center role can decide.
+export CRYOSTACK_APPROVAL_OWNER_ONLY="${CRYOSTACK_APPROVAL_OWNER_ONLY:-1}"
+export CRYOSTACK_APPROVAL_ADMIN_EMAILS="${CRYOSTACK_APPROVAL_ADMIN_EMAILS:-brian.kyanjo@aims.ac.rw}"
+export CRYOSTACK_PUBLIC_BASE_URL="${CRYOSTACK_PUBLIC_BASE_URL:-https://cryostack.eas.gatech.edu}"
+
+# Private provider settings persist independently of this checkout. Only mail
+# settings are accepted; JSON values are quoted and never executed as code.
+# Keep GT SMTP keys in the JSON when selecting resend/postmark for rollback.
+CRYOSTACK_MAIL_CONFIG_FILE="${CRYOSTACK_MAIL_CONFIG_FILE:-${HOME}/.config/cryostack/mail.json}"
+case "${1:-}" in
+    start|restart|start-gui|restart-gui)
+        if [ -e "${CRYOSTACK_MAIL_CONFIG_FILE}" ] || [ -L "${CRYOSTACK_MAIL_CONFIG_FILE}" ]; then
+            mail_exports="$(python3 "${REPO_ROOT}/deployment/mail_config.py" "${CRYOSTACK_MAIL_CONFIG_FILE}")"
+            eval "${mail_exports}"
+            unset mail_exports
+        fi
+        ;;
+esac
+
+
+
+# Hosted deployment configuration is private and restricted to the production checkout.
+# Paid admission is controlled independently by Control Center.
+if [[ "${REPO_ROOT}" == /home/bkyanjo3/CryoLauncher && -r "${CRYOSTACK_DATA_ROOT}/control/pilot713/pilot.json" ]]; then
+    export CRYOSTACK_PILOT_CONFIG="${CRYOSTACK_PILOT_CONFIG:-${CRYOSTACK_DATA_ROOT}/control/pilot713/pilot.json}"
+    export CRYOSTACK_PILOT_UI_ENABLED="${CRYOSTACK_PILOT_UI_ENABLED:-1}"
+    export CRYOSTACK_HOSTED_LICENSE_ENABLED="${CRYOSTACK_HOSTED_LICENSE_ENABLED:-1}"
+fi
+
+# Authenticated HTTP downloads for completed owner-scoped result archives.
+export CRYOSTACK_STREAM_DOWNLOADS="${CRYOSTACK_STREAM_DOWNLOADS:-1}"
+
+# Service-managed CEDAR bulk workspace; local coordination/credentials remain on XFS.
+export CRYOSTACK_WORKSPACE_ROOT="${CRYOSTACK_WORKSPACE_ROOT:-/srv/cryostack/workspace/users/workspaces-20261026}"
+export CRYOSTACK_WORKSPACE_STATE_ROOT="${CRYOSTACK_WORKSPACE_STATE_ROOT:-/home/bkyanjo3/cryostack-data/workspace}"
+export CRYOSTACK_WORKSPACE_MOUNT="${CRYOSTACK_WORKSPACE_MOUNT:-/srv/cryostack/workspace/users}"
+export CRYOSTACK_WORKSPACE_VOLUME_ID="${CRYOSTACK_WORKSPACE_VOLUME_ID:-ea17ef81309e4b3e8c06eea97882b8de}"
+
+# Reviewed native example trees, shared read-only by the model installations.
+# Discovery alone never grants access. Preserve an explicit operator override,
+# including an empty value (which intentionally disables canonical access).
+export CRYOSTACK_CANONICAL_EXAMPLE_ROOTS="${CRYOSTACK_CANONICAL_EXAMPLE_ROOTS-${ISSM_DIR:-${HOME}/ISSM}/examples:${ICEPACK_ROOT:-${HOME}/icepack}/notebooks}"
 
 # ============================================================
 # Helpers
@@ -418,8 +470,8 @@ start_services() {
 
     echo "Applications:"
     echo "  CryoStack:        http://127.0.0.1:8080/"
-    echo "  CryoLauncher:     http://127.0.0.1:8080/icesheets/"
-    echo "  ICESEE:           http://127.0.0.1:8080/icesee-gui/"
+    echo "  CryoLauncher:     http://127.0.0.1:8080/cryolauncher/"
+    echo "  ICESEE:           http://127.0.0.1:8080/icesee/"
     echo "  LIVIST:           http://127.0.0.1:8080/livist/"
     echo "  LIVIST docs:      http://127.0.0.1:8080/livist/docs/"
     echo "  Frozen Legacies:  http://127.0.0.1:8080/frozen-legacies/"
@@ -490,6 +542,23 @@ status_services() {
 
 ACTION="${1:-status}"
 
+
+# Autostart coordination (deployment/autostart_runbook.md): an explicit
+# operator `stop` leaves a marker so the watchdog keeps the runtime down;
+# any start clears it. reboot_gui.sh sets CRYOSTACK_ORCHESTRATED=1 because
+# its stop is part of a rebuild, not a decision to keep the site down.
+RUNTIME_STOPPED_MARKER="${REPO_ROOT}/var/.runtime-stopped"
+case "${ACTION}" in
+    stop)
+        if [ "${CRYOSTACK_ORCHESTRATED:-0}" != "1" ] && [ -d "${REPO_ROOT}/var" ]; then
+            date '+%Y-%m-%d %H:%M:%S operator stop' > "${RUNTIME_STOPPED_MARKER}"
+            echo "[CryoStack] Watchdog paused until the next start: ${RUNTIME_STOPPED_MARKER}"
+        fi
+        ;;
+    start|restart|start-gui|restart-gui)
+        rm -f "${RUNTIME_STOPPED_MARKER}"
+        ;;
+esac
 
 case "${ACTION}" in
 

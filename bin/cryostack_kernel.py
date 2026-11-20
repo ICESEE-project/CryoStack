@@ -45,8 +45,8 @@ AWS_DIR_ENV = "CRYOSTACK_KERNEL_AWS_DIR"
 HIDE_ENV = "CRYOSTACK_KERNEL_HIDE"
 
 #: installation paths a kernel never sees (relative to the repository)
-HIDDEN_DIRS = ("var", "users")
-HIDDEN_FILES = ("icesee.log", "relay.log",
+HIDDEN_DIRS = ("var", "users", "validation")
+HIDDEN_FILES = (".git", ".env", "icesee.log", "relay.log",
                 "icesee_jupyter_book/applications/frozen_legacies/radar_sources.local.yaml")
 #: model installations: environment variable -> directory names in the operator home
 MODEL_ROOTS = {"ISSM_DIR": ("ISSM", "issm"), "ICEPACK_ROOT": ("icepack", "Icepack"),
@@ -97,6 +97,24 @@ def _flatten_ssh_config(path: Path, depth: int = 0) -> str:
     return "\n".join(out) + "\n"
 
 
+
+LOCAL_STATE_RESERVE_BYTES = 5 * 1024**3
+
+
+def _require_local_state_capacity(root: Path):
+    """Admission check only; no cleanup, mount change or per-user home quota."""
+    root=Path(root)
+    while not root.exists() and root!=root.parent:
+        root=root.parent
+    try:
+        free=shutil.disk_usage(root).free
+    except OSError:
+        raise SandboxError("Local session-storage capacity could not be verified.") from None
+    if free < LOCAL_STATE_RESERVE_BYTES:
+        raise SandboxError("Local session storage is below the server's safe reserve; "
+                           "new sessions are temporarily unavailable. Existing files are retained.")
+
+
 def sandbox_command(connection_file: str, *, env: dict | None = None, cwd: Path | None = None,
                     bwrap: str | None = None, operator_home: Path | None = None,
                     extra: list[str] | None = None) -> tuple[list[str], dict]:
@@ -115,10 +133,19 @@ def sandbox_command(connection_file: str, *, env: dict | None = None, cwd: Path 
     root_value = (env.get("CRYOSTACK_WORKSPACE_ROOT") or "").strip()
     workspace_root = Path(root_value).resolve() if root_value else cwd
     owner = _owner_dir(workspace_root, user_id)
-    home = owner / ".cryostack" / "home"
+    from cryostack_src.workspace.storage_mount import require_workspace_storage, MARKER
+    require_workspace_storage(owner, environment=env)
+    state_value = (env.get("CRYOSTACK_WORKSPACE_STATE_ROOT") or "").strip()
+    state_root = Path(state_value).expanduser().resolve() if state_value else workspace_root
+    mount_value = (env.get("CRYOSTACK_WORKSPACE_MOUNT") or "").strip()
+    state_owner = _owner_dir(state_root, user_id)
+    if mount_value and (not state_value or state_owner.resolve().is_relative_to(Path(mount_value).resolve())):
+        raise SandboxError("Configure local control state outside the bulk workspace mount.")
+    _require_local_state_capacity(state_root)
+    home = state_owner / ".cryostack" / "home"
     runs = owner / ".cryostack" / "icesee_runs"
     book_runs = REPO / "icesee_jupyter_book" / "icesee_runs"
-    for path in (owner, home, runs):
+    for path in (owner, state_owner, home, runs):
         path.mkdir(parents=True, exist_ok=True, mode=0o700)
     book_runs.mkdir(exist_ok=True)               # mount point inside the read-only code
 
@@ -171,6 +198,12 @@ def sandbox_command(connection_file: str, *, env: dict | None = None, cwd: Path 
 
     # only this user's part of the workspace root, writable
     args += ["--tmpfs", str(workspace_root / "users"), "--bind", str(owner), str(owner)]
+    if state_root != workspace_root:
+        args += ["--tmpfs", str(state_root / "users"),
+                 "--bind", str(state_owner), str(state_owner)]
+    if mount_value:
+        marker = Path(mount_value) / MARKER
+        args += ["--ro-bind", str(marker), str(marker)]
     args += ["--bind", str(runs), str(book_runs)]
 
     aws_dir = (env.get(AWS_DIR_ENV) or "").strip()
@@ -181,7 +214,7 @@ def sandbox_command(connection_file: str, *, env: dict | None = None, cwd: Path 
 
     # accounts may come from a directory service the sandbox cannot reach:
     # give the kernel (ssh, getpass, ...) its own entry, with the sandbox home
-    identity = owner / ".cryostack" / "identity"
+    identity = state_owner / ".cryostack" / "identity"
     identity.mkdir(exist_ok=True, mode=0o700)
     uid, gid = os.getuid(), os.getgid()
     try:

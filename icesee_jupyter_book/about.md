@@ -126,7 +126,7 @@
           including remote execution and HPC job submission.
         </p>
 
-        <a href="/icesheets/">
+        <a href="/cryolauncher/">
           Open CryoLauncher →
         </a>
       </article>
@@ -143,7 +143,7 @@
           using numerical models and observational data.
         </p>
 
-        <a href="/icesee-gui/">
+        <a href="/icesee/">
           Open ICESEE →
         </a>
       </article>

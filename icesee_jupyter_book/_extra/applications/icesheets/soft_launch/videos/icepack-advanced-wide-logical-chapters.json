@@ -1,0 +1,237 @@
+{
+  "schema": "cryostack.pilot.interactive-tutorial.v1",
+  "title": "Icepack: change the shelf temperature",
+  "video_sha256": "9360dc9e180b34a2a454692ba8bbc63acad1675cae253ce82eb7a05c3eb5cb43",
+  "duration_seconds": 249.0,
+  "source_edit_receipt_sha256": "935813e95dc36a557e5cf0928cd30e213c4099359f54eb01a40f6c4fc5f35950",
+  "public_scene_chapters_sha256": "d8813a3a0c0babbe3df8b427ad0df449883597c08d0124841d476d4d217a8f4c",
+  "chapter_timing": "Receipt-bound logical chapters include control cue, actual transition and confirmation; durations are video times.",
+  "steps": [
+    {
+      "id": "step-00",
+      "logical_id": "orientation",
+      "title": "Your goal: change one temperature input",
+      "start": 0.0,
+      "end": 24.0,
+      "instructions": [
+        "Clone the synthetic shelf example, import a one-change run.py and inspect the native result.",
+        "Prepare run.py with T = firedrake.Constant(254.15) instead of 255.15.",
+        "Open CryoLauncher and sign in. Use an approved connected cloud account with its resources prepared.",
+        "The following steps select this tutorial\u2019s model and example."
+      ],
+      "why": "Keep the source inputs, inspect native fields, and save a complete result package. Your workspace keeps scripts, dataset references and results together.",
+      "expected": "Your workspace keeps scripts, datasets, run history and results together.",
+      "note": "Use an already connected cloud account with its resources prepared. Shared application orientation; the case-specific configuration follows.",
+      "pauseAfter": false,
+      "source_scene_ids": [
+        "step-00",
+        "start"
+      ]
+    },
+    {
+      "id": "step-01",
+      "logical_id": "step-1",
+      "title": "1. Choose the Advanced shelf example",
+      "start": 24.0,
+      "end": 36.0,
+      "instructions": [
+        "Choose Cloud \u2192 Advanced \u2192 Icepack \u2192 Tutorial / 02 Synthetic Ice Shelf.",
+        "Create an owned workspace copy before replacing source."
+      ],
+      "why": "Choose the intended interface, model and example before editing or launching a run.",
+      "expected": "Use an owned workspace clone before replacing source.",
+      "note": "The application example remains read-only.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-01"
+      ]
+    },
+    {
+      "id": "step-02",
+      "logical_id": "step-2",
+      "title": "2. Clone to your workspace",
+      "start": 36.0,
+      "end": 59.0,
+      "instructions": [
+        "Enter a new name, then choose Clone to My Workspace.",
+        "Wait for Cloned to your workspace.",
+        "The file selector contains run.py and the status changes to saved."
+      ],
+      "why": "Cloning gives you an editable copy while preserving the supplied application source.",
+      "expected": "This owned example is pilot-icepack-advanced-1118.",
+      "note": "This example is named pilot-icepack-advanced-1118. You will replace run.py only inside this owned clone.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-02",
+        "step-03"
+      ]
+    },
+    {
+      "id": "step-04",
+      "logical_id": "step-3",
+      "title": "3. Choose your replacement run.py",
+      "start": 59.0,
+      "end": 81.0,
+      "instructions": [
+        "Choose script files. In your file picker select the one-change run.py, then choose Open.",
+        "One script file is selected.",
+        "The replacement must keep the original source except for 255.15 \u2192 254.15 K."
+      ],
+      "why": "Selecting local files prepares them for import; importing saves them in this example.",
+      "expected": "Retain both 400-year phases and 200 steps per phase: dt = 2 years.",
+      "note": "Check that the picker shows one selected file. Both 400-year phases retain 200 steps each, at 2 years per step.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-04",
+        "step-05"
+      ]
+    },
+    {
+      "id": "step-06",
+      "logical_id": "step-4",
+      "title": "4. Enable intentional replacement",
+      "start": 81.0,
+      "end": 112.0,
+      "instructions": [
+        "Enable Replace existing script files.",
+        "Your clone already contains run.py, so replacing it requires this checkbox.",
+        "Choose Import script files.",
+        "Wait for Imported run.py. Files are saved.",
+        "Keep run.py as the Run target."
+      ],
+      "why": "Replacement explicitly allows an imported file to overwrite the same name in this clone. Import saves the selected source files in this example; it does not launch the model.",
+      "expected": "Keep run.py as the Run target.",
+      "note": "Keep the temperature edit in your local replacement file. Importing saves files; it does not launch a model. The submitted source was verified to contain this temperature-only change.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-06",
+        "step-07",
+        "step-08"
+      ]
+    },
+    {
+      "id": "step-09",
+      "logical_id": "step-5",
+      "title": "5. Review the cloud configuration",
+      "start": 112.0,
+      "end": 154.0,
+      "instructions": [
+        "Confirm Account connected and Storage, Containers and Compute Ready.",
+        "Choose Review & Launch and check the owned clone and run.py.",
+        "Choose Review & Launch.",
+        "Choose Launch cloud run when the readiness checks are ready.",
+        "This confirmation starts the run.",
+        "The new run card names pilot-icepack-advanced-1118.",
+        "Allow the job to finish, then open View results."
+      ],
+      "why": "Ready indicates that the required account resources are configured for the run. Review confirms the intended model, source, resources and charges before submission. This confirmation stages the reviewed inputs and starts a paid cloud job. Submission, queue/startup and native model execution are separate stages.",
+      "expected": "Wait for completion, then open View results.",
+      "note": "Retain 2 vCPU and 8 GiB for this native run. The displayed ~60 minutes is an estimate, not a measured model duration. Control guide; the following card belongs to this tutorial\u2019s original native run. Importing the replacement file did not submit it automatically.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-09",
+        "step-10",
+        "step-11",
+        "step-12"
+      ]
+    },
+    {
+      "id": "step-13",
+      "logical_id": "step-6",
+      "title": "6. Render the native velocity",
+      "start": 154.0,
+      "end": 176.0,
+      "instructions": [
+        "Open Results and select icepack \u2192 velocity. Use Render when needed.",
+        "Read the field name and units before interpreting the map.",
+        "The export contains 3,371 vertices and 6,533 triangles."
+      ],
+      "why": "The solution, field name, units and mesh counts identify what you are viewing.",
+      "expected": "3,371 vertices / 6,533 triangles; native CG2 fields exported as portable CG1.",
+      "note": "The first field may be previewed automatically. Native thickness/velocity use CG2; the portable fields are exported as CG1.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-13",
+        "step-14"
+      ]
+    },
+    {
+      "id": "step-15",
+      "logical_id": "step-7",
+      "title": "7. Inspect the full native velocity map",
+      "start": 176.0,
+      "end": 188.0,
+      "instructions": [
+        "Colour is speed in m/year; arrows show direction. The x and y axes are metres.",
+        "Speed is 160.457236\u2013728.806914 m/year."
+      ],
+      "why": "Keep the source, versions, hashes and scientific qualifications with the result.",
+      "expected": "Speed: 160.457236\u2013728.806914 m/year; arrows show direction.",
+      "note": "This is the complete map in the native Results panel.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-15"
+      ]
+    },
+    {
+      "id": "step-16",
+      "logical_id": "step-8",
+      "title": "8. Read the recorded thickness and damage checks",
+      "start": 188.0,
+      "end": 200.0,
+      "instructions": [
+        "This recorded-output summary complements the velocity map. Thickness is 98.259646\u2013350.139815 m; accumulation is zero.",
+        "The second 400-year phase includes damage physics."
+      ],
+      "why": "These checks complement the velocity map shown here.",
+      "expected": "Thickness: 98.259646\u2013350.139815 m; accumulation is zero.",
+      "note": "All saved fields are finite; the portable export is not a full Firedrake checkpoint.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-16"
+      ]
+    },
+    {
+      "id": "step-17",
+      "logical_id": "step-9",
+      "title": "9. Locate the result download",
+      "start": 200.0,
+      "end": 235.0,
+      "instructions": [
+        "Scroll to Download results below the plot.",
+        "Choose Download results.",
+        "The result package is prepared for download.",
+        "When the new link appears, open it to save the ZIP.",
+        "Save the 19-member ZIP with fields, mesh, figures and runtime/RNG provenance."
+      ],
+      "why": "The archive keeps this run\u2019s numeric outputs, figures and provenance together. Keep the source, versions, hashes and scientific qualifications with the result.",
+      "expected": "Keep fields, mesh, figures and runtime/RNG provenance together.",
+      "note": "Save the current run\u2019s archive rather than an earlier generated link. Wait for preparation to finish before opening the new HTTPS link. The following view resumes after preparation. The archive and its member hashes passed the retained checks.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-17",
+        "step-18",
+        "step-19",
+        "step-20"
+      ]
+    },
+    {
+      "id": "step-21",
+      "logical_id": "step-Keep",
+      "title": "Keep the numerical context",
+      "start": 235.0,
+      "end": 249.0,
+      "instructions": [
+        "Damage spans \u22120.0026125100 to 0.0689681004. The native undershoot is retained without clipping.",
+        "The mesh matches Basic, but this is a changed experiment, not a repeat or a temperature-sensitivity validation."
+      ],
+      "why": "Keep the scientific input definitions and numerical qualifications with the result.",
+      "expected": "Damage undershoot is retained; this changed case is not a sensitivity validation.",
+      "note": "Unchanged saved velocity PNG. Submission \u2192 Batch start: 215.252 s; task: 428.919 s.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-21"
+      ]
+    }
+  ]
+}

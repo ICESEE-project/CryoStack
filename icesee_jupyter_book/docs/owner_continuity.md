@@ -45,8 +45,8 @@ cross-service compatibility, large-TIFF performance tests, release evidence,
 and platform-wide developer/operations documentation. It independently reviews
 high-risk work from the other streams.
 
-Use isolated worktrees and branches (`codex/frozen-product`,
-`codex/storage-cedar`, and `codex/integration-docs`). Maintain a shared work
+Use isolated worktrees and branches (`feature/frozen-product`,
+`feature/storage-cedar`, and `feature/integration-docs`). Maintain a shared work
 ledger with task, owner, reserved components, dependencies, tests, status, and
 commit. Cross-owned schema, API, navigation, authentication, deployment, or
 storage changes require an interface note and review. Production deployment is

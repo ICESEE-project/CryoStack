@@ -1,0 +1,79 @@
+{
+  "schema": "cryostack.pilot.tutorial-publication.v1",
+  "status": "accepted_for_publication",
+  "title": "ISSM own-script diagnostic SSA walkthrough",
+  "duration_seconds": 239,
+  "scene_count": 17,
+  "video_sha256": "6c0a683cae46e10f7099039bf3e4fe0edbe7c9d57f55e1134a67ea7d0c48a333",
+  "visual_review": "Final17subscenes and two precise Upload/Reference pointers accepted.",
+  "privacy": {
+    "full_decode": "passed",
+    "sampled_frames": 80,
+    "sample_interval_seconds": 3,
+    "detector_flags": "Four flags manually checked as public example slug/filename; no private findings."
+  },
+  "scope": "Successful retry only; actual New example, three-script import, JSON upload/reference, explicit runme.m target, native submission, rendered results and saved archive. Separate actual takes and reading holds shorten waits.",
+  "native_science_receipt": "issm-own-script-run-manifest.json",
+  "native_input_download": {
+    "filename": "native-issm-own-script-inputs.zip",
+    "bytes": 2874,
+    "sha256": "ea51a4351d48bc9bb72c2f3c9886962d38bc28240cfe87fcd3013b7dfdd413a9",
+    "members": [
+      {
+        "member": "examples/soft_launch/issm/runme.m",
+        "submitted_path": "runme.m",
+        "bytes": 2104,
+        "sha256": "f5d8a64eb6d340c9a449ef4b273fff4f5fdf853c7987e3d1995989534127c387",
+        "matches_submitted": true
+      },
+      {
+        "member": "examples/soft_launch/issm/Launch.par",
+        "submitted_path": "Launch.par",
+        "bytes": 849,
+        "sha256": "a64f4bfeddd2577d519bdc9a23dfdba0ad3629d4e2bdb920dda657a5d9ba7deb",
+        "matches_submitted": true
+      },
+      {
+        "member": "examples/soft_launch/issm/validate_launch_dataset.m",
+        "submitted_path": "validate_launch_dataset.m",
+        "bytes": 1496,
+        "sha256": "0ad08139732b621384c7736e30dd3bca39aca70f12fde2216dcbf9115e280d6f",
+        "matches_submitted": true
+      },
+      {
+        "member": "examples/soft_launch/datasets/issm-shelf-small-v1.json",
+        "submitted_path": "data/issm-shelf-small-v1.json",
+        "bytes": 460,
+        "sha256": "c2f0c2b2e838be4598d97c61f8fdd897b30da7b326536251cf893f3dfed4767a",
+        "matches_submitted": true
+      }
+    ],
+    "crc_valid": true,
+    "all_four_submitted_hashes_exact": true,
+    "video_directory_hierarchy_matches": true,
+    "existing_HDF_MAT_packet_changed": false
+  },
+  "scientific_limits": "One diagnostic SSA solve/np1; zero initial and non-front velocity. Shared JSON inflow100m/year,dt,mesh_nx/ny unused by this ISSM source. Source-based thickness/opaque MCOS; scalar25 convergence; no physical time advance, repeat or accuracy claim.",
+  "files": [
+    {
+      "path": "issm-own-script-run-manifest.json",
+      "bytes": 6084,
+      "sha256": "a4c7e6951ce48370744571b5335e8c7a193bf1864baf5b1e9fa0c4897035db52"
+    },
+    {
+      "path": "issm-own-script-velocity.png",
+      "bytes": 72526,
+      "sha256": "ee9bfbd236d9cef2cd6ab21aee533a83475d974f230309256b5e1cd72faf9c0e"
+    },
+    {
+      "path": "issm-own-script.mp4",
+      "bytes": 3934702,
+      "sha256": "6c0a683cae46e10f7099039bf3e4fe0edbe7c9d57f55e1134a67ea7d0c48a333"
+    },
+    {
+      "path": "issm-own-script.vtt",
+      "bytes": 5128,
+      "sha256": "407ddbd347c30d47e00b635402503e0754eeb850f75361c86cd448bffe63fe5a"
+    }
+  ]
+}

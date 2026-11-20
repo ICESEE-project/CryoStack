@@ -12,11 +12,22 @@ from ..templates import control_layout
 from .compute import _blocking
 
 
+def _hosted_readiness(app):
+    """Read the gateway's current admission state; never performs an AWS call."""
+    service = app.get('cryostack_pilot_service')
+    if service is None or not service.enabled:
+        return {'hosted_service_ready': False, 'live_project_aws_enabled': False}
+    models = [m for m in service.models if m != 'issm' or service._issm_available()]
+    accepting = any(service.runtime.lanes[m].funding.admission_enabled for m in models)
+    return {'hosted_service_ready': bool(models), 'live_project_aws_enabled': accepting}
+
+
 async def overview(request):
     try:
         data = await _blocking(request.app['allocation_service'].overview,
                                request['cryostack_user'].id,
                                admin=request.path.startswith('/api/control/'))
+        data.update(_hosted_readiness(request.app))
         return web.json_response(data,headers={'Cache-Control':'no-store'})
     except PermissionError as e:
         return web.json_response({'error': str(e)}, status=403)
@@ -49,6 +60,12 @@ async def mutate(request):
             result = await _blocking(service.reserve,actor,**body)
         elif action == 'finish':
             result = await _blocking(service.finish,actor,**body)
+        elif action == 'invites':
+            result = await _blocking(service.set_invites,actor,**body)
+        elif action == 'invite-remove':
+            result = await _blocking(service.remove_invite,actor,**body)
+        elif action == 'grant-invited':
+            result = await _blocking(service.grant_invited_existing,actor,**body)
         else:
             raise ValueError('Unknown action.')
         return web.json_response({'result':result})
@@ -57,8 +74,25 @@ async def mutate(request):
         with service._transaction() as c:
             service._audit(c,actor,'request_denied',action_name=action)
         return web.json_response({'error':str(e)},status=403)
-    except (ValueError,TypeError,json.JSONDecodeError):
+    except (ValueError,TypeError,json.JSONDecodeError) as e:
+        # Invitation errors are fixed service wording with counts only; they never echo the request.
+        if action in _INVITE_ACTIONS and type(e) is ValueError:
+            return web.json_response({'error':str(e)},status=400)
         return web.json_response({'error':'Invalid request or allocation limit. Check the fields and available funds.'},status=400)
+
+
+_INVITE_ACTIONS = ('invites','invite-remove','grant-invited')
+
+
+async def invites(request):
+    try:
+        rows=await _blocking(request.app['allocation_service'].list_invites,
+                             request['cryostack_user'].id,pool_id=request.query.get('pool_id',''))
+        return web.json_response({'invites':rows},headers={'Cache-Control':'no-store'})
+    except PermissionError:
+        return web.json_response({'error':'Administrator or owner required.'},status=403)
+    except ValueError:
+        return web.json_response({'error':'Choose an existing pool.'},status=400)
 
 
 async def users(request):
@@ -110,14 +144,16 @@ async def page(request):
 
 
 def install_allocation_routes(app, *, auth, storage):
-    app['allocation_service'] = AllocationService(storage)
-    admin = auth.require_roles('admin','owner')
+    app['allocation_service'] = AllocationService(
+        storage, require_approval=getattr(auth, 'approval_required', None))
+    admin = auth.require_capability('quotas.manage')
     app.router.add_get('/control/allocations',admin(page))
     app.router.add_get('/compute/allocations',auth.require_login(page))
     app.router.add_get('/api/control/allocations',admin(overview))
     app.router.add_get('/api/control/allocations/users',admin(users))
     app.router.add_get('/api/control/allocations/policy-preview',admin(policy_preview))
     app.router.add_get('/api/control/allocations/export',admin(export_balances))
+    app.router.add_get('/api/control/allocations/invites',admin(invites))
     app.router.add_get('/api/allocations',auth.require_login(overview))
-    app.router.add_post('/api/control/allocations/{action:pool|budget|policy|adjust}',admin(mutate))
+    app.router.add_post('/api/control/allocations/{action:pool|budget|policy|adjust|invites|invite-remove|grant-invited}',admin(mutate))
     app.router.add_post('/api/allocations/{action:reserve|finish}',auth.require_login(mutate))

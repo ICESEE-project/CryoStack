@@ -1,0 +1,26 @@
+{
+  "guide": "First-time BYO AWS account connection",
+  "duration_seconds": 169,
+  "video_sha256": "d66af3e261340b9ef334bc89ebc4818517db6afad02e15be250e01e9ffc438e6",
+  "audio": false,
+  "maximum_upscale": 1.6,
+  "scope": "New AWS access-role stack creation and CryoStack connection verification. Cloud preparation and scientific-job submission are separate later steps. Keyboard copying is the instruction for the reader; there is no AWS Copy button in this recording.",
+  "security_values_masked": true,
+  "raw_or_private_files_included": false,
+  "cloud_resources_prepared": false,
+  "scientific_job_submitted": false,
+  "files": {
+    "byo-aws-first-connection-wide.chapters.json": {
+      "sha256": "77e21e5e573fd6f57911387df57f60abc73c35e3f7608590264d320e671b159f",
+      "bytes": 12815
+    },
+    "byo-aws-first-connection-wide.mp4": {
+      "sha256": "d66af3e261340b9ef334bc89ebc4818517db6afad02e15be250e01e9ffc438e6",
+      "bytes": 2758759
+    },
+    "byo-aws-first-connection-wide.vtt": {
+      "sha256": "9fa03e89508dc0b18f5d69ebf3c3dca3af98afd18ab3e40642bb95e5a732c64a",
+      "bytes": 3068
+    }
+  }
+}

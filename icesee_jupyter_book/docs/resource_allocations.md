@@ -9,6 +9,19 @@ Administrators and owners use `/control/allocations`. Researchers use
 `/compute/allocations` to view their own balances and test reservations.
 Developers and maintainers are not allocation administrators.
 
+## Deployment status checked on 18 November 2026
+
+The deployed dashboard stores budgets and user credits. Its **Test reservations**
+still simulate charges and do not submit AWS jobs. The current allocation API
+rejects a live project-funded reservation. Creating a pool therefore does not
+enable hosted execution or make an AWS payment.
+
+The selected-participant hosted pilot is a separate release: its funding policy,
+submission controls, model results and participant access must pass the
+<a href="/applications/icesheets/soft_launch/pilot_readiness">pilot release checks</a>.
+Until that release is enabled, use the documented BYO AWS path only with the
+account and billing arrangement approved for the run.
+
 ## What the amounts mean
 
 A pool budget is an internal planning allowance. It is not evidence of an AWS
@@ -54,10 +67,20 @@ filters must both match when specified. Matches ignore case; domain matching is
 exact. These filters use registration metadata and do not prove institutional
 membership.
 
-A qualifying account receives at most one introductory grant when created,
-provided enough unallocated pool funds remain. Existing accounts do not receive
-retroactive grants. Disabling or changing a policy preserves previous balances.
-Policy saves preserve the pool budget and name.
+When CryoStack's registration-approval requirement is enabled, the current policy is evaluated when
+an account is first approved, not when it registers. A pending registration
+receives no funds. The account must have been created after the policy was
+enabled, match both configured filters and have no prior introductory-grant
+marker. The pool must have enough unallocated funds for the whole grant.
+Reinstatement and policy edits do not issue a second grant or backfill older
+accounts. Disabling or changing a policy preserves existing balances; saving a
+policy preserves the pool's budget and name.
+
+Email-domain and institution filters are not an invitation list. For a pilot
+restricted to named invitees, review the confirmed email address against the
+invitation list before approval. Use explicit individual grants when those
+filters would also match people outside the pilot. The current general policy
+does not enforce the hosted pilot's expiry or no-top-up rule.
 
 ## Activity
 
@@ -111,7 +134,7 @@ flowchart LR
     Personal --> API
     API --> Ledger[Transactional allocation service]
     Ledger --> DB[(Authentication database)]
-    Registration[Normal user registration] --> Trigger[Eligible one-time grant]
+    Approval[First account approval] --> Trigger[Policy eligibility and whole-grant funding check]
     Trigger --> DB
     Scientific[Actual cloud operation] --> BYO[Verified user AWS role]
     BYO --> AWS[User-owned AWS account]
@@ -119,6 +142,6 @@ flowchart LR
 
 ## Deployed overview and reconciliation
 
-The running dashboard includes a ledger-composition overview, new-user grant-capacity indicators, read-only saved-policy previews, and an admin-only CSV balance export. Previewing a saved policy does not grant credits. Exported balances are an internal ledger snapshot, not a cloud-provider invoice.
+The running dashboard includes a ledger-composition overview, future first-approval grant-capacity indicators, read-only saved-policy previews, and an admin-only CSV balance export. Previewing a saved policy does not grant credits. Exported balances are an internal ledger snapshot, not a cloud-provider invoice.
 
 See the [live screenshot walkthrough](visual_walkthrough.md) and [Dashboard architecture](dashboard_architecture.md) for the interface and implementation boundaries.

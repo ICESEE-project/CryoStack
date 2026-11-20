@@ -1,0 +1,29 @@
+{
+  "guide": "ISSM \u00b7 Your first native SquareIceShelf run",
+  "duration_seconds": 202.0,
+  "video_sha256": "6fc525187b7cc0ed315fb93762367e34e77a5755c84e424541e6116cfc917ca6",
+  "maximum_upscale": 1.6,
+  "audio": false,
+  "native_archive_sha256": [
+    "be5223513d0b5374baddbe1f9624e18fc6e420cabe5f5c88991fbd897fbd8c52"
+  ],
+  "scope": "Existing accepted native/action evidence; no additional job was run for this edit. Supplemental control guides and scientific qualifications are stated in the chapters.",
+  "files": {
+    "issm-basic-figure-01-wide.png": {
+      "sha256": "a05b4d0a03e78ecd404dbe7adaf9c7453140e9fc69c6b7c8b55e525f71dfe761",
+      "bytes": 87143
+    },
+    "issm-basic-wide.chapters.json": {
+      "sha256": "7ec76f00fc812711f7c0ec3db3f9b3713fee5d23762ff19bfb81105df7937593",
+      "bytes": 15812
+    },
+    "issm-basic-wide.mp4": {
+      "sha256": "6fc525187b7cc0ed315fb93762367e34e77a5755c84e424541e6116cfc917ca6",
+      "bytes": 2692209
+    },
+    "issm-basic-wide.vtt": {
+      "sha256": "b8a995ecf4e134aa3d197e2ae96938c4cc1e777624d86a53ff214e25a0b0cbc9",
+      "bytes": 4299
+    }
+  }
+}

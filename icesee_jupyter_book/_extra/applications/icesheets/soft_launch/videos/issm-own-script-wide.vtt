@@ -1,0 +1,103 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:12.000
+Run your MATLAB workflow with native ISSM, then retain its results.
+Why: Bring your source, referenced data and native outputs into one reviewed workflow.
+Look for: Use a verified BYO AWS connection, your MATLAB license and Connector.
+
+2
+00:00:12.000 --> 00:00:24.000
+Download the native tutorial packet and extract four input files.
+Why: The entry script, two helpers and JSON must be available before importing.
+Look for: Scripts: runme.m, Launch.par, validate_launch_dataset.m; data: issm-shelf-small-v1.json.
+
+3
+00:00:24.000 --> 00:00:38.000
+Name your owned example, then choose New example.
+Why: An owned example gives your imported scripts a separate editable home.
+Look for: Keep that example selected for scripts and dataset references.
+
+4
+00:00:38.000 --> 00:00:46.000
+Choose Upload to store the selected JSON dataset.
+Why: Uploading stores the selected JSON in your workspace dataset library.
+Look for: Expected: Uploaded: issm-shelf-small-v1.json.
+
+5
+00:00:46.000 --> 00:00:58.000
+Read the uploaded filename and select it in the dataset list.
+Why: The filename confirms which dataset will be attached next.
+Look for: The selected-file count changes from 1 to 0 when upload finishes.
+
+6
+00:00:58.000 --> 00:01:06.000
+Choose Reference in example to attach the selected JSON.
+Why: A reference binds this dataset to the current owned example.
+Look for: The next staged run will receive this dataset.
+
+7
+00:01:06.000 --> 00:01:19.000
+Read the reference confirmation: data/issm-shelf-small-v1.json.
+Why: The exact relative path connects the attachment to the entry script.
+Look for: This exact relative path is read by runme.m.
+
+8
+00:01:19.000 --> 00:01:52.000
+Select all three scripts; enable Replace, then Import script files.
+Why: Replace is essential because a new ISSM example includes a starter runme.m.
+Look for: Check count 0 → 3 → 0; replacement updates the starter runme.m.
+
+9
+00:01:52.000 --> 00:02:06.000
+Confirm all three filenames and Files are saved.
+Why: Check saved source before the next staging step snapshots it.
+Look for: The accepted entry script is 37 lines; every submitted input hash matched.
+
+10
+00:02:06.000 --> 00:02:17.000
+Confirm Action Run and Run target runme.m.
+Why: The entrypoint chooses which MATLAB workflow is actually executed.
+Look for: Launch.par, the validator and referenced JSON accompany the entrypoint.
+
+11
+00:02:17.000 --> 00:02:33.000
+Review the owned ISSM run, then launch from the bottom of the review.
+Why: The normal review checks resources, license and the selected example.
+Look for: Check the model, example, resources, configured license and Connector.
+
+12
+00:02:33.000 --> 00:02:43.000
+Follow the new submission until Completed.
+Why: Follow the new submission rather than a previous completed run.
+Look for: Wait for this run’s results, rather than a previous completed run.
+
+13
+00:02:43.000 --> 00:02:58.000
+Check completion before opening the native results.
+Why: Startup, task time and script time describe different intervals.
+Look for: Startup 219.980 s; Batch task 45.010 s; script interval 2.156 s.
+
+14
+00:02:58.000 --> 00:03:13.000
+Choose StressbalanceSolution → Vel, then Render.
+Why: Render displays the selected native result without rerunning the solve.
+Look for: Expected: one diagnostic solution with 13 native nodal values.
+
+15
+00:03:13.000 --> 00:03:31.000
+Inspect the saved native velocity figure and its units.
+Why: Use the figure, mesh count and node-weighted metric together.
+Look for: Speed: 0–18.89046 m/year; node-RMS: 6.2386984 m/year.
+
+16
+00:03:31.000 --> 00:03:52.000
+Choose Download results, then save the fresh archive link.
+Why: Retain the native fields with source/data hashes and runtime provenance.
+Look for: Retain the 13-member result ZIP with the input and runtime manifests.
+
+17
+00:03:52.000 --> 00:04:07.000
+Interpret the script’s actual initial and boundary conditions.
+Why: The actual script and boundary conditions define this diagnostic result.
+Look for: Zero initial and constrained-boundary velocity; the JSON speed is unused.

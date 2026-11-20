@@ -1,0 +1,29 @@
+{
+  "guide": "Icepack \u00b7 Change the shelf temperature",
+  "duration_seconds": 249.0,
+  "video_sha256": "9360dc9e180b34a2a454692ba8bbc63acad1675cae253ce82eb7a05c3eb5cb43",
+  "maximum_upscale": 1.6,
+  "audio": false,
+  "native_archive_sha256": [
+    "6ce7d342dd48be2b129bb294e4e3e9535180831156a7eb2d1f14fcfdcc2a4447"
+  ],
+  "scope": "Existing accepted native/action evidence; no additional job was run for this edit. Supplemental control guides and scientific qualifications are stated in the chapters.",
+  "files": {
+    "icepack-advanced-figure-01-wide.png": {
+      "sha256": "264d4f8784a8415e830242b8d87c0fba6c77c635dde03f65a5e52ac9b77e1ac3",
+      "bytes": 99693
+    },
+    "icepack-advanced-wide.chapters.json": {
+      "sha256": "d8813a3a0c0babbe3df8b427ad0df449883597c08d0124841d476d4d217a8f4c",
+      "bytes": 19740
+    },
+    "icepack-advanced-wide.mp4": {
+      "sha256": "9360dc9e180b34a2a454692ba8bbc63acad1675cae253ce82eb7a05c3eb5cb43",
+      "bytes": 3585532
+    },
+    "icepack-advanced-wide.vtt": {
+      "sha256": "7df163a3c9728b4b686633167fb1f16b08378eb69778170c15099232e4fa8e7d",
+      "bytes": 5362
+    }
+  }
+}

@@ -59,6 +59,22 @@ class IssmMdPanel:
     def validate(self):
         return validate_md_config(self.overrides(), solvers=self._state["solvers"])
 
+    def session_state(self) -> dict:
+        """Enabled rows as ``{key: value}`` (ui/session_restore.py)."""
+        return {key: (list(control.value) if param.kind == "outputs" else control.value)
+                for key, (enable, control, param) in self._state["rows"].items() if enable.value}
+
+    def restore_session(self, state: dict) -> bool:
+        from icesee_jupyter_book.ui.session_restore import apply_value
+
+        changed = False
+        for key, (enable, control, _param) in self._state["rows"].items():
+            wanted = isinstance(state, dict) and key in state
+            changed |= apply_value(enable, wanted)
+            if wanted:
+                changed |= apply_value(control, state[key])
+        return changed
+
     def set_visible(self, visible: bool) -> None:
         self.container.layout.display = "" if visible else "none"
 

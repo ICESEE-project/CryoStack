@@ -1,0 +1,84 @@
+{
+  "status": "accepted_for_publication",
+  "recorded_date": "2026-11-18",
+  "scope": "Icepack Basic canonical02 Synthetic Ice Shelf native run and output checks",
+  "duration_seconds": 150,
+  "files": [
+    {
+      "path": "icepack-basic-thickness.png",
+      "bytes": 85885,
+      "sha256": "c330dbef457bc1e50bb7c2a4d3c1f7e6fe79b4d13bec4e793228fe460b1c87ab"
+    },
+    {
+      "path": "icepack-basic-velocity.png",
+      "bytes": 99774,
+      "sha256": "4819070454a6ac1330a7e6860fa09cbb5ac9849a725754c2a7f4253995196981"
+    },
+    {
+      "path": "icepack-basic.mp4",
+      "bytes": 2659172,
+      "sha256": "74dd72653702db0757875df77d2ef4d560c81208cfeadd5e3e0bb9b6088aadb6"
+    },
+    {
+      "path": "icepack-basic.vtt",
+      "bytes": 3196,
+      "sha256": "fba0c6b9156f64f2c9f6b04fe52882a7bd54dd61a2c23b5c6e501a0532590e8a"
+    }
+  ],
+  "archive": {
+    "sha256": "88d100f02041117b940a039d988bbd7d4c31ac85792af554f4ac79c88be6ac6a",
+    "members": 20,
+    "crc_valid": true,
+    "download": "Actual authenticated HTTPS browser download"
+  },
+  "scientific_evidence": {
+    "source": "Submitted run.py exactly matches canonical notebook materialization",
+    "temperature_kelvin": 255.15,
+    "phases": 2,
+    "years_per_phase": 400,
+    "steps_per_phase": 200,
+    "timestep_years": 2,
+    "damage_physics": "Included in phase2",
+    "mesh": {
+      "vertices": 3371,
+      "triangles": 6533
+    },
+    "thickness_range_m": [
+      98.1004,
+      350.1418
+    ],
+    "speed_range_m_per_year": [
+      160.457,
+      740.819
+    ],
+    "damage_range_dimensionless": [
+      -0.0036016,
+      0.0741413
+    ],
+    "native_damage_undershoot": "Retained without clipping",
+    "export": "Native h/u CG2 interpolated to portable CG1; not a full Firedrake checkpoint",
+    "comparison": "Canonical inputs and finite output checks; no independent repeat-equality claim"
+  },
+  "runtime": {
+    "native_exit_code": 0,
+    "submit_to_start_seconds": 223.044,
+    "start_to_stop_seconds": 427.137,
+    "python": "3.12.13",
+    "icepack_installed_distribution": "1.1.0",
+    "firedrake_installed_distribution": "2025.10.2",
+    "mpi_observed_world_size": 1
+  },
+  "editing": "Two actual recorded takes are combined; operator/control interruptions excluded. Full figures are exact downloaded archive members and labelled separately from the cropped GUI.",
+  "verification": {
+    "complete_video_decode": "passed",
+    "privacy": {
+      "video_sha256": "74dd72653702db0757875df77d2ef4d560c81208cfeadd5e3e0bb9b6088aadb6",
+      "sample_interval_seconds": 3,
+      "sampled_frames": 50,
+      "findings": [],
+      "raw_ocr_text_retained": false
+    },
+    "parent_visual_review": "accepted",
+    "independent_scientific_caption_review": "no material blocker"
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "schema": "cryostack.repeatability-criteria.v1",
+  "declared_at_utc": "2026-11-18 19:32:26 UTC",
+  "approval": "Confirmed by operator before the clean retake launch.",
+  "comparison": "AWS-to-AWS same scientific case; distinct from PC/AWS comparison.",
+  "case": "ISSM SquareIceShelf / SSA Stressbalance",
+  "second_job_submitted_at_declaration": false,
+  "reference_output_archive_sha256": "c2b0979288f1f51cc8339e68ea4a08efa6effa7ca79e84a3e28410e4a2251fdd",
+  "reference_private_input_archive_sha256": "09166ed71a3b4ce264317f0bf9b0f2565ff8528836db580a0f885d8d57f002e8",
+  "image_digest": "sha256:d68d88dcb7047f29d6e277a45710f50f1bf3023566e0472f07a7dd75ffbcd170",
+  "scientific_files": {
+    "runme.m": "ba33248542d76c0fd4d7c2430d4ab015572c7188560640d31c9157686c9c82b1",
+    "Square.par": "fb5bad3dfbe1dd25d7fbf1e0050dd8ce205037a92c6cbd6d3e31a5e800713f28",
+    "DomainOutline.exp": "3093d41076be127884136aded8a906f9ddd97dec250c7db67ab2fac8c01f7b30",
+    "Front.exp": "275790e3caf22144d05b41f768bb2cb362b651d8092de10bc1fc61a621bd515a"
+  },
+  "required_exact_matches": [
+    "Four scientific file SHA-256 values",
+    "Immutable image digest",
+    "Mesh connectivity and node ordering"
+  ],
+  "mesh": {
+    "coordinate_absolute_tolerance_m": 1e-8,
+    "coordinate_relative_tolerance": 0,
+    "connectivity": "exact integral entries and indexing; no silent remapping",
+    "finite_coordinates_required": true
+  },
+  "physical_fields": {
+    "names": [
+      "Pressure",
+      "Vel",
+      "Vx",
+      "Vy"
+    ],
+    "absolute_tolerance": 1e-8,
+    "relative_tolerance": 1e-10,
+    "formula": "abs(retake-reference) <= 1e-8 + 1e-10 * abs(reference)",
+    "same_shape_location_and_units_required": true,
+    "finite_arrays_required": true,
+    "report_exact_array_equality": true,
+    "report_maximum_absolute_and_relative_differences": true
+  },
+  "convergence": {
+    "record_both_step_counts": true,
+    "record_solver_completion_and_errors": true,
+    "step_count_difference": "Report explicitly; it is not alone a field-agreement criterion."
+  },
+  "archive_identity": "Retain both archive/member SHA-256 inventories; archive byte equality is not required because timestamps and provenance can differ.",
+  "allowed_nonscientific_differences": [
+    "Per-run job/storage/transport identifiers and timestamps",
+    "Provenance-only prelude that captures versions and initial RNG state without resetting/advancing RNG or changing scientific settings",
+    "Additional provenance outputs and archive metadata"
+  ],
+  "forbidden_changes": [
+    "Scientific input bytes",
+    "Mesh/solver/default/seed changes",
+    "Image change",
+    "Post-result tolerance widening"
+  ],
+  "interpretation": "Strict engineering repeatability check for this case; not a scientific-accuracy standard or a PC/AWS result."
+}

@@ -106,3 +106,36 @@ def test_migrate_requires_a_backup(tmp_path):
     db = _baseline_db(tmp_path / "auth.db")
     with pytest.raises(tool.MigrationError):
         tool.migrate(db, tmp_path / "missing.db")
+
+
+def test_approval_baseline_keeps_existing_users_and_is_audited(tmp_path, capsys):
+    db = _baseline_db(tmp_path / "auth.db")
+    backup = tool.backup(db, tmp_path / "backups")
+    assert tool.approval_status(db)["schema"] == "not migrated"
+    with pytest.raises(tool.MigrationError):
+        tool.approval_baseline(db, tmp_path / "missing.db", operator="op", reason="cutover")
+    with pytest.raises(tool.MigrationError):
+        tool.approval_baseline(db, backup, operator="", reason="cutover")
+
+    report = tool.approval_baseline(db, backup, operator="Test Operator",
+                                    reason="Accounts that existed before the gate")
+    assert report["ok"] and report["approved_now"] == 1
+    after = report["after"]
+    assert after["status_counts"] == {"approved": 1} and after["without_status"] == 0
+    assert after["control_roles"] == {"owner": 1}               # roles untouched
+    assert after["baseline"]["operator"] == "Test Operator"
+    again = tool.approval_baseline(db, backup, operator="Someone else", reason="second run")
+    assert again["approved_now"] == 0 and again["after"]["baseline"]["operator"] == "Test Operator"
+
+    # the existing session still belongs to an approved account
+    from icesee_auth import AuthManager
+    auth = AuthManager(database_path=db, approval_required=True)
+    assert auth.storage.get_session(SECRET_VALUES[0]).user_id == "u1"
+    assert auth.user_is_active("u1")
+    with sqlite3.connect(db) as c:
+        rows = c.execute("SELECT actor_label, previous_value, new_value FROM access_audit_log"
+                         " WHERE action = 'account_status_changed'").fetchall()
+    assert rows == [("migration: Test Operator", "no_record", "approved")]
+
+    tool._print(report)
+    assert not any(value in capsys.readouterr().out for value in SECRET_VALUES)

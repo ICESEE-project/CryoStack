@@ -181,17 +181,19 @@ class _CaptureDisplay:
     def __enter__(self):
         from cryostack_src.frontend.cryolauncher.workspace import visualization as _viz
         self._viz = _viz
-        self._orig = _viz.display
+        self._orig = _viz.VisualizationController._publish_output
         self.items = []
 
-        def _rec(*objs, **_):
-            self.items.extend(objs)
+        capture = self
+        def _rec(controller, value):
+            capture.items.append(value)
+            capture._orig(controller, value)
 
-        _viz.display = _rec
+        _viz.VisualizationController._publish_output = _rec
         return self
 
     def __exit__(self, *exc):
-        self._viz.display = self._orig
+        self._viz.VisualizationController._publish_output = self._orig
         return False
 
     @property
@@ -690,3 +692,25 @@ def test_user_b_cannot_render_user_a_run(tmp_path):
     leaked_dir = run.workspace_directory / "cache" / "outputs" / "figures"
     # only figures A rendered (if any) exist; B wrote nothing new
     assert m_b.result_package_for_run(run.id).status == "missing"
+
+
+def test_async_refresh_replaces_synced_previous_run_output(tmp_path):
+    """A callback without a kernel parent must still replace the visible plot."""
+    m = _mgr(USER_A, tmp_path / "ws")
+    run = _register(m, run_id="fresh-fields")
+    _drop_package(run.workspace_directory)
+    controller = _panel(m).controller
+    controller.plot_out.outputs = ({"output_type":"display_data", "data":{"text/html":"STALE PREVIOUS RUN"}, "metadata":{}},)
+    controller._auto_rendered_run = None
+    controller.preview()
+    outputs = controller.plot_out.outputs
+    assert outputs and "image/png" in outputs[0]["data"]
+    assert "STALE PREVIOUS RUN" not in str(outputs)
+
+
+def test_no_run_refresh_clears_synced_previous_output(tmp_path):
+    m = _mgr(USER_A, tmp_path / "ws")
+    controller = _panel(m).controller
+    controller.plot_out.outputs = ({"output_type":"display_data", "data":{"text/html":"STALE PREVIOUS RUN"}, "metadata":{}},)
+    controller.refresh()
+    assert controller.plot_out.outputs == ()

@@ -1,0 +1,476 @@
+{
+  "schema": "cryostack.icepack-own-problem-local-check.v1",
+  "native_scientific_artifact_check_passed": true,
+  "archives": {
+    "baseline": {
+      "sha256": "617b09e99d1b561951e072b7935f47c6edaf4bbd02e9cd0339e669740aad7e1e",
+      "bytes": 375843,
+      "members": 12,
+      "crc_valid": true
+    },
+    "variant": {
+      "sha256": "301caf92b3fca90411368f36420edc866ef5f2ab000df62a1d89aa3d745da1f5",
+      "bytes": 529026,
+      "members": 14,
+      "crc_valid": true
+    }
+  },
+  "sealed_criteria_sha256": "0573ca18f72fd97e8126acc6b48d9d033547d09218b123f82c93a7b8d9daadca",
+  "three_actual_submitted_input_hashes_match_criteria": true,
+  "baseline_and_variant_checks": {
+    "baseline": {
+      "mesh": {
+        "vertices": 25,
+        "triangles": 32,
+        "area_m2": 100000000.0,
+        "nondegenerate": true
+      },
+      "native_initial_field_transfer": [
+        {
+          "field": "thickness",
+          "nodes": 25,
+          "max_abs_error": 0.0,
+          "units": "m",
+          "passed": true
+        },
+        {
+          "field": "base",
+          "nodes": 25,
+          "max_abs_error": 0.0,
+          "units": "m",
+          "passed": true
+        },
+        {
+          "field": "surface",
+          "nodes": 25,
+          "max_abs_error": 0.0,
+          "units": "m",
+          "passed": true
+        },
+        {
+          "field": "vx",
+          "nodes": 25,
+          "max_abs_error": 0.0,
+          "units": "m/year",
+          "passed": true
+        },
+        {
+          "field": "vy",
+          "nodes": 25,
+          "max_abs_error": 0.0,
+          "units": "m/year",
+          "passed": true
+        }
+      ],
+      "initial_flotation_max_abs_error_m": 0.0,
+      "initial_surface_closure_max_abs_error_m": 0.0,
+      "all_final_fields_finite": true,
+      "positive_final_thickness": true,
+      "accumulation_exactly_zero": true,
+      "velocity_magnitude_max_abs_error_m_per_year": 1.4210854715202004e-14,
+      "reference_metrics": {
+        "model": "icepack",
+        "case": "synthetic-shelf-v1",
+        "steps": 1,
+        "thickness_min": 300.0226959304064,
+        "thickness_max": 499.98084677501714,
+        "thickness_mean": 403.64986119431734,
+        "speed_l2": 133.908461320484,
+        "runtime_seconds": 16.98177451800001
+      },
+      "independently_integrated_metrics": {
+        "thickness_min": 300.0226959304064,
+        "thickness_max": 499.98084677501714,
+        "thickness_mean": 403.64986119431734,
+        "speed_l2": 133.908461320484
+      },
+      "metric_max_abs_errors": {
+        "thickness_min": 0.0,
+        "thickness_max": 0.0,
+        "thickness_mean": 0.0,
+        "speed_l2": 0.0
+      },
+      "velocity_ranges_m_per_year": {
+        "vx": [
+          100.0,
+          153.12590687800926
+        ],
+        "vy": [
+          -2.903566258993949,
+          2.7953278909585335
+        ],
+        "speed": [
+          100.0,
+          153.13093916271987
+        ]
+      }
+    },
+    "variant": {
+      "mesh": {
+        "vertices": 25,
+        "triangles": 32,
+        "area_m2": 100000000.0,
+        "nondegenerate": true
+      },
+      "native_initial_field_transfer": [
+        {
+          "field": "thickness",
+          "nodes": 25,
+          "max_abs_error": 0.0,
+          "units": "m",
+          "passed": true
+        },
+        {
+          "field": "base",
+          "nodes": 25,
+          "max_abs_error": 0.0,
+          "units": "m",
+          "passed": true
+        },
+        {
+          "field": "surface",
+          "nodes": 25,
+          "max_abs_error": 0.0,
+          "units": "m",
+          "passed": true
+        },
+        {
+          "field": "vx",
+          "nodes": 25,
+          "max_abs_error": 0.0,
+          "units": "m/year",
+          "passed": true
+        },
+        {
+          "field": "vy",
+          "nodes": 25,
+          "max_abs_error": 0.0,
+          "units": "m/year",
+          "passed": true
+        }
+      ],
+      "initial_flotation_max_abs_error_m": 0.0,
+      "initial_surface_closure_max_abs_error_m": 0.0,
+      "all_final_fields_finite": true,
+      "positive_final_thickness": true,
+      "accumulation_exactly_zero": true,
+      "velocity_magnitude_max_abs_error_m_per_year": 2.842170943040401e-14,
+      "reference_metrics": {
+        "model": "icepack",
+        "case": "synthetic-shelf-v1",
+        "steps": 1,
+        "thickness_min": 315.02244680878727,
+        "thickness_max": 514.9759014020756,
+        "thickness_mean": 418.64757817035917,
+        "speed_l2": 137.17063595051746,
+        "runtime_seconds": 17.013433977000034
+      },
+      "independently_integrated_metrics": {
+        "thickness_min": 315.02244680878727,
+        "thickness_max": 514.9759014020756,
+        "thickness_mean": 418.64757817035917,
+        "speed_l2": 137.17063595051746
+      },
+      "metric_max_abs_errors": {
+        "thickness_min": 0.0,
+        "thickness_max": 0.0,
+        "thickness_mean": 0.0,
+        "speed_l2": 0.0
+      },
+      "velocity_ranges_m_per_year": {
+        "vx": [
+          100.0,
+          158.60759409253004
+        ],
+        "vy": [
+          -3.126381539356615,
+          3.0157464137469012
+        ],
+        "speed": [
+          100.0,
+          158.61350875742303
+        ]
+      }
+    }
+  },
+  "mesh_exactly_equal": {
+    "x": true,
+    "y": true,
+    "elements": true
+  },
+  "native_scalar_coordinates_exactly_equal": true,
+  "native_vector_coordinates_exactly_equal": true,
+  "separate_scalar_and_vector_coordinates_used": true,
+  "initial_velocity_exactly_equal": true,
+  "native_initial_field_deltas": {
+    "thickness": {
+      "nodes": 25,
+      "expected_delta_m": 15.0,
+      "min_delta_m": 15.0,
+      "max_delta_m": 15.0,
+      "max_abs_error_m": 0.0,
+      "passed": true
+    },
+    "base": {
+      "nodes": 25,
+      "expected_delta_m": -13.38035019455253,
+      "min_delta_m": -13.380350194552534,
+      "max_delta_m": -13.380350194552477,
+      "max_abs_error_m": 5.3290705182007514e-14,
+      "passed": true
+    },
+    "surface": {
+      "nodes": 25,
+      "expected_delta_m": 1.61964980544747,
+      "min_delta_m": 1.619649805447466,
+      "max_delta_m": 1.6196498054475228,
+      "max_abs_error_m": 5.284661597215745e-14,
+      "passed": true
+    }
+  },
+  "final_metric_deltas": {
+    "thickness_min": {
+      "baseline": 300.0226959304064,
+      "variant": 315.02244680878727,
+      "variant_minus_baseline": 14.999750878380837,
+      "relative_change": 0.04999538728850098
+    },
+    "thickness_max": {
+      "baseline": 499.98084677501714,
+      "variant": 514.9759014020756,
+      "variant_minus_baseline": 14.995054627058437,
+      "relative_change": 0.029991258112745178
+    },
+    "thickness_mean": {
+      "baseline": 403.64986119431734,
+      "variant": 418.64757817035917,
+      "variant_minus_baseline": 14.99771697604183,
+      "relative_change": 0.03715526355358244
+    },
+    "speed_l2": {
+      "baseline": 133.908461320484,
+      "variant": 137.17063595051746,
+      "variant_minus_baseline": 3.2621746300334564,
+      "relative_change": 0.024361228542728694
+    }
+  },
+  "final_field_deltas": {
+    "thickness": {
+      "nodes": 25,
+      "exactly_equal": false,
+      "min_delta": 14.994676083515174,
+      "max_delta": 14.999987750974128,
+      "max_abs_delta": 14.999987750974128
+    },
+    "vx": {
+      "nodes": 25,
+      "exactly_equal": false,
+      "min_delta": 0.0,
+      "max_delta": 5.481687214520775,
+      "max_abs_delta": 5.481687214520775
+    },
+    "vy": {
+      "nodes": 25,
+      "exactly_equal": false,
+      "min_delta": -0.22281528036266574,
+      "max_delta": 0.2204185227883677,
+      "max_abs_delta": 0.22281528036266574
+    },
+    "speed": {
+      "nodes": 25,
+      "exactly_equal": false,
+      "min_delta": 0.0,
+      "max_delta": 5.482569594703165,
+      "max_abs_delta": 5.482569594703165
+    },
+    "accumulation": {
+      "nodes": 25,
+      "exactly_equal": true,
+      "min_delta": 0.0,
+      "max_delta": 0.0,
+      "max_abs_delta": 0.0
+    },
+    "velocity_vector": {
+      "area_rms_of_vector_difference_m_per_year": 3.4839080271059975,
+      "note": "Distinct from the difference between the two speed RMS metrics."
+    }
+  },
+  "physical_delta_pass_fail_tolerance": null,
+  "metric_definition": "Thickness area integral of CG1 values; speed RMS from exact triangle CG1 vector mass integral, not arithmetic node averaging or an integral of interpolated speed magnitudes.",
+  "input_transfer_and_metric_self_consistency_absolute_tolerance": 1e-08,
+  "runtime_controls": {
+    "version_records_equal": true,
+    "thread_records_equal": true,
+    "mpi_records_equal": true,
+    "safe_actual_versions": {
+      "firedrake": {
+        "distribution_source": "runtime packages_distributions mapping",
+        "installed_distributions": {
+          "firedrake": "2025.10.2"
+        },
+        "module_loaded": true,
+        "source": "module version unavailable",
+        "value": null
+      },
+      "h5py": {
+        "source": "loaded module __version__",
+        "value": "3.16.0"
+      },
+      "icepack": {
+        "distribution_source": "runtime packages_distributions mapping",
+        "installed_distributions": {
+          "icepack": "1.1.0"
+        },
+        "module_loaded": true,
+        "source": "module version unavailable",
+        "value": null
+      },
+      "mpi4py": {
+        "source": "loaded module __version__",
+        "value": "4.1.1"
+      },
+      "mpi_library": {
+        "source": "MPI.Get_library_version() vendor/version only; raw text excluded",
+        "value": "Open MPI 5.0.10"
+      },
+      "mpi_standard": {
+        "source": "MPI.Get_version()",
+        "value": [
+          3,
+          1
+        ]
+      },
+      "numpy": {
+        "source": "loaded module __version__",
+        "value": "1.26.4"
+      },
+      "petsc4py": {
+        "source": "loaded module __version__",
+        "value": "3.24.0"
+      },
+      "petsc_library": {
+        "source": "PETSc.Sys.getVersion()",
+        "value": [
+          3,
+          24,
+          0
+        ]
+      },
+      "python": {
+        "source": "running Python interpreter",
+        "value": "3.12.13"
+      }
+    },
+    "actual_threads": {
+      "MKL_NUM_THREADS": "unset or nonnumeric; value not recorded",
+      "NUMEXPR_NUM_THREADS": "unset or nonnumeric; value not recorded",
+      "OMP_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1"
+    },
+    "actual_mpi": {
+      "observed_rank": 0,
+      "observed_world_size": 1,
+      "requested_processes": null,
+      "requested_source": "not separately supplied to runner",
+      "source": "running MPI.COMM_WORLD"
+    },
+    "expected_one_rank_observed": true,
+    "requested_count_note": "One rank was observed in both executions; requested_processes was not separately supplied to the runner.",
+    "image_resources_task_timeout_and_scripts_equal": true
+  },
+  "rng": {
+    "variant_artifact": "rng-before.json",
+    "variant_sha256": "0b44a594b572805284092dbeacddf714fcef65936b6d56950ca52369666c803e",
+    "baseline_sha256": "ea1cad6cda3b59342e8fb85ad7c97b95660eac0d573b3de2fa053e4a2abdc31e",
+    "both_artifact_hashes_verified": true,
+    "state_reset_or_advanced_by_capture": false,
+    "scope": "Python/NumPy global states captured; original seeds and script/library-owned generators remain unknown. Submitted source calls structured RectangleMesh; no explicit Triangle/Gmsh call."
+  },
+  "provenance_member_hashes": {
+    "baseline": {
+      "metadata.json": "b5edb42110df632b701e3a5fc155fcd9e4cb7ea0b4bb74239d79a7cc37bfbd5d",
+      "runtime-provenance.json": "0563a224c5f337a3511b448ad7d41e106253a961000596c42a320ba6ea0dac4b",
+      "rng-before.json": "ea1cad6cda3b59342e8fb85ad7c97b95660eac0d573b3de2fa053e4a2abdc31e",
+      "initial-fields-on-native-mesh.npz": "26a27be9d70bc575e9dbf85bc9bdaadd5a639a1b837048bbf85cf85a5bb1b100",
+      "reference-metrics.json": "ff4e23e4f6eb6df41d3df9c338bdb0c346491fcdba0f86d7cdf9a4ad4796c2d0"
+    },
+    "variant": {
+      "metadata.json": "e19f5ad208738d73bbde7baa6536dab4e3b4f4d8a9bf6195c554685e66c3a2ff",
+      "runtime-provenance.json": "2ba83291bc9255ad1a36f7efca13653d1229ecbef30c28b9405a7c9a92b6e624",
+      "rng-before.json": "0b44a594b572805284092dbeacddf714fcef65936b6d56950ca52369666c803e",
+      "initial-fields-on-native-mesh.npz": "96bd5d866a66467cbf38dbce5c36dd19efc00a1013bbf1275478edfb113771ec",
+      "reference-metrics.json": "b40f2f2356662bc5fa21454161a35ced0309f4d0a5280b10798b7161a08cdfa8"
+    }
+  },
+  "figures": [
+    {
+      "archive_member": "initial-conditions.png",
+      "saved_file": "figures/icepack-problem-initial-conditions.png",
+      "bytes": 255994,
+      "sha256": "a1cd0fafa0e121e96b19e16e56fdb1752abb756007720117ca8949ae53923ef7",
+      "archive_png_unchanged": true,
+      "role": "Exact source-saved initial thickness/surface/speed panels",
+      "visual_privacy_review": "Visually inspected exact scientific PNG: axes/field/units/colorbar only, no identity, private path, license or credential text."
+    },
+    {
+      "archive_member": "figures/figure-01.png",
+      "saved_file": "figures/icepack-problem-final-thickness-native.png",
+      "bytes": 113602,
+      "sha256": "6b358fff164f43df25b21bfcb28ebb92f687647559db75f03d2ab70c6ed4602d",
+      "archive_png_unchanged": true,
+      "role": "Exact native Python final-thickness figure captured by the runner",
+      "visual_privacy_review": "Visually inspected exact scientific PNG: axes/field/units/colorbar only, no identity, private path, license or credential text."
+    },
+    {
+      "archive_member": "figures/icepack_thickness.png",
+      "saved_file": "figures/icepack-problem-final-thickness-rendered.png",
+      "bytes": 74654,
+      "sha256": "178a4e1c305041b34e410f04d0d6915de992ed3986242e525c306362085d3553",
+      "archive_png_unchanged": true,
+      "role": "Exact frontend rendering of exported native thickness",
+      "visual_privacy_review": "Visually inspected exact scientific PNG: axes/field/units/colorbar only, no identity, private path, license or credential text."
+    },
+    {
+      "archive_member": "figures/icepack_velocity.png",
+      "saved_file": "figures/icepack-problem-final-velocity-rendered.png",
+      "bytes": 77375,
+      "sha256": "5a4852efd3013113143961d0db9ec84d153e8ae4c0648e624bf43c0867c74a3a",
+      "archive_png_unchanged": true,
+      "role": "Exact frontend rendering of exported native velocity",
+      "visual_privacy_review": "Visually inspected exact scientific PNG: axes/field/units/colorbar only, no identity, private path, license or credential text."
+    }
+  ],
+  "derived_comparison_figure": {
+    "path": "figures/icepack-problem-baseline-comparison.png",
+    "sha256": "9954c66b3e3da5bc8185c4947a787334bea216a04e6bc4704b391a5ac1e92170",
+    "source": "Standard local scientific plot of the verified neutral field arrays, not GUI footage or a native-run PNG",
+    "visual_privacy_review": "Scientific numeric comparison visually checked; common baseline/variant scales, explicit separate delta scales, full14.995-style delta thickness tick values, source archive hashes and coupled-perturbation scope caption. No GUI or private text."
+  },
+  "interpretation": "Observed controlled sensitivity to the coupled +15 m interior-and-inflow-thickness perturbation after one 0.01-year step. Final deltas are reported without a predicted physical threshold. This is not an independent unchanged-baseline repeat or an accuracy result.",
+  "network_or_solver_executed": false,
+  "source_or_seed_changed": false,
+  "raw_model_or_rng_exported": false,
+  "numeric_tables": [
+    {
+      "path": "final-node-deltas.csv",
+      "rows": 25,
+      "sha256": "3c0292df2a7d4d17b0f2ef2a4d98d557eff7fe12c8a12b27c8be969f8d5c6c39"
+    },
+    {
+      "path": "initial-scalar-node-deltas.csv",
+      "rows": 25,
+      "sha256": "7a96acda1e1f99b6c646de0bad9abad3b580acf765315940ef25f2e68eea055d"
+    },
+    {
+      "path": "initial-vector-node-deltas.csv",
+      "rows": 25,
+      "sha256": "70d44db7f4934299103fc5d850cea1ea82744afefada1d3fdf31555e89b7df08"
+    }
+  ],
+  "verification_readers": {
+    "numpy": "2.2.6",
+    "h5py": "3.13.0",
+    "scipy": "1.15.3",
+    "note": "Local reader versions, distinct from the captured native model runtime."
+  }
+}

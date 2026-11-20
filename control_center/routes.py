@@ -47,6 +47,7 @@ from .services import (
 
 from .pages.access import install_access_admin
 from .pages.audit import install_audit
+from .pages.registrations import install_registrations
 
 from .api import (
     authentication_api,
@@ -132,6 +133,7 @@ def install_control_center(
     ] = authentication_service
 
     app["control_storage"] = storage
+    app["control_auth"] = auth
 
     app[
         "control_dashboard_service"
@@ -297,3 +299,5 @@ def install_control_center(
         app,
         control_access=control_access,
     )
+
+    install_registrations(app, control_access=control_access)

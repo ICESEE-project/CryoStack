@@ -1,0 +1,33 @@
+{
+  "guide": "Icepack \u00b7 Your first native synthetic shelf run",
+  "duration_seconds": 202.0,
+  "video_sha256": "bf0c6fe2eb22440e4fbd5b336f8d01d77d34fba82906efa4e4f90210bb727764",
+  "maximum_upscale": 1.6,
+  "audio": false,
+  "native_archive_sha256": [
+    "88d100f02041117b940a039d988bbd7d4c31ac85792af554f4ac79c88be6ac6a"
+  ],
+  "scope": "Existing accepted native/action evidence; no additional job was run for this edit. Supplemental control guides and scientific qualifications are stated in the chapters.",
+  "files": {
+    "icepack-basic-figure-01-wide.png": {
+      "sha256": "4819070454a6ac1330a7e6860fa09cbb5ac9849a725754c2a7f4253995196981",
+      "bytes": 99774
+    },
+    "icepack-basic-figure-02-wide.png": {
+      "sha256": "c330dbef457bc1e50bb7c2a4d3c1f7e6fe79b4d13bec4e793228fe460b1c87ab",
+      "bytes": 85885
+    },
+    "icepack-basic-wide.chapters.json": {
+      "sha256": "5993242c4f70517b36416dcfd9ab0dbdfdedb0fad93b8d187ce1303e05e52506",
+      "bytes": 15833
+    },
+    "icepack-basic-wide.mp4": {
+      "sha256": "bf0c6fe2eb22440e4fbd5b336f8d01d77d34fba82906efa4e4f90210bb727764",
+      "bytes": 2806785
+    },
+    "icepack-basic-wide.vtt": {
+      "sha256": "04a04779b408176c26469ae28b87507983c7a24cc0c61bae87de8c460bc8a068",
+      "bytes": 4297
+    }
+  }
+}

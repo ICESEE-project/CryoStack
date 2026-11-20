@@ -23,7 +23,7 @@
     </p>
 
     <div class="cryostack-docs-actions">
-      <a class="cryostack-btn primary" href="/icesheets/">
+      <a class="cryostack-btn primary" href="/cryolauncher/">
         Open CryoLauncher
       </a>
 
@@ -349,7 +349,7 @@
       Ensemble state estimation and parameter inference with supported
       ice-sheet models.
     </p>
-    <a href="/icesee-gui/">Open ICESEE &rarr;</a>
+    <a href="/icesee/">Open ICESEE &rarr;</a>
   </article>
 
   <article class="cryostack-resource-card">
@@ -369,6 +369,11 @@
 
 Follow complete CryoLauncher workflows from model configuration through
 execution and results.
+
+These recordings use an earlier version of the interface. The workflow is
+unchanged, but the screen now has a step bar (Mode → Experiment → Environment →
+Parameters → Review & launch → Monitor → Results). Where a video and the
+written guides differ, follow the [Pilot Tutorials](soft_launch.md).
 
 :::{raw} html
 <div class="cryostack-resource-card-grid">
@@ -427,3 +432,7 @@ that project's own documentation and support channels.
   </div>
 </div>
 :::
+
+## Selected-participant soft launch
+
+Start with the [pilot tutorials](soft_launch.md) for the small AWS cases, synthetic datasets, saved scripts and PC comparisons. The [recording matrix](soft_launch/recording_matrix.md) lists the current videos and the acceptance evidence for each model/workflow.

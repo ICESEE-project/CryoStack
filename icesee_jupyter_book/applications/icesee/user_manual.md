@@ -24,7 +24,7 @@
     </p>
 
     <div class="cryostack-docs-actions">
-      <a class="cryostack-btn primary" href="/icesee-gui/">
+      <a class="cryostack-btn primary" href="/icesee/">
         Open ICESEE
       </a>
 
@@ -401,6 +401,17 @@ The run output shows the parameter file used, the runner, ensemble and
 forecast progress, analysis steps, warnings and errors — it is the first
 place to look when a run fails.
 
+### Reloading the page
+
+Reloading the page, or opening ICESEE again later, picks up where you left
+off: the mode, experiment, parameters, run settings, the open workspace tab,
+the selected run and unsaved text in the Editor come back, and a run still in
+progress keeps being monitored. ICESEE saves this a couple of seconds after
+each change, in your own workspace. Passwords are never saved; your saved
+HPC settings are restored as before. A note under the step indicator says
+when something was restored. **Start fresh** forgets it and reloads the page
+with the defaults.
+
 ### Getting from a run to its logs and results
 
 Once a run starts, **Review & launch** becomes the active-run panel. Its
@@ -455,6 +466,7 @@ while there is an error. Unsaved changes are marked, and switching files
 asks you to apply, save or discard them first. Files over 512 KB are shown
 read-only.
 
+(results-and-reports)=
 ## Results and reports
 
 Select a run and open **Results**. The launcher finds the run's outputs,
@@ -631,7 +643,7 @@ workflows.
 - Read [Getting Started with ICESEE](getting_started) to run a first experiment.
 - Review [ICESEE Resources](resources) for repositories, publications, software, and supporting documentation.
 - Open <a href="../icesheets/getting_started.html">CryoLauncher</a> for model runs without data assimilation.
-- Launch [ICESEE](https://cryostack.eas.gatech.edu/icesee-gui/) through the CryoStack platform.
+- Launch [ICESEE](https://cryostack.eas.gatech.edu/icesee/) through the CryoStack platform.
 
 :::{raw} html
   </div>

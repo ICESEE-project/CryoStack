@@ -64,6 +64,9 @@ class AWSConnectCallbacks:
                                 # the active connection's existing stack --
                                 # never mints anything, never touches the
                                 # stored connection
+    review_setup: Callable | None = None
+    review_verify: Callable | None = None
+    review_done: Callable | None = None
 
 
 def build_aws_connect_callbacks(
@@ -84,6 +87,7 @@ def build_aws_connect_callbacks(
     """
 
     _busy = {"on": False}
+    _review = {"connection_id": None, "role_arn": None}
 
     def _log(*parts: object) -> None:
         if log_output is None:
@@ -121,6 +125,8 @@ def build_aws_connect_callbacks(
             widgets.recheck_button, widgets.disconnect_button,
             widgets.retry_button, widgets.change_account_button,
             widgets.change_verify_button, widgets.change_cancel_button,
+            widgets.review_connection_button, widgets.review_connection_verify_button,
+            widgets.review_connection_done_button,
         ):
             b.disabled = disabled
 
@@ -193,21 +199,31 @@ def build_aws_connect_callbacks(
         widgets.aws_account_status.value = (
             "<span class='cryostack-status cryostack-status-running'>Verifying…</span>"
         )
+        if prefix == "review":
+            widgets.review_connection_status.value = "Verifying the saved access role…"
 
         async def _drive() -> None:
             try:
                 result = await to_thread(worker)
                 summary = onboarding_factory().summary()
                 _render(summary)
+                if prefix == "review":
+                    widgets.review_connection_status.value = (
+                        "Verified the existing connection. No new access role was created."
+                        if result.ok else "Verification failed. The existing role and license reference were retained; review the connection status above.")
                 if result.ok:
                     _log("connected:", result.connection.account_id)
                 else:
                     _log("not verified —", result.connection.status_reason)
             except (AssumeRoleError, OnboardingConfigError) as err:
                 _config_error(err)
+                if prefix == "review":
+                    widgets.review_connection_status.value = "Verification did not complete; the saved connection was not replaced."
                 _render(onboarding_factory().summary())
             except Exception as err:                    # noqa: BLE001
                 _config_error(err)
+                if prefix == "review":
+                    widgets.review_connection_status.value = "Verification did not complete; the saved connection was not replaced."
             finally:
                 _busy["on"] = False
                 _set_buttons(False)
@@ -418,6 +434,54 @@ def build_aws_connect_callbacks(
              f"({step.stack_name}) for a manual template update; "
              "same role, same ExternalId, nothing auto-applied")
 
+    def review_setup(_=None) -> None:
+        if _busy["on"]:
+            return
+        onboarding = onboarding_factory()
+        connection = onboarding.current()
+        if connection is None or not connection.is_connected:
+            widgets.review_connection_status.value = "Re-check or retry the existing connection first."
+            return
+        _review.update(connection_id=connection.connection_id, role_arn=connection.role_arn)
+        widgets.review_connection_role_arn.value = connection.role_arn
+        widgets.review_connection_status.value = "The saved access role is shown. Verify checks this same connection."
+        try:
+            step = onboarding.begin_update()  # read-only; never begin/mint/reconnect
+            widgets.review_connection_stack_link.value = (
+                f"<a href='{escape_attr(step.console_url)}' target='_blank' rel='noopener'>Review existing AWS stack</a>"
+                "<div style='font-size:11px'>Open the existing stack to inspect its template, permissions and Outputs RoleArn. "
+                "Opening this link makes no AWS change. Do not create another stack for this connection.</div>")
+        except Exception:
+            widgets.review_connection_stack_link.value = "The existing stack link is unavailable. The saved connection has not changed."
+        widgets.review_connection_panel.layout.display = "flex"
+
+    def review_verify(_=None) -> None:
+        if _busy["on"]:
+            return
+        entered = (widgets.review_connection_role_arn.value or "").strip()
+        def same_saved_connection():
+            onboarding = onboarding_factory()
+            current = onboarding.current()
+            if (current is None or current.connection_id != _review["connection_id"]
+                    or current.role_arn != _review["role_arn"] or entered != current.role_arn):
+                raise OnboardingConfigError("Paste the saved Role ARN shown in this review. A different role requires the separate account-change flow; nothing was changed.")
+            return onboarding.verify(role_arn=entered)
+        # Check before scheduling so a typo never mutates status or calls AWS.
+        current = onboarding_factory().current()
+        if (current is None or current.connection_id != _review["connection_id"]
+                or current.role_arn != _review["role_arn"] or entered != current.role_arn):
+            widgets.review_connection_status.value = "Paste the saved Role ARN shown when this review opened. Nothing was changed."
+            return
+        _verify_with(same_saved_connection, prefix="review")
+
+    def review_done(_=None) -> None:
+        widgets.review_connection_panel.layout.display = "none"
+
+    # Shared gateways receive this new view without separate live-page wiring.
+    widgets.review_connection_button.on_click(review_setup)
+    widgets.review_connection_verify_button.on_click(review_verify)
+    widgets.review_connection_done_button.on_click(review_done)
+
     return AWSConnectCallbacks(
         connect=connect,
         verify=verify,
@@ -429,4 +493,7 @@ def build_aws_connect_callbacks(
         change_verify=change_verify,
         change_cancel=change_cancel,
         update_role=update_role,
+        review_setup=review_setup,
+        review_verify=review_verify,
+        review_done=review_done,
     )

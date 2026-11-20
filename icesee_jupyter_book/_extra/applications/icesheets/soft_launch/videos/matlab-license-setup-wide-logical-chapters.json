@@ -1,0 +1,221 @@
+{
+  "schema": "cryostack.pilot.interactive-tutorial.v1",
+  "title": "MATLAB: reattach an existing license and check native execution",
+  "video_sha256": "3cec345e222541d2f2545417b8af82f2b69fc47fe2fefd34e14a9d81beb240c2",
+  "duration_seconds": 195.0,
+  "source_edit_receipt_sha256": "f9dd425216d33e04d54d2883f12b82a69e2062e272bb5ec2ed879102c557923e",
+  "public_scene_chapters_sha256": "353c29cde921a6d609a18d92485a24272724f5ee32e977f81f26d55bc9370630",
+  "chapter_timing": "Receipt-bound logical chapters include control cue, actual transition and confirmation; durations are video times.",
+  "steps": [
+    {
+      "id": "step-00",
+      "logical_id": "orientation",
+      "title": "Your goal: connect your MATLAB license",
+      "start": 0.0,
+      "end": 24.0,
+      "instructions": [
+        "Configure your institution\u2019s MATLAB license, connect any required network bridge and check ISSM readiness.",
+        "Have your institution\u2019s port@server address and an approved connected cloud account ready.",
+        "Open CryoLauncher and sign in. Use an approved connected cloud account with its resources prepared.",
+        "The following steps select this tutorial\u2019s model and example."
+      ],
+      "why": "Keep the source inputs, inspect native fields, and save a complete result package. Your workspace keeps scripts, dataset references and results together.",
+      "expected": "Your workspace keeps scripts, datasets, run history and results together.",
+      "note": "This ISSM cloud workflow runs MATLAB. Your institution supplies the usable license. Shared application orientation; the case-specific configuration follows.",
+      "pauseAfter": false,
+      "source_scene_ids": [
+        "step-00",
+        "start"
+      ]
+    },
+    {
+      "id": "step-01",
+      "logical_id": "step-1",
+      "title": "1. Choose Cloud and ISSM",
+      "start": 24.0,
+      "end": 36.0,
+      "instructions": [
+        "Choose Cloud, then select ISSM.",
+        "Open Environment & resources and find MATLAB LICENSE below the AWS connection."
+      ],
+      "why": "Choose the intended interface, model and example before editing or launching a run.",
+      "expected": "Your cloud account connection must already be verified.",
+      "note": "Your AWS account connection must already be verified.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-01"
+      ]
+    },
+    {
+      "id": "step-02",
+      "logical_id": "step-Keep",
+      "title": "Already configured? Prepare reattachment",
+      "start": 36.0,
+      "end": 48.0,
+      "instructions": [
+        "If the masked input is hidden, open Advanced license configuration. Save the current ARN privately, clear Existing secret ARN, then choose Use existing secret.",
+        "First-ever entry skips this step."
+      ],
+      "why": "This recovery reattaches the existing license reference without overwriting its value.",
+      "expected": "Save the current ARN privately; first-ever license entry skips this conditional step.",
+      "note": "This clears only the local reference; the AWS secret stays intact. Keep the saved ARN for recovery.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-02"
+      ]
+    },
+    {
+      "id": "step-03",
+      "logical_id": "step-2",
+      "title": "2. Enter your institution\u2019s license address",
+      "start": 48.0,
+      "end": 72.0,
+      "instructions": [
+        "Paste your own port@server value into the masked MATLAB license field.",
+        "The license address remains masked.",
+        "Use the address provided by your institution, rather than copying another institution\u2019s example."
+      ],
+      "why": "The institutional license address stays masked and must be reachable for the native run.",
+      "expected": "Use the port@server address provided by your institution.",
+      "note": "Keep license values and secret references out of shared recordings. This demonstration recovers an existing managed license.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-03",
+        "step-04"
+      ]
+    },
+    {
+      "id": "step-05",
+      "logical_id": "step-3",
+      "title": "3. Configure the license",
+      "start": 72.0,
+      "end": 93.0,
+      "instructions": [
+        "Choose Configure license.",
+        "Wait for MATLAB license configured.",
+        "The raw input clears and the application retains the managed secret reference."
+      ],
+      "why": "This recovery reattaches the existing license reference without overwriting its value.",
+      "expected": "The typed value does not overwrite this existing secret\u2019s stored value.",
+      "note": "For this recovery, the existing secret is found and its access is reattached. The typed value is not saved over the existing managed secret.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-05",
+        "step-06"
+      ]
+    },
+    {
+      "id": "step-07",
+      "logical_id": "step-4",
+      "title": "4. Make the license network reachable",
+      "start": 93.0,
+      "end": 105.0,
+      "instructions": [
+        "If the license service is private, run the CryoStack Connector on a host that can reach it.",
+        "Off campus, connect your institution\u2019s required VPN first."
+      ],
+      "why": "The Connector gives the cloud job access to a private institutional license service.",
+      "expected": "Off campus, establish the institution\u2019s required VPN first.",
+      "note": "Keep that network connection and the Connector running until the native run ends.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-07"
+      ]
+    },
+    {
+      "id": "step-08",
+      "logical_id": "connector-pairing",
+      "title": "5. Open the Connector setup",
+      "start": 105.0,
+      "end": 136.0,
+      "instructions": [
+        "Choose Open Connector.",
+        "The application opens a pairing request for your Connector.",
+        "In the Connector on your workstation, choose Pair with CryoStack and enter your own one-time code."
+      ],
+      "why": "The Connector gives the cloud job access to a private institutional license service.",
+      "expected": "Keep the Connector and required network connection running during the job.",
+      "note": "Use the same signed-in user for your application and Connector. The next view resumes with its one-time code hidden. The on-screen code is hidden here; enter your own current code.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-08",
+        "step-09",
+        "step-10"
+      ]
+    },
+    {
+      "id": "step-11",
+      "logical_id": "step-7",
+      "title": "7. Re-check the connection",
+      "start": 136.0,
+      "end": 157.0,
+      "instructions": [
+        "After pairing, choose Re-check.",
+        "Wait for CryoStack Connector connected.",
+        "Keep the Connector and required network connection available during the model run."
+      ],
+      "why": "The Connector gives the cloud job access to a private institutional license service.",
+      "expected": "The same-user bridge is online for the native run.",
+      "note": "This checks connectivity; it does not execute MATLAB. The readiness check comes next.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-11",
+        "step-12"
+      ]
+    },
+    {
+      "id": "step-13",
+      "logical_id": "step-8",
+      "title": "8. Review ISSM runtime readiness",
+      "start": 157.0,
+      "end": 169.0,
+      "instructions": [
+        "Open Review & Launch and confirm ISSM runtime is Ready.",
+        "Review the account, model, resources, time limit and estimated charges before submitting a run."
+      ],
+      "why": "Review confirms the intended model, source, resources and charges before submission.",
+      "expected": "Review the account, model, resources, time limit and estimated charges.",
+      "note": "Ready means the configuration checks passed; execution verifies the license path.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-13"
+      ]
+    },
+    {
+      "id": "step-14",
+      "logical_id": "step-9",
+      "title": "9. Verify the license path with execution",
+      "start": 169.0,
+      "end": 181.0,
+      "instructions": [
+        "The subsequent Basic SquareIceShelf run completed with native exit code 0.",
+        "Its runtime provenance records MATLAB R2024b Update 7 and ISSM 2026.1."
+      ],
+      "why": "A completed native job and its recorded provenance provide execution evidence.",
+      "expected": "MATLAB R2024b Update 7 \u00b7 ISSM 2026.1 \u00b7 native exit code 0.",
+      "note": "That successful native run confirms that this configured license path supported execution.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-14"
+      ]
+    },
+    {
+      "id": "step-15",
+      "logical_id": "step-Keep",
+      "title": "Keep the configuration scope clear",
+      "start": 181.0,
+      "end": 195.0,
+      "instructions": [
+        "This setup reattached an existing managed secret without overwriting its stored value.",
+        "The already-configured reset, VPN setup and external code entry are instructions outside this captured viewport; the configuration, pairing prompt, connected status and native execution are shown."
+      ],
+      "why": "Keep the scientific input definitions and numerical qualifications with the result.",
+      "expected": "This guide reattaches an existing secret; conditional reset, VPN and external entry are explained.",
+      "note": "Store your license reference privately and keep the successful run\u2019s downloaded provenance.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-15"
+      ]
+    }
+  ]
+}

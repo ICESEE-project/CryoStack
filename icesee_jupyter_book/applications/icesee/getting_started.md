@@ -24,7 +24,7 @@
     </p>
 
     <div class="cryostack-docs-actions">
-      <a class="cryostack-btn primary" href="/icesee-gui/">
+      <a class="cryostack-btn primary" href="/icesee/">
         Open ICESEE
       </a>
 
@@ -64,7 +64,7 @@ A first Lorenz-96 experiment needs none of the Remote or Cloud prerequisites.
 ## Open ICESEE
 
 Open
-[https://cryostack.eas.gatech.edu/icesee-gui/](https://cryostack.eas.gatech.edu/icesee-gui/).
+[https://cryostack.eas.gatech.edu/icesee/](https://cryostack.eas.gatech.edu/icesee/).
 
 The interface has two areas, with a step bar above them:
 
@@ -88,11 +88,13 @@ The interface has two areas, with a step bar above them:
   using ICESEE-Spack or a container. Required for ISSM.
 </p>
 <p>
-  <b>Cloud</b> <span class="cryostack-status dev">Lorenz-96 only</span>
-  &nbsp;— AWS Batch on your own AWS account, through the same Connect AWS
-  Account &rarr; Prepare cloud &rarr; cloud review flow as CryoLauncher.
-  Verified for exactly one configuration: Lorenz-96 at a single process.
-  Other examples, or more processes, are refused at Review.
+  <b>Cloud</b> <span class="cryostack-status supported">Two staged examples</span>
+  &nbsp;— AWS Batch on your connected AWS account. The current staged runner
+  accepts <code>lorenz96</code> and <code>synthetic_ice_stream</code>, with
+  one or two MPI processes in its default 2-vCPU task. Review rejects other
+  examples or a process count outside that bound. This is the current
+  submission contract, not evidence that every configuration has been run
+  on AWS. The earlier in-image Lorenz-96 reference used one process.
 </p>
 :::
 
@@ -102,10 +104,10 @@ The **Example** menu shows each example's status:
 
 | Example | Status | Where it runs today |
 |---|---|---|
-| Lorenz-96 | fully runnable locally | Local and Cloud (one process); Remote is available |
-| ISSM (ISMIP_Choi) | fully runnable in Remote | Remote |
-| Icepack | under development | Local (ICESEE container); Remote is available |
-| Flowline | under development | not yet an end-to-end workflow |
+| Lorenz-96 | Local execution and an earlier single-process AWS case recorded | Local; staged Cloud with 1–2 processes; Remote has separate configuration |
+| ISSM (ISMIP_Choi) | Remote example | Remote with its ISSM environment and allocation; Cloud is refused |
+| Icepack (synthetic_ice_stream) | Native container/staged-runner case | Local in the ICESEE container; staged Cloud with 1–2 processes; Remote has separate configuration |
+| Flowline (flowline_1d) | Current example does not produce a usable assimilation result | Cloud is refused and Results is disabled; see the manual for the recorded failure |
 
 See <a href="user_manual.html#examples-and-maturity">Examples and maturity</a>
 in the User Manual for details.
@@ -115,10 +117,13 @@ in the User Manual for details.
 - **Preset** — only **Default** (the example's own configuration) is offered.
 - **Filter** — **EnKF**, **DEnKF**, **EnTKF**, or **EnRSKF**. Keep the
   example's default for a first run.
-- **Ensemble size** — the number of members (the example's own value when
-  you choose it). Larger ensembles represent uncertainty better and cost
-  more.
-- **Seed** — the random seed; keep it fixed to repeat an experiment exactly.
+- **Ensemble size** — the number of members; choosing an example loads its
+  own value. Changing it changes compute and storage requirements. Evaluate
+  its effect on the assimilation result rather than assuming a larger value
+  is more accurate.
+- **Seed** — the random seed. Keep it fixed when repeating a case, together
+  with the inputs, software versions and process counts. A fixed seed alone
+  does not guarantee bitwise-identical numerical output.
 
 The example's parameter sections (`physical-parameters`,
 `modeling-parameters`, `enkf-parameters`) hold everything else, including the

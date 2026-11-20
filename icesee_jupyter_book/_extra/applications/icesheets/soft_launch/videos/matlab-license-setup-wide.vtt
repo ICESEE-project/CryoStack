@@ -1,0 +1,103 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:14.000
+Connect your institutional MATLAB license for an ISSM cloud run.
+Why: Keep the source inputs, inspect native fields, and save a complete result package.
+Look for: Have your own port@server address and an approved connected cloud account ready.
+
+2
+00:00:14.000 --> 00:00:24.000
+Start here in CryoLauncher. Choose Cloud for this tutorial.
+Why: Your workspace keeps scripts, dataset references and results together.
+Look for: Your workspace keeps scripts, datasets, run history and results together.
+
+3
+00:00:24.000 --> 00:00:36.000
+Choose Cloud and ISSM; find MATLAB LICENSE.
+Why: Choose the intended interface, model and example before editing or launching a run.
+Look for: Your cloud account connection must already be verified.
+
+4
+00:00:36.000 --> 00:00:48.000
+Already configured? Prepare the local reference for reattachment.
+Why: This recovery reattaches the existing license reference without overwriting its value.
+Look for: Save the current ARN privately; first-ever license entry skips this conditional step.
+
+5
+00:00:48.000 --> 00:01:00.000
+Paste your own institutional address into the masked license field.
+Why: The institutional license address stays masked and must be reachable for the native run.
+Look for: Keep license values and secret references out of shared recordings.
+
+6
+00:01:00.000 --> 00:01:12.000
+Check the masked license input.
+Why: The institutional license address stays masked and must be reachable for the native run.
+Look for: Use the port@server address provided by your institution.
+
+7
+00:01:12.000 --> 00:01:21.000
+Choose Configure license.
+Why: This recovery reattaches the existing license reference without overwriting its value.
+Look for: This recovery finds the existing managed secret and reattaches its access.
+
+8
+00:01:21.000 --> 00:01:33.000
+Wait for MATLAB license configured and the input to clear.
+Why: This recovery reattaches the existing license reference without overwriting its value.
+Look for: The typed value does not overwrite this existing secret’s stored value.
+
+9
+00:01:33.000 --> 00:01:45.000
+Make the private license service reachable from your Connector host.
+Why: The Connector gives the cloud job access to a private institutional license service.
+Look for: Off campus, establish the institution’s required VPN first.
+
+10
+00:01:45.000 --> 00:01:54.000
+Choose Open Connector.
+Why: The Connector gives the cloud job access to a private institutional license service.
+Look for: Use the same signed-in user in the application and Connector.
+
+11
+00:01:54.000 --> 00:02:04.000
+Start the application’s Connector pairing request.
+Why: The Connector gives the cloud job access to a private institutional license service.
+Look for: The next view resumes with the one-time code hidden.
+
+12
+00:02:04.000 --> 00:02:16.000
+In the external Connector, enter your own current pairing code.
+Why: The Connector gives the cloud job access to a private institutional license service.
+Look for: Keep the Connector and required network connection running during the job.
+
+13
+00:02:16.000 --> 00:02:25.000
+After pairing, choose Re-check.
+Why: The Connector gives the cloud job access to a private institutional license service.
+Look for: This checks connectivity; it does not execute MATLAB.
+
+14
+00:02:25.000 --> 00:02:37.000
+Wait for CryoStack Connector connected.
+Why: The Connector gives the cloud job access to a private institutional license service.
+Look for: The same-user bridge is online for the native run.
+
+15
+00:02:37.000 --> 00:02:49.000
+Open Review & Launch and confirm ISSM runtime is Ready.
+Why: Review confirms the intended model, source, resources and charges before submission.
+Look for: Review the account, model, resources, time limit and estimated charges.
+
+16
+00:02:49.000 --> 00:03:01.000
+Verify the license path with the completed native ISSM run.
+Why: A completed native job and its recorded provenance provide execution evidence.
+Look for: MATLAB R2024b Update 7 · ISSM 2026.1 · native exit code 0.
+
+17
+00:03:01.000 --> 00:03:15.000
+Keep the license reference private and retain the run provenance.
+Why: Keep the scientific input definitions and numerical qualifications with the result.
+Look for: This guide reattaches an existing secret; conditional reset, VPN and external entry are explained.

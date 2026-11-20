@@ -1,0 +1,139 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:18.000
+1. Run your own ISSM script
+Goal: upload a small MATLAB workflow and a synthetic JSON input, run native ISSM on your connected AWS resources, then inspect and download its results.
+
+Have an approved CryoStack login, a verified BYO AWS connection, and configured MATLAB plus Connector.
+Open CryoLauncher. Choose Cloud → Advanced → ISSM.
+
+2
+00:00:18.000 --> 00:00:36.000
+2. Download the tutorial inputs
+Open Pilot Tutorials → Bring your own script and download the supplied native input packet. Extract it.
+
+Scripts: runme.m, Launch.par, validate_launch_dataset.m.
+Data: issm-shelf-small-v1.json.
+Scripts are in examples/soft_launch/issm/. JSON is in examples/soft_launch/datasets/.
+
+3
+00:00:36.000 --> 00:00:49.000
+3. Create your workspace example
+In Editor, enter a new name and choose New example.
+
+This recording uses pilot-issm-script-1119. Keep the new owned example selected for the following uploads.
+New ISSM examples include a starter runme.m. The supplied entry script replaces it.
+
+4
+00:00:49.000 --> 00:00:52.008
+4. Choose Upload
+One JSON file is selected. Choose Upload.
+The next view keeps the actual action and confirmation.
+
+5
+00:00:52.008 --> 00:01:04.008
+4. Confirm the JSON upload
+The selected-file count changes from 1 to 0 when Upload finishes.
+
+The confirmation names issm-shelf-small-v1.json. Keep this dataset for the next reference step.
+Datasets are stored separately from source files.
+
+6
+00:01:04.008 --> 00:01:07.008
+5. Choose Reference in example
+Select the JSON dataset, then choose Reference in example.
+The next view keeps the actual action and confirmation.
+
+7
+00:01:07.008 --> 00:01:20.008
+5. Confirm the referenced filename
+The confirmation gives data/issm-shelf-small-v1.json.
+
+This is the exact relative path read by runme.m. The dataset is now referenced by this owned example.
+The referenced bytes are copied into data/ when the next run is staged.
+
+8
+00:01:20.008 --> 00:01:48.008
+6. Replace and import all three scripts
+Choose runme.m, Launch.par and validate_launch_dataset.m together.
+
+Check Replace existing script files, then choose Import script files.
+Watch selected count 0 → 3 → 0. Replacement is essential for the starter runme.m.
+
+9
+00:01:48.008 --> 00:02:02.008
+7. Confirm all three files are saved
+Read the confirmation: runme.m, Launch.par and validate_launch_dataset.m are imported and Files are saved.
+
+The entry script now shows 37 lines, saved.
+All three scripts and the referenced JSON matched the expected hashes before launch and in the submitted snapshot.
+
+10
+00:02:02.008 --> 00:02:13.008
+8. Confirm the entrypoint
+In Experiment, set Action to Run and Run target to runme.m.
+
+Keep the owned example and the three saved scripts from the previous steps.
+The selected entry script is runme.m; the two helpers and referenced JSON accompany it.
+
+11
+00:02:13.008 --> 00:02:29.008
+9. Review the run
+Choose Review & Launch. Confirm model ISSM, your owned example, and the resources shown in the review.
+
+Use the existing configured license and Connector. Scroll to the bottom and choose Launch cloud run.
+This native run used 2 vCPU and 8 GiB. The task time limit was 60 minutes.
+
+12
+00:02:29.008 --> 00:02:39.008
+10. Follow the new submission
+The new run enters Submitting, then Queued while AWS starts the container.
+
+Wait for Running and Completed before opening its results.
+The launch confirmation precedes this actual new submission.
+
+13
+00:02:39.008 --> 00:02:54.008
+11. Completion and elapsed times
+The native run completed successfully.
+
+Submission → Batch start: 219.980 s.
+Batch task: 45.010 s.
+Script-reported interval: 2.156046 s.
+Startup, task time and script time measure different intervals.
+
+14
+00:02:54.008 --> 00:03:09.008
+12. Render the native velocity
+In Workspace → Results, choose StressbalanceSolution and Vel, then choose Render.
+
+This is the recorded Render action and its native output.
+The selected output contains one diagnostic solution and 13 nodal values.
+
+15
+00:03:09.008 --> 00:03:27.008
+13. Inspect the saved native field
+The unchanged native PNG shows speed in metres/year.
+
+13 vertices and 16 triangles. Speed ranges from 0 to 18.89046 m/year.
+
+Node-RMS speed is 6.2386984 m/year. Convergence is the scalar 25.
+The 10 km square uses one diagnostic SSA Stressbalance solve, without physical time advance.
+
+16
+00:03:27.008 --> 00:03:44.008
+14. Download this run’s results
+Choose Download results, then use the fresh HTTPS download link.
+
+The saved ZIP has 13 CRC-valid members: mesh, native fields and figure, model, metrics and runtime/RNG provenance.
+Keep the archive together with the input manifest and recorded runtime versions.
+
+17
+00:03:44.008 --> 00:03:59.008
+15. What this example establishes
+This script starts with zero velocity and fixes its non-front boundary velocities. The shared JSON speed setting is unused.
+
+Thickness is source-confirmed at 300–500 m; its arithmetic-node mean is 400 m. The saved model geometry is opaque locally.
+One verified native diagnostic execution. Full source/data/runtime receipts are linked; this is not a repeat or accuracy result.
+

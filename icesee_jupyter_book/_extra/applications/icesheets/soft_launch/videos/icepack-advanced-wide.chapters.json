@@ -1,0 +1,435 @@
+{
+  "video_sha256": "9360dc9e180b34a2a454692ba8bbc63acad1675cae253ce82eb7a05c3eb5cb43",
+  "duration_seconds": 249.0,
+  "chapters": [
+    {
+      "id": "step-00",
+      "step": "Goal",
+      "start_seconds": 0,
+      "end_seconds": 14.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Clone the synthetic shelf and run a one-change temperature case.",
+      "screenWhy": "Keep the source inputs, inspect native fields, and save a complete result package.",
+      "expectedResult": "Prepare run.py with only T = 254.15 K instead of 255.15 K.",
+      "logical_step_id": "orientation",
+      "pause_after": false,
+      "title": "Your goal: change one temperature input",
+      "instructions": [
+        "Clone the synthetic shelf example, import a one-change run.py and inspect the native result.",
+        "Prepare run.py with T = firedrake.Constant(254.15) instead of 255.15."
+      ],
+      "note": "Use an already connected cloud account with its resources prepared.",
+      "why": "Keep the source inputs, inspect native fields, and save a complete result package."
+    },
+    {
+      "id": "start",
+      "step": "Start",
+      "start_seconds": 14.0,
+      "end_seconds": 24.0,
+      "where": "Mode and Experiment",
+      "screenText": "Start here in CryoLauncher. Choose Cloud for this tutorial.",
+      "screenWhy": "Your workspace keeps scripts, dataset references and results together.",
+      "expectedResult": "Your workspace keeps scripts, datasets, run history and results together.",
+      "logical_step_id": "orientation",
+      "pause_after": false,
+      "title": "Start here",
+      "instructions": [
+        "Open CryoLauncher and sign in. Use an approved connected cloud account with its resources prepared.",
+        "The following steps select this tutorial\u2019s model and example."
+      ],
+      "note": "Shared application orientation; the case-specific configuration follows.",
+      "why": "Your workspace keeps scripts, dataset references and results together."
+    },
+    {
+      "id": "step-01",
+      "step": "1",
+      "start_seconds": 24.0,
+      "end_seconds": 36.0,
+      "where": "Mode and Experiment",
+      "screenText": "Choose Cloud \u2192 Advanced \u2192 Icepack \u2192 Tutorial / 02 Synthetic Ice Shelf.",
+      "screenWhy": "Choose the intended interface, model and example before editing or launching a run.",
+      "expectedResult": "Use an owned workspace clone before replacing source.",
+      "logical_step_id": "step-1",
+      "pause_after": true,
+      "title": "1. Choose the Advanced shelf example",
+      "instructions": [
+        "Choose Cloud \u2192 Advanced \u2192 Icepack \u2192 Tutorial / 02 Synthetic Ice Shelf.",
+        "Create an owned workspace copy before replacing source."
+      ],
+      "note": "The application example remains read-only.",
+      "why": "Choose the intended interface, model and example before editing or launching a run."
+    },
+    {
+      "id": "step-02",
+      "step": "2",
+      "start_seconds": 36.0,
+      "end_seconds": 46.0,
+      "where": "Workspace \u2192 Editor",
+      "screenText": "Enter a new name and choose Clone to My Workspace.",
+      "screenWhy": "Cloning gives you an editable copy while preserving the supplied application source.",
+      "expectedResult": "The canonical application source stays read-only.",
+      "logical_step_id": "step-2",
+      "pause_after": true,
+      "title": "2. Clone to your workspace",
+      "instructions": [
+        "Enter a new name, then choose Clone to My Workspace."
+      ],
+      "note": "This example is named pilot-icepack-advanced-1118.",
+      "why": "Cloning gives you an editable copy while preserving the supplied application source."
+    },
+    {
+      "id": "step-03",
+      "step": "2",
+      "start_seconds": 46.0,
+      "end_seconds": 59.0,
+      "where": "Workspace \u2192 Editor",
+      "screenText": "Wait for the cloned-workspace confirmation and saved file status.",
+      "screenWhy": "Cloning gives you an editable copy while preserving the supplied application source.",
+      "expectedResult": "This owned example is pilot-icepack-advanced-1118.",
+      "logical_step_id": "step-2",
+      "pause_after": true,
+      "title": "2. Confirm the editable clone",
+      "instructions": [
+        "Wait for Cloned to your workspace.",
+        "The file selector contains run.py and the status changes to saved."
+      ],
+      "note": "You will replace run.py only inside this owned clone.",
+      "why": "Cloning gives you an editable copy while preserving the supplied application source."
+    },
+    {
+      "id": "step-04",
+      "step": "3",
+      "start_seconds": 59.0,
+      "end_seconds": 69.0,
+      "where": "Workspace \u2192 Editor",
+      "screenText": "Choose the one-change run.py in your file picker; Open.",
+      "screenWhy": "Selecting local files prepares them for import; importing saves them in this example.",
+      "expectedResult": "Check that one script file is selected.",
+      "logical_step_id": "step-3",
+      "pause_after": true,
+      "title": "3. Choose your replacement run.py",
+      "instructions": [
+        "Choose script files. In your file picker select the one-change run.py, then choose Open."
+      ],
+      "note": "Check that the picker shows one selected file.",
+      "why": "Selecting local files prepares them for import; importing saves them in this example."
+    },
+    {
+      "id": "step-05",
+      "step": "3",
+      "start_seconds": 69.0,
+      "end_seconds": 81.0,
+      "where": "Workspace \u2192 Editor",
+      "screenText": "Check the selected script before replacing the existing file.",
+      "screenWhy": "Selecting local files prepares them for import; importing saves them in this example.",
+      "expectedResult": "Retain both 400-year phases and 200 steps per phase: dt = 2 years.",
+      "logical_step_id": "step-3",
+      "pause_after": true,
+      "title": "3. Check the selected file",
+      "instructions": [
+        "One script file is selected.",
+        "The replacement must keep the original source except for 255.15 \u2192 254.15 K."
+      ],
+      "note": "Both 400-year phases retain 200 steps each, at 2 years per step.",
+      "why": "Selecting local files prepares them for import; importing saves them in this example."
+    },
+    {
+      "id": "step-06",
+      "step": "4",
+      "start_seconds": 81.0,
+      "end_seconds": 90.0,
+      "where": "Workspace \u2192 Editor",
+      "screenText": "Enable Replace existing script files.",
+      "screenWhy": "Replacement explicitly allows an imported file to overwrite the same name in this clone.",
+      "expectedResult": "Your clone already contains run.py.",
+      "logical_step_id": "step-4",
+      "pause_after": true,
+      "title": "4. Enable intentional replacement",
+      "instructions": [
+        "Enable Replace existing script files.",
+        "Your clone already contains run.py, so replacing it requires this checkbox."
+      ],
+      "note": "Keep the temperature edit in your local replacement file.",
+      "why": "Replacement explicitly allows an imported file to overwrite the same name in this clone."
+    },
+    {
+      "id": "step-07",
+      "step": "4",
+      "start_seconds": 90.0,
+      "end_seconds": 100.0,
+      "where": "Workspace \u2192 Editor",
+      "screenText": "Choose Import script files.",
+      "screenWhy": "Import saves the selected source files in this example; it does not launch the model.",
+      "expectedResult": "Importing saves the replacement; it does not launch a model.",
+      "logical_step_id": "step-4",
+      "pause_after": true,
+      "title": "4. Import and save the new source",
+      "instructions": [
+        "Choose Import script files."
+      ],
+      "note": "Importing saves files; it does not launch a model.",
+      "why": "Import saves the selected source files in this example; it does not launch the model."
+    },
+    {
+      "id": "step-08",
+      "step": "4",
+      "start_seconds": 100.0,
+      "end_seconds": 112.0,
+      "where": "Workspace \u2192 Editor",
+      "screenText": "Wait for Imported run.py. Files are saved.",
+      "screenWhy": "Import saves the selected source files in this example; it does not launch the model.",
+      "expectedResult": "Keep run.py as the Run target.",
+      "logical_step_id": "step-4",
+      "pause_after": true,
+      "title": "4. Confirm the saved source",
+      "instructions": [
+        "Wait for Imported run.py. Files are saved.",
+        "Keep run.py as the Run target."
+      ],
+      "note": "The submitted source was verified to contain this temperature-only change.",
+      "why": "Import saves the selected source files in this example; it does not launch the model."
+    },
+    {
+      "id": "step-09",
+      "step": "5",
+      "start_seconds": 112.0,
+      "end_seconds": 124.0,
+      "where": "Environment \u2192 Cloud readiness",
+      "screenText": "Check cloud readiness and retain 2 vCPU / 8 GiB.",
+      "screenWhy": "Ready indicates that the required account resources are configured for the run.",
+      "expectedResult": "Review the owned clone and run.py target.",
+      "logical_step_id": "step-5",
+      "pause_after": true,
+      "title": "5. Review the cloud configuration",
+      "instructions": [
+        "Confirm Account connected and Storage, Containers and Compute Ready.",
+        "Choose Review & Launch and check the owned clone and run.py."
+      ],
+      "note": "Retain 2 vCPU and 8 GiB for this native run.",
+      "why": "Ready indicates that the required account resources are configured for the run."
+    },
+    {
+      "id": "step-10",
+      "step": "5",
+      "start_seconds": 124.0,
+      "end_seconds": 133.0,
+      "where": "Environment \u2192 Review & Launch",
+      "screenText": "Choose Review & Launch.",
+      "screenWhy": "Review confirms the intended model, source, resources and charges before submission.",
+      "expectedResult": "The displayed runtime is an estimate, not measured model duration.",
+      "logical_step_id": "step-5",
+      "pause_after": true,
+      "title": "5. Open the review",
+      "instructions": [
+        "Choose Review & Launch."
+      ],
+      "note": "The displayed ~60 minutes is an estimate, not a measured model duration.",
+      "why": "Review confirms the intended model, source, resources and charges before submission."
+    },
+    {
+      "id": "step-11",
+      "step": "5",
+      "start_seconds": 133.0,
+      "end_seconds": 144.0,
+      "where": "Environment \u2192 Review & Launch",
+      "screenText": "Control guide: confirm Launch cloud run when checks are Ready.",
+      "screenWhy": "This confirmation stages the reviewed inputs and starts a paid cloud job.",
+      "expectedResult": "The following card belongs to this tutorial\u2019s original native run.",
+      "logical_step_id": "step-5",
+      "pause_after": true,
+      "title": "5. Confirm the launch",
+      "instructions": [
+        "Choose Launch cloud run when the readiness checks are ready.",
+        "This confirmation starts the run."
+      ],
+      "note": "Control guide; the following card belongs to this tutorial\u2019s original native run.",
+      "why": "This confirmation stages the reviewed inputs and starts a paid cloud job."
+    },
+    {
+      "id": "step-12",
+      "step": "5",
+      "start_seconds": 144.0,
+      "end_seconds": 154.0,
+      "where": "Cloud run status",
+      "screenText": "Follow the new Advanced clone run card.",
+      "screenWhy": "Submission, queue/startup and native model execution are separate stages.",
+      "expectedResult": "Wait for completion, then open View results.",
+      "logical_step_id": "step-5",
+      "pause_after": true,
+      "title": "5. Follow the new submission",
+      "instructions": [
+        "The new run card names pilot-icepack-advanced-1118.",
+        "Allow the job to finish, then open View results."
+      ],
+      "note": "Importing the replacement file did not submit it automatically.",
+      "why": "Submission, queue/startup and native model execution are separate stages."
+    },
+    {
+      "id": "step-13",
+      "step": "6",
+      "start_seconds": 154.0,
+      "end_seconds": 164.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Select icepack \u2192 velocity in Results; Render when needed.",
+      "screenWhy": "The solution, field name, units and mesh counts identify what you are viewing.",
+      "expectedResult": "Read the field units and selected solution.",
+      "logical_step_id": "step-6",
+      "pause_after": true,
+      "title": "6. Render the native velocity",
+      "instructions": [
+        "Open Results and select icepack \u2192 velocity. Use Render when needed."
+      ],
+      "note": "The first field may be previewed automatically.",
+      "why": "The solution, field name, units and mesh counts identify what you are viewing."
+    },
+    {
+      "id": "step-14",
+      "step": "6",
+      "start_seconds": 164.0,
+      "end_seconds": 176.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Check the native field metadata.",
+      "screenWhy": "The solution, field name, units and mesh counts identify what you are viewing.",
+      "expectedResult": "3,371 vertices / 6,533 triangles; native CG2 fields exported as portable CG1.",
+      "logical_step_id": "step-6",
+      "pause_after": true,
+      "title": "6. Check the field metadata",
+      "instructions": [
+        "Read the field name and units before interpreting the map.",
+        "The export contains 3,371 vertices and 6,533 triangles."
+      ],
+      "note": "Native thickness/velocity use CG2; the portable fields are exported as CG1.",
+      "why": "The solution, field name, units and mesh counts identify what you are viewing."
+    },
+    {
+      "id": "step-15",
+      "step": "7",
+      "start_seconds": 176.0,
+      "end_seconds": 188.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Inspect the complete native velocity map.",
+      "screenWhy": "Keep the source, versions, hashes and scientific qualifications with the result.",
+      "expectedResult": "Speed: 160.457236\u2013728.806914 m/year; arrows show direction.",
+      "logical_step_id": "step-7",
+      "pause_after": true,
+      "title": "7. Inspect the full native velocity map",
+      "instructions": [
+        "Colour is speed in m/year; arrows show direction. The x and y axes are metres.",
+        "Speed is 160.457236\u2013728.806914 m/year."
+      ],
+      "note": "This is the complete map in the native Results panel.",
+      "why": "Keep the source, versions, hashes and scientific qualifications with the result."
+    },
+    {
+      "id": "step-16",
+      "step": "8",
+      "start_seconds": 188.0,
+      "end_seconds": 200.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Read the recorded thickness and damage checks.",
+      "screenWhy": "These checks complement the velocity map shown here.",
+      "expectedResult": "Thickness: 98.259646\u2013350.139815 m; accumulation is zero.",
+      "logical_step_id": "step-8",
+      "pause_after": true,
+      "title": "8. Read the recorded thickness and damage checks",
+      "instructions": [
+        "This recorded-output summary complements the velocity map. Thickness is 98.259646\u2013350.139815 m; accumulation is zero.",
+        "The second 400-year phase includes damage physics."
+      ],
+      "note": "All saved fields are finite; the portable export is not a full Firedrake checkpoint.",
+      "why": "These checks complement the velocity map shown here."
+    },
+    {
+      "id": "step-17",
+      "step": "9",
+      "start_seconds": 200.0,
+      "end_seconds": 208.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Locate Download results beneath the plot.",
+      "screenWhy": "The archive keeps this run\u2019s numeric outputs, figures and provenance together.",
+      "expectedResult": "Save the current run\u2019s archive.",
+      "logical_step_id": "step-9",
+      "pause_after": true,
+      "title": "9. Locate the result download",
+      "instructions": [
+        "Scroll to Download results below the plot."
+      ],
+      "note": "Save the current run\u2019s archive rather than an earlier generated link.",
+      "why": "The archive keeps this run\u2019s numeric outputs, figures and provenance together."
+    },
+    {
+      "id": "step-18",
+      "step": "9",
+      "start_seconds": 208.0,
+      "end_seconds": 216.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Choose Download results.",
+      "screenWhy": "The archive keeps this run\u2019s numeric outputs, figures and provenance together.",
+      "expectedResult": "Wait for preparation to finish and a new HTTPS link.",
+      "logical_step_id": "step-9",
+      "pause_after": true,
+      "title": "9. Generate the archive link",
+      "instructions": [
+        "Choose Download results."
+      ],
+      "note": "Wait for preparation to finish before opening the new HTTPS link.",
+      "why": "The archive keeps this run\u2019s numeric outputs, figures and provenance together."
+    },
+    {
+      "id": "step-19",
+      "step": "9",
+      "start_seconds": 216.0,
+      "end_seconds": 225.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Allow the result archive to finish preparing.",
+      "screenWhy": "Keep the source, versions, hashes and scientific qualifications with the result.",
+      "expectedResult": "The following view resumes after preparation.",
+      "logical_step_id": "step-9",
+      "pause_after": true,
+      "title": "9. Wait for the archive preparation",
+      "instructions": [
+        "The result package is prepared for download.",
+        "When the new link appears, open it to save the ZIP."
+      ],
+      "note": "The following view resumes after preparation.",
+      "why": "Keep the source, versions, hashes and scientific qualifications with the result."
+    },
+    {
+      "id": "step-20",
+      "step": "9",
+      "start_seconds": 225.0,
+      "end_seconds": 235.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Open the new link and save the 19-member ZIP.",
+      "screenWhy": "The archive keeps this run\u2019s numeric outputs, figures and provenance together.",
+      "expectedResult": "Keep fields, mesh, figures and runtime/RNG provenance together.",
+      "logical_step_id": "step-9",
+      "pause_after": true,
+      "title": "9. Save the new archive",
+      "instructions": [
+        "Save the 19-member ZIP with fields, mesh, figures and runtime/RNG provenance."
+      ],
+      "note": "The archive and its member hashes passed the retained checks.",
+      "why": "The archive keeps this run\u2019s numeric outputs, figures and provenance together."
+    },
+    {
+      "id": "step-21",
+      "step": "Keep",
+      "start_seconds": 235.0,
+      "end_seconds": 249.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Keep the native numerical context with your result.",
+      "screenWhy": "Keep the scientific input definitions and numerical qualifications with the result.",
+      "expectedResult": "Damage undershoot is retained; this changed case is not a sensitivity validation.",
+      "logical_step_id": "step-Keep",
+      "pause_after": true,
+      "title": "Keep the numerical context",
+      "instructions": [
+        "Damage spans \u22120.0026125100 to 0.0689681004. The native undershoot is retained without clipping.",
+        "The mesh matches Basic, but this is a changed experiment, not a repeat or a temperature-sensitivity validation."
+      ],
+      "note": "Unchanged saved velocity PNG. Submission \u2192 Batch start: 215.252 s; task: 428.919 s.",
+      "why": "Keep the scientific input definitions and numerical qualifications with the result."
+    }
+  ]
+}

@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import threading
 import time
 import uuid
 import zipfile
@@ -127,6 +128,7 @@ class WorkspaceManager:
     ) -> None:
         self.status = status
         self.session = session
+        self._run_listeners: list = []
         self.example_dir = example_dir
         #: ``model`` may be a selector widget (IceSheets) or a fixed model name
         #: string (single-model apps like ICESEE).
@@ -158,12 +160,8 @@ class WorkspaceManager:
             if owner is not None
             else resolve_workspace_user(require_authenticated=require_authenticated)
         )
-        if workspace_root is not None:
-            root = Path(workspace_root).resolve()
-        else:
-            from cryostack_src.storage_layout import resolve
-
-            root = resolve("workspaces")[0].resolve()
+        from .roots import resolve_workspace_root
+        root = resolve_workspace_root(workspace_root)
         self._workspace_root = root
         self._owner_root = (root / "users" / self.owner.safe_id).resolve()
         self.manifest_root = (self._owner_root / ".cryostack" / "runs").resolve()
@@ -178,6 +176,8 @@ class WorkspaceManager:
 
         self._runs: dict[str, RunInfo] = {}
         self._selected_run_id: str | None = None
+        self._result_download_generation = 0
+        self._result_download_lock = threading.RLock()
         self._tail_handler = None
         self._status_resolver = None
         #: per-run ResultPackage cache -- run_id -> (signature, package). This
@@ -204,6 +204,19 @@ class WorkspaceManager:
     def set_status_resolver(self, resolver) -> None:
         self._status_resolver = resolver
 
+    def add_run_listener(self, listener) -> None:
+        """Call ``listener(run)`` when a run is registered, selected or changes
+        status (the workflow stepper follows these). A failing listener never
+        breaks the run bookkeeping."""
+        self._run_listeners.append(listener)
+
+    def _notify_run(self, run) -> None:
+        for listener in tuple(self._run_listeners):
+            try:
+                listener(run)
+            except Exception:  # noqa: BLE001 - presentation must not break runs
+                pass
+
     def reconcile_run(self, run_id: str) -> RunInfo | None:
         run = self._runs.get(run_id)
         if not run or not run.jobid or self._status_resolver is None:
@@ -226,6 +239,7 @@ class WorkspaceManager:
             run.finished = datetime.now() if normalized in {"completed", "failed", "cancelled"} else None
             if run.workspace_directory:
                 write_manifest(run, run.workspace_directory)
+            self._notify_run(run)
         return run
 
     def update_run_status_by_job(self, job_id: str, state: str | None) -> RunInfo | None:
@@ -267,7 +281,38 @@ class WorkspaceManager:
             raise RuntimeError("Workspace log routing is not configured.")
         return self._tail_handler()
 
+    def _assert_example_source_allowed(self, source: str | Path) -> Path:
+        """Only scientific source trees, never another owner or control state."""
+        path = Path(source).expanduser().resolve()
+        from .roots import LOCAL_CONTROL_SCOPES
+        for scope in LOCAL_CONTROL_SCOPES:
+            control = self._owner_root / ".cryostack" / scope
+            if path.is_relative_to(control) or control.is_relative_to(path):
+                raise WorkspacePermissionError("Application control state cannot be used as an example.")
+        if path.is_relative_to(self._owner_root):
+            return path
+        protected = [self._workspace_root / "users"]
+        for key in ("CRYOSTACK_WORKSPACE_STATE_ROOT", "CRYOSTACK_DATA_ROOT"):
+            value = os.environ.get(key, "").strip()
+            if value:
+                protected.append(Path(value).expanduser().resolve())
+        home = Path.home()
+        protected.extend(home / name for name in (".aws", ".ssh", ".cryostack", ".claude", "cryostack-backups"))
+        installation = Path(__file__).resolve().parents[2]
+        protected.extend([installation / "var", installation / ".git"])
+        for boundary in protected:
+            boundary = boundary.resolve()
+            if path.is_relative_to(boundary) or boundary.is_relative_to(path):
+                raise WorkspacePermissionError("This location is not an accessible scientific example.")
+        allowed = [Path(v).expanduser().resolve() for v in
+                   os.environ.get("CRYOSTACK_CANONICAL_EXAMPLE_ROOTS", "").split(os.pathsep) if v.strip()]
+        if allowed or os.environ.get("CRYOSTACK_WORKSPACE_MOUNT", "").strip():
+            if not any(path.is_relative_to(root) for root in allowed):
+                raise WorkspacePermissionError("Select a registered application example or upload files into your own workspace.")
+        return path
+
     def list_editable_files(self, example_path: str) -> list[tuple[str, str]]:
+        self._assert_example_source_allowed(example_path)
         return list_editable_files(example_path)
 
     # ------------------------------------------------------------------
@@ -315,8 +360,68 @@ class WorkspaceManager:
         """True when ``path`` resolves inside this authenticated user's workspace."""
         return self._is_user_owned_path(Path(path)) if path not in (None, "") else False
 
+    def is_transient_working_copy(self, path: str | Path | None) -> bool:
+        """A derived run snapshot, not a persistent editable example.
+
+        This presentation distinction does not change workspace ownership or
+        the staging/write authorization used by native runners.
+        """
+        if path in (None, ""):
+            return False
+        try:
+            working = self._working_root.resolve()
+            return (working.is_relative_to(self._owner_root)
+                    and Path(path).expanduser().resolve().is_relative_to(working))
+        except (OSError, ValueError, RuntimeError):
+            return False
+
+    def canonical_working_copy_source(self, path: str | Path) -> Path | None:
+        """Verify a fresh canonical snapshot before offering a persistent clone.
+
+        Workspace metadata is only a hint: ownership, fresh-snapshot shape,
+        registered canonical roots and the normal source guards are checked
+        independently. The subsequent copy retains quota and no-link guards.
+        """
+        try:
+            snapshot = self._assert_example_source_allowed(path)
+            if not self.is_transient_working_copy(snapshot) or not snapshot.is_dir():
+                return None
+            relative = snapshot.relative_to(self._working_root)
+            if len(relative.parts) != 2 or not re.fullmatch(r"[0-9a-f]{32}", relative.parts[0]):
+                return None
+            metadata = snapshot / ".cryostack-example.json"
+            if metadata.is_symlink() or not metadata.is_file() or metadata.stat().st_size > 65536:
+                return None
+            data = json.loads(metadata.read_text(encoding="utf-8"))
+            if (not isinstance(data, dict) or data.get("kind") != "cryostack-working-copy"
+                    or data.get("owner") != self.owner.safe_id or data.get("from_canonical") is not True):
+                return None
+            roots = [Path(v).expanduser().resolve() for v in
+                     os.environ.get("CRYOSTACK_CANONICAL_EXAMPLE_ROOTS", "").split(os.pathsep) if v.strip()]
+            if not roots or not isinstance(data.get("source"), str):
+                return None
+            source = self._assert_example_source_allowed(data["source"])
+            if self._is_user_owned_path(source) or not any(source.is_relative_to(root) for root in roots):
+                return None
+            if source.is_dir():
+                expected_name = source.name
+            elif source.is_file() and _file_source_materializer(source.suffix) is not None:
+                expected_name = source.stem
+            else:
+                return None
+            if not isinstance(data.get("entrypoint"), str):
+                return None
+            entry = snapshot / self._safe_segment(data["entrypoint"])
+            if snapshot.name != expected_name or entry.is_symlink() or not entry.is_file():
+                return None
+            return source
+        except (OSError, ValueError, RuntimeError, TypeError):
+            return None
+
     def resolve_user_file(self, path: str | Path, *, must_exist: bool = False) -> Path:
         """Resolve ``path`` and require it to sit inside this user's workspace."""
+        from .storage_mount import require_workspace_storage
+        require_workspace_storage(self._owner_root)
         try:
             rp = Path(path).expanduser().resolve()
         except (OSError, RuntimeError):
@@ -364,10 +469,10 @@ class WorkspaceManager:
             raise FileNotFoundError(f"Directory does not exist: {rp.parent}")
         from .storage_policy import workspace_write
         payload = text.encode("utf-8")
-        growth = max(0, len(payload) - (rp.stat().st_size if rp.is_file() else 0))
-        with workspace_write(self._owner_root, self.owner.user_id, growth,
-                             what="saving this file"):
-            rp.write_bytes(payload)
+        from cryostack_src.storage_layout import atomic_write
+        with workspace_write(self._owner_root, self.owner.user_id, len(payload),
+                             what="saving this file", replacing=rp):
+            atomic_write(rp, payload)
         return rp
 
     def create_text_file(self, directory: str | Path, name: str, text: str = "") -> Path:
@@ -392,6 +497,8 @@ class WorkspaceManager:
         return rp
 
     def user_examples_root(self, model: str | None = None) -> Path:
+        from .storage_mount import require_workspace_storage
+        require_workspace_storage(self._owner_root)
         root = self._examples_root
         if model:
             root = (root / self._safe_segment(str(model).strip().lower())).resolve()
@@ -400,15 +507,24 @@ class WorkspaceManager:
     # ── one generic copy-into-workspace primitive ─────────────────────────
     def _copy_example_tree(self, src: Path, dest: Path, *, overwrite: bool) -> None:
         """Copy an example directory to ``dest`` inside this user's workspace."""
+        from .storage_mount import require_workspace_storage
+        require_workspace_storage(self._owner_root)
+        src = self._assert_example_source_allowed(src)
         dest = dest.resolve()
         if not dest.is_relative_to(self._owner_root):
             raise WorkspacePermissionError("Destination escaped the workspace.")
-        if dest.exists():
-            if not overwrite:
-                raise FileExistsError(f"Already exists: {dest.name}")
-            shutil.rmtree(dest)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(src, dest)
+        from .copying import copy_workspace_tree, workspace_copy_size
+        from .storage_policy import workspace_write
+        if dest.exists() and not overwrite:
+            raise FileExistsError(f"Already exists: {dest.name}")
+        incoming = workspace_copy_size(src)
+        previous = workspace_copy_size(dest) if dest.exists() else 0
+        with workspace_write(self._owner_root, self.owner.user_id,
+                             max(0, incoming - previous), what="copying this example"):
+            if dest.exists():
+                shutil.rmtree(dest)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            copy_workspace_tree(src, dest)
 
     def _example_provenance(self, path: Path) -> dict:
         prov = path / ".cryostack-example.json"
@@ -420,9 +536,15 @@ class WorkspaceManager:
         return {}
 
     def _write_example_provenance(self, path: Path, data: dict) -> None:
-        (path / ".cryostack-example.json").write_text(
-            json.dumps(data, indent=2, sort_keys=True), encoding="utf-8"
-        )
+        from .storage_mount import require_workspace_storage
+        require_workspace_storage(self._owner_root)
+        from .storage_policy import workspace_write
+        from cryostack_src.storage_layout import atomic_write
+        target = path / ".cryostack-example.json"
+        payload = json.dumps(data, indent=2, sort_keys=True).encode("utf-8")
+        with workspace_write(self._owner_root, self.owner.user_id, len(payload),
+                             what="saving example metadata", replacing=target):
+            atomic_write(target, payload)
 
     # ── user example lifecycle ───────────────────────────────────────────
     def clone_example_to_workspace(
@@ -438,6 +560,8 @@ class WorkspaceManager:
             raise ValueError(f"Cannot resolve example path: {source!r}")
         if not src.is_dir():
             raise ValueError(f"Not an example directory: {src}")
+        if self.is_transient_working_copy(src) and self.canonical_working_copy_source(src) is None:
+            raise WorkspacePermissionError("Only a verified canonical working copy can be cloned from run staging.")
 
         dest = (self.user_examples_root(model)
                 / self._safe_example_name(name or src.name)).resolve()
@@ -460,16 +584,19 @@ class WorkspaceManager:
     ) -> Path:
         """Create a minimal user-owned example directory. ``template`` (if any)
         is supplied by the model adapter -- the generic layer knows no filenames."""
+        from .storage_mount import require_workspace_storage
+        require_workspace_storage(self._owner_root)
         dest = (self.user_examples_root(model)
                 / self._safe_example_name(name)).resolve()
         if not dest.is_relative_to(self._examples_root):
             raise WorkspacePermissionError("Example target escaped the workspace.")
         if dest.exists():
             raise FileExistsError(f"A workspace example named {dest.name!r} already exists.")
-        dest.mkdir(parents=True)
-        for fname, body in (template or {}).items():
-            (dest / self._safe_segment(fname)).write_text(str(body), encoding="utf-8")
-        self._write_example_provenance(dest, {
+        from .storage_policy import workspace_write
+        from cryostack_src.storage_layout import atomic_write
+        bodies = {self._safe_segment(fname): str(body).encode("utf-8")
+                  for fname, body in (template or {}).items()}
+        provenance = {
             "kind": "cryostack-user-example",
             "model": (model or "").strip().lower() or None,
             "name": dest.name,
@@ -479,7 +606,15 @@ class WorkspaceManager:
             "source_name": None,
             "source_type": "new-template" if template else "new-empty",
             "datasets": [],
-        })
+        }
+        payload = json.dumps(provenance, indent=2, sort_keys=True).encode("utf-8")
+        with workspace_write(self._owner_root, self.owner.user_id,
+                             len(payload) + sum(map(len, bodies.values())),
+                             what="creating this example"):
+            dest.mkdir(parents=True)
+            for fname, body in bodies.items():
+                atomic_write(dest / fname, body)
+            atomic_write(dest / ".cryostack-example.json", payload)
         return dest
 
     def _user_example_dir(self, model: str, name: str) -> Path:
@@ -547,6 +682,8 @@ class WorkspaceManager:
         rel = self._safe_relpath(as_path or ds.name)
         prov = self._example_provenance(d)
         refs = [r for r in prov.get("datasets", []) if r.get("name") != ds.name]
+        if any(r.get("as", r.get("name")) == rel for r in refs):
+            raise ValueError(f"Another dataset already uses reference path {rel!r}.")
         refs.append({"name": ds.name, "as": rel})
         prov["datasets"] = refs
         self._write_example_provenance(d, prov)
@@ -573,7 +710,11 @@ class WorkspaceManager:
         return hits
 
     def example_root(self) -> Path | None:
-        path = Path(self.example_dir.value).expanduser()
+        # No selection is not the process working directory.
+        source = (self.example_dir.value or "").strip()
+        if not source:
+            return None
+        path = self._assert_example_source_allowed(source)
         if path.exists():
             return path if path.is_dir() else path.parent
         return None
@@ -597,6 +738,20 @@ class WorkspaceManager:
             raise ValueError(f"Unsafe example name: {name!r}")
         return name
 
+    def _fresh_working_target(self, name: str) -> Path:
+        """A new run snapshot namespace; never delete/reuse a prior staging tree.
+
+        Preserve the example basename because model scripts and result labels
+        may depend on it. Existing snapshots remain owned and quota-accounted.
+        """
+        working = self._working_root.resolve()
+        if not working.is_relative_to(self._owner_root.resolve()):
+            raise WorkspacePermissionError("Working directory escaped the workspace.")
+        snapshot = working / uuid.uuid4().hex
+        if snapshot.exists() or snapshot.is_symlink():
+            raise FileExistsError("The fresh staging namespace already exists.")
+        return snapshot / self._safe_example_name(name)
+
     def stage_example_for_run(
         self,
         *,
@@ -613,13 +768,13 @@ class WorkspaceManager:
 
         * a **directory** (every model's usual shape) --
           canonical example  -> a fresh copy under
-          ``<owner_root>/.cryostack/working/<name>`` (rebuilt each run);
+          ``<owner_root>/.cryostack/working/<snapshot>/<name>`` (unique per run);
           user-owned example -> operated on in place; or
         * a **single file** whose type has a registered materializer (today:
           ``.ipynb`` -- an Icepack canonical notebook, which ships as one
           loose file rather than a directory). The materializer builds a
           fresh directory-shaped working copy under
-          ``<owner_root>/.cryostack/working/<stem>`` and returns the
+          ``<owner_root>/.cryostack/working/<snapshot>/<stem>`` and returns the
           entrypoint filename it produced (e.g. ``run.py``), which OVERRIDES
           the caller's ``entrypoint`` argument -- there is no generic
           default entrypoint for a bare single-file source. An unsupported
@@ -632,16 +787,16 @@ class WorkspaceManager:
         opaque callable -- the ISSM md-override injector, for instance) may
         rewrite the entrypoint. The canonical example is never modified.
         """
-        src = Path(source_example).expanduser().resolve()
+        from .storage_mount import require_workspace_storage
+        require_workspace_storage(self._owner_root)
+        src = self._assert_example_source_allowed(source_example)
 
         if src.is_file():
             materializer = _file_source_materializer(src.suffix)
             if materializer is None:
                 raise ValueError(f"Example directory not found: {src}")
-            target = (self._working_root / self._safe_example_name(src.stem)).resolve()
-            if target.exists():
-                shutil.rmtree(target)
-            target.mkdir(parents=True, exist_ok=True)
+            target = self._fresh_working_target(src.stem)
+            target.mkdir(parents=True, exist_ok=False)
             entrypoint = materializer(src, dest_dir=target)
             from_canonical = True
         elif not src.exists() or not src.is_dir():
@@ -649,8 +804,8 @@ class WorkspaceManager:
         elif self._is_user_owned_path(src):
             target, from_canonical = src, False
         else:
-            target = (self._working_root / self._safe_example_name(src.name)).resolve()
-            self._copy_example_tree(src, target, overwrite=True)
+            target = self._fresh_working_target(src.name)
+            self._copy_example_tree(src, target, overwrite=False)
             from_canonical = True
 
         for fname, body in (extra_files or {}).items():
@@ -710,6 +865,8 @@ class WorkspaceManager:
     MAX_DATASET_UPLOAD_BYTES = 50 * 1024 * 1024
 
     def datasets_root(self) -> Path:
+        from .storage_mount import require_workspace_storage
+        require_workspace_storage(self._owner_root)
         self._datasets_root.mkdir(parents=True, exist_ok=True)
         return self._datasets_root
 
@@ -727,7 +884,10 @@ class WorkspaceManager:
 
     @staticmethod
     def _safe_relpath(raw: str) -> str:
-        parts = [p for p in str(raw or "").replace("\\", "/").split("/") if p]
+        text = str(raw or "").replace("\\", "/")
+        if text.startswith("/") or re.match(r"^[A-Za-z]:", text):
+            raise ValueError("Reference path must be relative to data/.")
+        parts = [p for p in text.split("/") if p]
         if not parts:
             raise ValueError("empty reference path")
         for p in parts:
@@ -736,6 +896,8 @@ class WorkspaceManager:
         return "/".join(parts)
 
     def _resolve_dataset(self, name: str) -> Path:
+        from .storage_mount import require_workspace_storage
+        require_workspace_storage(self._owner_root)
         p = (self._datasets_root / self._safe_dataset_name(name)).resolve()
         if not p.is_relative_to(self._datasets_root):
             raise WorkspacePermissionError("Dataset escaped the datasets root.")
@@ -797,12 +959,12 @@ class WorkspaceManager:
                 skipped.append(name)
                 continue
             from .storage_policy import QuotaExceeded, workspace_write
-            growth = max(0, len(content) - (target.stat().st_size if target.is_file() else 0))
+            from cryostack_src.storage_layout import atomic_write
             try:
-                with workspace_write(self._owner_root, self.owner.user_id, growth,
-                                     what=f"uploading {name}"):
-                    target.write_bytes(content)
-            except QuotaExceeded as error:
+                with workspace_write(self._owner_root, self.owner.user_id, len(content),
+                                     what=f"uploading {name}", replacing=target):
+                    atomic_write(target, content)
+            except (QuotaExceeded, OSError) as error:
                 errors.append(f"{name}: {error}")
                 continue
             saved.append(name)
@@ -827,25 +989,40 @@ class WorkspaceManager:
         """Copy the datasets the source example references into ``working_copy/data``."""
         refs = self._example_provenance(source).get("datasets", [])
         staged: list[dict] = []
+        planned = []
+        destinations = set()
+        data_root = (working_copy / "data").resolve()
+        if not data_root.is_relative_to(working_copy.resolve()):
+            raise WorkspacePermissionError("Dataset directory escaped the working copy.")
+        # Resolve every reference before writing anything. A deleted input must
+        # never silently leave a stale copy from an earlier run in use.
         for ref in refs:
-            try:
-                ds = self._resolve_dataset(ref.get("name", ""))
-            except (FileNotFoundError, WorkspacePermissionError, ValueError):
-                continue
-            try:
-                rel = self._safe_relpath(ref.get("as") or ds.name)
-            except ValueError:
-                continue
-            dest = (working_copy / "data" / rel).resolve()
-            if not dest.is_relative_to(working_copy.resolve()):
-                continue
+            ds = self._resolve_dataset(ref.get("name", ""))
+            rel = self._safe_relpath(ref.get("as") or ds.name)
+            dest = (data_root / rel).resolve()
+            if not dest.is_relative_to(data_root):
+                raise WorkspacePermissionError("Dataset reference escaped data/.")
+            if dest in destinations or any(
+                dest in other.parents or other in dest.parents for other in destinations
+            ):
+                raise ValueError(f"Conflicting dataset reference path: {rel!r}")
+            destinations.add(dest)
+            planned.append((ds, dest, rel))
+        for ds, dest, rel in planned:
             dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(ds, dest)
+            from .copying import copy_workspace_file
+            from .storage_policy import workspace_write
+            growth = max(0, ds.stat().st_size - (dest.stat().st_size if dest.is_file() else 0))
+            with workspace_write(self._owner_root, self.owner.user_id, growth,
+                                 what="staging this dataset"):
+                copy_workspace_file(ds, dest)
             staged.append({"name": ds.name, "as": f"data/{rel}"})
         return staged
 
     def delete(self, path: Path) -> None:
         """Delete one explicitly resolved workspace path."""
+        from .storage_mount import require_workspace_storage
+        require_workspace_storage(self._owner_root)
         path = Path(path)
         if path.is_dir():
             shutil.rmtree(path)
@@ -853,6 +1030,8 @@ class WorkspaceManager:
             path.unlink()
 
     def register_run(self, run: RunInfo) -> RunInfo:
+        from .storage_mount import require_workspace_storage
+        require_workspace_storage(self._owner_root)
         if not _SAFE_RUN_ID.match(run.id or ""):
             raise ValueError(f"Unsafe run id: {run.id!r}")
         workspace = (self.manifest_root / run.id).resolve()
@@ -861,6 +1040,7 @@ class WorkspaceManager:
         run.workspace_directory = workspace
         write_manifest(run, workspace)
         self._runs[run.id] = run
+        self._notify_run(run)
         return run
 
     def refresh(self) -> list[RunInfo]:
@@ -875,17 +1055,50 @@ class WorkspaceManager:
                     continue
         self._runs = discovered
         if self._selected_run_id not in discovered:
-            self._selected_run_id = None
+            self._set_selected_run_id(None)
         for run in tuple(discovered.values()):
             self.reconcile_run(run.id)
+        self._notify_run(None)          # the run list itself changed
         return self.list_runs()
 
     def list_runs(self) -> list[RunInfo]:
         return sorted(self._runs.values(), key=lambda run: run.created, reverse=True)
 
+    def _set_selected_run_id(self, run_id: str | None) -> None:
+        """Invalidate generated links only when the selected run changes."""
+        with self._result_download_lock:
+            if self._selected_run_id != run_id:
+                self._result_download_generation += 1
+                self._selected_run_id = run_id
+                if self.results_output is not None:
+                    # Widget state must clear even from detached job callbacks;
+                    # clear_output alone depends on an active display context.
+                    self.results_output.outputs = ()
+                    send_state = getattr(self.results_output, "send_state", None)
+                    if callable(send_state):
+                        send_state("outputs")
+                    self.results_output.clear_output()
+
+    def result_download_token(self) -> tuple:
+        """Bind a pending archive to this owner, run and selection generation.
+
+        The generation also rejects A→B→A selection races. Legacy unregistered
+        runs retain their existing status-based identity.
+        """
+        with self._result_download_lock:
+            run = self.selected_run()
+            return (self.owner.safe_id, self._selected_run_id,
+                    self._result_download_generation,
+                    run.jobid if run else self.status.get("jobid"),
+                    run.metadata.get("cloud_run") if run else self.status.get("cloud_run"),
+                    str(run.workspace_directory) if run else self.status.get("remote_dir"))
+
+    def result_download_is_current(self, token: tuple) -> bool:
+        return token == self.result_download_token()
+
     def select_run(self, run_id: str) -> RunInfo | None:
         run = self._runs.get(run_id)
-        self._selected_run_id = run.id if run else None
+        self._set_selected_run_id(run.id if run else None)
         if run:
             self.status.update(
                 jobid=run.jobid,
@@ -909,6 +1122,7 @@ class WorkspaceManager:
                 self.model.value = run.model
             if run.backend in backend_values:
                 self.backend.value = run.backend
+        self._notify_run(run)
         return run
 
     def selected_run(self) -> RunInfo | None:
@@ -938,8 +1152,24 @@ class WorkspaceManager:
         self._runs.pop(run_id, None)
         self.invalidate_result_package_cache(run_id)
         if self._selected_run_id == run_id:
-            self._selected_run_id = None
+            self._set_selected_run_id(None)
         return True
+
+    def cached_result_outputs(self) -> Path | None:
+        """Read retained outputs for the selected owned run without a transfer."""
+        from .storage_mount import require_workspace_storage
+        require_workspace_storage(self._owner_root)
+        run = self.selected_run()
+        if run is None or not self._owns(run.workspace_directory):
+            return None
+        base = Path(run.workspace_directory).resolve()
+        for relative in ("cache/outputs", "cache/cloud_outputs", "outputs"):
+            candidate = base / relative
+            if not candidate.resolve().is_relative_to(base):
+                continue
+            if candidate.is_dir() and any(p.is_file() for p in candidate.rglob("*")):
+                return candidate
+        return None
 
     def preview_results_for_run(self, run_id: str) -> None:
         if self.select_run(run_id):
@@ -975,29 +1205,38 @@ class WorkspaceManager:
             base / "outputs",
             base,
         ]
-        chosen = next((c for c in candidates if c.exists()), base)
-
-        # cheap freshness signature: which dir + its metadata.json mtime. A
-        # re-fetch rewrites metadata.json, so a stale package is never served.
-        meta = chosen / "outputs" / "metadata.json"
-        if not meta.is_file():
-            meta = chosen / "metadata.json"
-        try:
-            sig = (str(chosen), meta.stat().st_mtime_ns if meta.is_file() else 0)
-        except OSError:
-            sig = (str(chosen), -1)
-
+        # Include every possible cache root in the freshness signature. A
+        # later cloud retrieval must invalidate an earlier legacy fallback.
+        stamps = []
+        for candidate in candidates:
+            meta = candidate / "outputs" / "metadata.json"
+            if not meta.is_file():
+                meta = candidate / "metadata.json"
+            try:
+                stamps.append((str(candidate), candidate.stat().st_mtime_ns,
+                               meta.stat().st_mtime_ns if meta.is_file() else 0))
+            except OSError:
+                stamps.append((str(candidate), -1, -1))
+        sig = tuple(stamps)
         cached = self._result_pkg_cache.get(run_id)
         if cached is not None and cached[0] == sig:
             return cached[1]
 
+        fallback = None
+        artifacts = None
         for candidate in candidates:
             if candidate.exists():
                 package = discover_results(candidate)
-                if package.outputs is not None:
+                if package.outputs is None:
+                    continue
+                if package.is_readable():
                     self._result_pkg_cache[run_id] = (sig, package)
                     return package
-        package = discover_results(base)
+                if package.status == "artifacts" and artifacts is None:
+                    artifacts = package
+                if fallback is None:
+                    fallback = package
+        package = artifacts if artifacts is not None else fallback if fallback is not None else discover_results(base)
         self._result_pkg_cache[run_id] = (sig, package)
         return package
 
@@ -1064,7 +1303,8 @@ class WorkspaceManager:
                     with self.log_output:
                         print(f"[advanced][ERROR] Target already exists: {destination}")
                     return None
-                shutil.copytree(source, destination)
+                from .copying import copy_workspace_tree
+                copy_workspace_tree(source, destination)
             with self.log_output:
                 print(f"[advanced] New example created: {destination}")
             return destination
@@ -1088,13 +1328,21 @@ class WorkspaceManager:
     def local_run_cache_dir(self, run: "RunInfo | None" = None) -> Path:
         """Cache dir for ``run`` (default: the selected run). Falls back to a
         model/backend-scoped scratch dir only when no run context exists."""
+        from .storage_mount import require_workspace_storage
+        require_workspace_storage(self._owner_root)
         target = run or self.selected_run()
         if target and target.workspace_directory:
+            if not self._owns(target.workspace_directory):
+                raise WorkspacePermissionError("Run cache is outside your managed workspace.")
             cache = target.workspace_directory / "cache"
-            cache.mkdir(parents=True, exist_ok=True)
-            return cache
-        root = self.example_root()
-        return root / "_icesee_remote_runs" / f"{self.model.value}_{self.backend.value}"
+        else:
+            # Canonical examples live on the VM and may be shared. A missing
+            # run selection must never send outputs there or into process cwd.
+            scope = f"{self._safe_segment(self.model.value)}_{self._safe_segment(self.backend.value)}"
+            cache = self._owner_root / ".cryostack" / "cache" / scope
+        require_workspace_storage(cache)
+        cache.mkdir(parents=True, exist_ok=True)
+        return cache
 
     def sync_cloud_results(
         self,
@@ -1114,6 +1362,8 @@ class WorkspaceManager:
         mock the transfer). The write target is per-``WorkspaceManager`` (=per
         authenticated user); a cloud result never lands in another user's cache.
         """
+        from .storage_mount import require_workspace_storage
+        require_workspace_storage(self._owner_root)
         run_uri = str(s3_uri or "").strip().rstrip("/")
         if not run_uri.lower().startswith("s3://") or "/" not in run_uri[5:]:
             raise RuntimeError(
@@ -1127,6 +1377,30 @@ class WorkspaceManager:
         self.invalidate_result_package_cache(
             target_run.id if target_run else self._selected_run_id)
         outputs_dir = self.local_run_cache_dir(target_run) / "cloud_outputs"
+        from .copying import content_only
+        if content_only(outputs_dir):
+            from .s3_contents import fetch_s3_contents
+            from .storage_policy import workspace_write
+            options = (["--profile", profile] if profile and not credentials else [])
+            if region:
+                options.extend(["--region", region])
+            transfer_env = None
+            if credentials:
+                drop = {"AWS_PROFILE", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY",
+                        "AWS_SESSION_TOKEN", "AWS_SECURITY_TOKEN"}
+                transfer_env = {k: v for k, v in os.environ.items() if k not in drop}
+                transfer_env.update({k: credentials[k] for k in
+                    ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN")
+                    if credentials.get(k)})
+            def invoke(arguments):
+                arguments = options + arguments
+                if aws is not None:
+                    return aws(arguments)
+                return subprocess.run(["aws", *arguments], capture_output=True,
+                                      text=True, env=transfer_env, timeout=600)
+            return fetch_s3_contents(run_uri, outputs_dir, invoke=invoke,
+                reserve=lambda size: workspace_write(self._owner_root,
+                    self.owner.user_id, size, what="receiving cloud results"))
         if outputs_dir.exists():
             self.delete(outputs_dir)
         outputs_dir.mkdir(parents=True, exist_ok=True)
@@ -1183,6 +1457,8 @@ class WorkspaceManager:
 
     def _refresh_results_locked(self) -> Path | None:
         # a fetch is about to overwrite this run's local outputs
+        from .storage_mount import require_workspace_storage
+        require_workspace_storage(self._owner_root)
         self.invalidate_result_package_cache(self._selected_run_id)
         remote_dir = self.normalize_remote_path(self.status.get("remote_dir") or "")
         if not remote_dir:
@@ -1217,22 +1493,29 @@ class WorkspaceManager:
                 archive_b64 = result.get("archive_b64")
                 if not archive_b64:
                     raise RuntimeError("Connector response did not include archive_b64.")
-                with tempfile.TemporaryDirectory() as temp_dir:
+                with tempfile.TemporaryDirectory(dir=self.local_run_cache_dir()) as temp_dir:
                     archive_path = Path(temp_dir) / "outputs.tar.gz"
                     archive_path.write_bytes(base64.b64decode(archive_b64))
                     if outputs_dir.exists():
                         self.delete(outputs_dir)
                     outputs_dir.mkdir(parents=True, exist_ok=True)
                     with tarfile.open(archive_path, "r:gz") as archive:
-                        archive.extractall(outputs_dir)
+                        from .archive import archive_size, extract_contents
+                        from .storage_policy import workspace_write
+                        size = archive_size(archive, outputs_dir)
+                        with workspace_write(self._owner_root, self.owner.user_id, size,
+                                             what="receiving run results"):
+                            extract_contents(archive, outputs_dir)
                 return outputs_dir
             except Exception as error:
                 with self.results_output:
                     print("[results][ERROR] Could not unpack connector archive.")
                     print(type(error).__name__, error)
                 return None
+        from .copying import content_only
+        rsync_options = ["-rz", "--no-perms", "--no-owner", "--no-group", "--inplace"] if content_only(outputs_dir) else ["-az"]
         command = [
-            "rsync", "-az", "-e", f"ssh -p {port}",
+            "rsync", *rsync_options, "-e", f"ssh -p {port}",
             f"{user}@{host}:{remote_outputs.rstrip('/')}/", f"{outputs_dir}/",
         ]
         result = subprocess.run(command, capture_output=True, text=True)
@@ -1248,11 +1531,18 @@ class WorkspaceManager:
         return outputs_dir
 
     @staticmethod
-    def _make_zip(source: Path, destination: Path) -> None:
-        with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as archive:
-            for path in sorted(source.rglob("*")):
-                if path.is_file():
-                    archive.write(path, arcname=path.relative_to(source))
+    def _make_zip(source: Path, destination, *, figures_only: bool = False) -> None:
+        from .result_archive import write_zip, UnsafeArchiveError
+        try:
+            write_zip(source,destination,figures_only=figures_only)
+        except UnsafeArchiveError as error:
+            raise WorkspacePermissionError(str(error)) from error
+
+    def _prepare_result_archive(self, source, target, *, figures_only=False):
+        from .result_archive import prepare_archive
+        return prepare_archive(source,target,owner_root=self._owner_root,
+                               user_id=self.owner.user_id,zip_writer=self._make_zip,
+                               figures_only=figures_only)
 
     @staticmethod
     def _auto_download(path: Path, filename: str | None = None) -> None:
@@ -1262,119 +1552,108 @@ class WorkspaceManager:
         stem = Path(filename).stem
         suffix = Path(filename).suffix or ".zip"
         download_name = f"{stem}_{stamp}{suffix}"
-        data = base64.b64encode(path.read_bytes()).decode("ascii")
+        from .result_archive import inline_bytes
+        from .downloads import download_url
+        target_url = download_url(path)
+        if target_url is None:
+            data = base64.b64encode(inline_bytes(path)).decode("ascii")
+            target_url = "data:application/zip;base64," + data
         element_id = f"icesee_download_{uuid.uuid4().hex}"
-        display(HTML(f'''<div id="{element_id}"></div><script>
-        (function() {{ const a = document.createElement("a");
-        a.href = "data:application/zip;base64,{data}";
-        a.download = "{html.escape(download_name)}"; a.style.display = "none";
-        document.body.appendChild(a); setTimeout(() => {{ a.click();
-        document.body.removeChild(a); }}, 100); }})();</script>'''))
+        # Keep a user-clickable link: notebook/Voila renderers can suppress
+        # scripts and browsers may refuse programmatic downloads.
+        display(HTML(
+            f'<a id="{element_id}" href="{html.escape(target_url, quote=True)}" '
+            f'download="{html.escape(download_name, quote=True)}">'
+            f'Download {html.escape(download_name)}</a>'
+        ))
 
     def package_and_download(self, outputs_dir, *, filename: str = "results_bundle.zip",
-                             cache_dir=None) -> bool:
-        """Zip ``outputs_dir`` and hand it to the browser. Returns ``False``
-        with a clear message (and generates no download) when there is nothing
-        to package -- never a misleading empty archive.
+                             cache_dir=None, figures_only: bool = False,
+                             expected_run_token: tuple | None = None) -> bool:
+        """Package retained outputs and publish only for the same selected run.
 
-        Shared by every result-download surface (Remote, Cloud) so they all
-        export the SAME discovered file set."""
+        Fetching and archive generation may finish after another run is selected.
+        Their old links must not reappear beside that run's fields. Scientific
+        field selection alone does not invalidate an existing same-run archive.
+        """
+        from .storage_mount import require_workspace_storage
+        require_workspace_storage(self._owner_root)
+        token = expected_run_token if expected_run_token is not None else self.result_download_token()
+        if not self.result_download_is_current(token):
+            return False
         if outputs_dir is None:
-            with self.results_output:
-                print("[download] No outputs to package for this run.")
+            with self._result_download_lock:
+                if self.result_download_is_current(token) and self.results_output is not None:
+                    with self.results_output:
+                        print("[download] No outputs to package for this run.")
             return False
         outputs_dir = Path(outputs_dir)
-        files = [p for p in outputs_dir.rglob("*") if p.is_file()] \
-            if outputs_dir.is_dir() else []
-        if not files:
-            with self.results_output:
-                print("[download] This run produced no output files. "
-                      "Nothing to download.")
-            return False
         zip_path = Path(cache_dir or self.local_run_cache_dir()) / filename
         try:
-            if zip_path.exists():
-                self.delete(zip_path)
-            self._make_zip(outputs_dir, zip_path)
-            if not zipfile.is_zipfile(zip_path):
-                raise RuntimeError(f"Created file is not a valid zip: {zip_path}")
-            with self.results_output:
-                print(f"Preparing download: {zip_path.name} ({len(files)} file(s))")
-                print("If the browser blocks repeated downloads, allow multiple "
-                      "downloads for this page.")
-                self._auto_download(zip_path, filename)
+            run = self.selected_run()
+            if run is not None:
+                root = Path(run.workspace_directory).resolve()
+                if (not self._owns(root) or not outputs_dir.resolve().is_relative_to(root)
+                        or not zip_path.resolve().is_relative_to(root)):
+                    raise WorkspacePermissionError("Archive paths do not belong to the selected run.")
+            self._prepare_result_archive(outputs_dir, zip_path, figures_only=figures_only)
+            # Selection clearing and link publication share a lock: a selection
+            # either happens first (reject here) or clears the published old link.
+            with self._result_download_lock:
+                if not self.result_download_is_current(token):
+                    return False
+                with self.results_output:
+                    print(f"Preparing download: {zip_path.name}")
+                    print("Click the download link below to save the archive.")
+                    self._auto_download(zip_path, filename)
             return True
         except Exception as error:
-            with self.results_output:
-                print("[download][ERROR]", type(error).__name__, error)
+            with self._result_download_lock:
+                if self.result_download_is_current(token):
+                    with self.results_output:
+                        print("[download][ERROR]", type(error).__name__, error)
             return False
 
     def download_results(self, _=None) -> None:
         if isinstance(_, str) and not self.select_run(_):
             return
+        token = self.result_download_token()
         self.results_output.clear_output()
         with self.results_output:
-            print("Fetching results…")
-        outputs_dir = self.refresh_results()
-        if outputs_dir is None:
+            print("Loading results…")
+        outputs_dir = self.cached_result_outputs() or self.refresh_results()
+        if not self.result_download_is_current(token):
             return
-        zip_path = self.local_run_cache_dir() / "results_bundle.zip"
-        try:
-            if zip_path.exists():
-                self.delete(zip_path)
-            self._make_zip(outputs_dir, zip_path)
-            if not zipfile.is_zipfile(zip_path):
-                raise RuntimeError(f"Created file is not a valid zip: {zip_path}")
-            with self.results_output:
-                print(f"Preparing download: {zip_path.name}")
-                print("If the browser blocks repeated downloads, allow multiple downloads for this page.")
-                self._auto_download(zip_path, "results_bundle.zip")
-        except Exception as error:
-            with self.results_output:
-                print("[download][ERROR]", type(error).__name__, error)
+        self.package_and_download(outputs_dir, expected_run_token=token)
 
     def download_figures(self, _=None) -> None:
         if isinstance(_, str) and not self.select_run(_):
             return
+        token = self.result_download_token()
         self.results_output.clear_output()
         with self.results_output:
-            print("Fetching figures…")
-        outputs_dir = self.refresh_results()
-        if outputs_dir is None:
+            print("Preparing figures…")
+        outputs_dir = self.cached_result_outputs() or self.refresh_results()
+        if outputs_dir is None or not self.result_download_is_current(token):
             return
-        pngs = sorted(outputs_dir.rglob("*.png"))
-        if not pngs:
-            with self.results_output:
-                print("[download] No PNG figures found.")
-                print("Checked recursively under:", outputs_dir)
+        has_png = any(path.suffix.lower() in (".png", ".jpg", ".jpeg") and path.is_file()
+                      for path in outputs_dir.rglob("*"))
+        if not has_png:
+            with self._result_download_lock:
+                if self.result_download_is_current(token):
+                    with self.results_output:
+                        print("[download] No PNG or JPEG figures found.")
+                        print("Checked recursively under:", outputs_dir)
             return
-        figures_dir = self.local_run_cache_dir() / "_figures_only"
-        if figures_dir.exists():
-            self.delete(figures_dir)
-        figures_dir.mkdir(parents=True, exist_ok=True)
-        for path in pngs:
-            shutil.copy2(path, figures_dir / path.name)
-        zip_path = self.local_run_cache_dir() / "figures_bundle.zip"
-        try:
-            if zip_path.exists():
-                self.delete(zip_path)
-            self._make_zip(figures_dir, zip_path)
-            if not zipfile.is_zipfile(zip_path):
-                raise RuntimeError(f"Created file is not a valid zip: {zip_path}")
-            with self.results_output:
-                print(f"Preparing download: {zip_path.name}")
-                print("If the browser blocks repeated downloads, allow multiple downloads for this page.")
-                self._auto_download(zip_path, "figures_bundle.zip")
-        except Exception as error:
-            with self.results_output:
-                print("[download][ERROR]", type(error).__name__, error)
+        self.package_and_download(outputs_dir, filename="figures_bundle.zip",
+                                  figures_only=True, expected_run_token=token)
 
     def preview_results(self, _=None) -> None:
         if isinstance(_, str) and not self.select_run(_):
             return
         self.results_output.clear_output()
-        remote_check = self.inspect_remote_results()
-        outputs_dir = self.refresh_results()
+        cached = self.cached_result_outputs()
+        outputs_dir = cached or self.refresh_results()
         if outputs_dir is None:
             return
         pngs = sorted(outputs_dir.rglob("*.png"))
@@ -1383,7 +1662,7 @@ class WorkspaceManager:
         all_files = sorted(path for path in outputs_dir.rglob("*") if path.is_file())
         structured = (outputs_dir / "metadata.json").is_file()
         with self.results_output:
-            print("Fetched outputs:", outputs_dir)
+            print("Available outputs:", outputs_dir)
             print(f"Figures: {len(pngs)}")
             print(f"Model files: {len(mats)}")
             print(f"H5 files: {len(h5s)}\n")
@@ -1406,12 +1685,14 @@ class WorkspaceManager:
                       "an initial recommended plot is rendered there.")
                 print("Use it to render any Solution / Field / Timestep.")
             else:
-                print("No structured results and no PNG figures after fetch.\n")
-                print("--- Remote inspection ---")
-                print((remote_check.stdout or "").strip())
-                if (remote_check.stderr or "").strip():
-                    print("--- stderr ---")
-                    print(remote_check.stderr.strip())
+                print("No structured fields or PNG figures are present; the listed files remain available to download.\n")
+                if cached is None:
+                    remote_check = self.inspect_remote_results()
+                    print("--- Remote inspection ---")
+                    print((remote_check.stdout or "").strip())
+                    if (remote_check.stderr or "").strip():
+                        print("--- stderr ---")
+                        print(remote_check.stderr.strip())
 
     def inspect_remote_results(self):
         remote_dir = self.normalize_remote_path(self.status.get("remote_dir") or "")

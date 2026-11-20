@@ -1,0 +1,28 @@
+{
+  "schema": "cryostack.tutorial-publish-assets.v1",
+  "title": "ISSM \u00b7 Bring your own script",
+  "video_sha256": "fbee64c7567cae7a9a7597c2a4744a4880be2bfa0f5f671a6cd3bc193e2ab2fd",
+  "duration_seconds": 247.0,
+  "silent": true,
+  "logical_chapter_count": 13,
+  "max_source_pixel_scale": 1.6,
+  "scientific_figures_aspect_preserved": true,
+  "files": {
+    "issm-own-script-wide.chapters.json": {
+      "sha256": "d650d61ff6357fed9feca3a839c18375c274ed71364f9f3ad9b898fa52ad0846",
+      "bytes": 15451
+    },
+    "issm-own-script-wide.mp4": {
+      "sha256": "fbee64c7567cae7a9a7597c2a4744a4880be2bfa0f5f671a6cd3bc193e2ab2fd",
+      "bytes": 3572650
+    },
+    "issm-own-script-wide.poster.jpg": {
+      "sha256": "908ae17e6149501ceb4821adeb5d32ca47dc9a90c4ca05791c35ecfa0df11fc2",
+      "bytes": 100226
+    },
+    "issm-own-script-wide.vtt": {
+      "sha256": "7559f13d41aec8c0075e4f710e9f1f6bd40c4ee7232095ae468575b880fb4b64",
+      "bytes": 4084
+    }
+  }
+}

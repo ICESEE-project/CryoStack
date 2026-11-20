@@ -1,0 +1,328 @@
+{
+  "video_sha256": "fbee64c7567cae7a9a7597c2a4744a4880be2bfa0f5f671a6cd3bc193e2ab2fd",
+  "duration_seconds": 247.0,
+  "chapters": [
+    {
+      "id": "script-01",
+      "step": "Goal",
+      "start_seconds": 0,
+      "end_seconds": 12.0,
+      "where": "",
+      "screenText": "Run your MATLAB workflow with native ISSM, then retain its results.",
+      "screenWhy": "Bring your source, referenced data and native outputs into one reviewed workflow.",
+      "expectedResult": "Use a verified BYO AWS connection, your MATLAB license and Connector.",
+      "logical_step_id": "orientation",
+      "pause_after": false,
+      "title": "1. Run your own ISSM script",
+      "instructions": [
+        "Goal: upload a small MATLAB workflow and a synthetic JSON input, run native ISSM on your connected AWS resources, then inspect and download its results.",
+        "Have an approved CryoStack login, a verified BYO AWS connection, and configured MATLAB plus Connector."
+      ],
+      "note": "Open CryoLauncher. Choose Cloud \u2192 Advanced \u2192 ISSM.",
+      "why": "Bring your source, referenced data and native outputs into one reviewed workflow."
+    },
+    {
+      "id": "script-02",
+      "step": 1,
+      "start_seconds": 12.0,
+      "end_seconds": 24.0,
+      "where": "",
+      "screenText": "Download the native tutorial packet and extract four input files.",
+      "screenWhy": "The entry script, two helpers and JSON must be available before importing.",
+      "expectedResult": "Scripts: runme.m, Launch.par, validate_launch_dataset.m; data: issm-shelf-small-v1.json.",
+      "logical_step_id": "inputs",
+      "pause_after": true,
+      "title": "2. Download the tutorial inputs",
+      "instructions": [
+        "Open Pilot Tutorials \u2192 Bring your own script and download the supplied native input packet. Extract it.",
+        "Scripts: runme.m, Launch.par, validate_launch_dataset.m.\nData: issm-shelf-small-v1.json."
+      ],
+      "note": "Scripts are in examples/soft_launch/issm/. JSON is in examples/soft_launch/datasets/.",
+      "why": "The entry script, two helpers and JSON must be available before importing."
+    },
+    {
+      "id": "script-03",
+      "step": 2,
+      "start_seconds": 24.0,
+      "end_seconds": 38.0,
+      "where": "",
+      "screenText": "Name your owned example, then choose New example.",
+      "screenWhy": "An owned example gives your imported scripts a separate editable home.",
+      "expectedResult": "Keep that example selected for scripts and dataset references.",
+      "logical_step_id": "example",
+      "pause_after": true,
+      "title": "3. Create your workspace example",
+      "instructions": [
+        "In Editor, enter a new name and choose New example.",
+        "This recording uses pilot-issm-script-1119. Keep the new owned example selected for the following uploads."
+      ],
+      "note": "New ISSM examples include a starter runme.m. The supplied entry script replaces it.",
+      "why": "An owned example gives your imported scripts a separate editable home."
+    },
+    {
+      "id": "script-04",
+      "step": 3,
+      "start_seconds": 38.0,
+      "end_seconds": 46.0,
+      "where": "",
+      "screenText": "Choose Upload to store the selected JSON dataset.",
+      "screenWhy": "Uploading stores the selected JSON in your workspace dataset library.",
+      "expectedResult": "Expected: Uploaded: issm-shelf-small-v1.json.",
+      "logical_step_id": "upload",
+      "pause_after": false,
+      "title": "4. Choose Upload",
+      "instructions": [
+        "One JSON file is selected. Choose Upload."
+      ],
+      "note": "The next view keeps the actual action and confirmation.",
+      "why": "Uploading stores the selected JSON in your workspace dataset library."
+    },
+    {
+      "id": "script-05",
+      "step": 3,
+      "start_seconds": 46.0,
+      "end_seconds": 58.0,
+      "where": "",
+      "screenText": "Read the uploaded filename and select it in the dataset list.",
+      "screenWhy": "The filename confirms which dataset will be attached next.",
+      "expectedResult": "The selected-file count changes from 1 to 0 when upload finishes.",
+      "logical_step_id": "upload",
+      "pause_after": true,
+      "title": "4. Confirm the JSON upload",
+      "instructions": [
+        "The selected-file count changes from 1 to 0 when Upload finishes.",
+        "The confirmation names issm-shelf-small-v1.json. Keep this dataset for the next reference step."
+      ],
+      "note": "Datasets are stored separately from source files.",
+      "why": "The filename confirms which dataset will be attached next."
+    },
+    {
+      "id": "script-06",
+      "step": 4,
+      "start_seconds": 58.0,
+      "end_seconds": 66.0,
+      "where": "",
+      "screenText": "Choose Reference in example to attach the selected JSON.",
+      "screenWhy": "A reference binds this dataset to the current owned example.",
+      "expectedResult": "The next staged run will receive this dataset.",
+      "logical_step_id": "reference",
+      "pause_after": false,
+      "title": "5. Choose Reference in example",
+      "instructions": [
+        "Select the JSON dataset, then choose Reference in example."
+      ],
+      "note": "The next view keeps the actual action and confirmation.",
+      "why": "A reference binds this dataset to the current owned example."
+    },
+    {
+      "id": "script-07",
+      "step": 4,
+      "start_seconds": 66.0,
+      "end_seconds": 79.0,
+      "where": "",
+      "screenText": "Read the reference confirmation: data/issm-shelf-small-v1.json.",
+      "screenWhy": "The exact relative path connects the attachment to the entry script.",
+      "expectedResult": "This exact relative path is read by runme.m.",
+      "logical_step_id": "reference",
+      "pause_after": true,
+      "title": "5. Confirm the referenced filename",
+      "instructions": [
+        "The confirmation gives data/issm-shelf-small-v1.json.",
+        "This is the exact relative path read by runme.m. The dataset is now referenced by this owned example."
+      ],
+      "note": "The referenced bytes are copied into data/ when the next run is staged.",
+      "why": "The exact relative path connects the attachment to the entry script."
+    },
+    {
+      "id": "script-08",
+      "step": 5,
+      "start_seconds": 79.0,
+      "end_seconds": 112.0,
+      "where": "",
+      "screenText": "Select all three scripts; enable Replace, then Import script files.",
+      "screenWhy": "Replace is essential because a new ISSM example includes a starter runme.m.",
+      "expectedResult": "Check count 0 \u2192 3 \u2192 0; replacement updates the starter runme.m.",
+      "logical_step_id": "scripts",
+      "pause_after": false,
+      "title": "6. Replace and import all three scripts",
+      "instructions": [
+        "Choose runme.m, Launch.par and validate_launch_dataset.m together.",
+        "Check Replace existing script files, then choose Import script files."
+      ],
+      "note": "Watch selected count 0 \u2192 3 \u2192 0. Replacement is essential for the starter runme.m.",
+      "why": "Replace is essential because a new ISSM example includes a starter runme.m."
+    },
+    {
+      "id": "script-09",
+      "step": 6,
+      "start_seconds": 112.0,
+      "end_seconds": 126.0,
+      "where": "",
+      "screenText": "Confirm all three filenames and Files are saved.",
+      "screenWhy": "Check saved source before the next staging step snapshots it.",
+      "expectedResult": "The accepted entry script is 37 lines; every submitted input hash matched.",
+      "logical_step_id": "scripts",
+      "pause_after": true,
+      "title": "7. Confirm all three files are saved",
+      "instructions": [
+        "Read the confirmation: runme.m, Launch.par and validate_launch_dataset.m are imported and Files are saved.",
+        "The entry script now shows 37 lines, saved."
+      ],
+      "note": "All three scripts and the referenced JSON matched the expected hashes before launch and in the submitted snapshot.",
+      "why": "Check saved source before the next staging step snapshots it."
+    },
+    {
+      "id": "script-10",
+      "step": 7,
+      "start_seconds": 126.0,
+      "end_seconds": 137.0,
+      "where": "",
+      "screenText": "Confirm Action Run and Run target runme.m.",
+      "screenWhy": "The entrypoint chooses which MATLAB workflow is actually executed.",
+      "expectedResult": "Launch.par, the validator and referenced JSON accompany the entrypoint.",
+      "logical_step_id": "review",
+      "pause_after": false,
+      "title": "8. Confirm the entrypoint",
+      "instructions": [
+        "In Experiment, set Action to Run and Run target to runme.m.",
+        "Keep the owned example and the three saved scripts from the previous steps."
+      ],
+      "note": "The selected entry script is runme.m; the two helpers and referenced JSON accompany it.",
+      "why": "The entrypoint chooses which MATLAB workflow is actually executed."
+    },
+    {
+      "id": "script-11",
+      "step": 8,
+      "start_seconds": 137.0,
+      "end_seconds": 153.0,
+      "where": "",
+      "screenText": "Review the owned ISSM run, then launch from the bottom of the review.",
+      "screenWhy": "The normal review checks resources, license and the selected example.",
+      "expectedResult": "Check the model, example, resources, configured license and Connector.",
+      "logical_step_id": "review",
+      "pause_after": true,
+      "title": "9. Review the run",
+      "instructions": [
+        "Choose Review & Launch. Confirm model ISSM, your owned example, and the resources shown in the review.",
+        "Use the existing configured license and Connector. Scroll to the bottom and choose Launch cloud run."
+      ],
+      "note": "This native run used 2 vCPU and 8 GiB. The task time limit was 60 minutes.",
+      "why": "The normal review checks resources, license and the selected example."
+    },
+    {
+      "id": "script-12",
+      "step": 9,
+      "start_seconds": 153.0,
+      "end_seconds": 163.0,
+      "where": "",
+      "screenText": "Follow the new submission until Completed.",
+      "screenWhy": "Follow the new submission rather than a previous completed run.",
+      "expectedResult": "Wait for this run\u2019s results, rather than a previous completed run.",
+      "logical_step_id": "submit",
+      "pause_after": true,
+      "title": "10. Follow the new submission",
+      "instructions": [
+        "The new run enters Submitting, then Queued while AWS starts the container.",
+        "Wait for Running and Completed before opening its results."
+      ],
+      "note": "The launch confirmation precedes this actual new submission.",
+      "why": "Follow the new submission rather than a previous completed run."
+    },
+    {
+      "id": "script-13",
+      "step": 10,
+      "start_seconds": 163.0,
+      "end_seconds": 178.0,
+      "where": "",
+      "screenText": "Check completion before opening the native results.",
+      "screenWhy": "Startup, task time and script time describe different intervals.",
+      "expectedResult": "Startup 219.980 s; Batch task 45.010 s; script interval 2.156 s.",
+      "logical_step_id": "completion",
+      "pause_after": true,
+      "title": "11. Completion and elapsed times",
+      "instructions": [
+        "The native run completed successfully.",
+        "Submission \u2192 Batch start: 219.980 s.\nBatch task: 45.010 s.\nScript-reported interval: 2.156046 s."
+      ],
+      "note": "Startup, task time and script time measure different intervals.",
+      "why": "Startup, task time and script time describe different intervals."
+    },
+    {
+      "id": "script-14",
+      "step": 11,
+      "start_seconds": 178.0,
+      "end_seconds": 193.0,
+      "where": "",
+      "screenText": "Choose StressbalanceSolution \u2192 Vel, then Render.",
+      "screenWhy": "Render displays the selected native result without rerunning the solve.",
+      "expectedResult": "Expected: one diagnostic solution with 13 native nodal values.",
+      "logical_step_id": "render",
+      "pause_after": true,
+      "title": "12. Render the native velocity",
+      "instructions": [
+        "In Workspace \u2192 Results, choose StressbalanceSolution and Vel, then choose Render.",
+        "This is the recorded Render action and its native output."
+      ],
+      "note": "The selected output contains one diagnostic solution and 13 nodal values.",
+      "why": "Render displays the selected native result without rerunning the solve."
+    },
+    {
+      "id": "script-15",
+      "step": 12,
+      "start_seconds": 193.0,
+      "end_seconds": 211.0,
+      "where": "",
+      "screenText": "Inspect the saved native velocity figure and its units.",
+      "screenWhy": "Use the figure, mesh count and node-weighted metric together.",
+      "expectedResult": "Speed: 0\u201318.89046 m/year; node-RMS: 6.2386984 m/year.",
+      "logical_step_id": "interpret",
+      "pause_after": true,
+      "title": "13. Inspect the saved native field",
+      "instructions": [
+        "The unchanged native PNG shows speed in metres/year.",
+        "13 vertices and 16 triangles. Speed ranges from 0 to 18.89046 m/year.",
+        "Node-RMS speed is 6.2386984 m/year. Convergence is the scalar 25."
+      ],
+      "note": "The 10 km square uses one diagnostic SSA Stressbalance solve, without physical time advance.",
+      "why": "Use the figure, mesh count and node-weighted metric together."
+    },
+    {
+      "id": "script-16",
+      "step": 13,
+      "start_seconds": 211.0,
+      "end_seconds": 232.0,
+      "where": "",
+      "screenText": "Choose Download results, then save the fresh archive link.",
+      "screenWhy": "Retain the native fields with source/data hashes and runtime provenance.",
+      "expectedResult": "Retain the 13-member result ZIP with the input and runtime manifests.",
+      "logical_step_id": "download",
+      "pause_after": true,
+      "title": "14. Download this run\u2019s results",
+      "instructions": [
+        "Choose Download results, then use the fresh HTTPS download link.",
+        "The saved ZIP has 13 CRC-valid members: mesh, native fields and figure, model, metrics and runtime/RNG provenance."
+      ],
+      "note": "Keep the archive together with the input manifest and recorded runtime versions.",
+      "why": "Retain the native fields with source/data hashes and runtime provenance."
+    },
+    {
+      "id": "script-17",
+      "step": 14,
+      "start_seconds": 232.0,
+      "end_seconds": 247.0,
+      "where": "",
+      "screenText": "Interpret the script\u2019s actual initial and boundary conditions.",
+      "screenWhy": "The actual script and boundary conditions define this diagnostic result.",
+      "expectedResult": "Zero initial and constrained-boundary velocity; the JSON speed is unused.",
+      "logical_step_id": "qualification",
+      "pause_after": true,
+      "title": "15. What this example establishes",
+      "instructions": [
+        "This script starts with zero velocity and fixes its non-front boundary velocities. The shared JSON speed setting is unused.",
+        "Thickness is source-confirmed at 300\u2013500 m; its arithmetic-node mean is 400 m. The saved model geometry is opaque locally."
+      ],
+      "note": "One verified native diagnostic execution. Full source/data/runtime receipts are linked; this is not a repeat or accuracy result.",
+      "why": "The actual script and boundary conditions define this diagnostic result."
+    }
+  ]
+}

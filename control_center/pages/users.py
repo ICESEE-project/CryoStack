@@ -153,6 +153,7 @@ async def _render_user_detail(
     ]
 
     user["developer_docs_access"] = access.can_read_developer_docs(user_id=user_id)
+    user["account_status"] = request.app["control_auth"].approval.effective_status(user_id)
     user["can_manage_developer_docs"] = access.effective_role(user_id=actor.id) == "owner"
 
     inspector = WorkspaceInspector.for_app(

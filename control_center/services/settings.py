@@ -124,6 +124,19 @@ class SettingDefinition:
 
 SETTINGS: tuple[SettingDefinition, ...] = (
     SettingDefinition(
+        key="pilot.hosted_admission_enabled",
+        label="Accept new Hosted runs",
+        group="Hosted pilot",
+        env="CRYOSTACK_PILOT_ADMISSION_ENABLED",
+        kind="bool", default=False,
+        description="Allow eligible pilot participants to reserve and submit new Hosted runs "
+                    "once the service is ready. Pausing keeps existing jobs, results and "
+                    "cancellation available; work already admitted or running continues.",
+        reader="Hosted gateway funding admission",
+        restart="none",
+        restart_note="Checked for each new reservation and submission claim; no restart needed.",
+    ),
+    SettingDefinition(
         key="frozen_legacies.ursa_concurrency",
         label="URSA concurrent jobs",
         group="Frozen Legacies workers",

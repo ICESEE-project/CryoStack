@@ -1,0 +1,28 @@
+{
+  "schema": "cryostack.tutorial-publish-assets.v1",
+  "title": "ISSM \u00b7 Auto-config one solver setting",
+  "video_sha256": "35649c43dff0a5e1a479c4167642945ee6e2db51cca0f345d228099a05891d54",
+  "duration_seconds": 194.0,
+  "silent": true,
+  "logical_chapter_count": 11,
+  "max_source_pixel_scale": 1.6,
+  "scientific_figures_aspect_preserved": true,
+  "files": {
+    "issm-auto-config-wide.chapters.json": {
+      "sha256": "45b910d30c16234b2d745c14932ba87f40fdd6ed8fedf2f8ba23525f6967f4a1",
+      "bytes": 13615
+    },
+    "issm-auto-config-wide.mp4": {
+      "sha256": "35649c43dff0a5e1a479c4167642945ee6e2db51cca0f345d228099a05891d54",
+      "bytes": 2412154
+    },
+    "issm-auto-config-wide.poster.jpg": {
+      "sha256": "f993725731fd5132ea1f81a173cea01577315bfb3f544e5c6ec3c60357678b98",
+      "bytes": 107762
+    },
+    "issm-auto-config-wide.vtt": {
+      "sha256": "dab57490d02bdf8c42a6ef56906a3387c6fa20f501663e279b3ec5827dbbe038",
+      "bytes": 3595
+    }
+  }
+}

@@ -29,7 +29,7 @@ This captured account had no funding pools or allocations. Zero values are the r
 
 ![Automatic Credits interface before a policy has been configured](images/screenshots/allocations-policy.jpg)
 
-Saved policies apply to qualifying future registrations, not existing accounts. Test reservations simulate ledger operations; they do not launch AWS resources. Actual BYO jobs require a verified user AWS connection and are billed to that user's account. Managed AWS execution remains unavailable.
+When CryoStack registration approval is enabled, a policy grants credits at an eligible account's first approval. Registrations still awaiting approval receive no funds, and enabling a policy does not backfill older accounts. Test reservations simulate ledger operations; they do not launch AWS resources. Actual BYO jobs require a verified user AWS connection and are billed to that user's account. Managed AWS execution remains unavailable.
 
 See [Resource Allocations](resource_allocations.md) for eligibility, limits, security, and recovery guidance.
 

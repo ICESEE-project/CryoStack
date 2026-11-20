@@ -39,16 +39,33 @@ def usage(owner_root: Path, user_id: str, *, refresh: bool = False):
 
 @contextmanager
 def workspace_write(owner_root: Path, user_id: str, incoming: int = 0,
-                    *, what: str = "writing workspace files"):
-    """Reserve quota and local capacity for one controlled workspace write."""
+                    *, what: str = "writing workspace files", replacing: Path | None = None):
+    """Serialize a controlled write and reserve its fresh net growth.
+
+    Replacement sizes are measured while the owner lock is held through the
+    write. The disk guard includes the complete temporary replacement bytes.
+    Only an existing, non-growing file can be replaced while over quota.
+    """
     _store, accounts = policy()
     root = Path(owner_root)
-    current = accounts.usage(root, str(user_id))
-    reserved = accounts.reserve(current, root, max(0, int(incoming)), what=what)
-    try:
-        yield current
-    finally:
-        accounts.release(root, reserved)
+    with quota._owner_write_lock(_store, root):
+        current = accounts.usage(root, str(user_id))
+        incoming = max(0, int(incoming))
+        growth, non_growing, disk_bytes = incoming, False, None
+        if replacing is not None:
+            target = Path(replacing)
+            if not target.resolve().is_relative_to(root.resolve()):
+                raise ValueError("Replacement escaped its owner's workspace.")
+            previous = target.stat().st_size if target.is_file() else 0
+            growth = max(0, incoming - previous)
+            non_growing = target.is_file() and incoming <= previous
+            disk_bytes = incoming
+        reserved = accounts.reserve(current, root, growth, what=what,
+                                    allow_non_growing=non_growing, disk_bytes=disk_bytes)
+        try:
+            yield current
+        finally:
+            accounts.release(root, reserved)
 
 
 def check_workspace_write(owner_root: Path, user_id: str, incoming: int = 0,

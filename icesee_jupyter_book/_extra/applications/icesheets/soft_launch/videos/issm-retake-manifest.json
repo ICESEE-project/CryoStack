@@ -1,0 +1,291 @@
+{
+  "schema": "cryostack.reproducibility.v1",
+  "clip_id": "IS-BASIC-RETAKE-20261118",
+  "collected_at": "2026-11-18T20:33:38.022950+00:00",
+  "model": "issm",
+  "example": "SquareIceShelf",
+  "job_reference_sha256": "5791307c3363ef505db4f102b468905f33e43c3a951e1e3a4bae065e81b911bd",
+  "job_status": "SUCCEEDED",
+  "job_times_ms": {
+    "createdAt": 1795033809612,
+    "startedAt": 1795034024021,
+    "stoppedAt": 1795034066859
+  },
+  "private_input_archive_sha256": "5ed0438b8f6fa675557bef6c02c408b25f8118cf1c0d78b0cd99879e596c8744",
+  "input_archive_access": "Sealed input bytes and raw object provenance retained privately on host; no raw desktop export.",
+  "input_evidence": "Actual run-scoped S3 objects read through verified owner BYO role; raw objects/keys/logs remain private on the host.",
+  "inputs": [
+    {
+      "relative_path": "DomainOutline.exp",
+      "bytes": 123,
+      "sha256": "3093d41076be127884136aded8a906f9ddd97dec250c7db67ab2fac8c01f7b30",
+      "last_modified": "2026-11-18T20:30:08+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": "Front.exp",
+      "bytes": 139,
+      "sha256": "275790e3caf22144d05b41f768bb2cb362b651d8092de10bc1fc61a621bd515a",
+      "last_modified": "2026-11-18T20:30:08+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": "Square.par",
+      "bytes": 1177,
+      "sha256": "fb5bad3dfbe1dd25d7fbf1e0050dd8ce205037a92c6cbd6d3e31a5e800713f28",
+      "last_modified": "2026-11-18T20:30:08+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": "runme.m",
+      "bytes": 225,
+      "sha256": "ba33248542d76c0fd4d7c2430d4ab015572c7188560640d31c9157686c9c82b1",
+      "last_modified": "2026-11-18T20:30:08+00:00",
+      "last_modified_no_later_than_submission": true
+    }
+  ],
+  "total_input_files": 38,
+  "total_input_bytes": 548641,
+  "all_inputs_predate_submission": true,
+  "public_input_list_restricted": true,
+  "inputs_manifest_sha256": "f5323e4dbd1611128bcf751da8ac0c67aac77109ef4de4ac115384c897a44db8",
+  "actual_image_digests": [
+    "sha256:d68d88dcb7047f29d6e277a45710f50f1bf3023566e0472f07a7dd75ffbcd170"
+  ],
+  "image_digest_evidence": "Exact actual AWS Batch job definition revision pins image@sha256; optional ECS observation is separately reported.",
+  "job_environment_binds_expected_run_root": true,
+  "job_input_binding_contract": "Actual CRYOSTACK_S3_RUN environment equals this run root; the pinned native runner downloads its input/ subdirectory.",
+  "actual_job_model_and_target": {
+    "CRYOSTACK_MODEL": "issm",
+    "CRYOSTACK_RUN_TARGET": "runme.m"
+  },
+  "versions": {
+    "matlab": {
+      "value": "24.2.0.3070828 (R2024b) Update 7",
+      "evidence": "actual runtime-provenance.json"
+    },
+    "matlab_release": {
+      "value": "2024b",
+      "evidence": "actual runtime-provenance.json"
+    },
+    "issm": {
+      "value": "2026.1",
+      "evidence": "actual runtime-provenance.json"
+    }
+  },
+  "scientific_source_statements": [],
+  "resources": {
+    "VCPU": "2",
+    "MEMORY": "8192"
+  },
+  "timeout_seconds": 3600,
+  "randomness": {
+    "status": "not-yet-reviewed",
+    "reason": "Confirm actual submitted scripts before asserting RNG not applicable."
+  },
+  "missing_evidence": [
+    "Actual solver-child MPI rank count is not observed by the MATLAB parent",
+    "Triangle internal, script-owned and other solver-library RNGs were not captured",
+    "First reference run did not capture MATLAB version or RNG state",
+    "No new PC/AWS comparison is claimed"
+  ],
+  "reproducibility_accepted": false,
+  "raw_payload_exported": false,
+  "read_only_aws": true,
+  "secret_values_read": false,
+  "terminal_evidence": {
+    "checked_at_utc": "2026-11-18T20:35:38.576363+00:00",
+    "source": "Actual owner-bound AWS Batch describe-jobs",
+    "container_exit_code": 0
+  },
+  "runtime_observations": {
+    "schema": "cryostack.runtime-provenance.v1",
+    "model": "issm",
+    "phase": "after",
+    "architecture": "glnxa64",
+    "versions": {
+      "matlab": {
+        "value": "24.2.0.3070828 (R2024b) Update 7",
+        "evidence": "actual runtime-provenance.json"
+      },
+      "matlab_release": {
+        "value": "2024b",
+        "evidence": "actual runtime-provenance.json"
+      },
+      "issm": {
+        "value": "2026.1",
+        "evidence": "actual runtime-provenance.json"
+      }
+    },
+    "before_versions": {
+      "matlab": {
+        "value": "24.2.0.3070828 (R2024b) Update 7",
+        "evidence": "actual runtime-provenance.json"
+      },
+      "matlab_release": {
+        "value": "2024b",
+        "evidence": "actual runtime-provenance.json"
+      },
+      "issm": {
+        "value": "2026.1",
+        "evidence": "actual runtime-provenance.json"
+      }
+    },
+    "capture_times": {
+      "before_capture_time_utc": "2026-11-18T20:33:56.855Z",
+      "after_capture_time_utc": "2026-11-18T20:33:59.627Z"
+    },
+    "mpi": {
+      "requested_processes": 2,
+      "observed_world_size": null,
+      "observed_rank": null
+    },
+    "threads": {
+      "OMP_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1",
+      "MKL_NUM_THREADS": "unset or nonnumeric; value not recorded",
+      "NUMEXPR_NUM_THREADS": "unset or nonnumeric; value not recorded"
+    },
+    "matlab_max_compute_threads": 1,
+    "rng": {
+      "matlab_global_captured": true,
+      "algorithm": "twister",
+      "seed": 0,
+      "artifact": "rng-before.mat",
+      "artifact_present": true,
+      "claimed_sha256": "3c933d74cfe2f886d3b7428b7d29200812cd662fe559934287f7be958ffd958a",
+      "actual_sha256": "3c933d74cfe2f886d3b7428b7d29200812cd662fe559934287f7be958ffd958a",
+      "reported_hash_matches_actual": true,
+      "capture_reports_no_reset_or_advance": true,
+      "unobserved": [
+        "Triangle internal RNG",
+        "script-owned generators",
+        "other solver-library generators"
+      ]
+    }
+  },
+  "scientific_configuration": {
+    "domain": {
+      "x_min": 0,
+      "x_max": 1000000,
+      "y_min": 0,
+      "y_max": 1000000,
+      "units": "m"
+    },
+    "nominal_triangle_size": {
+      "value": 100000,
+      "units": "m"
+    },
+    "thickness": {
+      "min": 300,
+      "max": 1000,
+      "units": "m",
+      "axis": "linear along y"
+    },
+    "base_surface": "hydrostatic flotation using md.materials density defaults",
+    "initial_velocity": {
+      "vx": 0,
+      "vy": 0,
+      "vz": 0,
+      "units": "m/year"
+    },
+    "rheology_temperature": {
+      "value": 253,
+      "units": "K",
+      "expression": "273-20"
+    },
+    "flow_equation": "SSA",
+    "solution": "Stressbalance",
+    "time_advancing": false,
+    "mpi_processes_requested_by_source": 2,
+    "model_defaults": "ISSM 2026.1 in the actual digest-pinned image; full final model is retained in the hashed results archive."
+  },
+  "units": {
+    "coordinates": "m",
+    "geometry": "m",
+    "velocity": "m/year",
+    "pressure": "Pa",
+    "evidence": "ISSM native model conventions; exported plot omits axis/colorbar unit labels.",
+    "sources": [
+      "https://raw.githubusercontent.com/ISSMteam/ISSM/main/src/m/classes/mesh2d.m",
+      "https://raw.githubusercontent.com/ISSMteam/ISSM/main/src/m/classes/initialization.m"
+    ]
+  },
+  "outputs": {
+    "archive_sha256": "be5223513d0b5374baddbe1f9624e18fc6e420cabe5f5c88991fbd897fbd8c52",
+    "archive_members": 11,
+    "crc_valid": true,
+    "members": {
+      "fields/StressbalanceSolution/Pressure.h5": {
+        "bytes": 1880,
+        "sha256": "a5f1ded0bd5fd0fba1b83ddd422c7b047a3d7368938d6b2f94e82cf0ec4598de"
+      },
+      "fields/StressbalanceSolution/StressbalanceConvergenceNumSteps.h5": {
+        "bytes": 1160,
+        "sha256": "e54baebeb6b7790ca080ea01ffea59435e65212f417afdaad270379c1e934c0e"
+      },
+      "fields/StressbalanceSolution/Vel.h5": {
+        "bytes": 1880,
+        "sha256": "3b41874d59299491aa5b87d216bd3407c38f7665f9820da190d18e88c04ca288"
+      },
+      "fields/StressbalanceSolution/Vx.h5": {
+        "bytes": 1880,
+        "sha256": "9bafe425f6bd882211c47df1b667325ec9371c64d054fd843cb56df593569b4b"
+      },
+      "fields/StressbalanceSolution/Vy.h5": {
+        "bytes": 1880,
+        "sha256": "ec676fc695008e2d432c851be955d8db0f4d04456dab979f7f0e35860c0f6311"
+      },
+      "figures/StressbalanceSolution_Vel.png": {
+        "bytes": 87143,
+        "sha256": "a05b4d0a03e78ecd404dbe7adaf9c7453140e9fc69c6b7c8b55e525f71dfe761"
+      },
+      "mesh/mesh.h5": {
+        "bytes": 6800,
+        "sha256": "02ad97046e81bb39108324854e59dba4d1e44b700a46a7aba81bb76e2004492c"
+      },
+      "metadata.json": {
+        "bytes": 991,
+        "sha256": "b92a611abc510e303669e4ec2242dd72e69e2e4d1fa95aba6c8f8542ed239f7d"
+      },
+      "model/md_final.mat": {
+        "bytes": 515492,
+        "sha256": "7ea3f54cff0147857fc5eff6a8deaa39c8db2887afc30bc70c53d41e9c4bb831"
+      },
+      "rng-before.mat": {
+        "bytes": 2823,
+        "sha256": "3c933d74cfe2f886d3b7428b7d29200812cd662fe559934287f7be958ffd958a"
+      },
+      "runtime-provenance.json": {
+        "bytes": 1798,
+        "sha256": "ea0fdfea75708eeee0044463b0cfb242170731bd60afff9280e67c26293474e7"
+      }
+    },
+    "native_mesh": {
+      "vertices": 91,
+      "triangles": 148
+    },
+    "convergence_steps": [
+      23.0
+    ]
+  },
+  "rng_artifact_validation": {
+    "artifact": "rng-before.mat",
+    "bytes": 2823,
+    "sha256": "3c933d74cfe2f886d3b7428b7d29200812cd662fe559934287f7be958ffd958a",
+    "claimed_hash_matches_actual": true,
+    "mat_file_decodes": true,
+    "algorithm": "twister",
+    "seed": 0.0,
+    "state_numeric_entries": 625,
+    "capture_reports_no_reset_or_advance": true,
+    "unobserved": [
+      "Triangle internal RNG",
+      "script-owned generators",
+      "other solver-library generators"
+    ]
+  },
+  "aws_repeatability_accepted": true,
+  "recording_status": "Accepted native Basic walkthrough; 160-second sanitized video published with this record",
+  "recording_file": "issm-basic.mp4"
+}

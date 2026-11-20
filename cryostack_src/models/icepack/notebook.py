@@ -54,7 +54,6 @@ that would only fail later, deep inside a Batch container.
 from __future__ import annotations
 
 import re
-import shutil
 from pathlib import Path
 
 #: the canonical execution target every materialized notebook example gets
@@ -131,7 +130,8 @@ def materialize_notebook_workspace(source: str | Path, *, dest_dir: str | Path) 
     src = Path(source)
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dest_dir / src.name)
+    from cryostack_src.workspace.copying import copy_workspace_file
+    copy_workspace_file(src, dest_dir / src.name)
 
     script_text = convert_notebook_to_script(src)
     (dest_dir / RUN_SCRIPT_NAME).write_text(script_text, encoding="utf-8")

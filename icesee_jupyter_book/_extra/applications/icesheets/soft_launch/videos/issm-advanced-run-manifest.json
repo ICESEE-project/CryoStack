@@ -1,0 +1,273 @@
+{
+  "schema": "cryostack.reproducibility.v1",
+  "clip_id": "IS-ADVANCED-20261119",
+  "collected_at": "2026-11-19T03:57:31.160631+00:00",
+  "model": "issm",
+  "example": "pilot-issm-advanced-1119",
+  "job_reference_sha256": "da6d9a8bb5b913ce98ed143ea64651df430c7ac84a07f96a5fc5e3b48582e6f7",
+  "job_status": "SUCCEEDED",
+  "job_times_ms": {
+    "createdAt": 1795060348402,
+    "startedAt": 1795060532044,
+    "stoppedAt": 1795060568875
+  },
+  "private_input_archive_sha256": "d1c9c56d3e12c7ce00a8964f95b6a5e84503a71db628008c207d900c9f8f2a05",
+  "input_archive_access": "Sealed input bytes and raw object provenance retained privately on host; no raw desktop export.",
+  "input_evidence": "Actual run-scoped S3 objects read through verified owner BYO role; raw objects/keys/logs remain private on the host.",
+  "inputs": [
+    {
+      "relative_path": "DomainOutline.exp",
+      "bytes": 123,
+      "sha256": "3093d41076be127884136aded8a906f9ddd97dec250c7db67ab2fac8c01f7b30",
+      "last_modified": "2026-11-19T03:52:27+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": "Front.exp",
+      "bytes": 139,
+      "sha256": "275790e3caf22144d05b41f768bb2cb362b651d8092de10bc1fc61a621bd515a",
+      "last_modified": "2026-11-19T03:52:27+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": "Square.par",
+      "bytes": 1177,
+      "sha256": "d5bc47afe1acfae950a93ad0171199399406b7a5dee0b0b36bc266eb1d2c7225",
+      "last_modified": "2026-11-19T03:52:27+00:00",
+      "last_modified_no_later_than_submission": true
+    },
+    {
+      "relative_path": "runme.m",
+      "bytes": 225,
+      "sha256": "ba33248542d76c0fd4d7c2430d4ab015572c7188560640d31c9157686c9c82b1",
+      "last_modified": "2026-11-19T03:52:27+00:00",
+      "last_modified_no_later_than_submission": true
+    }
+  ],
+  "total_input_files": 38,
+  "total_input_bytes": 548652,
+  "all_inputs_predate_submission": true,
+  "public_input_list_restricted": true,
+  "inputs_manifest_sha256": "c99b04fddbc4ad6b928dd9a54001f1b70dffa9fc088663340462b3ff95beaf01",
+  "actual_image_digests": [
+    "sha256:d68d88dcb7047f29d6e277a45710f50f1bf3023566e0472f07a7dd75ffbcd170"
+  ],
+  "image_digest_evidence": "Exact actual AWS Batch job definition revision pins image@sha256; optional ECS observation is separately reported.",
+  "job_environment_binds_expected_run_root": true,
+  "job_input_binding_contract": "Actual CRYOSTACK_S3_RUN environment equals this run root; the pinned native runner downloads its input/ subdirectory.",
+  "actual_job_model_and_target": {
+    "CRYOSTACK_MODEL": "issm",
+    "CRYOSTACK_RUN_TARGET": "runme.m"
+  },
+  "versions": {
+    "matlab": "24.2.0.3070828 (R2024b) Update 7",
+    "matlab_release": "2024b",
+    "issm": "2026.1"
+  },
+  "scientific_source_statements": [],
+  "resources": {
+    "VCPU": "2",
+    "MEMORY": "8192"
+  },
+  "timeout_seconds": 3600,
+  "randomness": {
+    "MATLAB_global_state_captured": true,
+    "capture_no_reset_or_advance": true,
+    "Triangle_internal_and_script_library_generators": "unobserved"
+  },
+  "missing_evidence": [
+    "No unchanged-input repeat, validated sensitivity or PC/AWS agreement.",
+    "Opaque saved MATLAB MCOS model not decoded; geometry hmax/hmin source-confirmed.",
+    "Solver-child MPI ranks and Triangle/script/library RNG states not observed."
+  ],
+  "reproducibility_accepted": false,
+  "raw_payload_exported": false,
+  "read_only_aws": true,
+  "secret_values_read": false,
+  "scientific_configuration": {
+    "hmax_m": 1010,
+    "hmin_m": 300,
+    "thickness_profile": "y-dependent taper; added10m at upstream end decreases to0 downstream",
+    "solver": "SSA Stressbalance, diagnostic only",
+    "physical_time_advance": false,
+    "requested_MPI_processes": 2,
+    "temperature_K": 253,
+    "source_hash_match": "All four submitted files match declared expected bytes; only Square.par carries the hmax literal change."
+  },
+  "native_outputs": {
+    "schema": "cryostack.issm-advanced-local-check.v1",
+    "archive": {
+      "sha256": "440ada602f9029c18c5f36446e121c9dd0d5632105a56fc682ba75e3ac24daba",
+      "bytes": 182898,
+      "members": 11,
+      "crc_valid": true
+    },
+    "native_scientific_artifact_check_passed": true,
+    "mesh": {
+      "vertices": 91,
+      "triangles": 148,
+      "x_range": [
+        0.0,
+        1000000.0
+      ],
+      "y_range": [
+        0.0,
+        1000000.0
+      ],
+      "nondegenerate": true,
+      "total_triangle_area": 1000000000000.0
+    },
+    "field_statistics": {
+      "Pressure": {
+        "count": 91,
+        "min": 2698731.0,
+        "max": 9085727.700000001,
+        "nodal_mean": 5902885.115040451,
+        "nodal_rms": 6233682.10791699
+      },
+      "StressbalanceConvergenceNumSteps": {
+        "count": 1,
+        "value": 23.0,
+        "location": "scalar"
+      },
+      "Vel": {
+        "count": 91,
+        "min": 0.0,
+        "max": 9272.778004710266,
+        "nodal_mean": 4020.828711647849,
+        "nodal_rms": 5096.71914350853
+      },
+      "Vx": {
+        "count": 91,
+        "min": -1183.7907757181918,
+        "max": 1192.117522329531,
+        "nodal_mean": 1.5007951326080309,
+        "nodal_rms": 343.9289311467879
+      },
+      "Vy": {
+        "count": 91,
+        "min": 0.0,
+        "max": 9272.761416787871,
+        "nodal_mean": 4007.823223896475,
+        "nodal_rms": 5085.10166251635
+      }
+    },
+    "velocity_magnitude_matches_components": true,
+    "model": {
+      "present": true,
+      "geometry_thickness_m": null,
+      "representation": "Opaque MATLAB MCOS object; no directly named geometry dataset",
+      "md_dataset_dtype": "uint32",
+      "md_dataset_shape": [
+        1,
+        6
+      ]
+    },
+    "submitted_parameters": {
+      "hmax": 1010,
+      "hmin": 300,
+      "evidence": "Actual submitted Square.par matches the predeclared expected SHA d5bc47afe1acfae950a93ad0171199399406b7a5dee0b0b36bc266eb1d2c7225. Values are source-confirmed, not decoded from the opaque saved model."
+    },
+    "basic_context_comparison": {
+      "purpose": "Descriptive context for the changed hmax case; no repeat or accuracy claim",
+      "basic_archive_sha256": "be5223513d0b5374baddbe1f9624e18fc6e420cabe5f5c88991fbd897fbd8c52",
+      "mesh_exactly_equal": {
+        "x": true,
+        "y": true,
+        "elements": true
+      },
+      "fields": {
+        "Pressure": {
+          "basic_min": 2698731.0,
+          "basic_max": 8995770.0,
+          "advanced_min": 2698731.0,
+          "advanced_max": 9085727.700000001,
+          "same_shape": true,
+          "exactly_equal": false,
+          "max_absolute_change": 89957.70000000112,
+          "relative_nodal_l2_change": 0.008610036171208412
+        },
+        "StressbalanceConvergenceNumSteps": {
+          "basic_min": 23.0,
+          "basic_max": 23.0,
+          "advanced_min": 23.0,
+          "advanced_max": 23.0,
+          "same_shape": true,
+          "exactly_equal": true,
+          "max_absolute_change": 0.0,
+          "relative_nodal_l2_change": 0.0
+        },
+        "Vel": {
+          "basic_min": 0.0,
+          "basic_max": 9034.387288463504,
+          "advanced_min": 0.0,
+          "advanced_max": 9272.778004710266,
+          "same_shape": true,
+          "exactly_equal": false,
+          "max_absolute_change": 238.39071624676217,
+          "relative_nodal_l2_change": 0.02902358919820794
+        },
+        "Vx": {
+          "basic_min": -1152.2731208904463,
+          "basic_max": 1159.5649136296163,
+          "advanced_min": -1183.7907757181918,
+          "advanced_max": 1192.117522329531,
+          "same_shape": true,
+          "exactly_equal": false,
+          "max_absolute_change": 32.5526086999148,
+          "relative_nodal_l2_change": 0.028018961018378124
+        },
+        "Vy": {
+          "basic_min": 0.0,
+          "basic_max": 9034.37118216809,
+          "advanced_min": 0.0,
+          "advanced_max": 9272.761416787871,
+          "same_shape": true,
+          "exactly_equal": false,
+          "max_absolute_change": 238.39023461978104,
+          "relative_nodal_l2_change": 0.029029807295253993
+        }
+      }
+    },
+    "safe_runtime_versions": {
+      "matlab": "24.2.0.3070828 (R2024b) Update 7",
+      "matlab_release": "2024b",
+      "issm": "2026.1"
+    },
+    "rng_artifact_hash_verified": true,
+    "rng_capture_no_reset_or_advance": true,
+    "figures": [
+      {
+        "archive_member": "figures/StressbalanceSolution_Vel.png",
+        "saved_file": "figures/issm-advanced-velocity.png",
+        "bytes": 87379,
+        "sha256": "a0cf078843500354a1eb71d74b8254ac3ed7ba867983d51fb7c7def6ffb07f0e",
+        "native_exporter_png_unchanged": true,
+        "visual_privacy_review": "Scientific axes/field/colorbar only; no identity, path or license text."
+      }
+    ],
+    "timings": {
+      "times_utc": {
+        "submitted": "2026-11-19T03:52:28.402000+00:00",
+        "batch_started": "2026-11-19T03:55:32.044000+00:00",
+        "batch_stopped": "2026-11-19T03:56:08.875000+00:00"
+      },
+      "submission_to_batch_start_seconds": 183.642,
+      "batch_running_seconds": 36.831,
+      "submission_to_stop_seconds": 220.473
+    },
+    "repeat_comparison_performed": false,
+    "accuracy_comparison_performed": false,
+    "network_or_solver_run": false,
+    "raw_model_or_rng_exported": false
+  },
+  "runtime_observations": {
+    "runtime_json_sha256": "bedfb4eb53826a7ca9babe1e1397abb5c32a56058494c81c8c0bd8a72758eddc",
+    "rng_artifact": "rng-before.mat",
+    "rng_sha256": "279e16957f76722f30cd4b0ab1509caf615caab7cd1c35330571db3bd0df98cf",
+    "state_reset_or_advanced_by_capture": false,
+    "observed_solver_child_MPI_processes": "unknown"
+  },
+  "native_execution_accepted": true,
+  "recording_status": "Root visually accepted173-second Advanced tutorial."
+}

@@ -10,4 +10,4 @@
 
 CryoLauncher is the workflow launcher for CryoStack. It currently provides access to ice-sheet simulations and ICESEE data assimilation workflows.
 
-<a class="cryostack-card-btn" href="/icesee-gui/">Open CryoLauncher</a>
+<a class="cryostack-card-btn" href="/icesee/">Open CryoLauncher</a>

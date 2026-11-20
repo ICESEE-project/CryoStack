@@ -1,0 +1,79 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:12.000
+1. Choose your workspace workflow
+Use Cloud → Advanced → Icepack.
+This run uses an editable workspace example and a short custom script for a 10 km square synthetic shelf.
+This is separate from the canonical 02 Synthetic Ice Shelf spin-up.
+
+2
+00:00:12.000 --> 00:00:28.000
+2. Create an editable example
+In Editor, enter a name and choose New example. This creates an owned workspace example.
+The recorded example is pilot-icepack-script-1118; its file list is initially empty.
+Setup pauses are omitted. Importing the source files follows.
+
+3
+00:00:28.000 --> 00:00:46.875
+3. Import the script and helper
+Choose script files, select run.py and validate_dataset.py, then Import script files.
+UTF-8 files can be up to 2 MiB each. Imported files are saved. Set run.py as the run target.
+If files are seeded or already present, enable Replace existing script files only for the files you intend to overwrite. Importing does not launch a run.
+
+4
+00:00:46.875 --> 00:01:02.875
+4. Reference the JSON configuration
+Select icepack-shelf-small-v1.json in Datasets and choose Reference in example.
+The script reads data/icepack-shelf-small-v1.json; staging copies the referenced file into that path.
+This JSON describes a synthetic configuration. Gridded initial-field files are a separate workflow.
+
+5
+00:01:02.875 --> 00:01:20.875
+5. Review the script’s science
+Configuration: 10 km×10 km, 4×4 subdivisions, CG1 thickness/velocity, 253.15 K and zero accumulation.
+Initial thickness tapers 500→300 m. The initial velocity guess increases 100→200 m/year along x.
+The 200 m/year value is an initial guess, not a prescribed outflow boundary speed.
+
+6
+00:01:20.875 --> 00:01:36.875
+6. Review and launch the native job
+The validator checks the JSON schema, model, units and bounds before scientific imports.
+The script runs a diagnostic solve, one 0.01-year prognostic step, then another diagnostic solve. Review readiness before launching.
+The actual submitted script, helper and JSON hashes match the declared fixtures.
+
+7
+00:01:36.875 --> 00:01:52.875
+7. Confirm actual completion
+The native job succeeded with exit code 0.
+Submission to Batch start: 220.087 s. AWS task: 48.192 s. The script’s own reported elapsed time is 15.6633 s.
+These are separate timings. The setup/results recording gap is not solver time.
+
+8
+00:01:52.875 --> 00:02:06.875
+8. Select the current run’s fields
+Open Results and choose solution icepack, then thickness or velocity.
+This run has 25 vertices and 32 triangles. The final fields are finite CG1 values, with positive thickness and zero accumulation.
+No damage field or transient time axis is present in this one-step fixture.
+
+9
+00:02:06.875 --> 00:02:22.875
+9. Inspect final thickness
+This full figure is the exact downloaded archive member. Axes and thickness are in metres.
+Final thickness ranges 300.023425–499.981468 m. The area-weighted mean is 400.006923 m.
+Independent integration of the exported field agrees with the script metrics.
+
+10
+00:02:22.875 --> 00:02:38.875
+10. Inspect velocity and metrics
+Colour shows speed in metres/year; arrows show direction.
+The domain RMS speed is 130.141951 m/year. It agrees with the script’s area-normalized speed_l2 metric.
+This is actual native output. No separate PC/AWS or repeat-equality result is claimed.
+
+11
+00:02:38.875 --> 00:02:52.875
+11. Save this run’s archive
+Choose Download results and use the freshly generated HTTPS link for this current run.
+The browser saved an 11-member ZIP with valid CRC: fields, mesh, figures, metrics and runtime/RNG provenance.
+The generated link and downloaded archive were verified against this accepted 25-node run.
+

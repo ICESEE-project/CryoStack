@@ -61,7 +61,7 @@ import secrets
 from pathlib import Path
 
 from cryostack_src.workspace.identity import WorkspaceUser, resolve_workspace_user
-from cryostack_src.workspace.roots import owner_root
+from cryostack_src.workspace.roots import state_owner_root
 
 from .external_id import generate_external_id
 from .models import AWSConnection, utc_now_iso
@@ -85,7 +85,7 @@ class AWSConnectionStore:
         self.user = user or resolve_workspace_user(
             require_authenticated=require_authenticated
         )
-        self._owner_root = owner_root(self.user, workspace_root=workspace_root)
+        self._owner_root = state_owner_root(self.user, workspace_root=workspace_root)
         self._path = self._safe_path(_REL_PATH)
         self._pending_path = self._safe_path(_PENDING_REL_PATH)
 

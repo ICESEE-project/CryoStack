@@ -115,9 +115,9 @@ needs it, private-service tunneling from inside a Cloud container back to
 an institutional service the Cloud provider cannot reach directly
 (`/connector/tunnel-grant/{id}`, `/connector/tunnel/{id}`,
 `/connector/tunnel-data/{id}` in `icesee_jupyter_book/core/connector_relay_server.py`).
-Cloud execution does **not** generally require Connector/Relay — an
-ordinary Fargate/EC2 Icepack or ISSM run with no private-license dependency
-never touches it. The one concrete, validated case that does:
+Cloud execution without a private-service dependency does **not** require
+Connector/Relay. The Icepack tutorial runs do not use a MATLAB license tunnel;
+ISSM needs the license and connectivity required by its selected environment. The one concrete, validated case that does:
 
 ```text
 Cloud scientific container
@@ -205,8 +205,10 @@ but not the submission, staging, or result-sync code that follows.
   `AWSConnection` → a **fresh** `sts:AssumeRole` every time (nothing cached),
   region from the connection, bucket `cryostack-runs-<account-id>`, `profile`
   forced to `None`; **no ambient-credential fallback** — a broken connection
-  raises `CloudAccessError` and the op fails closed. No connection record →
-  developer mode, unchanged. `CloudBridge` / `CloudBackend` / `CloudManager`
+  raises `CloudAccessError` and the operation fails closed. An ordinary
+  CryoStack user without a verified connection is denied. Ambient/profile
+  execution is reserved for explicitly authorized operator/development
+  contexts; a missing connection is not permission to use server credentials. `CloudBridge` / `CloudBackend` / `CloudManager`
   take a `credentials` kwarg; when set it wins and `run_aws` scrubs ambient
   `AWS_*` from the child env.
 - *Run Log emission from background tasks.* Cloud Test/Prepare/Smoke and the

@@ -1,0 +1,10 @@
+{
+  "model": "issm",
+  "example": "SquareIceShelf",
+  "action": "Stressbalance",
+  "parameter_overrides": {
+    "stressbalance.maxiter": 120
+  },
+  "requested_MPI_processes": 2,
+  "source_scope": "Reference canonical4files plus the reviewed pre-solve override; this settings record is not an additional model execution."
+}

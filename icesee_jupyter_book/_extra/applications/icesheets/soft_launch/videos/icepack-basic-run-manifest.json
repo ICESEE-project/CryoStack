@@ -1,0 +1,527 @@
+{
+  "schema": "cryostack.reproducibility.v1",
+  "clip_id": "IP-BASIC-20261118",
+  "collected_at": "2026-11-18T23:35:57.221205+00:00",
+  "model": "icepack",
+  "example": "02 Synthetic Ice Shelf",
+  "job_reference_sha256": "976acc7d20b0c317588b35f0c1c458c8f08969a83c76fc7850e1cb680d4732e1",
+  "job_status": "SUCCEEDED",
+  "job_times_ms": {
+    "createdAt": 1795034485782,
+    "startedAt": 1795034708826,
+    "stoppedAt": 1795035135963
+  },
+  "private_input_archive_sha256": "9559c1b5d439e6600f0bfad6afce3284801720bab2d231309261193880b2a26c",
+  "input_archive_access": "Sealed input bytes and raw object provenance retained privately on host; no raw desktop export.",
+  "input_evidence": "Actual run-scoped S3 objects read through verified owner BYO role; raw objects/keys/logs remain private on the host.",
+  "inputs": [
+    {
+      "relative_path": "run.py",
+      "bytes": 28565,
+      "sha256": "4efcfce487cdd181243fc23949f737c2fb812a2e6e7dfeaf1e774ff0ba951c32",
+      "last_modified": "2026-11-18T20:41:24+00:00",
+      "last_modified_no_later_than_submission": true
+    }
+  ],
+  "total_input_files": 7,
+  "total_input_bytes": 97486,
+  "all_inputs_predate_submission": true,
+  "public_input_list_restricted": true,
+  "inputs_manifest_sha256": "b9f31c05eae14260f27a53e14a10961a5c843bd615aaf22a7d35839e466e7c85",
+  "actual_image_digests": [
+    "sha256:d68d88dcb7047f29d6e277a45710f50f1bf3023566e0472f07a7dd75ffbcd170"
+  ],
+  "image_digest_evidence": "Exact actual AWS Batch job definition revision pins image@sha256; optional ECS observation is separately reported.",
+  "job_environment_binds_expected_run_root": true,
+  "job_input_binding_contract": "Actual CRYOSTACK_S3_RUN environment equals this run root; the pinned native runner downloads its input/ subdirectory.",
+  "actual_job_model_and_target": {
+    "CRYOSTACK_MODEL": "icepack",
+    "CRYOSTACK_RUN_TARGET": "run.py"
+  },
+  "versions": {
+    "firedrake": {
+      "value": null,
+      "installed_distributions": {
+        "firedrake": "2025.10.2"
+      },
+      "evidence": "actual runtime-provenance.json"
+    },
+    "h5py": {
+      "value": "3.16.0",
+      "installed_distributions": {},
+      "evidence": "actual runtime-provenance.json"
+    },
+    "icepack": {
+      "value": null,
+      "installed_distributions": {
+        "icepack": "1.1.0"
+      },
+      "evidence": "actual runtime-provenance.json"
+    },
+    "mpi4py": {
+      "value": "4.1.1",
+      "installed_distributions": {},
+      "evidence": "actual runtime-provenance.json"
+    },
+    "mpi_library": {
+      "value": "Open MPI 5.0.10",
+      "installed_distributions": {},
+      "evidence": "actual runtime-provenance.json"
+    },
+    "mpi_standard": {
+      "value": [
+        3,
+        1
+      ],
+      "installed_distributions": {},
+      "evidence": "actual runtime-provenance.json"
+    },
+    "numpy": {
+      "value": "1.26.4",
+      "installed_distributions": {},
+      "evidence": "actual runtime-provenance.json"
+    },
+    "petsc4py": {
+      "value": "3.24.0",
+      "installed_distributions": {},
+      "evidence": "actual runtime-provenance.json"
+    },
+    "petsc_library": {
+      "value": [
+        3,
+        24,
+        0
+      ],
+      "installed_distributions": {},
+      "evidence": "actual runtime-provenance.json"
+    },
+    "python": {
+      "value": "3.12.13",
+      "installed_distributions": {},
+      "evidence": "actual runtime-provenance.json"
+    }
+  },
+  "scientific_source_statements": [],
+  "resources": {
+    "VCPU": "2",
+    "MEMORY": "8192"
+  },
+  "timeout_seconds": 3600,
+  "randomness": {
+    "status": "not-yet-reviewed",
+    "reason": "Confirm actual submitted scripts before asserting RNG not applicable."
+  },
+  "missing_evidence": [
+    "Gmsh version/internal seed not captured",
+    "No new same-input AWS repeat or PC/AWS run",
+    "Portable CG1 fields do not preserve all native CG2 degrees of freedom",
+    "Canonical damage has negative numerical undershoot; no scientific-accuracy claim"
+  ],
+  "reproducibility_accepted": false,
+  "raw_payload_exported": false,
+  "read_only_aws": true,
+  "secret_values_read": false,
+  "scientific_configuration": {
+    "example": "02 Synthetic Ice Shelf",
+    "geometry": "Synthetic curved floating shelf",
+    "inflow_radius_m": 200000,
+    "nominal_mesh_spacing_m": 5000,
+    "temperature_K": 255.15,
+    "num_timesteps_each_phase": 200,
+    "final_time_each_phase_years": 400,
+    "dt_years": 2,
+    "phases": [
+      "undamaged shelf evolution",
+      "damage-coupled evolution"
+    ],
+    "accumulation_m_per_year": 0,
+    "source_hash_matches_known_canonical_materialization": true,
+    "source_override_evidence": "Actual submitted run.py is byte-identical to the preserved canonical materialization; no source parameter override was applied.",
+    "plot_streamline_seed": 1729
+  },
+  "outputs": {
+    "schema": "cryostack.icepack.artifact-check.v1",
+    "archive_sha256": "88d100f02041117b940a039d988bbd7d4c31ac85792af554f4ac79c88be6ac6a",
+    "archive_bytes": 1868683,
+    "member_count": 20,
+    "crc_valid": true,
+    "members": [
+      {
+        "path": "fields/icepack/accumulation.h5",
+        "bytes": 29016,
+        "sha256": "9b6447bb452a9ae93684dbad5865a7acf929799cfdae29bbb0101ce31930f8f1"
+      },
+      {
+        "path": "fields/icepack/damage.h5",
+        "bytes": 29016,
+        "sha256": "80dc757127795e74e0022502100bb50ba2c05760b1a251ab4e4735147beebd73"
+      },
+      {
+        "path": "fields/icepack/thickness.h5",
+        "bytes": 29016,
+        "sha256": "43a92467d2906373a0b5a45d4672c030f0a5848ba2e8901113a963bbd1f4648e"
+      },
+      {
+        "path": "fields/icepack/velocity.h5",
+        "bytes": 82952,
+        "sha256": "49a8b65623d7dc52b837835b35825c9bcabda158d3dfd8456acb4d69b43aa07a"
+      },
+      {
+        "path": "figures/_captured.json",
+        "bytes": 384,
+        "sha256": "6139a101cf700309b1e4d3f6ef8189aeb163b3d8e7028c03f5f75a92ca2e0e1b"
+      },
+      {
+        "path": "figures/figure-01.png",
+        "bytes": 154576,
+        "sha256": "27c62263bb20b7f9fff5013bd095c4457b9d15ff7ed2c88f99fb960f9894b20d"
+      },
+      {
+        "path": "figures/figure-02.png",
+        "bytes": 98895,
+        "sha256": "1451d0f5ef4b6552836b91703b9d093875bb1083bed20439259969402e1e51b5"
+      },
+      {
+        "path": "figures/figure-03.png",
+        "bytes": 273870,
+        "sha256": "999bf042b79d1cdb4e794b85f71f0b3d5b12a94c063e8c7d446015646f5180e0"
+      },
+      {
+        "path": "figures/figure-04.png",
+        "bytes": 223720,
+        "sha256": "b54b49340ce8864224108e9be084d0cf2e7815e20bb0e51919ed9186b6c1fb01"
+      },
+      {
+        "path": "figures/figure-05.png",
+        "bytes": 131114,
+        "sha256": "be145305cd19d12ebdce8c05c95324b043dcd89f57d874ed430ce42f31e890c5"
+      },
+      {
+        "path": "figures/figure-06.png",
+        "bytes": 256073,
+        "sha256": "642c8f90bca837f8b51b508b6bc6ae93d7833ea0242b9539a03f647220cf92bc"
+      },
+      {
+        "path": "figures/figure-07.png",
+        "bytes": 121112,
+        "sha256": "c2fb64c1a141bcdf6b154bc81824f300307691f569cbf8ada5d00f7a7374a870"
+      },
+      {
+        "path": "figures/figure-08.png",
+        "bytes": 106094,
+        "sha256": "3dc70cda81922424bce174ebdca7e7de7ad05f377d6fd94d2c60436bfa044daf"
+      },
+      {
+        "path": "figures/icepack_thickness.png",
+        "bytes": 85885,
+        "sha256": "c330dbef457bc1e50bb7c2a4d3c1f7e6fe79b4d13bec4e793228fe460b1c87ab"
+      },
+      {
+        "path": "figures/icepack_velocity.png",
+        "bytes": 99774,
+        "sha256": "4819070454a6ac1330a7e6860fa09cbb5ac9849a725754c2a7f4253995196981"
+      },
+      {
+        "path": "mesh/mesh.h5",
+        "bytes": 212776,
+        "sha256": "716d4902e60bc61755351bd561e216507d29ec9305793626df597ce66ea93a57"
+      },
+      {
+        "path": "metadata.json",
+        "bytes": 3180,
+        "sha256": "3b59480112988830f63ff0d04976e52032effffa5c94f773d58d32f9c480904a"
+      },
+      {
+        "path": "model/ice-shelf.msh",
+        "bytes": 281234,
+        "sha256": "c32e5d0ebcc4083c147031de3c53967cfded937c78129088fb555d5fa3807e14"
+      },
+      {
+        "path": "rng-before.json",
+        "bytes": 13584,
+        "sha256": "76fd05679e06d9989d48bc2351526c303a2a02c002b68c6b05a05e633704048e"
+      },
+      {
+        "path": "runtime-provenance.json",
+        "bytes": 4815,
+        "sha256": "2f91c0b902db65bca83ffa21e0058eb6f0ae352d03fefdb6af84108b69c843c3"
+      }
+    ],
+    "mesh": {
+      "vertices": 3371,
+      "elements": 6533,
+      "dimension": 2,
+      "connectivity_indexing": "0-based",
+      "connectivity_valid": true,
+      "coordinates_finite": true,
+      "x_range_m": [
+        -200000.0,
+        200000.0
+      ],
+      "y_range_m": [
+        -200000.0,
+        24617.3536554788
+      ]
+    },
+    "fields": {
+      "thickness": {
+        "range": [
+          98.10043119557913,
+          350.14182139713347
+        ],
+        "all_finite": true
+      },
+      "velocity": {
+        "range": [
+          -331.1506875885454,
+          193.71284928023215
+        ],
+        "all_finite": true
+      },
+      "accumulation": {
+        "range": [
+          0.0,
+          0.0
+        ],
+        "all_finite": true
+      },
+      "damage": {
+        "range": [
+          -0.00360164412547828,
+          0.07414133433994703
+        ],
+        "all_finite": true
+      }
+    },
+    "speed_range_m_per_year": [
+      160.4572357088255,
+      740.819331443691
+    ],
+    "speed_equals_hypot_components": {
+      "maximum_absolute_difference": 1.1368683772161603e-13,
+      "tolerance": 1e-10,
+      "passed": true
+    },
+    "rng": {
+      "artifact": "rng-before.json",
+      "hash_matches": true,
+      "json_decodes": true,
+      "global_state_members_present": true,
+      "raw_state_exported": false
+    },
+    "provenance_json_sha256": "2f91c0b902db65bca83ffa21e0058eb6f0ae352d03fefdb6af84108b69c843c3",
+    "source_solution_representation": "Native thickness/velocity CG2 fields are interpolated to CG1 in the portable archive; not a full Firedrake checkpoint.",
+    "damage_physical_bounds": {
+      "minimum": -0.00360164412547828,
+      "maximum": 0.07414133433994703,
+      "within_zero_to_one": false,
+      "qualification": "Canonical unmodified numerical result has a small negative undershoot; not clipped and not represented as physical-bound validation."
+    },
+    "artifact_structure_and_finite_checks_pass": true,
+    "scientific_accuracy_validated": false,
+    "new_pc_aws_comparison": false,
+    "new_aws_repeat_comparison": false,
+    "native_solver_executed_by_checker": false
+  },
+  "runtime_observations": {
+    "schema": "cryostack.runtime-provenance.v1",
+    "model": "icepack",
+    "phase": "after",
+    "architecture": "x86_64",
+    "versions": {
+      "python": {
+        "value": "3.12.13",
+        "evidence": "actual runtime-provenance.json"
+      },
+      "numpy": {
+        "value": "1.26.4",
+        "evidence": "actual runtime-provenance.json"
+      },
+      "h5py": {
+        "value": "3.16.0",
+        "evidence": "actual runtime-provenance.json"
+      },
+      "firedrake": {
+        "value": null,
+        "evidence": "actual runtime-provenance.json"
+      },
+      "icepack": {
+        "value": null,
+        "evidence": "actual runtime-provenance.json"
+      },
+      "petsc4py": {
+        "value": "3.24.0",
+        "evidence": "actual runtime-provenance.json"
+      },
+      "mpi4py": {
+        "value": "4.1.1",
+        "evidence": "actual runtime-provenance.json"
+      },
+      "petsc_library": {
+        "value": null,
+        "evidence": "actual runtime-provenance.json"
+      },
+      "mpi_standard": {
+        "value": null,
+        "evidence": "actual runtime-provenance.json"
+      },
+      "mpi_library": {
+        "value": "Open MPI 5.0.10",
+        "evidence": "actual runtime-provenance.json"
+      }
+    },
+    "before_versions": {
+      "python": {
+        "value": "3.12.13",
+        "evidence": "actual runtime-provenance.json"
+      },
+      "numpy": {
+        "value": "1.26.4",
+        "evidence": "actual runtime-provenance.json"
+      },
+      "h5py": {
+        "value": null,
+        "evidence": "actual runtime-provenance.json"
+      },
+      "firedrake": {
+        "value": null,
+        "evidence": "actual runtime-provenance.json"
+      },
+      "icepack": {
+        "value": null,
+        "evidence": "actual runtime-provenance.json"
+      },
+      "petsc4py": {
+        "value": null,
+        "evidence": "actual runtime-provenance.json"
+      },
+      "mpi4py": {
+        "value": null,
+        "evidence": "actual runtime-provenance.json"
+      },
+      "petsc_library": {
+        "value": null,
+        "evidence": "actual runtime-provenance.json"
+      },
+      "mpi_standard": {
+        "value": null,
+        "evidence": "actual runtime-provenance.json"
+      },
+      "mpi_library": {
+        "value": null,
+        "evidence": "actual runtime-provenance.json"
+      }
+    },
+    "capture_times": {
+      "before_capture_time_utc": "2026-11-18T20:45:10.948640+00:00",
+      "after_capture_time_utc": "2026-11-18T20:51:45.433547+00:00"
+    },
+    "mpi": {
+      "requested_processes": null,
+      "observed_world_size": 1,
+      "observed_rank": 0
+    },
+    "threads": {
+      "OMP_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1",
+      "MKL_NUM_THREADS": "unset or nonnumeric; value not recorded",
+      "NUMEXPR_NUM_THREADS": "unset or nonnumeric; value not recorded"
+    },
+    "matlab_max_compute_threads": null,
+    "rng": {
+      "artifact": "rng-before.json",
+      "artifact_present": true,
+      "claimed_sha256": "76fd05679e06d9989d48bc2351526c303a2a02c002b68c6b05a05e633704048e",
+      "actual_sha256": "76fd05679e06d9989d48bc2351526c303a2a02c002b68c6b05a05e633704048e",
+      "reported_hash_matches_actual": true,
+      "capture_reports_no_reset_or_advance": true,
+      "unobserved": [
+        "Triangle internal RNG",
+        "script-owned generators",
+        "other solver-library generators"
+      ],
+      "global_states": {
+        "numpy_global": {
+          "algorithm": "MT19937",
+          "captured": true,
+          "seed": null,
+          "seed_status": "not inferable from current state",
+          "state_member": "numpy_random"
+        },
+        "python_global": {
+          "captured": true,
+          "seed": null,
+          "seed_status": "not inferable from current state",
+          "state_member": "python_random"
+        }
+      }
+    },
+    "version_details": {
+      "firedrake": {
+        "value": null,
+        "installed_distributions": {
+          "firedrake": "2025.10.2"
+        },
+        "evidence": "actual runtime-provenance.json"
+      },
+      "h5py": {
+        "value": "3.16.0",
+        "installed_distributions": {},
+        "evidence": "actual runtime-provenance.json"
+      },
+      "icepack": {
+        "value": null,
+        "installed_distributions": {
+          "icepack": "1.1.0"
+        },
+        "evidence": "actual runtime-provenance.json"
+      },
+      "mpi4py": {
+        "value": "4.1.1",
+        "installed_distributions": {},
+        "evidence": "actual runtime-provenance.json"
+      },
+      "mpi_library": {
+        "value": "Open MPI 5.0.10",
+        "installed_distributions": {},
+        "evidence": "actual runtime-provenance.json"
+      },
+      "mpi_standard": {
+        "value": [
+          3,
+          1
+        ],
+        "installed_distributions": {},
+        "evidence": "actual runtime-provenance.json"
+      },
+      "numpy": {
+        "value": "1.26.4",
+        "installed_distributions": {},
+        "evidence": "actual runtime-provenance.json"
+      },
+      "petsc4py": {
+        "value": "3.24.0",
+        "installed_distributions": {},
+        "evidence": "actual runtime-provenance.json"
+      },
+      "petsc_library": {
+        "value": [
+          3,
+          24,
+          0
+        ],
+        "installed_distributions": {},
+        "evidence": "actual runtime-provenance.json"
+      },
+      "python": {
+        "value": "3.12.13",
+        "installed_distributions": {},
+        "evidence": "actual runtime-provenance.json"
+      }
+    },
+    "gmsh_version_status": "not captured by this observer; do not infer from other package versions"
+  },
+  "recording_status": "Reviewed 150-second native walkthrough published with this record",
+  "native_execution_accepted": true,
+  "recording_file": "icepack-basic.mp4"
+}

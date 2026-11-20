@@ -47,10 +47,24 @@ _SHARED_MENU_CSS = """
     gap: 10px;
 }
 
-.cryostack-app-mark {
+/* The mark is the way back to the CryoStack home page. */
+.cryostack-app-mark-link {
+    display: inline-flex;
     flex: 0 0 auto;
-    width: 30px;
-    height: 30px;
+    border-radius: 9px;
+    transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.cryostack-app-mark-link:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+}
+
+.cryostack-app-mark {
+    display: block;
+    flex: 0 0 auto;
+    width: auto;
+    height: 50px;
     object-fit: contain;
     border-radius: 7px;
 }
@@ -227,6 +241,10 @@ def _build_application_menu(
     """Build a shared CryoStack application navigation header."""
 
     documentation_root = documentation_root.rstrip("/")
+    soft_launch_link = (
+        f'<a href="{documentation_root}/soft_launch.html">Pilot Tutorials</a>'
+        if application_name == "CryoLauncher" else ""
+    )
 
     cryostack_mark = cryostack_mark_img()
 
@@ -239,7 +257,12 @@ def _build_application_menu(
     <div class="cryostack-app-header-left">
 
         <div class="cryostack-app-identity">
-            {cryostack_mark}
+            <a
+                class="cryostack-app-mark-link"
+                href="/"
+                title="CryoStack home"
+                aria-label="CryoStack home"
+            >{cryostack_mark}</a>
             <a
                 class="cryostack-app-home"
                 href="{application_href}"
@@ -263,6 +286,7 @@ def _build_application_menu(
             <a href="{documentation_root}/resources.html">
                 Resources
             </a>
+            {soft_launch_link}
         </nav>
 
     </div>
@@ -285,7 +309,7 @@ def build_icesheets_app_menu() -> W.HTML:
 
     return _build_application_menu(
         application_name="CryoLauncher",
-        application_href="/icesheets/",
+        application_href="/cryolauncher/",
         documentation_root="/applications/icesheets",
     )
 
@@ -295,7 +319,7 @@ def build_icesee_app_menu() -> W.HTML:
 
     return _build_application_menu(
         application_name="ICESEE",
-        application_href="/icesee-gui/",
+        application_href="/icesee/",
         documentation_root="/applications/icesee",
     )
 
@@ -312,6 +336,14 @@ def load_cryostack_account_assets() -> None:
             """
 (() => {
     "use strict";
+
+    // Show the CryoStack mark in the browser tab instead of Jupyter's icon.
+    document.querySelectorAll('link[rel~="icon"]').forEach((link) => link.remove());
+    const icon = document.createElement("link");
+    icon.rel = "icon";
+    icon.type = "image/png";
+    icon.href = "/_static/cryostack-favicon.png";
+    document.head.appendChild(icon);
 
     const cssId = "cryostack-shared-account-css";
     const scriptId = "cryostack-shared-account-script";

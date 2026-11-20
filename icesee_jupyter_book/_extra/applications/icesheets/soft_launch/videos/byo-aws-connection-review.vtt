@@ -1,0 +1,44 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:12.000
+1. Review the connected account
+Choose Cloud and confirm the intended provider and region.
+This account already has a CryoStack access role. Select Review connection setup to inspect the saved connection.
+Account identifiers are hidden in this tutorial.
+
+2
+00:00:12.000 --> 00:00:28.000
+2. Inspect the existing setup
+Review current AWS connection keeps the existing connection and saved role.
+Review existing AWS stack opens its template, permissions and Outputs RoleArn for inspection.
+The AWS-console inspection is explained here; it is not recorded in this clip.
+
+3
+00:00:28.000 --> 00:00:48.000
+First connection: AWS setup
+For a new connection: Connect AWS Account → Open AWS Setup → review the role template and permissions → create the stack.
+Copy Outputs RoleArn back into CryoLauncher, then select Verify connection.
+These first-time creation steps are explained, not performed. This recording reuses an existing role.
+
+4
+00:00:48.000 --> 00:01:04.000
+3. Use the same saved role
+Copy or paste the saved Role ARN for this same connection. Then select Verify connection.
+To connect a different account, use Change AWS account rather than replacing the role in this review form.
+The role is masked. Entry and verification were completed during an omitted wait.
+
+5
+00:01:04.000 --> 00:01:20.000
+4. Confirm actual verification
+The recorded final state says: Verified the existing connection. No new access role was created.
+Verification uses fresh temporary access and checks the AWS account identity.
+This confirms account access. It does not prepare compute resources, test MATLAB or check billing.
+
+6
+00:01:20.000 --> 00:01:36.000
+5. Continue to the run review
+Connected and the updated Last verified time confirm the saved account is usable. Select Done to close the review.
+Check storage, compute, image and any MATLAB readiness before launching.
+BYO runs charge the connected AWS account. The run estimate is separate from AWS Billing.
+

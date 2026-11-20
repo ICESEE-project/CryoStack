@@ -1,0 +1,234 @@
+{
+  "video_sha256": "db0cf5f7cdebd75bb1fd7d5efccf5338eba18678b141920f6ecf64b5e4df75a8",
+  "duration_seconds": 162.0,
+  "chapters": [
+    {
+      "id": "goal",
+      "step": "Goal",
+      "start_seconds": 0,
+      "end_seconds": 14.0,
+      "where": "Environment \u2192 AWS account",
+      "screenText": "Review and verify an existing AWS account connection.",
+      "screenWhy": "Use the access role already registered for this account; this is not first-time account setup.",
+      "expectedResult": "Have the same saved Role ARN available privately.",
+      "logical_step_id": "orientation",
+      "pause_after": false,
+      "title": "1. Review the connected account",
+      "instructions": [
+        "Choose Cloud and confirm the intended provider and region.",
+        "This account already has a CryoStack access role. Select Review connection setup to inspect the saved connection."
+      ],
+      "why": "Use the access role already registered for this account; this is not first-time account setup.",
+      "note": "Account identifiers are hidden in this tutorial."
+    },
+    {
+      "id": "start",
+      "step": "Start",
+      "start_seconds": 14.0,
+      "end_seconds": 24.0,
+      "where": "Mode and Environment",
+      "screenText": "Start here in CryoLauncher. Choose Cloud for this tutorial.",
+      "screenWhy": "The Cloud environment panel contains the account connection and its review controls.",
+      "expectedResult": "Your workspace keeps scripts, datasets, run history and results together.",
+      "logical_step_id": "orientation",
+      "pause_after": false,
+      "title": "Start here",
+      "instructions": [
+        "Open CryoLauncher and sign in. Use an approved connected cloud account with its resources prepared.",
+        "The following steps select this tutorial\u2019s model and example."
+      ],
+      "note": "Shared application orientation; the case-specific configuration follows.",
+      "why": "The Cloud environment panel contains the account connection and its review controls."
+    },
+    {
+      "id": "account",
+      "step": 1,
+      "start_seconds": 24.0,
+      "end_seconds": 38.0,
+      "where": "Environment \u2192 AWS account",
+      "screenText": "Confirm the intended provider and region; open Review connection setup.",
+      "screenWhy": "Review inspects the existing account connection without creating another role.",
+      "expectedResult": "Keep the connected account and saved role unchanged.",
+      "logical_step_id": "step-1",
+      "pause_after": true,
+      "title": "1. Review the connected account",
+      "instructions": [
+        "Choose Cloud and confirm the intended provider and region.",
+        "This account already has a CryoStack access role. Select Review connection setup to inspect the saved connection."
+      ],
+      "why": "Review inspects the existing account connection without creating another role.",
+      "note": "Account identifiers are hidden in this tutorial."
+    },
+    {
+      "id": "review",
+      "step": 2,
+      "start_seconds": 38.0,
+      "end_seconds": 52.0,
+      "where": "Environment \u2192 AWS account",
+      "screenText": "Read Review current AWS connection and the existing-role instructions.",
+      "screenWhy": "This form verifies the same saved role rather than replacing its trust or reconnecting the account.",
+      "expectedResult": "The form contains the saved Role ARN; identifiers are masked here.",
+      "logical_step_id": "step-2",
+      "pause_after": true,
+      "title": "2. Inspect the existing setup",
+      "instructions": [
+        "Review current AWS connection keeps the existing connection and saved role.",
+        "Review existing AWS stack opens its template, permissions and Outputs RoleArn for inspection."
+      ],
+      "why": "This form verifies the same saved role rather than replacing its trust or reconnecting the account.",
+      "note": "The AWS-console inspection is explained here; it is not recorded in this clip."
+    },
+    {
+      "id": "aws-stack",
+      "step": 2,
+      "start_seconds": 52.0,
+      "end_seconds": 66.0,
+      "where": "Environment \u2192 AWS account",
+      "screenText": "If needed, inspect the existing AWS stack in the AWS console.",
+      "screenWhy": "Its template, permissions and Outputs RoleArn explain the existing grant.",
+      "expectedResult": "Console inspection is explained here; it is not filmed.",
+      "logical_step_id": "step-2",
+      "pause_after": true,
+      "title": "2. Inspect the existing setup",
+      "instructions": [
+        "Review current AWS connection keeps the existing connection and saved role.",
+        "Review existing AWS stack opens its template, permissions and Outputs RoleArn for inspection."
+      ],
+      "why": "Its template, permissions and Outputs RoleArn explain the existing grant.",
+      "note": "The AWS-console inspection is explained here; it is not recorded in this clip."
+    },
+    {
+      "id": "saved-role",
+      "step": 3,
+      "start_seconds": 66.0,
+      "end_seconds": 81.0,
+      "where": "Environment \u2192 AWS account",
+      "screenText": "Copy or paste the same saved Role ARN into the review form.",
+      "screenWhy": "The review is bound to this existing connection; use Change AWS account for a different account.",
+      "expectedResult": "Keep the ARN private and use the role for this same account.",
+      "logical_step_id": "step-3",
+      "pause_after": true,
+      "title": "3. Use the same saved role",
+      "instructions": [
+        "Copy or paste the saved Role ARN for this same connection. Then select Verify connection.",
+        "To connect a different account, use Change AWS account rather than replacing the role in this review form."
+      ],
+      "why": "The review is bound to this existing connection; use Change AWS account for a different account.",
+      "note": "The role is masked. Entry and verification were completed during an omitted wait."
+    },
+    {
+      "id": "verify-cue",
+      "step": 4,
+      "start_seconds": 81.0,
+      "end_seconds": 93.0,
+      "where": "Environment \u2192 AWS account",
+      "screenText": "Choose Verify connection and allow the identity check to finish.",
+      "screenWhy": "Verification uses fresh temporary access to check the AWS account identity.",
+      "expectedResult": "A successful check reports Verified the existing connection.",
+      "logical_step_id": "step-4",
+      "pause_after": true,
+      "title": "3. Use the same saved role",
+      "instructions": [
+        "Copy or paste the saved Role ARN for this same connection. Then select Verify connection.",
+        "To connect a different account, use Change AWS account rather than replacing the role in this review form."
+      ],
+      "why": "Verification uses fresh temporary access to check the AWS account identity.",
+      "note": "The role is masked. Entry and verification were completed during an omitted wait."
+    },
+    {
+      "id": "verifying",
+      "step": 4,
+      "start_seconds": 93.0,
+      "end_seconds": 104.0,
+      "where": "Environment \u2192 AWS account",
+      "screenText": "Wait for the existing-role verification to complete.",
+      "screenWhy": "Checking access is separate from preparing compute resources or launching a model.",
+      "expectedResult": "The following view resumes after the verification wait.",
+      "logical_step_id": "step-4",
+      "pause_after": true,
+      "title": "3. Use the same saved role",
+      "instructions": [
+        "Copy or paste the saved Role ARN for this same connection. Then select Verify connection.",
+        "To connect a different account, use Change AWS account rather than replacing the role in this review form."
+      ],
+      "why": "Checking access is separate from preparing compute resources or launching a model.",
+      "note": "The role is masked. Entry and verification were completed during an omitted wait."
+    },
+    {
+      "id": "verified",
+      "step": 4,
+      "start_seconds": 104.0,
+      "end_seconds": 117.0,
+      "where": "Environment \u2192 AWS account",
+      "screenText": "Confirm Verified the existing connection.",
+      "screenWhy": "This confirms account access; no new access role was created.",
+      "expectedResult": "The form explicitly reports successful verification of the existing connection.",
+      "logical_step_id": "step-4",
+      "pause_after": true,
+      "title": "4. Confirm actual verification",
+      "instructions": [
+        "The recorded final state says: Verified the existing connection. No new access role was created.",
+        "Verification uses fresh temporary access and checks the AWS account identity."
+      ],
+      "why": "This confirms account access; no new access role was created.",
+      "note": "This confirms account access. It does not prepare compute resources, test MATLAB or check billing."
+    },
+    {
+      "id": "done",
+      "step": 5,
+      "start_seconds": 117.0,
+      "end_seconds": 132.0,
+      "where": "Environment \u2192 AWS account",
+      "screenText": "Choose Done to close the connection review.",
+      "screenWhy": "The saved connection remains available for the ordinary run-readiness checks.",
+      "expectedResult": "Return to the Cloud environment account panel.",
+      "logical_step_id": "step-5",
+      "pause_after": true,
+      "title": "5. Continue to the run review",
+      "instructions": [
+        "Connected and the updated Last verified time confirm the saved account is usable. Select Done to close the review.",
+        "Check storage, compute, image and any MATLAB readiness before launching."
+      ],
+      "why": "The saved connection remains available for the ordinary run-readiness checks.",
+      "note": "BYO runs charge the connected AWS account. The run estimate is separate from AWS Billing."
+    },
+    {
+      "id": "connected",
+      "step": 5,
+      "start_seconds": 132.0,
+      "end_seconds": 146.0,
+      "where": "Environment \u2192 AWS account",
+      "screenText": "Check Connected and the updated Last verified time.",
+      "screenWhy": "Account verification does not test MATLAB, prepare compute or review billing.",
+      "expectedResult": "Check storage, image, compute and any MATLAB readiness before launch.",
+      "logical_step_id": "step-5",
+      "pause_after": true,
+      "title": "5. Continue to the run review",
+      "instructions": [
+        "Connected and the updated Last verified time confirm the saved account is usable. Select Done to close the review.",
+        "Check storage, compute, image and any MATLAB readiness before launching."
+      ],
+      "why": "Account verification does not test MATLAB, prepare compute or review billing.",
+      "note": "BYO runs charge the connected AWS account. The run estimate is separate from AWS Billing."
+    },
+    {
+      "id": "scope",
+      "step": "Keep",
+      "start_seconds": 146.0,
+      "end_seconds": 162.0,
+      "where": "Environment \u2192 AWS account",
+      "screenText": "Use the separate first-time setup flow only for a new account connection.",
+      "screenWhy": "This tutorial records existing-role review and verification; it does not create or run a new stack.",
+      "expectedResult": "BYO model runs charge the connected AWS account; review estimated charges before launch.",
+      "logical_step_id": "step-Keep",
+      "pause_after": true,
+      "title": "First connection: AWS setup",
+      "instructions": [
+        "For a new connection: Connect AWS Account \u2192 Open AWS Setup \u2192 review the role template and permissions \u2192 create the stack.",
+        "Copy Outputs RoleArn back into CryoLauncher, then select Verify connection."
+      ],
+      "why": "This tutorial records existing-role review and verification; it does not create or run a new stack.",
+      "note": "These first-time creation steps are explained, not performed. This recording reuses an existing role."
+    }
+  ]
+}

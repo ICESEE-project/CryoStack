@@ -111,6 +111,8 @@ def render_field(pkg, solution: str, field: str, timestep=None, *, outdir=None) 
         ax.set_aspect("equal")
         ax.set_xlabel("x")
         ax.set_ylabel("y")
+        from cryostack_src.visualization.axes import format_map_axes
+        format_map_axes(ax)
         fig.colorbar(mappable, ax=ax)
 
         out = _figures_dir(pkg, outdir) / figure_name(

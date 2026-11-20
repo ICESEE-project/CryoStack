@@ -1,0 +1,32 @@
+{
+  "guide": "Icepack HDF5 initial fields",
+  "native_case": "IP-DATA-H5-20261119",
+  "duration_seconds": 251,
+  "audio": false,
+  "maximum_upscale": 1.6,
+  "video_sha256": "f38fd5276bcc1f6ba67cbd8b19b309f54f631930db08af9c9839eee8f4cb09c9",
+  "native_archive_sha256": "617b09e99d1b561951e072b7935f47c6edaf4bbd02e9cd0339e669740aad7e1e",
+  "scope": "Existing accepted native run and file actions; no additional model run. Separate control guidance is labeled. The tutorial uses the supplied HDF5 schema and scripts. Initial-field interpolation equality is separate from final-field equality, accuracy or a native repeat.",
+  "files": {
+    "icepack-h5-final-wide.png": {
+      "sha256": "f9d893ec7ef7334fd6f5a83476aa999a02c2786d40013ea3d35df4eebbf99be5",
+      "bytes": 112853
+    },
+    "icepack-h5-initial-wide.png": {
+      "sha256": "b309f3b3b94e5cae9b25122a34fd4f167a94a10700539934cbd9545e8499e665",
+      "bytes": 254279
+    },
+    "icepack-own-h5-data-wide.chapters.json": {
+      "sha256": "b55cd9535b6dd242c1c96af6e2d17c50d63d9de69e1679b053093be3551c385e",
+      "bytes": 22161
+    },
+    "icepack-own-h5-data-wide.mp4": {
+      "sha256": "f38fd5276bcc1f6ba67cbd8b19b309f54f631930db08af9c9839eee8f4cb09c9",
+      "bytes": 3706498
+    },
+    "icepack-own-h5-data-wide.vtt": {
+      "sha256": "6791c79676338936a0b09d7209a54616f16f93aaddeefa3a216728918ab1fec5",
+      "bytes": 5834
+    }
+  }
+}

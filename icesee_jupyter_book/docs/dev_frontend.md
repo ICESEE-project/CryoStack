@@ -84,6 +84,45 @@ All responsive rules for the `cryostack-*` component classes live in a single
 stylesheet, `icesee_jupyter_book/ui/shared_app_styles.py`. Do not add a
 per-gateway visual system.
 
+## Documentation theme contract
+
+Every CryoStack application may organize its scientific content differently,
+but its documentation must retain the shared CryoStack identity and escape
+routes:
+
+- the CryoStack logo always returns to the CryoStack platform home;
+- the documentation identifies whether the reader is in platform docs or a
+  named application's docs;
+- application docs always provide a visible route back to **CryoStack
+  documentation** and a visible **Open application** action;
+- every documentation page uses the shared full-width CryoStack header, in
+  one of two deliberate layouts chosen by `HEADER_LAYOUT` in
+  `_static/icesee-sidebar.js` (never per page):
+  - **application docs — spacious, two rows:** logo | application name /
+    section breadcrumb, a large search box, page tools and account on the
+    first row; that application's pages as tabs (from its table of contents)
+    on the second, with **Open application ↗** at the far right;
+  - **CryoStack platform docs — compact, one row:** logo | CryoStack, the
+    platform tabs inline, then search, page tools and account (two rows only
+    below 1140px).
+  There is no separate vertical sidebar, so platform and application docs
+  never look like two different sites;
+- typography, blue/navy color tokens, active states, cards, buttons, spacing,
+  and accessibility states follow the CryoStack visual system;
+- application-specific scientific controls belong in that application's own
+  manual and must not be copied into the platform manual.
+
+The Jupyter Book applications—CryoLauncher, ICESEE, and Frozen Legacies—share
+`_static/icesee.css` and `_static/icesee-sidebar.js`; extend those shared files
+instead of forking the header. LIVIST uses Zensical, so it implements the
+same contract in `docs/stylesheets/cryostack.css` and
+`docs/javascripts/cryostack-navigation.js`. Engine-specific markup may differ,
+but the identity, navigation outcome, and design tokens must remain equivalent.
+
+After a documentation-shell change, rebuild the global book and all application
+books with `bin/build_application_docs.sh`, rebuild LIVIST with Zensical, and
+inspect at least one desktop and phone-sized render from each engine.
+
 ## How the applications differ
 
 CryoStack does not impose one UI structure on every application:

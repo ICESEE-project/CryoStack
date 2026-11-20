@@ -108,11 +108,13 @@ CURATED_ICEPACK_PARAMETERS: tuple[IcepackParameter, ...] = (
         minimum=1,
         maximum=100000,
         rationale=(
-            "Where an example uses a literal `num_timesteps = <int>` (01, 02) "
-            "this only sets the length of the time loop -- it does not change "
-            "the physics or the timestep size. Examples that derive the step "
-            "count differently (e.g. num_years * timesteps_per_year in 04) do "
-            "not match the pattern and the override is rejected pre-submission."
+            "Changes the number of time-loop iterations in examples with a literal "
+            "`num_timesteps = <int>` (01, 02). It can also change the timestep size "
+            "and numerical result: 02 Synthetic Ice Shelf computes "
+            "`dt = final_time / num_timesteps`. Keep the example's default for "
+            "reproducibility comparisons. Examples that compute the step count "
+            "differently (e.g. num_years * timesteps_per_year in 04) do not match "
+            "the override pattern and are rejected before submission."
         ),
         assignment_pattern=r"^(?P<indent>[ \t]*)num_timesteps\s*=\s*(?P<value>[0-9]+)\s*$",
         evidence=("01-synthetic-ice-sheet", "02-synthetic-ice-shelf"),

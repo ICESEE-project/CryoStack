@@ -1,0 +1,73 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:14.000
+Review and verify an existing AWS account connection.
+Why: Use the access role already registered for this account; this is not first-time account setup.
+Look for: Have the same saved Role ARN available privately.
+
+2
+00:00:14.000 --> 00:00:24.000
+Start here in CryoLauncher. Choose Cloud for this tutorial.
+Why: The Cloud environment panel contains the account connection and its review controls.
+Look for: Your workspace keeps scripts, datasets, run history and results together.
+
+3
+00:00:24.000 --> 00:00:38.000
+Confirm the intended provider and region; open Review connection setup.
+Why: Review inspects the existing account connection without creating another role.
+Look for: Keep the connected account and saved role unchanged.
+
+4
+00:00:38.000 --> 00:00:52.000
+Read Review current AWS connection and the existing-role instructions.
+Why: This form verifies the same saved role rather than replacing its trust or reconnecting the account.
+Look for: The form contains the saved Role ARN; identifiers are masked here.
+
+5
+00:00:52.000 --> 00:01:06.000
+If needed, inspect the existing AWS stack in the AWS console.
+Why: Its template, permissions and Outputs RoleArn explain the existing grant.
+Look for: Console inspection is explained here; it is not filmed.
+
+6
+00:01:06.000 --> 00:01:21.000
+Copy or paste the same saved Role ARN into the review form.
+Why: The review is bound to this existing connection; use Change AWS account for a different account.
+Look for: Keep the ARN private and use the role for this same account.
+
+7
+00:01:21.000 --> 00:01:33.000
+Choose Verify connection and allow the identity check to finish.
+Why: Verification uses fresh temporary access to check the AWS account identity.
+Look for: A successful check reports Verified the existing connection.
+
+8
+00:01:33.000 --> 00:01:44.000
+Wait for the existing-role verification to complete.
+Why: Checking access is separate from preparing compute resources or launching a model.
+Look for: The following view resumes after the verification wait.
+
+9
+00:01:44.000 --> 00:01:57.000
+Confirm Verified the existing connection.
+Why: This confirms account access; no new access role was created.
+Look for: The form explicitly reports successful verification of the existing connection.
+
+10
+00:01:57.000 --> 00:02:12.000
+Choose Done to close the connection review.
+Why: The saved connection remains available for the ordinary run-readiness checks.
+Look for: Return to the Cloud environment account panel.
+
+11
+00:02:12.000 --> 00:02:26.000
+Check Connected and the updated Last verified time.
+Why: Account verification does not test MATLAB, prepare compute or review billing.
+Look for: Check storage, image, compute and any MATLAB readiness before launch.
+
+12
+00:02:26.000 --> 00:02:42.000
+Use the separate first-time setup flow only for a new account connection.
+Why: This tutorial records existing-role review and verification; it does not create or run a new stack.
+Look for: BYO model runs charge the connected AWS account; review estimated charges before launch.

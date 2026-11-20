@@ -54,70 +54,60 @@
     <div class="cryostack-docs-summary-grid">
 
       <div class="cryostack-docs-summary-card">
-        <div class="cryostack-docs-summary-icon">AR</div>
         <h3><a href="dev_architecture.html">Architecture</a></h3>
         <p>How the web shell, gateways, application layer, and execution
            backends fit together.</p>
       </div>
 
       <div class="cryostack-docs-summary-card">
-        <div class="cryostack-docs-summary-icon">FA</div>
         <h3><a href="dev_frontend.html">Frontend &amp; Applications</a></h3>
         <p>Local environment, running a gateway, Basic/Advanced modes, and
            the shared application-shell components.</p>
       </div>
 
       <div class="cryostack-docs-summary-card">
-        <div class="cryostack-docs-summary-icon">EX</div>
         <h3><a href="dev_execution.html">Execution Backends</a></h3>
         <p>Local/Remote/Cloud, AWS Batch (Fargate/EC2), and the shared
            Connector/Relay path for private Cloud connectivity.</p>
       </div>
 
       <div class="cryostack-docs-summary-card">
-        <div class="cryostack-docs-summary-icon">CN</div>
         <h3><a href="dev_connector.html">Connector &amp; Relay</a></h3>
         <p>Connector architecture, building one locally, versioning, and
            the publishing workflow.</p>
       </div>
 
       <div class="cryostack-docs-summary-card">
-        <div class="cryostack-docs-summary-icon">MR</div>
         <h3><a href="dev_models_results.html">Models, Examples &amp; Results</a></h3>
         <p>The model-adapter contract, WorkspaceManager boundaries, the
            result package, and visualization.</p>
       </div>
 
       <div class="cryostack-docs-summary-card">
-        <div class="cryostack-docs-summary-icon">EC</div>
         <h3><a href="dev_extending.html">Extending CryoStack</a></h3>
         <p>Concrete recipes: a new application, model adapter, Remote/Cloud
            example, capability, or Auto-config change.</p>
       </div>
 
       <div class="cryostack-docs-summary-card">
-        <div class="cryostack-docs-summary-icon">AC</div>
         <h3><a href="building_agents.html">Auto-config &middot; Beta</a></h3>
         <p>The deterministic configuration layer's behavioral contract and
            implementation files.</p>
       </div>
 
       <div class="cryostack-docs-summary-card">
-        <div class="cryostack-docs-summary-icon">TE</div>
         <h3><a href="dev_testing.html">Testing</a></h3>
         <p>The Python suite, Node tests, the book build, source guards, and
            what to run for each kind of change.</p>
       </div>
 
       <div class="cryostack-docs-summary-card">
-        <div class="cryostack-docs-summary-icon">DM</div>
         <h3><a href="dev_deployment.html">Deployment &amp; Maintenance</a></h3>
         <p>Contribution workflow, documentation builds, and where the
            actual maintainer-only procedures live.</p>
       </div>
 
       <div class="cryostack-docs-summary-card">
-        <div class="cryostack-docs-summary-icon">OC</div>
         <h3><a href="owner_continuity.html">Owner Continuity</a></h3>
         <p>The November delivery program, absence-readiness backlog, release
            gates, and return checklist.</p>
@@ -190,8 +180,8 @@
 
       <div class="cryostack-footer-group">
         <h3>Applications</h3>
-        <a href="/icesheets/">CryoLauncher</a>
-        <a href="/icesee-gui/">ICESEE</a>
+        <a href="/cryolauncher/">CryoLauncher</a>
+        <a href="/icesee/">ICESEE</a>
         <a href="/livist/">LIVIST</a>
       </div>
 

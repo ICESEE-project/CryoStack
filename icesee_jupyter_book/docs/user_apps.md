@@ -29,48 +29,22 @@
 
 ---
 
-## CryoLauncher — ISSM and Icepack
+## Choose by scientific task
 
-CryoLauncher configures and runs ISSM and Icepack. Its configuration
-experiences are **Basic** (curated, solver-aware parameters), **Advanced**
-(the full working copy), and **Auto-config · Beta** (natural-language
-proposals over the same configuration state) — see the
-<a href="../applications/icesheets/user_manual.html">CryoLauncher User Manual</a>
-and <a href="../applications/icesheets/getting_started.html">Getting Started</a>.
+| Application | Use it for | Interaction model | Application documentation |
+| --- | --- | --- | --- |
+| **CryoLauncher** | Configuring and running ISSM and Icepack examples | Configure, submit, monitor, and retrieve a model run | <a href="../applications/icesheets/getting_started.html">Getting Started</a> · <a href="../applications/icesheets/user_manual.html">User Manual</a> |
+| **ICESEE** | Ensemble state and parameter estimation | Configure, submit, monitor, and retrieve a data-assimilation workflow | <a href="../applications/icesee/getting_started.html">Getting Started</a> · <a href="../applications/icesee/user_manual.html">User Manual</a> |
+| **Frozen Legacies** | Historical Antarctic airborne-radar observations and products | Search, map, inspect, process, review, and download radar records | <a href="../applications/frozen_legacies/getting_started.html">Getting Started</a> · <a href="../applications/frozen_legacies/user_manual.html">User Manual</a> |
+| **LIVIST** | Antarctic englacial-temperature products and borehole constraints | Map, compare, interpret, and download published temperature products | <a href="/livist/">Open LIVIST</a> · <a href="/livist/docs/livist_user_manual/">User Manual</a> |
 
-CryoLauncher's execution paths are **Remote** and **Cloud**; it has no
-Local execution mode for a standalone ISSM or Icepack run. ISSM's container
-workflow uses MATLAB and requires a license; Icepack does not.
-
-## ICESEE — ensemble data assimilation
-
-ICESEE organizes execution as **Local**, **Remote**, or **Cloud**, with
-**Auto-config · Beta** available alongside that organization — not a
-Basic/Advanced split. See the
-<a href="../applications/icesee/user_manual.html">ICESEE User Manual</a> and
-<a href="../applications/icesee/getting_started.html">Getting Started</a>.
-
-ICESEE can wrap ISSM, Icepack, or a synthetic model such as Lorenz-96 as
-its forecast model. Dependencies follow that choice: an ISSM-based
-workflow requires MATLAB, Icepack and Lorenz-96 do not — ICESEE itself
-does not generally require MATLAB.
-
-## Frozen Legacies — historical radar catalog
-
-Frozen Legacies discovers, catalogs, and interprets historical Antarctic
-radar observations. It is not organized around Local/Remote/Cloud
-execution modes — see its own
-<a href="../applications/frozen_legacies/getting_started.html">Getting Started</a>
-and <a href="../applications/frozen_legacies/user_manual.html">User Manual</a>.
-
-## LIVIST — englacial temperature products
-
-LIVIST explores Antarctic englacial-temperature products inferred from
-radar and constrained by boreholes, through its own frontend served under
-the CryoStack deployment registry. It does not use CryoLauncher/ICESEE
-execution-mode concepts — see
-<a href="/livist/">Open LIVIST</a> and its own
-<a href="/livist/docs/livist_user_manual/">User Manual</a>.
+The first two are **workflow-execution applications**; the other two are
+**scientific-data applications**. Local, Remote, and Cloud are therefore not
+missing options in Frozen Legacies or LIVIST—they do not describe those
+applications' work. See [Run Scientific Workflows](user_execution.md) or
+[Explore Scientific Data](user_data.md) for the appropriate platform-level
+orientation. Detailed controls and procedures stay in each application's own
+manual.
 
 ## Control Center — administrative infrastructure
 

@@ -89,7 +89,7 @@
 
         <a
           class="cryostack-card-btn"
-          href="/icesheets/"
+          href="/cryolauncher/"
           data-requires-auth="true"
         >
           Open Modeling GUI
@@ -119,7 +119,7 @@
 
         <a
           class="cryostack-card-btn green-btn"
-          href="/icesee-gui/"
+          href="/icesee/"
           data-requires-auth="true"
         >
           Open ICESEE GUI
@@ -204,7 +204,6 @@
 
       <div class="cryostack-workflow-card">
         <div class="cryostack-workflow-number">01</div>
-        <div class="cryostack-workflow-icon">CFG</div>
         <h3>Configure</h3>
         <p>
           Choose a model and example and set the scientific options through a
@@ -218,7 +217,6 @@
 
       <div class="cryostack-workflow-card">
         <div class="cryostack-workflow-number">02</div>
-        <div class="cryostack-workflow-icon">RUN</div>
         <h3>Execute</h3>
         <p>
           Submit the run to a remote server, an HPC cluster, or a container,
@@ -232,7 +230,6 @@
 
       <div class="cryostack-workflow-card">
         <div class="cryostack-workflow-number">03</div>
-        <div class="cryostack-workflow-icon">MON</div>
         <h3>Monitor</h3>
         <p>
           Follow staging, the scheduler job, and progress in a run log and
@@ -246,7 +243,6 @@
 
       <div class="cryostack-workflow-card">
         <div class="cryostack-workflow-number">04</div>
-        <div class="cryostack-workflow-icon">VIZ</div>
         <h3>Visualize</h3>
         <p>
           Discover what the run actually produced and render fields and
@@ -260,7 +256,6 @@
 
       <div class="cryostack-workflow-card">
         <div class="cryostack-workflow-number">05</div>
-        <div class="cryostack-workflow-icon">DL</div>
         <h3>Download</h3>
         <p>
           Take the structured result package or the rendered figures for
@@ -486,9 +481,11 @@
           workflows have each completed end-to-end execution on both Fargate
           and EC2 On-Demand (single node, CPU) — for ISSM, including
           institutional MATLAB licensing through Connector/Relay — and
-          ICESEE's Lorenz-96 example has done the same on Fargate. EC2 Spot,
-          GPU, multi-node, and ICESEE's own Cloud/ISSM workflows remain
-          unvalidated.
+          ICESEE's earlier live-AWS reference is Lorenz-96 on Fargate.
+          CryoLauncher EC2 Spot and custom networking have no qualified run
+          here; GPU and multi-node scientific submission are blocked.
+          ICESEE's current staged runner and its separate restrictions are
+          listed in the Cloud Run Guide; ICESEE Cloud/ISSM is refused.
         </p>
 
         <a href="docs/hpc_cloud.html">
@@ -524,8 +521,8 @@
       <div class="cryostack-footer-group">
         <h3>Applications</h3>
 
-        <a href="/icesheets/">CryoLauncher</a>
-        <a href="/icesee-gui/">ICESEE</a>
+        <a href="/cryolauncher/">CryoLauncher</a>
+        <a href="/icesee/">ICESEE</a>
         <a href="/livist/">LIVIST</a>
       </div>
 

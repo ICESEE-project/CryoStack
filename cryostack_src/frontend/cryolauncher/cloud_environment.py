@@ -121,6 +121,8 @@ class CloudEnvironmentWidgets:
 
     #: Advanced: AWS Batch compute environment -- "fargate" (default) or "ec2"
     compute_mode: W.Dropdown
+    compute_section: W.VBox
+    hosted_compute_section: W.VBox
     #: EC2-only knobs, revealed only while compute_mode == "ec2"
     ec2_max_vcpus: W.IntText
     ec2_instance_types: W.Text
@@ -231,6 +233,16 @@ class CloudEnvironmentWidgets:
     active_run_log_button: W.Button
     active_run_results_button: W.Button
     active_run_terminate_button: W.Button
+    #: Native account/provisioning controls; hidden for hosted pilot runs.
+    byo_configuration: W.VBox | None = None
+    setup_section: W.VBox | None = None
+    review_connection_button: W.Button | None = None
+    review_connection_panel: W.VBox | None = None
+    review_connection_role_arn: W.Text | None = None
+    review_connection_stack_link: W.HTML | None = None
+    review_connection_status: W.HTML | None = None
+    review_connection_verify_button: W.Button | None = None
+    review_connection_done_button: W.Button | None = None
 
 
 def _status_row(
@@ -283,6 +295,12 @@ def _status_row(
     return row, status
 
 
+def set_cloud_compute_view(widgets: "CloudEnvironmentWidgets", *, advanced: bool, route: str | None) -> None:
+    """Expose effective compute per Advanced route without changing its value."""
+    widgets.compute_section.layout.display = "flex" if advanced and route == "byo" else "none"
+    widgets.hosted_compute_section.layout.display = "flex" if advanced and route == "hosted" else "none"
+
+
 def set_cloud_status(
     widget: W.HTML,
     *,
@@ -303,6 +321,33 @@ _DISCONNECTED_BLURB = (
     "Use your own AWS account and credits. CryoStack uses temporary role "
     "access and does not store your AWS access keys."
 )
+
+
+def _aws_setup_action(setup_url: str, *, verify_label: str = "Verify connection") -> str:
+    """Make the existing CloudFormation handoff visible without changing it."""
+    return (
+        "<style>.cryostack-aws-setup-action a:focus-visible{"
+        "outline:3px solid #f59e0b;outline-offset:3px;}"
+        ".cryostack-aws-setup-action a:hover{background:#1d4ed8!important;}</style>"
+        "<div class='cryostack-aws-setup-action' style='padding:12px;"
+        "border:1px solid #bfdbfe;border-radius:8px;background:#eff6ff;'>"
+        "<div style='font-size:13px;font-weight:700;color:#172033;margin-bottom:8px;'>"
+        "Next: create the CryoStack access role in AWS</div>"
+        f"<a href='{escape_attr(setup_url)}' target='_blank' rel='noopener' "
+        "aria-label='Open AWS Setup in a new tab' "
+        "style='display:inline-flex;align-items:center;min-height:44px;"
+        "box-sizing:border-box;padding:10px 16px;border:1px solid #1d4ed8;"
+        "border-radius:6px;background:#2563eb;color:#fff;font-size:14px;"
+        "font-weight:700;text-decoration:none;'>Open AWS Setup "
+        "<span aria-hidden='true' style='margin-left:8px;'>↗</span></a>"
+        "<span style='display:inline-block;margin:6px 0 0 8px;font-size:11px;"
+        "color:#475569;'>Opens in a new tab</span>"
+        "<div style='font-size:12px;color:#334155;line-height:1.55;margin-top:8px;'>"
+        "In the new AWS CloudFormation tab, confirm the account you want to connect, "
+        "review the access role, and create the stack. When it finishes, copy "
+        "<b>Outputs → RoleArn</b> into <b>Role ARN</b> below, then choose "
+        f"<b>{escape_text(verify_label)}</b>.</div></div>"
+    )
 
 
 def _build_aws_account_section() -> dict:
@@ -344,11 +389,6 @@ def _build_aws_account_section() -> dict:
         <div style="font-size:12px;font-weight:700;color:#172033;margin-bottom:4px;">
           CONNECT YOUR AWS ACCOUNT
         </div>
-        <ol style="font-size:11px;color:#66758d;line-height:1.6;margin:0 0 6px 16px;padding:0;">
-          <li>Open AWS setup</li>
-          <li>Create the CryoStack access role</li>
-          <li>Return here and verify</li>
-        </ol>
         """,
     )
 
@@ -372,8 +412,24 @@ def _build_aws_account_section() -> dict:
     #: version state.
     update_role_button = secondary_button("Update role permissions", icon="wrench")
 
+    review_connection_button = secondary_button("Review connection setup", icon="list-alt")
+    review_connection_role_arn = W.Text(description="Role ARN:", layout=W.Layout(width="100%"),
+                                        style={"description_width": "110px"})
+    review_connection_stack_link = W.HTML()
+    review_connection_status = W.HTML()
+    review_connection_verify_button = primary_button("Verify connection", icon="check")
+    review_connection_done_button = secondary_button("Done", icon="check")
+    review_connection_panel = W.VBox([
+        W.HTML("<b>REVIEW CURRENT AWS CONNECTION</b><div style='font-size:11px;line-height:1.5'>"
+               "This account already has an access role. Copy or paste its saved Role ARN below and verify the same connection. "
+               "This does not create another role, change its trust policy, or reconnect the account. "
+               "For a new connection, first-time setup is Connect AWS Account → Open AWS Setup → create the access role → copy Outputs RoleArn → Verify connection.</div>"),
+        review_connection_stack_link, review_connection_role_arn, review_connection_status,
+        W.HBox([review_connection_verify_button, review_connection_done_button], layout=W.Layout(gap="8px")),
+    ], layout=W.Layout(width="100%", gap="6px", padding="8px", border="1px solid #dfe6ef", display="none"))
+
     connect_actions = W.HBox(
-        [recheck_button, disconnect_button, update_role_button],
+        [recheck_button, review_connection_button, disconnect_button, update_role_button],
         layout=W.Layout(gap="8px", flex_wrap="wrap", display="none"),
     )
 
@@ -451,6 +507,7 @@ def _build_aws_account_section() -> dict:
             connect_button,
             connect_form,
             connect_actions,
+            review_connection_panel,
             update_role_link,
             recovery_actions,
             change_account_panel,
@@ -465,6 +522,13 @@ def _build_aws_account_section() -> dict:
         "connect_button": connect_button,
         "connect_form": connect_form,
         "connect_actions": connect_actions,
+        "review_connection_button": review_connection_button,
+        "review_connection_panel": review_connection_panel,
+        "review_connection_role_arn": review_connection_role_arn,
+        "review_connection_stack_link": review_connection_stack_link,
+        "review_connection_status": review_connection_status,
+        "review_connection_verify_button": review_connection_verify_button,
+        "review_connection_done_button": review_connection_done_button,
         "open_setup_link": open_setup_link,
         "role_arn_input": role_arn_input,
         "verify_button": verify_button,
@@ -509,10 +573,7 @@ def set_aws_account_view(
         widgets.update_role_link.value = ""
 
     if setup_url:
-        widgets.open_setup_link.value = (
-            f"<a href='{escape_attr(setup_url)}' target='_blank' rel='noopener' "
-            "style='font-size:12px;font-weight:600;'>▶ Open AWS Setup</a>"
-        )
+        widgets.open_setup_link.value = _aws_setup_action(setup_url)
 
     if form_open is not None:
         widgets.connect_form.layout.display = "flex" if form_open else "none"
@@ -572,6 +633,8 @@ def set_aws_account_view(
         return
 
     # disconnected
+    if widgets.review_connection_panel is not None:
+        widgets.review_connection_panel.layout.display = "none"
     widgets.aws_account_status.value = status_badge("idle", label="Not connected")
     detail.value = (
         f"<div style='font-size:11px;color:#66758d;line-height:1.45;'>{_DISCONNECTED_BLURB}</div>"
@@ -606,9 +669,8 @@ def set_change_account_panel(
     widgets.change_account_panel.layout.display = "flex"
 
     if setup_url:
-        widgets.change_setup_link.value = (
-            f"<a href='{escape_attr(setup_url)}' target='_blank' rel='noopener' "
-            "style='font-size:12px;font-weight:600;'>▶ Open AWS Setup</a>"
+        widgets.change_setup_link.value = _aws_setup_action(
+            setup_url, verify_label="Verify new account"
         )
 
     if prefill_role_arn:
@@ -1286,7 +1348,16 @@ def wire_institutional_connection_widgets(
 
 def set_review_panel(widgets: "CloudEnvironmentWidgets", review) -> None:
     """Render the REVIEW CLOUD RUN body from a ``CloudRunReview`` (no secrets)."""
+    if getattr(review, "route", "byo") == "hosted":
+        from .hosted_pilot import render_hosted_review
+        render_hosted_review(widgets, review)
+        return
     r = review
+    if getattr(widgets, "_review_route", "byo") == "hosted":
+        widgets.review_notice.value = (
+            "<div style='font-size:10.5px;padding:8px;background:#f6f8fb'>"
+            + _BILLING_NOTE + "</div>")
+    widgets._review_route = "byo"
     infra = r.infrastructure
     basis = "".join(f"<div>{escape_text(line)}</div>" for line in r.estimate_basis_lines())
     blocked = ""
@@ -1548,6 +1619,7 @@ def build_cloud_environment_card(
     ec2_subnet_ids: str = "",
     ec2_security_group_ids: str = "",
     ec2_node_count: int = 2,
+    cloud_access_picker: bool = False,
 ) -> CloudEnvironmentWidgets:
     """
     Build the ICESEE Cloud Environment panel.
@@ -2055,8 +2127,7 @@ def build_cloud_environment_card(
             job_queue_widget,
             job_definition_widget,
             job_name_widget,
-            compute_mode_widget,
-            ec2_options_box,
+            *([] if cloud_access_picker else [compute_mode_widget, ec2_options_box]),
         ],
         layout=W.Layout(
             width="100%",
@@ -2064,6 +2135,24 @@ def build_cloud_environment_card(
             padding="6px 0",
         ),
     )
+
+    compute_section = W.VBox(
+        ([W.HTML("<b>Compute</b><br>Choose Fargate or EC2 before Prepare cloud."),
+          compute_mode_widget, ec2_options_box] if cloud_access_picker else []),
+        layout=W.Layout(width="100%", gap="6px", display="none"),
+    )
+    hosted_compute_section = W.VBox(
+        [W.HTML(
+            "<b>Compute</b>"
+            "<div style='margin-top:6px;padding:8px;border:1px solid #cbdcf0;'>"
+            "<b>Fargate</b> — current Hosted compute profile.</div>"
+            "<div style='margin-top:6px;padding:8px;border:1px solid #dfe6ef;color:#66758d;'>"
+            "<b>EC2 — unavailable for Hosted</b><br>"
+            "EC2 requires a project-configured Hosted EC2 profile.</div>"
+        )],
+        layout=W.Layout(width="100%", gap="6px", display="none"),
+    )
+    hosted_compute_section.add_class("cryostack-hosted-compute")
 
     # Independent of the Advanced cloud settings accordion -- and of
     # Basic/Advanced mode -- so a workflow that needs MATLAB (ISSM, or an
@@ -2266,40 +2355,42 @@ def build_cloud_environment_card(
     # if EC2, Capacity/Accelerator/Network/Execution, before Prepare cloud;
     # Review & Launch only becomes available once Prepare succeeds (see
     # set_run_estimate_view / _invalidate_prepared_state below).
+    byo_configuration = W.VBox(
+        [heading, provider_widget, region_widget, aws_account["aws_account_section"],
+         *([compute_section] if cloud_access_picker else []),
+         advanced, matlab_license_box, infra_heading, status_panel, actions],
+        layout=W.Layout(width="100%", gap="7px"),
+    )
+    setup_widgets = [byo_configuration, *([hosted_compute_section] if cloud_access_picker else []),
+                     institutional_connection_box,
+                     run_estimate["run_estimate_section"], run_estimate["review_panel"]]
+    card_layout = W.Layout(width="100%", border="1px solid #dfe6ef", padding="12px")
+    setup_section = None
+    if cloud_access_picker:
+        setup_section = W.VBox(setup_widgets, layout=card_layout)
+        setup_widgets = [setup_section]
     body = W.VBox(
-        [
-            heading,
-            provider_widget,
-            region_widget,
-            aws_account["aws_account_section"],
-            advanced,
-            matlab_license_box,
-            institutional_connection_box,
-            infra_heading,
-            status_panel,
-            actions,
-            run_estimate["run_estimate_section"],
-            run_estimate["review_panel"],
-            active_run["active_run_section"],
-        ],
-        layout=W.Layout(
-            width="100%",
-            gap="7px",
-        ),
+        [*setup_widgets, active_run["active_run_section"]],
+        layout=W.Layout(width="100%", gap="7px"),
     )
 
     container = W.VBox(
         [
             body,
         ],
-        layout=W.Layout(
-            width="100%",
-            border="1px solid #dfe6ef",
-            padding="12px",
-        ),
+        layout=W.Layout(width="100%") if cloud_access_picker else card_layout,
     )
 
     return CloudEnvironmentWidgets(
+        byo_configuration=byo_configuration,
+        setup_section=setup_section,
+        review_connection_button=aws_account["review_connection_button"],
+        review_connection_panel=aws_account["review_connection_panel"],
+        review_connection_role_arn=aws_account["review_connection_role_arn"],
+        review_connection_stack_link=aws_account["review_connection_stack_link"],
+        review_connection_status=aws_account["review_connection_status"],
+        review_connection_verify_button=aws_account["review_connection_verify_button"],
+        review_connection_done_button=aws_account["review_connection_done_button"],
         provider=provider_widget,
         region=region_widget,
         profile=profile_widget,
@@ -2329,6 +2420,8 @@ def build_cloud_environment_card(
         institutional_connection_disconnect_button=institutional_connection_disconnect_button,
 
         compute_mode=compute_mode_widget,
+        compute_section=compute_section,
+        hosted_compute_section=hosted_compute_section,
         ec2_max_vcpus=ec2_max_vcpus_widget,
         ec2_instance_types=ec2_instance_types_widget,
         ec2_options_box=ec2_options_box,

@@ -1,0 +1,58 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:12.000
+1. Select the native Basic case
+Choose Cloud → Basic → ISSM → SquareIceShelf.
+Start with your verified AWS account, configured MATLAB license and any required institutional Connector.
+
+00:00:12.000 --> 00:00:28.000
+2. Understand the synthetic shelf
+The supplied case is a 1,000 km square floating shelf. Thickness tapers from 1,000 m to 300 m along y.
+It solves one steady SSA stress-balance problem.
+
+00:00:28.000 --> 00:00:44.000
+3. Keep the canonical defaults
+Basic overrides are disabled for this reference run.
+The script requests 100 km nominal mesh spacing and 2 MPI processes. The resulting mesh has 91 vertices and 148 elements.
+
+00:00:44.000 --> 00:00:58.000
+4. Review the model and image
+Review ISSM, SquareIceShelf and the tested image/digest.
+This actual run used 2 vCPU, 8 GiB and a time limit of 60 minutes. Verify the target account and licensing readiness before launch.
+
+00:00:58.000 --> 00:01:12.000
+5. Launch the reviewed run
+Confirm the readiness rows, including ISSM runtime. Select Launch cloud run.
+CryoLauncher stages the reviewed inputs and submits the native job.
+
+00:01:12.000 --> 00:01:28.000
+6. Let the native job run
+Actual timings from this accepted AWS job:
+Submit to container start:214.4 s.
+Batch start to stop:42.8 s.
+The 283.7 s recording pause also includes retrieval and observation time.
+
+00:01:28.000 --> 00:01:42.000
+Native MATLAB / ISSM run completed
+The actual AWS Batch run succeeded with native exit code 0.
+Downloaded runtime provenance reports MATLAB R2024b Update 7 and ISSM 2026.1. This confirms that the configured license path supported actual execution.
+
+00:01:42.000 --> 00:01:56.000
+7. Select the structured field
+Open Results, select StressbalanceSolution and Vel, then Render.
+The current package has 91 nodal speed values and four native physical fields, plus a convergence diagnostic.
+
+00:01:56.000 --> 00:02:12.000
+8. Interpret the full saved Vel map
+This full figure comes from this run’s browser-downloaded result ZIP.
+Vel is horizontal speed in m/year. The 91 mesh vertices span approximately 0 to 9,034 m/year. Axes are in metres; 10⁶ m equals 1,000 km.
+
+00:02:12.000 --> 00:02:26.000
+9. Save the actual results
+Choose Download results, then the generated HTTPS archive link.
+The browser saved this run’s ZIP successfully: 11 members and valid CRC. It includes fields, mesh, native model, figure and provenance.
+
+00:02:26.000 --> 00:02:40.000
+10. Check the accepted evidence
+All four physical fields and the mesh match the declared reference exactly. The native convergence count is 23 steps.
+Keep the source packet, run provenance and downloaded outputs together.

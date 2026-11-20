@@ -1,0 +1,29 @@
+{
+  "guide": "ISSM \u00b7 Change the shelf thickness profile",
+  "duration_seconds": 248.0,
+  "video_sha256": "9ee89c1244c83f4a8dda0f343e0e110993d795036ef8414c10e4f2129c386225",
+  "maximum_upscale": 1.6,
+  "audio": false,
+  "native_archive_sha256": [
+    "440ada602f9029c18c5f36446e121c9dd0d5632105a56fc682ba75e3ac24daba"
+  ],
+  "scope": "Existing accepted native/action evidence; no additional job was run for this edit. Supplemental control guides and scientific qualifications are stated in the chapters.",
+  "files": {
+    "issm-advanced-figure-01-wide.png": {
+      "sha256": "a0cf078843500354a1eb71d74b8254ac3ed7ba867983d51fb7c7def6ffb07f0e",
+      "bytes": 87379
+    },
+    "issm-advanced-wide.chapters.json": {
+      "sha256": "8a2f253d7a35636142723328e1c2c9f2b6654734a045210b41039209e94d3127",
+      "bytes": 19969
+    },
+    "issm-advanced-wide.mp4": {
+      "sha256": "9ee89c1244c83f4a8dda0f343e0e110993d795036ef8414c10e4f2129c386225",
+      "bytes": 3572608
+    },
+    "issm-advanced-wide.vtt": {
+      "sha256": "854440cbbbe99ffda5ef7442731f2fb798cc4311c3c4441c2a343957b4d9e40b",
+      "bytes": 5336
+    }
+  }
+}

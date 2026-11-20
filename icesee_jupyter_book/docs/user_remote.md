@@ -79,7 +79,7 @@ select Remote
 configure target/access
       |
       v
-choose Remote software backend where applicable
+choose ICESEE-Spack or ICESEE-Container for the remote software environment
       |
       v
 configure Slurm resources
@@ -101,11 +101,11 @@ and
 
 ## ICESEE Remote
 
-ICESEE has its own interface organization — **Local**, **Remote**, and
-**Cloud** tabs, alongside Auto-config · Beta — not CryoLauncher's
-Basic/Advanced model. Its Remote mode is operational and has already been
-used for real ensemble data-assimilation runs, not planned or experimental
-functionality.
+ICESEE selects **Local**, **Remote** or **Cloud** under **Mode** and has
+its own Auto-config · Beta controls. It does not use CryoLauncher's
+Basic/Advanced selector. Remote submission has been used for ensemble
+data-assimilation runs; model, software environment, allocation and process
+counts still belong to the selected example's configuration.
 
 Configuring an ICESEE Remote run adds the same target/access fields as
 CryoLauncher (host, user, access mode) plus ICESEE's own

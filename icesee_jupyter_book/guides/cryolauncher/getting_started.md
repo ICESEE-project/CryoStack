@@ -2,7 +2,7 @@
 
 CryoLauncher provides browser-based access to supported ice-sheet models through the CryoStack platform. It allows users to configure simulations, select computing resources, submit jobs, monitor execution, and inspect results without managing the complete scientific software environment manually.
 
-[Open CryoLauncher](https://cryostack.eas.gatech.edu/icesheets/)
+[Open CryoLauncher](https://cryostack.eas.gatech.edu/cryolauncher/)
 
 ---
 
@@ -39,7 +39,7 @@ The models and available examples shown in the interface depend on the software 
 
 Open:
 
-[https://cryostack.eas.gatech.edu/icesheets/](https://cryostack.eas.gatech.edu/icesheets/)
+[https://cryostack.eas.gatech.edu/cryolauncher/](https://cryostack.eas.gatech.edu/cryolauncher/)
 
 The interface contains two principal areas:
 

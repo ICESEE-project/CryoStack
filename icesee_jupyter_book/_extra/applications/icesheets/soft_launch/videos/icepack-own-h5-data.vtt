@@ -1,0 +1,85 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:13.000
+1. Create an owned data experiment
+Choose Cloud → Advanced → Icepack. In Editor, create an owned workspace example.
+This recorded example is pilot-icepack-h5-1118. It uses a 10 km × 10 km synthetic shelf.
+The earlier Advanced run card is excluded; it is not this data experiment.
+
+2
+00:00:13.000 --> 00:00:28.000
+2. Import the reader and run script
+Choose script files, select run.py and initial_fields.py, then Import script files.
+The confirmation says both files are saved. Explicitly set run.py as the Run target.
+The helper validates and reads the HDF5 schema; upload alone does not initialize a solver.
+
+3
+00:00:28.000 --> 00:00:42.000
+3. Upload the full HDF5 input
+In Datasets, Choose data files → select icepack-shelf-initial.h5 → Upload.
+The 11,973-byte file contains coordinates, full gridded thickness, base, surface, vx, vy and a floating mask.
+This synthetic input contains fields on a 5 × 9 grid, rather than only scalar configuration values.
+
+4
+00:00:42.000 --> 00:00:58.000
+4. Reference the exact staged path
+Select icepack-shelf-initial.h5 and choose Reference in example.
+Keep the alias icepack-shelf-initial.h5. The script reads data/icepack-shelf-initial.h5.
+The recorded confirmation states that staging copies the file into that path.
+
+5
+00:00:58.000 --> 00:01:14.000
+5. Check initialized thickness
+This is the exact saved initial-conditions PNG from the accepted archive.
+The reader bilinearly samples the uploaded grid onto the native mesh. Initial thickness is 300–500 m; axes are metres.
+This saved scientific figure is shown here; a populated GUI Preview is not claimed.
+
+6
+00:01:14.000 --> 00:01:31.000
+6. Check surface and initial velocity
+The saved figure also shows the initialized surface and initial speed in m/year.
+Independent interpolation matched thickness, base, surface, vx and vy at every one of the 25 native mesh nodes.
+Maximum absolute initialization error was 0 for each of those five fields, using the appropriate scalar/vector coordinates.
+
+7
+00:01:31.000 --> 00:01:46.000
+7. Review before launching
+Review & Launch shows Icepack and the owned HDF5 example. Check the prepared cloud resources and the intended run target.
+The native job used 2 vCPU / 8 GiB and was submitted once.
+The displayed ~60 min estimate is not measured model time. Private image/account details are excluded.
+
+8
+00:01:46.000 --> 00:02:02.000
+8. Confirm native completion
+This HDF5 experiment completed successfully.
+The script performs a diagnostic solve, one 0.01-year prognostic step, then another diagnostic solve. Accumulation is zero.
+Submission → Batch start: 214.703 s. Batch task: 46.352 s. Script elapsed time: 16.9818 s.
+
+9
+00:02:02.000 --> 00:02:16.000
+9. Inspect the current native fields
+In Results, choose solution icepack, then velocity or thickness.
+The export has 25 vertices, 32 triangles and finite CG1 fields. Speed ranges 100–153.130939 m/year.
+No damage field or transient time axis is present in this one-step example.
+
+10
+00:02:16.000 --> 00:02:33.000
+10. Inspect final thickness
+This is the exact final thickness PNG from the downloaded archive. Thickness and axes are in metres.
+Final thickness is 300.022696–499.980847 m. Area-weighted mean: 403.649861 m.
+The portable fields retain positive thickness. They are numeric exports, not a Firedrake checkpoint.
+
+11
+00:02:33.000 --> 00:02:49.000
+11. Verify the native metrics
+Domain RMS speed is 133.908461 m/year.
+Independent triangle-area integration of the exported mesh/fields agrees with the script’s thickness mean and speed_l2 to 1e−8.
+These checks validate this retained output and initialization. No independent native rerun or cross-model equivalence is claimed.
+
+12
+00:02:49.000 --> 00:03:03.000
+12. Save this run’s result archive
+Choose Download results, then use this run’s freshly generated HTTPS link.
+The actual browser download contains 12 ZIP members with valid CRC: mesh, fields, initial/final figures, metrics and runtime/RNG provenance.
+The accepted ZIP is bound to this HDF5 run. Stale links and unrelated wait intervals are excluded from this edit.

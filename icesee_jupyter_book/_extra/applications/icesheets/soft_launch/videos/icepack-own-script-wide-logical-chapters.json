@@ -1,0 +1,303 @@
+{
+  "schema": "cryostack.pilot.interactive-tutorial.v1",
+  "title": "Icepack: bring your own Python script",
+  "video_sha256": "eb69c8d172755e6170af55314afc13b5665c82b0ce9b4fac015db1e222e009ed",
+  "duration_seconds": 266.0,
+  "source_edit_receipt_sha256": "71d4bbc26f824760dfff0913f193c42d1039c3589455589ba8f107144e32f1da",
+  "public_scene_chapters_sha256": "68385e703454d7765ce62e22e9c38fb2dc5dcc79b1086b828b40183ae9b7df94",
+  "chapter_timing": "Receipt-bound logical chapters include control cue, actual transition and confirmation; durations are video times.",
+  "steps": [
+    {
+      "id": "step-00",
+      "logical_id": "orientation",
+      "title": "Your goal: run your own Icepack script",
+      "start": 0.0,
+      "end": 24.0,
+      "instructions": [
+        "Run a short Python shelf experiment, inspect its fields and save a complete results ZIP.",
+        "Have run.py, validate_dataset.py and icepack-shelf-small-v1.json ready.",
+        "Open CryoLauncher and sign in. Use an approved connected cloud account with its resources prepared.",
+        "The following steps select this tutorial\u2019s model and example."
+      ],
+      "why": "Keep the source inputs, inspect native fields, and save a complete result package. Your workspace keeps scripts, dataset references and results together.",
+      "expected": "Your workspace keeps scripts, datasets, run history and results together.",
+      "note": "Start with your approved cloud account connected and its resources prepared. Shared application orientation; the case-specific configuration follows.",
+      "pauseAfter": false,
+      "source_scene_ids": [
+        "step-00",
+        "start"
+      ]
+    },
+    {
+      "id": "step-01",
+      "logical_id": "step-1",
+      "title": "1. Open an Advanced workspace",
+      "start": 24.0,
+      "end": 33.0,
+      "instructions": [
+        "Choose Cloud \u2192 Advanced \u2192 Icepack.",
+        "You will keep this custom experiment in its own editable workspace."
+      ],
+      "why": "Choose the intended interface, model and example before editing or launching a run.",
+      "expected": "Use a separate editable workspace for your script.",
+      "note": "This short 10 km shelf experiment is separate from the canonical spin-up example.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-01"
+      ]
+    },
+    {
+      "id": "step-02",
+      "logical_id": "step-2",
+      "title": "2. Create your workspace example",
+      "start": 33.0,
+      "end": 59.0,
+      "instructions": [
+        "Enter a new name, then choose New example.",
+        "Enter a new name and choose New example.",
+        "Wait for the created-workspace confirmation and empty file list."
+      ],
+      "why": "An owned example stores your files separately from the supplied application source.",
+      "expected": "This example is pilot-icepack-script-1118.",
+      "note": "You will create a separate editable workspace. This example is named pilot-icepack-script-1118.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-02",
+        "step-03"
+      ]
+    },
+    {
+      "id": "step-04",
+      "logical_id": "step-3",
+      "title": "3. Select both Python files",
+      "start": 59.0,
+      "end": 80.0,
+      "instructions": [
+        "Choose script files. In your file picker select run.py and validate_dataset.py, then choose Open.",
+        "The script picker changes from zero to two selected files.",
+        "You are ready to import the script and its validator."
+      ],
+      "why": "Selecting local files prepares them for import; importing saves them in this example.",
+      "expected": "Selected files are not saved until you import them.",
+      "note": "Keep both Python files in the same example. Files are selected first; importing saves them.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-04",
+        "step-05"
+      ]
+    },
+    {
+      "id": "step-06",
+      "logical_id": "step-4",
+      "title": "4. Import the scripts",
+      "start": 80.0,
+      "end": 101.0,
+      "instructions": [
+        "Choose Import script files.",
+        "Wait for Imported run.py, validate_dataset.py. Files are saved.",
+        "The file selector now contains the runnable Python script."
+      ],
+      "why": "Import saves the selected source files in this example; it does not launch the model.",
+      "expected": "The file selector now contains the runnable script.",
+      "note": "If your example already contains run.py, enable Replace existing script files first. Replace only the existing files you intend to update.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-06",
+        "step-07"
+      ]
+    },
+    {
+      "id": "step-08",
+      "logical_id": "step-5",
+      "title": "5. Use run.py as the entry point",
+      "start": 101.0,
+      "end": 111.0,
+      "instructions": [
+        "Set Run target to run.py.",
+        "The validator checks JSON schema, model, units and bounds before the scientific libraries are imported."
+      ],
+      "why": "Run target selects the entry script; other imported files can act as helpers.",
+      "expected": "The validator checks the JSON before loading the scientific libraries.",
+      "note": "Importing files does not launch a run.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-08"
+      ]
+    },
+    {
+      "id": "step-09",
+      "logical_id": "step-6",
+      "title": "6. Select the JSON configuration",
+      "start": 111.0,
+      "end": 143.0,
+      "instructions": [
+        "In Datasets select icepack-shelf-small-v1.json.",
+        "If it is not listed yet, add it with Choose data files \u2192 Upload first.",
+        "Choose Reference in example.",
+        "Read the reference confirmation.",
+        "At launch, the JSON is copied to data/icepack-shelf-small-v1.json for the script to read."
+      ],
+      "why": "Select the dataset that this script will reference and read at launch. A reference stages this dataset under data/ when the selected example launches.",
+      "expected": "The script reads data/icepack-shelf-small-v1.json.",
+      "note": "This workflow uses JSON configuration; gridded initial fields have their own tutorial. The script reads data/icepack-shelf-small-v1.json. The reference belongs to this workspace example.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-09",
+        "step-10",
+        "step-11"
+      ]
+    },
+    {
+      "id": "step-12",
+      "logical_id": "step-7",
+      "title": "7. Understand the short experiment",
+      "start": 143.0,
+      "end": 155.0,
+      "instructions": [
+        "The domain is 10 km \u00d7 10 km with 4 \u00d7 4 subdivisions and CG1 thickness/velocity.",
+        "The script runs a diagnostic solve, one 0.01-year step, then another diagnostic solve."
+      ],
+      "why": "The unchanged saved figure preserves the complete map, axes and colour scale.",
+      "expected": "One 0.01-year step; temperature 253.15 K; zero accumulation.",
+      "note": "Temperature is 253.15 K; accumulation is zero.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-12"
+      ]
+    },
+    {
+      "id": "step-13",
+      "logical_id": "step-8",
+      "title": "8. Review the cloud configuration",
+      "start": 155.0,
+      "end": 182.0,
+      "instructions": [
+        "Choose Review & Launch. Check the model, workspace example, run.py target and resources.",
+        "Choose Launch cloud run when the readiness checks are ready.",
+        "This confirmation starts the run.",
+        "The new run card names pilot-icepack-script-1118.",
+        "Allow it to finish, then open View results."
+      ],
+      "why": "Review confirms the intended model, source, resources and charges before submission. This confirmation stages the reviewed inputs and starts a paid cloud job. Submission, queue/startup and native model execution are separate stages.",
+      "expected": "The native job used 2 vCPU and 8 GiB.",
+      "note": "You should be reviewing the custom script example. Control guide; the following card belongs to this tutorial\u2019s original native run. The native job used 2 vCPU and 8 GiB.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-13",
+        "step-14",
+        "step-15"
+      ]
+    },
+    {
+      "id": "step-16",
+      "logical_id": "step-9",
+      "title": "9. Open the completed native results",
+      "start": 182.0,
+      "end": 191.0,
+      "instructions": [
+        "The job completed successfully with exit code 0.",
+        "Open Results for this custom script run."
+      ],
+      "why": "A completed native job and its recorded provenance provide execution evidence.",
+      "expected": "Submission \u2192 start: 220.087 s; task: 48.192 s; script: 15.6633 s.",
+      "note": "Submission \u2192 Batch start: 220.087 s; task: 48.192 s; script: 15.6633 s.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-16"
+      ]
+    },
+    {
+      "id": "step-17",
+      "logical_id": "step-10",
+      "title": "10. Render a saved field",
+      "start": 191.0,
+      "end": 210.0,
+      "instructions": [
+        "Results opens with an initial preview. Select a field and use Render when needed.",
+        "This native export has 25 vertices and 32 triangles.",
+        "Thickness and velocity are finite CG1 fields; accumulation is zero."
+      ],
+      "why": "The solution, field name, units and mesh counts identify what you are viewing.",
+      "expected": "25 vertices / 32 triangles; finite CG1 thickness and velocity.",
+      "note": "Use the displayed field name and units. Velocity is in metres/year; thickness is in metres.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-17",
+        "step-18"
+      ]
+    },
+    {
+      "id": "step-19",
+      "logical_id": "step-11",
+      "title": "11. Inspect the final thickness",
+      "start": 210.0,
+      "end": 222.0,
+      "instructions": [
+        "Open the full saved thickness figure.",
+        "Thickness is 300.023425\u2013499.981468 m, with area-weighted mean 400.006923 m."
+      ],
+      "why": "The unchanged saved figure preserves the complete map, axes and colour scale.",
+      "expected": "Area-weighted mean thickness: 400.006923 m.",
+      "note": "Keep the original scientific PNG with your results.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-19"
+      ]
+    },
+    {
+      "id": "step-20",
+      "logical_id": "step-12",
+      "title": "12. Inspect speed and direction",
+      "start": 222.0,
+      "end": 234.0,
+      "instructions": [
+        "Colour shows speed and arrows show direction.",
+        "The domain RMS speed is 130.141951 m/year; independent field integration agrees with the script metric."
+      ],
+      "why": "The unchanged saved figure preserves the complete map, axes and colour scale.",
+      "expected": "Domain RMS speed: 130.141951 m/year; arrows show direction.",
+      "note": "The figure is the unchanged downloaded archive member.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-20"
+      ]
+    },
+    {
+      "id": "step-21",
+      "logical_id": "step-13",
+      "title": "13. Save your result archive",
+      "start": 234.0,
+      "end": 252.0,
+      "instructions": [
+        "Choose Download results, then open the fresh HTTPS link.",
+        "Save the 11-member ZIP containing fields, mesh, figures, metrics and runtime/RNG provenance."
+      ],
+      "why": "The archive keeps this run\u2019s numeric outputs, figures and provenance together.",
+      "expected": "Keep it with your script, validator and JSON.",
+      "note": "Keep the ZIP with your script, validator and JSON. Use the current run\u2019s generated link.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-21",
+        "step-22"
+      ]
+    },
+    {
+      "id": "step-23",
+      "logical_id": "step-Keep",
+      "title": "What this example establishes",
+      "start": 252.0,
+      "end": 266.0,
+      "instructions": [
+        "The initial velocity guess rises from 100 to 200 m/year; 200 is not an imposed outflow speed.",
+        "This one-step fixture has no damage field or transient time axis. Its retained output checks are separate from an independent native repeat or accuracy assessment."
+      ],
+      "why": "Keep the scientific input definitions and numerical qualifications with the result.",
+      "expected": "The 100\u2192200 m/year initial guess is not an imposed outflow speed.",
+      "note": "The supplied script, validator and JSON were bound to the accepted native run.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-23"
+      ]
+    }
+  ]
+}

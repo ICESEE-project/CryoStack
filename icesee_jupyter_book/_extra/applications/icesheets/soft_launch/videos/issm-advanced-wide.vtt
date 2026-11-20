@@ -1,0 +1,139 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:14.000
+Run an owned ISSM clone with a changed thickness profile.
+Why: Keep the source inputs, inspect native fields, and save a complete result package.
+Look for: Prepare Square.par with only hmax 1000→1010 m; keep hmin = 300 m.
+
+2
+00:00:14.000 --> 00:00:24.000
+Start here in CryoLauncher. Choose Cloud for this tutorial.
+Why: Your workspace keeps scripts, dataset references and results together.
+Look for: Your workspace keeps scripts, datasets, run history and results together.
+
+3
+00:00:24.000 --> 00:00:34.000
+Choose Cloud → Advanced → ISSM → SquareIceShelf.
+Why: Choose the intended interface, model and example before editing or launching a run.
+Look for: Retain your configured MATLAB license and required Connector.
+
+4
+00:00:34.000 --> 00:00:43.000
+Enter a new name and choose Clone to My Workspace.
+Why: Cloning gives you an editable copy while preserving the supplied application source.
+Look for: The canonical example remains read-only.
+
+5
+00:00:43.000 --> 00:00:55.000
+Wait for the cloned-workspace confirmation.
+Why: Cloning gives you an editable copy while preserving the supplied application source.
+Look for: Keep the native example files in your owned clone.
+
+6
+00:00:55.000 --> 00:01:05.000
+Choose the changed Square.par in your file picker; Open.
+Why: Selecting local files prepares them for import; importing saves them in this example.
+Look for: Keep runme.m, DomainOutline.exp and Front.exp unchanged.
+
+7
+00:01:05.000 --> 00:01:15.000
+Check that one script file is selected.
+Why: Selecting local files prepares them for import; importing saves them in this example.
+Look for: You are replacing Square.par in the owned clone.
+
+8
+00:01:15.000 --> 00:01:24.000
+Enable Replace existing script files.
+Why: Replacement explicitly allows an imported file to overwrite the same name in this clone.
+Look for: The clone already contains Square.par.
+
+9
+00:01:24.000 --> 00:01:34.000
+Choose Import script files.
+Why: Import saves the selected source files in this example; it does not launch the model.
+Look for: Import the intended hmax = 1010 m parameter file.
+
+10
+00:01:34.000 --> 00:01:46.000
+Check Imported Square.par. Files are saved.
+Why: Import saves the selected source files in this example; it does not launch the model.
+Look for: The submitted parameter file was checked against the intended copy.
+
+11
+00:01:46.000 --> 00:01:58.000
+Keep runme.m as the Run target.
+Why: Run target selects the entry script; other imported files can act as helpers.
+Look for: The +10 m change at hmax tapers along y; it is not a uniform addition.
+
+12
+00:01:58.000 --> 00:02:06.000
+Choose Review & Launch.
+Why: Review confirms the intended model, source, resources and charges before submission.
+Look for: Retain the existing licensed MATLAB workflow.
+
+13
+00:02:06.000 --> 00:02:14.000
+Confirm ISSM and pilot-issm-advanced-1119.
+Why: Review confirms the intended model, source, resources and charges before submission.
+Look for: The native job used 2 vCPU and 8 GiB.
+
+14
+00:02:14.000 --> 00:02:25.000
+Control guide: confirm Launch cloud run when checks are Ready.
+Why: This confirmation stages the reviewed inputs and starts a paid cloud job.
+Look for: The following card belongs to this tutorial’s original native run.
+
+15
+00:02:25.000 --> 00:02:34.000
+Wait for the new ISSM Advanced run card.
+Why: The previous card remains visible while the new run is registered.
+Look for: ISSM · pilot-issm-advanced-1119, then Submitting.
+
+16
+00:02:34.000 --> 00:02:43.000
+Select StressbalanceSolution → Vel; Render when needed.
+Why: The solution, field name, units and mesh counts identify what you are viewing.
+Look for: The first field may preview automatically.
+
+17
+00:02:43.000 --> 00:03:00.000
+Read the native field summary.
+Why: The solution, field name, units and mesh counts identify what you are viewing.
+Look for: Vx, Vy, Vel and Pressure are finite at all 91 nodes; 148 triangles.
+
+18
+00:03:00.000 --> 00:03:12.000
+Open the full unchanged saved velocity PNG.
+Why: The unchanged saved figure preserves the complete map, axes and colour scale.
+Look for: Speed: 0–9272.778005 m/year; x and y are metres.
+
+19
+00:03:12.000 --> 00:03:24.000
+Read convergence as a diagnostic, rather than transient time.
+Why: A steady diagnostic convergence count is different from a transient time axis.
+Look for: 23 steps is a scalar stress-balance convergence count.
+
+20
+00:03:24.000 --> 00:03:36.000
+Keep the native completion and runtime provenance.
+Why: Submission, queue/startup and native model execution are separate stages.
+Look for: Submission → start: 183.642 s; Batch task: 36.831 s.
+
+21
+00:03:36.000 --> 00:03:44.000
+Choose Download results.
+Why: The archive keeps this run’s numeric outputs, figures and provenance together.
+Look for: Wait for this run’s fresh HTTPS link.
+
+22
+00:03:44.000 --> 00:03:54.000
+Open the new link and save the 11-member ZIP.
+Why: The archive keeps this run’s numeric outputs, figures and provenance together.
+Look for: Keep it with your modified Square.par and native source files.
+
+23
+00:03:54.000 --> 00:04:08.000
+Retain the changed-input context with your result.
+Why: Keep the scientific input definitions and numerical qualifications with the result.
+Look for: The Basic mesh matches; the changed speed is descriptive context, not accuracy validation.

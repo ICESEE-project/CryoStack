@@ -29,40 +29,41 @@
 
 ---
 
-## Connectivity (Remote)
+## Start with the application that shows the problem
 
-- SSH key, password bootstrap, and manual/web-portal registration issues —
-  see <a href="../applications/icesheets/user_manual.html#ssh-keys">SSH keys</a>.
-- VPN/MFA/campus-network reachability — see
-  <a href="../applications/icesheets/user_manual.html#vpn-mfa-campus-network">VPN, MFA, campus network</a>.
-- Verifying a connection before submitting a run — see
-  <a href="../applications/icesheets/user_manual.html#check-ssh-access">Check SSH Access</a>.
+| Application | User-facing help |
+| --- | --- |
+| **CryoLauncher** | <a href="../applications/icesheets/user_manual.html#troubleshooting">CryoLauncher troubleshooting</a> |
+| **ICESEE** | <a href="../applications/icesee/user_manual.html">ICESEE User Manual</a> |
+| **Frozen Legacies** | <a href="../applications/frozen_legacies/user_manual.html#troubleshooting">Frozen Legacies troubleshooting</a> |
+| **LIVIST** | <a href="/livist/docs/livist_user_manual/#13-troubleshooting">LIVIST troubleshooting</a> |
 
-## Cloud
+Those manuals own application controls, missing data, run states, scientific
+products, and recovery steps. This page only covers shared CryoStack concerns.
 
-Cloud-specific submission, connectivity, and job-state problems are
-consolidated in
+## Shared connectivity and cloud concerns
+
+Remote/HPC connectivity through direct SSH or the CryoStack Connector applies
+to CryoLauncher and ICESEE. Start with [Running Remotely](user_remote.md).
+Cloud account, AWS Batch, and shared job-state concerns are consolidated in
 <a href="hpc_cloud.html#troubleshooting-and-verification">Running in the Cloud &rarr; Troubleshooting and verification</a>.
 
-## Runs and results
+Frozen Legacies and LIVIST do not use those execution modes. For them, follow
+their application manual for catalog, map, product, imagery, or publication
+issues rather than applying an execution-backend fix.
 
-- A run that never appears to start, or a state that looks stuck — see
-  <a href="../applications/icesheets/user_manual.html#run-monitoring-and-history">Run monitoring and history</a>.
-- A results view with nothing to preview, or only legacy figures — see
-  <a href="../applications/icesheets/user_manual.html#legacy-runs">Legacy runs</a>.
+## Escalating a platform problem
 
-## Where to look next
-
-If a problem is not covered here, check the specific application's own
-User Manual, then the [Developer Guide](developer_guide.md) for the
-implementation behind the behavior you are seeing.
+If the application manual does not cover the issue, check the
+[Developer Guide](developer_guide.md) for the platform implementation behind
+the behavior you are seeing.
 
 
 ## Allocation access and empty states
 
 Resource Allocations administration requires an owner or administrator session. A forbidden response should be resolved through the existing role-management process; do not substitute demo credentials. Researchers can inspect their own allocations.
 
-A zero-budget overview means no pool budget has been configured. Automatic credits also require an enabled policy, matching registration metadata, and sufficient unallocated funds. Existing accounts need individual adjustments; enabling a policy does not issue retroactive grants.
+A zero-budget overview means no pool budget has been configured. When CryoStack registration approval is enabled, automatic credits are evaluated at first approval, not signup. They require an enabled policy, a qualifying creation date, matching email-domain/institution filters, no prior introductory-grant marker, and enough unallocated funds for the full grant. An invitation list still requires an exact-email approval check; matching an institutional domain alone is insufficient. Older accounts need a reviewed individual adjustment rather than a policy backfill.
 
 A missing or invalid BYO connection must fail closed. Reconnect the user's AWS account through the normal cloud workflow; do not enter a server profile to bypass verification. Test reservations do not provide real cloud execution.
 

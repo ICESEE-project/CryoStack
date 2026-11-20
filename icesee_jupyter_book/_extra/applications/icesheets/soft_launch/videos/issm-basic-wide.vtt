@@ -1,0 +1,109 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:14.000
+Run the supplied ISSM shelf and save its native results.
+Why: Keep the source inputs, inspect native fields, and save a complete result package.
+Look for: Start with a connected cloud account, configured MATLAB license and required Connector.
+
+2
+00:00:14.000 --> 00:00:24.000
+Start here in CryoLauncher. Choose Cloud for this tutorial.
+Why: Your workspace keeps scripts, dataset references and results together.
+Look for: Your workspace keeps scripts, datasets, run history and results together.
+
+3
+00:00:24.000 --> 00:00:35.000
+Choose Cloud → Basic → ISSM → SquareIceShelf.
+Why: Basic keeps the supplied scientific workflow and exposes its reviewed controls.
+Look for: Keep runme.m as the Run target; no script upload is needed.
+
+4
+00:00:35.000 --> 00:00:47.000
+Keep the supplied inputs and leave optional overrides disabled.
+Why: Basic retains the supplied example; optional edits change its scientific input definition.
+Look for: The 1,000 km shelf tapers from 1,000 m to 300 m along y.
+
+5
+00:00:47.000 --> 00:00:59.000
+Check Account connected and Storage, Containers and Compute Ready.
+Why: Storage, image, compute and MATLAB access must be ready before AWS can execute the model.
+Look for: Use Prepare cloud first if the account resources are not ready.
+
+6
+00:00:59.000 --> 00:01:08.000
+Choose Review & Launch.
+Why: Review confirms the intended model, source, resources and charges before submission.
+Look for: Reviewing shows the configuration before a paid run is submitted.
+
+7
+00:01:08.000 --> 00:01:20.000
+Confirm ISSM, SquareIceShelf and the tested image/digest.
+Why: The tested image and pinned digest identify the native software environment.
+Look for: AWS charges the connected account; the displayed price is an estimate.
+
+8
+00:01:20.000 --> 00:01:29.000
+When every readiness row is Ready, choose Launch cloud run.
+Why: This final confirmation submits a paid job to the connected AWS account.
+Look for: Check ISSM runtime before confirming.
+
+9
+00:01:29.000 --> 00:01:41.000
+Wait for the submission and execution summary.
+Why: Review confirms the intended model, source, resources and charges before submission.
+Look for: Expected: ISSM · SquareIceShelf · runme.m.
+
+10
+00:01:41.000 --> 00:01:53.000
+Let the native job complete, then open its results.
+Why: Submission, queue/startup and native model execution are separate stages.
+Look for: Submission → start: 214.4 s; Batch task: 42.8 s.
+
+11
+00:01:53.000 --> 00:02:03.000
+Confirm the completed native run.
+Why: A completed native job and its recorded provenance provide execution evidence.
+Look for: MATLAB R2024b Update 7 · ISSM 2026.1 · exit code 0.
+
+12
+00:02:03.000 --> 00:02:13.000
+In Results select StressbalanceSolution → Vel; Render when needed.
+Why: The solution, field name, units and mesh counts identify what you are viewing.
+Look for: The first field may preview automatically.
+
+13
+00:02:13.000 --> 00:02:24.000
+Read the field summary before interpreting the map.
+Why: The solution, field name, units and mesh counts identify what you are viewing.
+Look for: Four physical arrays, 91 mesh vertices and 148 triangles.
+
+14
+00:02:24.000 --> 00:02:36.000
+Open the full saved velocity PNG.
+Why: The unchanged saved figure preserves the complete map, axes and colour scale.
+Look for: Speed: 0–9034.387288 m/year; x and y are metres.
+
+15
+00:02:36.000 --> 00:02:48.000
+Read the convergence count as a diagnostic, rather than time.
+Why: A steady diagnostic convergence count is different from a transient time axis.
+Look for: 23 steps describes steady stress-balance convergence.
+
+16
+00:02:48.000 --> 00:02:56.000
+Choose Download results.
+Why: The archive keeps this run’s numeric outputs, figures and provenance together.
+Look for: Wait for a fresh archive link for this run.
+
+17
+00:02:56.000 --> 00:03:08.000
+Open the generated HTTPS link and save the ZIP.
+Why: The archive keeps this run’s numeric outputs, figures and provenance together.
+Look for: Keep its 11 members: fields, mesh, model, figure and provenance.
+
+18
+00:03:08.000 --> 00:03:22.000
+Keep the four source files and results together.
+Why: Keep the source, versions, hashes and scientific qualifications with the result.
+Look for: All four physical fields and the mesh match the declared reference exactly.

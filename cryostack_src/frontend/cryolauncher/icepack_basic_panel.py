@@ -35,6 +35,21 @@ class IcepackBasicPanel:
                 out[name] = control.value
         return out
 
+    def session_state(self) -> dict:
+        """Enabled rows as ``{name: value}`` (ui/session_restore.py)."""
+        return self.overrides()
+
+    def restore_session(self, state: dict) -> bool:
+        from icesee_jupyter_book.ui.session_restore import apply_value
+
+        changed = False
+        for name, (enable, control) in self._rows.items():
+            wanted = isinstance(state, dict) and name in state
+            changed |= apply_value(enable, wanted)
+            if wanted:
+                changed |= apply_value(control, state[name])
+        return changed
+
     def validate(self):
         result = validate_icepack_config(self.overrides())
 

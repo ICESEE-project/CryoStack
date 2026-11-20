@@ -1,0 +1,90 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:15.000
+1. Choose Advanced and preserve the original
+Use Cloud → Advanced → Icepack. Start from Tutorial / 02 Synthetic Ice Shelf.
+
+The goal is to change only the temperature constant and retain the native model and time stepping.
+This is a changed scientific experiment, separate from the Basic baseline.
+
+2
+00:00:15.000 --> 00:00:30.000
+2. Clone the read-only application example
+Enter a new name and choose Clone to My Workspace. The application source stays read-only.
+
+The recorded clone is pilot-icepack-advanced-1118.
+Create an owned editable clone before replacing source.
+
+3
+00:00:30.000 --> 00:00:48.000
+3. Import the one-change source copy
+Prepare run.py with only T = firedrake.Constant(255.15) changed to T = firedrake.Constant(254.15).
+
+Choose script files, enable Replace existing script files, then Import script files.
+The replacement was imported through the GUI; inline editing of the temperature is not shown.
+
+4
+00:00:48.000 --> 00:01:06.000
+4. Confirm the saved source and target
+The Imported run.py message confirms that files are saved. Explicitly keep run.py as the Run target.
+
+Actual submitted bytes were checked: only 255.15 → 254.15 K changed.
+The source manifest records the exact staged script SHA-256.
+
+5
+00:01:06.000 --> 00:01:23.000
+5. Retain the native time stepping
+Both 400-year phases keep 200 steps each: dt = 2 years. The second phase includes damage physics; accumulation is zero.
+
+Review the actual resources and launch once.
+This run used 2 vCPU / 8 GiB. The displayed ~60 min estimate is not measured model runtime.
+
+6
+00:01:23.000 --> 00:01:37.000
+6. Confirm the new submission
+This Cloud Run card is the newly queued Advanced clone. Importing the file did not launch it automatically.
+
+The scientific source, pinned image and run input binding were checked separately.
+Setup pause of 89.116 s omitted. Queue/startup and compute are separate from editing time.
+
+7
+00:01:37.000 --> 00:01:55.000
+7. Inspect this run’s native velocity
+The Advanced native job succeeded with exit code 0.
+
+Colour is speed in m/year; arrows show direction; x and y are in metres. Speed is 160.457236–728.806914 m/year.
+The complete native Results plot for this Advanced run is shown in the recorded right-hand panel.
+
+8
+00:01:55.000 --> 00:02:13.000
+8. Interpret the saved fields carefully
+Thickness is 98.259646–350.139815 m. All saved fields are finite; accumulation is zero.
+
+The mesh has 3,371 vertices and 6,533 triangles. Source thickness/velocity are CG2, exported to portable CG1.
+This export is not a complete Firedrake checkpoint. No unchanged-input equality or validated temperature-sensitivity claim is made.
+
+9
+00:02:13.000 --> 00:02:30.000
+9. Keep the numerical qualification
+Saved damage spans −0.0026125100 to 0.0689681004. The small negative undershoot remains in the native output and is not clipped.
+
+The exported mesh exactly matches Basic, for context only.
+Finite output and identical mesh do not establish scientific accuracy.
+
+10
+00:02:30.000 --> 00:02:47.000
+10. Save the current Advanced archive
+Download results generated this run’s HTTPS link; the browser saved a 19-member ZIP with valid CRC.
+
+The source, runtime metadata, RNG-artifact hash and downloaded fields were checked against this run.
+The download receipt records the exact accepted ZIP SHA-256.
+
+11
+00:02:47.000 --> 00:03:05.000
+11. Separate actual timings from the edit
+Submission → Batch start: 215.252 s. Batch task: 428.919 s. The runtime-observer interval was 396.249 s.
+
+The setup and results are separate actual takes; recorded idle intervals are shortened.
+Timing comes from the accepted job and runtime receipts.
+

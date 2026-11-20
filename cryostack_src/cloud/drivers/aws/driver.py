@@ -723,7 +723,12 @@ class AWSDriver(
         # secret's value (never seen here either). Independent of
         # compute_mode: Fargate and EC2 consume the identical mechanism,
         # see step 1b below.
-        matlab_license_requires_tunnel = bool(kwargs.get("matlab_license_requires_tunnel", False))
+        from cryostack_src.models.workflow_capabilities import resolve_workflow_capabilities
+        capabilities = resolve_workflow_capabilities(model=model)
+        matlab_license_requires_tunnel = (
+            capabilities.requires_matlab_license
+            and bool(kwargs.get("matlab_license_requires_tunnel", False))
+        )
         s3 = kwargs.get("s3")
         aws = kwargs.get("aws")
 

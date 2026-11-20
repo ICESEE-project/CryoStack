@@ -1,5 +1,11 @@
 # User Manual
 
+> **Archived GHUB guidance.** This page preserves the earlier GHUB material.
+> For the deployed CryoStack controls and current model restrictions, use the
+> [ICESEE User Manual](../applications/icesee/user_manual.md),
+> [CryoLauncher User Manual](../applications/icesheets/user_manual.md), or
+> [current platform documentation](../documentation.md).
+
 This section provides practical guidance for using the **ICESEE GHUB Tool**.  
 It focuses on what is available in this environment, how to run the included material, and where to look for more advanced workflows.
 
@@ -13,7 +19,10 @@ The navigation sidebar organizes the book into:
 - A small set of **tutorial notebooks** that run directly in GHUB  
 - Reference links to the upstream ICESEE documentation  
 
-Pages and notebooks can be opened directly in the browser without additional setup.
+This archived GHUB book displayed pages in a browser and ran notebooks in
+a GHUB interactive session. The deployed CryoStack applications require the
+current sign-in, approval and model-specific environment described in the
+manuals linked above.
 
 ---
 

@@ -1,0 +1,283 @@
+{
+  "schema": "cryostack.pilot.interactive-tutorial.v1",
+  "title": "Icepack: test a coupled +15 m thickness change",
+  "video_sha256": "29a56b823e6b668bda8f19fbad16237ba85904671801da7e5492837812e2def0",
+  "duration_seconds": 322.0,
+  "source_edit_receipt_sha256": "0c4c2557ec2946dcd11841808d4d4d85c76263bdaf66e3e653a81c5553dd4751",
+  "public_scene_chapters_sha256": "4bd99e689f9f3fccfd987e78a3409f444e2f152d305d17757ffa05891a2aefc9",
+  "chapter_timing": "Receipt-bound logical chapters include control cue, actual transition and confirmation; durations are video times.",
+  "steps": [
+    {
+      "id": "goal",
+      "logical_id": "orientation",
+      "title": "Goal and prerequisites",
+      "start": 0.0,
+      "end": 11.0,
+      "instructions": [
+        "First complete the baseline HDF5 guide and retain its result archive.",
+        "Open CryoLauncher with a verified BYO AWS connection. Download run.py, initial_fields.py and icepack-shelf-initial-plus15m.h5."
+      ],
+      "why": "Answer a controlled question with fixed scripts, mesh and runtime controls.",
+      "expected": "Keep scripts and controls fixed; change the full synthetic thickness input.",
+      "note": "This synthetic sensitivity case changes interior and inflow thickness together. Base and surface are adjusted consistently with flotation; initial velocity stays fixed.",
+      "pauseAfter": false,
+      "source_scene_ids": [
+        "goal"
+      ]
+    },
+    {
+      "id": "new-example",
+      "logical_id": "example",
+      "title": "1. Create a separate example",
+      "start": 11.0,
+      "end": 23.0,
+      "instructions": [
+        "Choose Cloud \u2192 Advanced \u2192 Icepack. In Editor enter pilot-icepack-problem-1119 or another unique name.",
+        "Choose New example. Keep the accepted baseline example and results for comparison."
+      ],
+      "why": "Keep baseline and variant examples separate for comparison.",
+      "expected": "Expected: a new owned Icepack example.",
+      "note": "",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "new-example"
+      ]
+    },
+    {
+      "id": "choose-scripts",
+      "logical_id": "scripts",
+      "title": "2. Select both scripts",
+      "start": 23.0,
+      "end": 57.0,
+      "instructions": [
+        "Choose Choose script files. Select run.py and initial_fields.py, then Open.",
+        "Check that two files are selected.",
+        "Enable Replace existing script files so an existing starter entrypoint cannot take precedence.",
+        "Choose Import script files; wait for the saved confirmation.",
+        "Check Imported run.py, initial_fields.py. Files are saved.",
+        "Select run.py as Run target in Experiment before launching."
+      ],
+      "why": "Both files validate and initialize the native model fields. Replace prevents a starter or older entrypoint from taking precedence. The saved source bytes are what the next run stages.",
+      "expected": "Set Run target to run.py.",
+      "note": "The two script hashes are unchanged from the accepted baseline HDF5 case.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "choose-scripts",
+        "import-scripts",
+        "saved-scripts"
+      ]
+    },
+    {
+      "id": "choose-data",
+      "logical_id": "upload",
+      "title": "5. Choose the variant dataset",
+      "start": 57.0,
+      "end": 92.0,
+      "instructions": [
+        "Scroll to Datasets. Choose Choose data files.",
+        "Select icepack-shelf-initial-plus15m.h5 and choose Open. Check the count is one.",
+        "Choose Upload to store the selected variant.",
+        "Wait for the uploaded filename and select that variant in the dataset list.",
+        "Check the uploaded filename and highlight icepack-shelf-initial-plus15m.h5."
+      ],
+      "why": "Select the full +15 m field dataset rather than editing one mesh node. Uploading stores the variant in your workspace dataset library. Choosing the variant keeps the accepted baseline input unchanged.",
+      "expected": "Keep the baseline file separate.",
+      "note": "The supplied file is a 5 \u00d7 9 synthetic structured HDF5 grid, not a Firedrake checkpoint. The baseline and variant have different hashes. Their x/y grids, initial vx/vy and floating mask are identical.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "choose-data",
+        "upload-data",
+        "uploaded"
+      ]
+    },
+    {
+      "id": "alias",
+      "logical_id": "reference",
+      "title": "8. Set the staged alias",
+      "start": 92.0,
+      "end": 126.0,
+      "instructions": [
+        "In the path/alias field enter icepack-shelf-initial.h5.",
+        "Do not change the script path: run.py reads data/icepack-shelf-initial.h5.",
+        "Choose Reference in example with the variant selected and the alias entered.",
+        "The reference is copied to the script path when the next run is staged.",
+        "Read Referenced icepack-shelf-initial-plus15m.h5. In your script, read data/icepack-shelf-initial.h5.",
+        "Check that this dataset is referenced by the current example."
+      ],
+      "why": "An alias lets unchanged run.py read the new dataset at its fixed path. The attachment binds this variant to the current owned example. The exact path proves what will be copied at the next staging step.",
+      "expected": "Expected: variant \u2192 data/icepack-shelf-initial.h5.",
+      "note": "The filename of the uploaded variant is different from its staged alias. Accepted staged inputs later matched both script hashes and the variant dataset hash exactly.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "alias",
+        "reference",
+        "reference-confirmed"
+      ]
+    },
+    {
+      "id": "review",
+      "logical_id": "review",
+      "title": "11. Review the native plan",
+      "start": 126.0,
+      "end": 156.0,
+      "instructions": [
+        "Check Icepack, the new owned example and run.py. Open Review & Launch.",
+        "Confirm the verified BYO connection, qualified image, resource and time-limit settings.",
+        "Confirm Model ICEPACK and Example pilot-icepack-problem-1119 in the expanded review.",
+        "Keep the qualified image and baseline resource controls unchanged.",
+        "In the expanded review scroll to Infrastructure.",
+        "Check that account, storage, image and compute are ready."
+      ],
+      "why": "The review is the final check before an explicit paid submission. This prevents a previous example from being mistaken for the new plan. Ready checks confirm storage, image and compute can support the run.",
+      "expected": "Keep the explicit launch action separate from review.",
+      "note": "The accepted run retained the baseline scripts, image, 2 vCPU, 8 GiB and 3600-second task timeout.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "review",
+        "review-confirmed",
+        "ready"
+      ]
+    },
+    {
+      "id": "launch",
+      "logical_id": "submit",
+      "title": "13. Launch explicitly",
+      "start": 156.0,
+      "end": 180.0,
+      "instructions": [
+        "Scroll to the bottom of the review and read the final notice.",
+        "Choose Launch cloud run. Stay on the page while the selected input is staged.",
+        "Confirm that the new Cloud run names the owned Own Problem example.",
+        "Wait for Completed, then open View results."
+      ],
+      "why": "This action stages the bound data and starts one native execution. The new run is the record to follow through startup and completion.",
+      "expected": "Startup and Batch task time are recorded separately.",
+      "note": "Recorded startup 226.749 s; Batch task 47.298 s; submission-to-stop 274.047 s. The tutorial skips waiting time.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "launch",
+        "submitted"
+      ]
+    },
+    {
+      "id": "select-thickness",
+      "logical_id": "thickness",
+      "title": "15. Select thickness",
+      "start": 180.0,
+      "end": 209.0,
+      "instructions": [
+        "Open Results for the completed variant run.",
+        "Select the thickness field. The plot is updated only after Render.",
+        "Choose Render.",
+        "Read the new thickness summary and colorbar."
+      ],
+      "why": "Selecting a field does not itself update the displayed plot. Render displays the final thickness exported by the native solver.",
+      "expected": "Expected: 25 native values, about 315\u2013515 m.",
+      "note": "",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "select-thickness",
+        "render-thickness"
+      ]
+    },
+    {
+      "id": "select-velocity",
+      "logical_id": "velocity",
+      "title": "17. Select native velocity",
+      "start": 209.0,
+      "end": 239.0,
+      "instructions": [
+        "Select velocity in the Field dropdown.",
+        "Choose Render next to update the plot.",
+        "With velocity selected, choose Render.",
+        "Read the speed summary with its m/year units."
+      ],
+      "why": "Use velocity to inspect the response to the thickness change. Render updates the plot to the selected native velocity field.",
+      "expected": "Expected: native speed 100\u2013158.61 m/year.",
+      "note": "",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "select-velocity",
+        "render-velocity"
+      ]
+    },
+    {
+      "id": "download",
+      "logical_id": "download",
+      "title": "18. Prepare the archive",
+      "start": 239.0,
+      "end": 268.0,
+      "instructions": [
+        "Scroll below the field and choose Download results.",
+        "Wait for a fresh results_bundle link for the selected variant run.",
+        "Choose the newly prepared archive link.",
+        "Save the variant beside the accepted baseline archive and keep their hashes in the comparison record."
+      ],
+      "why": "Preserve the fields and initialization evidence with runtime metadata. Both archives are needed for the baseline-versus-variant comparison.",
+      "expected": "Retain both baseline and variant archives.",
+      "note": "",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "download",
+        "save-link"
+      ]
+    },
+    {
+      "id": "initial-fields",
+      "logical_id": "initial-check",
+      "title": "20. Verify what initialized the model",
+      "start": 268.0,
+      "end": 280.0,
+      "instructions": [
+        "Open initial-conditions.png and initial-fields-on-native-mesh.npz from the saved archive.",
+        "Thickness, base, surface, vx and vy matched independent interpolation at all native scalar/vector nodes."
+      ],
+      "why": "Check that the uploaded full fields actually initialized the native mesh.",
+      "expected": "All five initial fields matched interpolation at all 25 native vertices.",
+      "note": "All 45 source-grid thickness values are +15 m; flotation-consistent base/surface adjustment is retained, with unchanged initial velocity.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "initial-fields"
+      ]
+    },
+    {
+      "id": "compare-thickness",
+      "logical_id": "compare",
+      "title": "21. Compare thickness",
+      "start": 280.0,
+      "end": 310.0,
+      "instructions": [
+        "Read the baseline and variant on the shared thickness scale. Read the difference on its separate scale.",
+        "The final area-mean thickness increased by 14.99772 m after one 0.01-year step.",
+        "Read baseline and variant speed on the same scale; use the separate scale for the difference.",
+        "The area-RMS speed increased by 3.26217 m/year in this recorded pair."
+      ],
+      "why": "Shared scales show the two fields; the separate delta scale shows their difference. Area-weighted metrics compare the full field rather than one selected node.",
+      "expected": "Area-RMS speed: 133.90846 \u2192 137.17064 m/year.",
+      "note": "Derived scientific plot from verified numeric output archives, not GUI footage. The complete figure and per-node deltas are available with this chapter. Derived scientific plot from the two verified archives. The mesh remained 25 vertices and 32 triangles over 100 km\u00b2.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "compare-thickness",
+        "compare-speed"
+      ]
+    },
+    {
+      "id": "interpret",
+      "logical_id": "qualification",
+      "title": "23. Interpret and retain the evidence",
+      "start": 310.0,
+      "end": 322.0,
+      "instructions": [
+        "Keep the two unchanged scripts, dataset hashes, mesh, runtime versions and controls with both result archives.",
+        "The perturbation changes thickness inside the shelf and the script\u2019s thickness_inflow condition together."
+      ],
+      "why": "Retain the coupled input change so the scientific question stays clear.",
+      "expected": "This pair changes interior and inflow thickness together.",
+      "note": "This one synthetic sensitivity pair is not an independent baseline repeat or an accuracy result.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "interpret"
+      ]
+    }
+  ]
+}

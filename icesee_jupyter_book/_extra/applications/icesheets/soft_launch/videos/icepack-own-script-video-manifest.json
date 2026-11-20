@@ -1,0 +1,129 @@
+{
+  "status": "accepted_for_publication",
+  "scope": "Icepack bring-your-own Python script and JSON configuration; actual native one-step run",
+  "recorded_utc_dates": [
+    "2026-11-18",
+    "2026-11-19"
+  ],
+  "duration_seconds": 172.88,
+  "files": [
+    {
+      "path": "icepack-own-script.mp4",
+      "bytes": 2847158,
+      "sha256": "61a101d3f8788a1258475f7cfd7cb67b1656f341b97eeb15d484463248e77e4d"
+    },
+    {
+      "path": "icepack-own-script.vtt",
+      "bytes": 3692,
+      "sha256": "c93ef6e57a2628a2ba2c233f540c2a4906def62f2231dc97a645ebb6fb600f91"
+    },
+    {
+      "path": "icepack-own-script-thickness.png",
+      "bytes": 108631,
+      "sha256": "a5063bd0667b3d68b61d6da8ff118314622e5fefcfc810f3f3a5767b0f859f16"
+    },
+    {
+      "path": "icepack-own-script-velocity.png",
+      "bytes": 72607,
+      "sha256": "3880b6201704e8d8276da3c193b9734b1e7955497b48a783fb5926446db48a64"
+    }
+  ],
+  "archive": {
+    "bytes": 191386,
+    "sha256": "77717148aa3087180b29f1396e339c4befcde0e313b6ac9bc0c964f3eedc6185",
+    "members": 11,
+    "crc_valid": true
+  },
+  "source_hashes": {
+    "data/icepack-shelf-small-v1.json": "ebd6b13ba8cd3a08606855d642904af585ff095700777f929e09addf4e736e30",
+    "run.py": "7c5b4023b83715aed5ef2d137c13c48f382c0b1048845d088c871e219e107f54",
+    "validate_dataset.py": "6da5742d8d26d993d36ae7800c51dc9dce24e1cb928c886fbdc1b2db64598ed5"
+  },
+  "submitted_source_hashes_match_fixture": true,
+  "all_inputs_predate_submission": true,
+  "scientific_configuration": {
+    "domain_m": [
+      10000,
+      10000
+    ],
+    "subdivisions": [
+      4,
+      4
+    ],
+    "initial_thickness_endpoints_m": [
+      500,
+      300
+    ],
+    "temperature_K": 253.15,
+    "initial_velocity_guess_m_per_year": [
+      100,
+      200
+    ],
+    "boundary_note": "200 m/year is an initial guess at the downstream side, not a prescribed outflow speed",
+    "steps": 1,
+    "dt_years": 0.01,
+    "zero_accumulation": true,
+    "damage_physics": false
+  },
+  "native_output_checks": {
+    "accepted": true,
+    "mesh": {
+      "vertices": 25,
+      "triangles": 32,
+      "extent_m": [
+        0.0,
+        10000.0,
+        0.0,
+        10000.0
+      ],
+      "total_area_m2": 100000000.0,
+      "nondegenerate": true
+    },
+    "all_fields_finite": true,
+    "thickness_positive": true,
+    "fields_space": "CG1",
+    "thickness_min_m": 300.0234248451919,
+    "thickness_max_m": 499.98146762497385,
+    "area_weighted_thickness_mean_m": 400.0069232414657,
+    "domain_rms_speed_m_per_year": 130.14195128541198,
+    "script_metrics_match_independent_field_integration": true,
+    "repeat_comparison_performed": false,
+    "pc_aws_comparison_performed": false
+  },
+  "timing": {
+    "submission_to_batch_start_seconds": 220.087,
+    "batch_task_seconds": 48.192,
+    "script_reported_seconds": 15.663332356000012,
+    "recording_gap": "Excluded operator/setup gap, not model runtime"
+  },
+  "editing": "Real application recordings only; setup pauses omitted; exact full downloaded scientific PNGs are labelled separately from GUI crops. Only the fresh archive link for the accepted 25-node run is shown.",
+  "verification": {
+    "complete_video_decode": "passed",
+    "privacy": {
+      "video_sha256": "61a101d3f8788a1258475f7cfd7cb67b1656f341b97eeb15d484463248e77e4d",
+      "sampled_frames": 58,
+      "sample_interval_seconds": 3,
+      "actual_privacy_findings": [],
+      "detector_flags_adjudicated": "15 false-positive samples: public workspace basename script-1118 and separate scientific axis ticks concatenated across whitespace",
+      "raw_ocr_text_retained": false
+    },
+    "png_text_metadata_review": [
+      {
+        "file": "icepack-own-script-thickness.png",
+        "text_metadata_keys": [
+          "Software"
+        ],
+        "private_identifiers": false
+      },
+      {
+        "file": "icepack-own-script-velocity.png",
+        "text_metadata_keys": [
+          "Software"
+        ],
+        "private_identifiers": false
+      }
+    ],
+    "parent_visual_review": "accepted",
+    "independent_scientific_caption_review": "no material blocker"
+  }
+}

@@ -22,10 +22,12 @@ import base64
 import html
 import re
 from dataclasses import dataclass
+from contextlib import nullcontext
 from pathlib import Path
 
 import ipywidgets as W
 from IPython.display import HTML, Image, clear_output, display
+from IPython.core.formatters import format_display_data
 
 #: figures larger than this are NOT base64-embedded for inline preview -- the
 #: card shows a "too large to preview" note instead and the file stays fully
@@ -50,6 +52,39 @@ _ARTIFACTS_NOTE = (
 _EMPTY_NOTE = (
     "This run completed but produced no figures or output files to collect."
 )
+_EXPORT_FAILED_NOTE = (
+    "Structured field export is unavailable for this run. "
+    "Existing native figures and output files are still available."
+)
+
+
+def _run_identity_html(run) -> str:
+    """Display only selected-run metadata: never current launch-form values."""
+    if run is None:
+        return ""
+    model = {"issm": "ISSM", "icepack": "Icepack", "icesee": "ICESEE"}.get(
+        str(getattr(run, "model", "")).lower(), "Model unavailable")
+    metadata = run.metadata if isinstance(getattr(run, "metadata", None), dict) else {}
+    example = "Example unavailable"
+    for key in ("example", "source"):
+        value = metadata.get(key)
+        if not isinstance(value, str):
+            continue
+        name = value.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1].strip()
+        if (not name or name in (".", "..") or len(name) > 96
+                or any(ord(c) < 32 for c in name)
+                or any(c in name for c in ":?#%")
+                or re.search(r"\d{12}|\b\d{4}[ -]\d{4}[ -]\d{4}\b|\b\d{3}[ -]\d{3}[ -]\d{3}[ -]\d{3}\b", name)):
+            continue
+        example = name
+        break
+    suffix = re.sub(r"[^A-Za-z0-9._-]", "", str(getattr(run, "id", "")))[-8:] or "unknown"
+    status = {"preparing": "Preparing", "submitted": "Submitted", "queued": "Queued",
+              "running": "Running", "completed": "Completed", "failed": "Failed",
+              "cancelled": "Cancelled"}.get(str(getattr(run, "status", "")).lower(), "Status unavailable")
+    text = html.escape(f"{model} · {example} · run #{suffix} · {status}")
+    return ("<div class='cryostack-help' role='status' aria-live='polite'>"
+            f"<b>Results from:</b> {text}</div>")
 
 
 @dataclass
@@ -76,6 +111,7 @@ class VisualizationController:
         self.status = status
         self.meta = meta
         self.plot_out = plot_out
+        self.run_identity = W.HTML()
         #: the Solution / Field / Timestep / Render block -- hidden entirely
         #: (not just disabled) for a run with no structured fields, so an
         #: artifacts-only run never implies fields exist.
@@ -90,6 +126,12 @@ class VisualizationController:
         render_btn.on_click(lambda _=None: self.render())
         fetch_btn.on_click(lambda _=None: self.fetch())
 
+    def _publish_output(self, value) -> None:
+        """Replace visible output even from a detached job-completion callback."""
+        data, metadata = format_display_data(value)
+        self.plot_out.outputs = ({"output_type": "display_data", "data": data,
+                                  "metadata": metadata},)
+
     # -- helpers ---------------------------------------------------------
     def _log(self, *parts):
         if self.log_output is not None:
@@ -99,6 +141,24 @@ class VisualizationController:
     def _run_id(self) -> str:
         return (self._selected_run_id() or "") if callable(self._selected_run_id) \
             else (self._selected_run_id or "")
+
+    def _selection_lock(self):
+        return getattr(self.manager, "_result_download_lock", None) or nullcontext()
+
+    def _selection_token(self):
+        token = getattr(self.manager, "result_download_token", None)
+        return token() if callable(token) else None
+
+    def _selection_matches(self, run_id, token):
+        selected = self.manager.selected_run()
+        if not selected or selected.id != run_id or self._run_id() != run_id:
+            return False
+        current = getattr(self.manager, "result_download_is_current", None)
+        return token is None or (callable(current) and current(token))
+
+    def _update_run_identity(self, run_id):
+        selected = self.manager.selected_run()
+        self.run_identity.value = _run_identity_html(selected) if selected and selected.id == run_id else ""
 
     def _set_enabled(self, enabled: bool):
         self.solution_dd.disabled = not enabled
@@ -164,8 +224,14 @@ class VisualizationController:
 
     # -- lifecycle -----------------------------------------------------
     def refresh(self, _=None):
+        with self._selection_lock():
+            return self._refresh_current(_)
+
+    def _refresh_current(self, _=None):
         run_id = self._run_id()
+        token = self._selection_token()
         if not run_id:
+            self.run_identity.value = ""
             self._pkg = None
             self._set_enabled(False)
             self._show_field_controls(False)
@@ -174,17 +240,23 @@ class VisualizationController:
             self.field_dd.options = ()
             self.status.value = f"<span class='icesee-subtle'>{_NO_RUN_NOTE}</span>"
             self.meta.value = ""
-            with self.plot_out:
-                clear_output()
+            self.plot_out.outputs = ()
             return
 
-        self._pkg = self.manager.result_package_for_run(run_id)
+        package = self.manager.result_package_for_run(run_id)
+        if not self._selection_matches(run_id, token):
+            return
+        self._pkg = package
+        self._update_run_identity(run_id)
         status = self._pkg.status
 
         # "legacy"   -- a run that predates the neutral package
         # "artifacts"-- a run whose model has no structured field reader yet
         #               (Icepack today): figures + native output files only
-        if status in ("legacy", "artifacts", "empty"):
+        export_artifacts = self._pkg.legacy_artifacts() if status == "export_failed" else None
+        has_export_artifacts = bool(export_artifacts and any(
+            export_artifacts.get(key) for key in ("figures", "model_mat", "native", "mats", "other")))
+        if status in ("legacy", "artifacts", "empty") or has_export_artifacts:
             self._set_enabled(False)
             self._show_field_controls(False)
             self._show_fetch(status != "legacy")   # a re-fetch can still help
@@ -192,7 +264,7 @@ class VisualizationController:
             # run that produced no structured fields.
             self.solution_dd.options = ()
             self.field_dd.options = ()
-            arts = self._pkg.legacy_artifacts()
+            arts = export_artifacts if export_artifacts is not None else self._pkg.legacy_artifacts()
             figs = arts.get("figures") or []
             _seen: set = set()
             natives = []
@@ -208,7 +280,8 @@ class VisualizationController:
             # WHAT was found (figures vs other output files), never a vague
             # "N files".
             if figs or natives:
-                note = _LEGACY_NOTE if status == "legacy" else _ARTIFACTS_NOTE
+                note = (_EXPORT_FAILED_NOTE if status == "export_failed"
+                        else _LEGACY_NOTE if status == "legacy" else _ARTIFACTS_NOTE)
                 parts = []
                 if figs:
                     parts.append(f"{len(figs)} figure{'s' if len(figs) != 1 else ''}")
@@ -229,7 +302,7 @@ class VisualizationController:
                 )
             self.status.value = f"<span class='icesee-subtle'>{note}</span>"
             self.meta.value = ""
-            self._show_native_outputs(figs, natives)
+            self._show_native_outputs(figs, natives, expected_run_id=run_id, expected_token=token)
             return
 
         if status == "missing" or not self._pkg.is_readable():
@@ -245,8 +318,7 @@ class VisualizationController:
                 self._show_fetch(True)         # a re-fetch may repair a partial sync
             self.status.value = f"<span class='icesee-subtle'>{note}</span>"
             self.meta.value = ""
-            with self.plot_out:
-                clear_output()
+            self.plot_out.outputs = ()
             return
 
         solutions = self._pkg.available_solutions()
@@ -317,7 +389,12 @@ class VisualizationController:
 
     # -- render ------------------------------------------------------
     def render(self, _=None):
+        with self._selection_lock():
+            return self._render_current(_)
+
+    def _render_current(self, _=None):
         run_id = self._run_id()
+        token = self._selection_token()
         sol, fld = self.solution_dd.value, self.field_dd.value
         if not run_id or not sol or not fld:
             return
@@ -327,11 +404,13 @@ class VisualizationController:
         result = self.manager.render_run_plot(
             run_id, solution=sol, field=fld,
             timestep=self.timestep_dd.value, kind=kind)
+        if not self._selection_matches(run_id, token):
+            return
+        self._update_run_identity(run_id)
 
-        with self.plot_out:
-            clear_output(wait=True)
-            if result.ok and result.path is not None:
-                display(Image(filename=str(result.path)))
+        self.plot_out.outputs = ()
+        if result.ok and result.path is not None:
+            self._publish_output(Image(filename=str(result.path)))
         if result.ok:
             self.meta.value = (
                 "<div class='cryostack-plot-meta'>"
@@ -413,7 +492,7 @@ class VisualizationController:
             "<tbody>" + "".join(rows) + "</tbody></table>"
         )
 
-    def _show_native_outputs(self, figs: list, natives: list):
+    def _show_native_outputs(self, figs: list, natives: list, *, expected_run_id=None, expected_token=None):
         """The native-output fallback: render any recognisable figure files as
         an inline gallery, and list every other native output file (name /
         relative path / type / size). Never fabricates a plot.
@@ -428,14 +507,14 @@ class VisualizationController:
         """
         gallery_html, oversized = self._figure_gallery_html(figs)
         native_html = self._native_file_rows(natives)
-        with self.plot_out:
-            clear_output(wait=True)
-            if gallery_html or native_html:
-                display(HTML(gallery_html + native_html))
-            else:
-                display(HTML(
-                    "<div class='icesee-subtle'>No output files were found "
-                    "for this run.</div>"))
+        if expected_run_id is not None and not self._selection_matches(expected_run_id, expected_token):
+            return
+        if gallery_html or native_html:
+            self._publish_output(HTML(gallery_html + native_html))
+        else:
+            self._publish_output(HTML(
+                "<div class='icesee-subtle'>No output files were found "
+                "for this run.</div>"))
         rendered = gallery_html.count("data:image/")
         if gallery_html or native_html:
             self._log(
@@ -564,6 +643,7 @@ def build_visualization_panel(*, manager: WorkspaceManager, selected_run_id,
     container = W.VBox(
         [
             W.HTML("<div class='cryostack-section-label'>Field visualization</div>"),
+            controller.run_identity,
             W.HBox([status, fetch_btn],
                    layout=W.Layout(align_items="center", gap="10px", flex_wrap="wrap")),
             field_controls,

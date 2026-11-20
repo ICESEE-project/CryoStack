@@ -107,8 +107,9 @@ class Stepper:
                       ".scrollIntoView({behavior:'smooth',block:'nearest'});}")
             else:
                 js = f"var e=document.querySelector('{target}');if(e)e.scrollIntoView({{behavior:'smooth',block:'start'}});"
-            label = {"attention": "needs attention", "done": "done", "current": "current step"}
-            sr = next((v for k, v in label.items() if k in cls), "")
+            label = {"stopped": "cancelled", "attention": "needs attention", "active": "in progress",
+                     "current": "current step", "done": "done"}
+            sr = ", ".join(v for k, v in label.items() if k in cls.split())
             items.append(f'<li class="icw-step {cls}"{aria} role="link" tabindex="0" title="{esc(name)}'
                          f'{": " + sr if sr else ""}" onclick="{js}" onkeydown="if(event.key===\'Enter\'){{{js}}}">'
                          f'<span class="n">{"✓" if "done" in cls else i}</span>{esc(name)}</li>')

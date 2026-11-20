@@ -35,6 +35,10 @@ CONTROL_DENIED = "control_denied"
 ROLE_CHANGED = "role_changed"
 ROLE_CHANGE_DENIED = "role_change_denied"
 SESSIONS_REVOKED = "sessions_revoked"
+ACCOUNT_STATUS_CHANGED = "account_status_changed"
+ACCOUNT_DENIED = "account_denied"
+EMAIL_VERIFIED = "email_verified"
+PASSWORD_RESET = "password_reset"
 
 EVENT_TYPES = (
     LOGIN_SUCCESS,
@@ -46,6 +50,10 @@ EVENT_TYPES = (
     ROLE_CHANGED,
     ROLE_CHANGE_DENIED,
     SESSIONS_REVOKED,
+    ACCOUNT_STATUS_CHANGED,
+    ACCOUNT_DENIED,
+    EMAIL_VERIFIED,
+    PASSWORD_RESET,
 )
 
 #: failure categories (stable, non-sensitive labels)
@@ -64,6 +72,12 @@ FAILURE_CATEGORIES = (
     "internal_error",
     "registration_invalid",
     "registration_conflict",
+    "account_pending",
+    "account_rejected",
+    "account_suspended",
+    "invalid_token",
+    "nonce_mismatch",
+    "email_not_verified",
 )
 
 RETENTION_DAYS_ENV = "CRYOSTACK_ACCESS_EVENT_RETENTION_DAYS"

@@ -38,7 +38,9 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 #: tables this release adds; everything else must be unchanged by `migrate`
-NEW_TABLES = ("access_events", "access_audit_log")
+from icesee_auth.approval import TABLES as APPROVAL_TABLES
+
+NEW_TABLES = ("access_events", "access_audit_log") + APPROVAL_TABLES
 GATEWAY_PORT = 8080
 
 
@@ -241,6 +243,60 @@ def _print(result) -> None:
     print(json.dumps(result, indent=2, default=str))
 
 
+def approval_status(db: Path) -> dict:
+    """Counts by approval status and whether the baseline ran; no identities."""
+    with _connect_ro(db) as connection:
+        tables = _tables(connection)
+        users = connection.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        if "account_status" not in tables:
+            return {"users": users, "schema": "not migrated", "baseline": None}
+        counts = dict(connection.execute(
+            "SELECT status, COUNT(*) FROM account_status GROUP BY status").fetchall())
+        without = connection.execute(
+            "SELECT COUNT(*) FROM users WHERE id NOT IN (SELECT user_id FROM account_status)"
+        ).fetchone()[0]
+        marker = connection.execute(
+            "SELECT value FROM account_approval_meta WHERE key = 'baseline'").fetchone()
+        roles = dict(connection.execute(
+            "SELECT role, COUNT(*) FROM user_roles GROUP BY role").fetchall())
+    return {
+        "users": users,
+        "status_counts": counts,
+        "without_status": without,
+        "control_roles": roles,
+        "baseline": json.loads(marker[0]) if marker else None,
+    }
+
+def approval_baseline(db: Path, backup_path: Path, *, operator: str, reason: str) -> dict:
+    """Record every account without a status as approved, with audit rows.
+
+    Applies the additive schema first. Roles are not touched. Accounts that
+    already have a status (for example pending registrations) keep it.
+    """
+    if not backup_path.is_file():
+        raise MigrationError("Take a backup first and pass it with --backup.")
+    if describe(backup_path)["integrity"] != "ok":
+        raise MigrationError("The backup does not pass integrity_check.")
+    from icesee_auth.approval import ApprovalStore
+    from icesee_auth.storage import AuthStorage
+
+    with _connect_ro(db) as probe:
+        migrated = "account_status" in _tables(probe)
+    before = approval_status(db) if migrated else None
+    try:
+        marker = ApprovalStore(AuthStorage(db)).record_baseline(operator=operator, reason=reason)
+    except ValueError as error:
+        raise MigrationError(str(error))
+    after = approval_status(db)
+    return {
+        "ok": after["without_status"] == 0,
+        "before": before,
+        "after": after,
+        "approved_now": marker["approved_last_run"],
+        "backup": backup_path.name,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -250,6 +306,12 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("verify"); p.add_argument("--before", type=Path, required=True); p.add_argument("--after", type=Path, required=True)
     p = sub.add_parser("rollback"); p.add_argument("--db", type=Path, required=True); p.add_argument("--backup", type=Path, required=True)
     p.add_argument("--force", action="store_true", help="skip the gateway-stopped check (copies only)")
+    p = sub.add_parser("approval-baseline"); p.add_argument("--db", type=Path, required=True)
+    p.add_argument("--backup", type=Path, required=True)
+    p.add_argument("--operator", required=True, help="who reviewed and ran the baseline")
+    p.add_argument("--reason", required=True, help="recorded in every audit row")
+    p.add_argument("--force", action="store_true", help="skip the gateway-stopped check (copies only)")
+    p = sub.add_parser("approval-status"); p.add_argument("--db", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == "backup":
@@ -261,6 +323,11 @@ def main(argv: list[str] | None = None) -> int:
             result = migrate(args.db, args.backup)
         elif args.command == "verify":
             result = verify(args.before, args.after)
+        elif args.command == "approval-status":
+            result = approval_status(args.db)
+        elif args.command == "approval-baseline":
+            _require_stopped(args.force)
+            result = approval_baseline(args.db, args.backup, operator=args.operator, reason=args.reason)
         else:
             _require_stopped(args.force)
             result = rollback(args.db, args.backup)

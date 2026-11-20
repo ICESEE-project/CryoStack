@@ -20,6 +20,7 @@ import ipywidgets as W
 
 from icesee_jupyter_book.ui.icesee_workflow.components import card, esc
 from icesee_jupyter_book.ui.icesee_workflow.launch import Stepper, tab_slug
+from icesee_jupyter_book.ui.icesee_workflow.progress import run_step_states
 
 STEPS = ("Mode", "Experiment", "Environment", "Parameters", "Review & launch", "Monitor", "Results")
 STEP_TARGETS = {"Mode": ".icw-anchor-mode", "Experiment": ".icw-anchor-experiment",
@@ -30,7 +31,7 @@ MODE_LABELS = {"remote": "Remote HPC", "cloud": "Cloud", "local": "Local"}
 MODE_HELP = {
     "remote": "Submits a Slurm job to your HPC allocation through the CryoStack Connector or SSH, using "
               "ICESEE-Spack or the ICESEE container.",
-    "cloud": "Launches an AWS Batch job in your connected AWS account. You review the cost and readiness "
+    "cloud": "Choose cloud access in Environment. You review the cost and readiness "
              "before anything starts.",
     "local": "Runs on this CryoStack server.",
 }
@@ -53,27 +54,40 @@ class CryoLauncherWorkflow:
     modes_box: W.Box = None
     cards: dict = field(default_factory=dict)
     _sections: dict = field(default_factory=dict)
+    _last: dict = field(default_factory=dict)
 
-    def refresh(self, *, example_chosen: bool = False, run_state: str = "", manual: bool = True) -> None:
+    def refresh(self, *, example_chosen: bool | None = None, run_state: str | None = None,
+                manual: bool | None = None, viewing: str | None = None) -> None:
         """Hide cards whose contents are all hidden; update the stepper.
-        ``manual`` is False while Auto-config is the interface. The execution
-        mode toggle stays visible in every interface: Auto-config plans for
-        the selected mode and never changes it."""
+
+        ``run_state`` is the lifecycle state of the run the stepper follows
+        (None before a launch) and ``viewing`` the workspace step that is open;
+        see progress.run_step_states. An argument left as None keeps its last
+        value, so a visibility refresh and a run-state change each update the
+        stepper without knowing the other. ``manual`` is False while
+        Auto-config is the interface. The execution mode toggle stays visible
+        in every interface: Auto-config plans for the selected mode and never
+        changes it."""
+        for key, value in (("example_chosen", example_chosen), ("run_state", run_state),
+                           ("manual", manual), ("viewing", viewing)):
+            if value is not None:
+                self._last[key] = value
         for name, widgets in self._sections.items():
             shown = any(getattr(w.layout, "display", "") != "none" for w in widgets)
             self.cards[name].layout.display = "" if shown else "none"
-        states = {"Mode": "done"}
+        setup = {"Mode": "done"}
+        if self.cards["environment"].layout.display != "none":
+            setup["Environment"] = ""
+        if self.cards["parameters"].layout.display != "none":
+            setup["Parameters"] = ""
         if self.cards["experiment"].layout.display != "none":
-            states["Experiment"] = "done" if example_chosen else "current"
-            if example_chosen:
-                states["Review & launch"] = "current"
-        if run_state in ("running", "submitted", "queued", "pending"):
-            states["Monitor"] = "current"
-        elif run_state in ("completed", "done", "succeeded"):
-            states.update({"Monitor": "done", "Results": "current"})
-        elif run_state in ("failed", "error"):
-            states["Monitor"] = "attention"
-        self.stepper.update(states)
+            chosen = bool(self._last.get("example_chosen"))
+            setup["Experiment"] = "done" if chosen else "current"
+            if chosen:
+                setup["Review & launch"] = "current"
+        state = str(self._last.get("run_state") or "").strip().lower()
+        self.stepper.update(run_step_states(setup, state if state != "preparing" else None,
+                                            viewing=self._last.get("viewing") or None))
 
 
 def _tab_jumps(tabs: W.Tab | None, titles: list) -> list:

@@ -1,0 +1,378 @@
+{
+  "status": "accepted_for_publication",
+  "scope": "Icepack owned-script initialization from this bounded synthetic HDF5 schema, native run and saved archive",
+  "root_visual_review": "Accepted12-scene contact sheet for exact183-second video",
+  "duration_seconds": 183,
+  "files": [
+    {
+      "path": "icepack-own-h5-data.mp4",
+      "bytes": 3158026,
+      "sha256": "65ccfae249943dea7aa4c89039c6c8821b2072a3d2ace1b80759f5b2cab38b6e"
+    },
+    {
+      "path": "icepack-own-h5-data.vtt",
+      "bytes": 4131,
+      "sha256": "014ca4d43b5313e6f0c03b67dc0538c266e652a14861201947eb219a2d2ce99c"
+    },
+    {
+      "path": "icepack-own-h5-final-thickness.png",
+      "bytes": 112853,
+      "sha256": "f9d893ec7ef7334fd6f5a83476aa999a02c2786d40013ea3d35df4eebbf99be5"
+    },
+    {
+      "path": "icepack-own-h5-initial-conditions.png",
+      "bytes": 254279,
+      "sha256": "b309f3b3b94e5cae9b25122a34fd4f167a94a10700539934cbd9545e8499e665"
+    }
+  ],
+  "archive": {
+    "bytes": 375843,
+    "members": 12,
+    "crc_valid": true,
+    "sha256": "617b09e99d1b561951e072b7935f47c6edaf4bbd02e9cd0339e669740aad7e1e"
+  },
+  "run": {
+    "schema": "cryostack.reproducibility.v1",
+    "clip_id": "IP-DATA-H5-20261119",
+    "collected_at": "2026-11-19T00:46:05.378144+00:00",
+    "model": "icepack",
+    "example": "pilot-icepack-h5-1118",
+    "job_reference_sha256": "3c7e38634257f6e27cda3d4d25c333934a6e54fde9c18be5ad3f3afb4b1113a5",
+    "job_status": "SUCCEEDED",
+    "job_times_ms": {
+      "createdAt": 1795048740708,
+      "startedAt": 1795048955411,
+      "stoppedAt": 1795049001763
+    },
+    "private_input_archive_sha256": "192272ff596654b78cb67cff4bfcafc061f26eebe66b332fc02e76d0aeffbf84",
+    "input_archive_access": "Sealed input bytes and raw object provenance retained privately on host; no raw desktop export.",
+    "input_evidence": "Actual run-scoped S3 objects read through verified owner BYO role; raw objects/keys/logs remain private on the host.",
+    "inputs": [
+      {
+        "relative_path": "data/icepack-shelf-initial.h5",
+        "bytes": 11973,
+        "sha256": "fffecf6470c23479c678fa98d602d7f47687d74f20f2f9b8bae074b345293be5",
+        "last_modified": "2026-11-19T00:38:59+00:00",
+        "last_modified_no_later_than_submission": true
+      },
+      {
+        "relative_path": "initial_fields.py",
+        "bytes": 5465,
+        "sha256": "111da787a6f1088ac0fa29216997e8a2346c36d9e72a8a31c4d6e391750e3839",
+        "last_modified": "2026-11-19T00:38:59+00:00",
+        "last_modified_no_later_than_submission": true
+      },
+      {
+        "relative_path": "run.py",
+        "bytes": 3516,
+        "sha256": "447806605f9866159e03ea4ae5b27e591b4a16b032862e416f8571e16d98713a",
+        "last_modified": "2026-11-19T00:38:59+00:00",
+        "last_modified_no_later_than_submission": true
+      }
+    ],
+    "total_input_files": 8,
+    "total_input_bytes": 51683,
+    "all_inputs_predate_submission": true,
+    "public_input_list_restricted": true,
+    "inputs_manifest_sha256": "a046e023010827849589ba29077f103bec0e1bee9161c1b4660418b21161658f",
+    "actual_image_digests": [
+      "sha256:d68d88dcb7047f29d6e277a45710f50f1bf3023566e0472f07a7dd75ffbcd170"
+    ],
+    "image_digest_evidence": "Exact actual AWS Batch job definition revision pins image@sha256; optional ECS observation is separately reported.",
+    "job_environment_binds_expected_run_root": true,
+    "job_input_binding_contract": "Actual CRYOSTACK_S3_RUN environment equals this run root; the pinned native runner downloads its input/ subdirectory.",
+    "actual_job_model_and_target": {
+      "CRYOSTACK_MODEL": "icepack",
+      "CRYOSTACK_RUN_TARGET": "run.py"
+    },
+    "versions": {
+      "firedrake": {
+        "distribution_source": "runtime packages_distributions mapping",
+        "installed_distributions": {
+          "firedrake": "2025.10.2"
+        },
+        "module_loaded": true,
+        "source": "module version unavailable",
+        "value": null
+      },
+      "h5py": {
+        "source": "loaded module __version__",
+        "value": "3.16.0"
+      },
+      "icepack": {
+        "distribution_source": "runtime packages_distributions mapping",
+        "installed_distributions": {
+          "icepack": "1.1.0"
+        },
+        "module_loaded": true,
+        "source": "module version unavailable",
+        "value": null
+      },
+      "mpi4py": {
+        "source": "loaded module __version__",
+        "value": "4.1.1"
+      },
+      "mpi_library": {
+        "source": "MPI.Get_library_version() vendor/version only; raw text excluded",
+        "value": "Open MPI 5.0.10"
+      },
+      "mpi_standard": {
+        "source": "MPI.Get_version()",
+        "value": [
+          3,
+          1
+        ]
+      },
+      "numpy": {
+        "source": "loaded module __version__",
+        "value": "1.26.4"
+      },
+      "petsc4py": {
+        "source": "loaded module __version__",
+        "value": "3.24.0"
+      },
+      "petsc_library": {
+        "source": "PETSc.Sys.getVersion()",
+        "value": [
+          3,
+          24,
+          0
+        ]
+      },
+      "python": {
+        "source": "running Python interpreter",
+        "value": "3.12.13"
+      }
+    },
+    "scientific_source_statements": [],
+    "resources": {
+      "VCPU": "2",
+      "MEMORY": "8192"
+    },
+    "timeout_seconds": 3600,
+    "randomness": {
+      "global_states_captured_without_reset": true,
+      "original_global_seeds": "unknown; not inferred from captured states",
+      "script_source": "Structured RectangleMesh with no explicit RNG or Gmsh/Triangle calls",
+      "unobserved": "library-owned generators"
+    },
+    "missing_evidence": [
+      "No independent native repeat or PC/AWS comparison",
+      "Original global seeds and library-owned generator states unknown",
+      "Portable numeric arrays, not complete Firedrake checkpoint",
+      "No arbitrary HDF5 schema/dependency compatibility or scientific accuracy qualification"
+    ],
+    "reproducibility_accepted": false,
+    "raw_payload_exported": false,
+    "read_only_aws": true,
+    "secret_values_read": false,
+    "scientific_configuration": {
+      "schema": "cryostack.shelf-initial-fields.v1",
+      "synthetic": true,
+      "grid_shape_ny_nx": [
+        5,
+        9
+      ],
+      "domain_m": [
+        10000,
+        10000
+      ],
+      "temperature_K": 253.15,
+      "rho_ice_kg_m3": 917,
+      "rho_water_kg_m3": 1028,
+      "native_space": "CG1",
+      "steps": 1,
+      "dt_years": 0.01,
+      "accumulation_m_per_year": 0,
+      "damage_physics": false,
+      "base_surface_role": "Saved/checked hydrostatic initial fields; IceShelf uses thickness/velocity under flotation."
+    },
+    "native_output_checks": {
+      "archive_sha256": "617b09e99d1b561951e072b7935f47c6edaf4bbd02e9cd0339e669740aad7e1e",
+      "members": 12,
+      "crc_valid": true,
+      "uploaded_grid_shape": [
+        5,
+        9
+      ],
+      "initial_fields_match_every_native_node": [
+        {
+          "field": "thickness",
+          "max_abs_error": 0.0,
+          "nodes": 25
+        },
+        {
+          "field": "base",
+          "max_abs_error": 0.0,
+          "nodes": 25
+        },
+        {
+          "field": "surface",
+          "max_abs_error": 0.0,
+          "nodes": 25
+        },
+        {
+          "field": "vx",
+          "max_abs_error": 0.0,
+          "nodes": 25
+        },
+        {
+          "field": "vy",
+          "max_abs_error": 0.0,
+          "nodes": 25
+        }
+      ],
+      "scalar_and_vector_coordinates_separate": true,
+      "all_exported_arrays_finite": true,
+      "metadata_status": "ok",
+      "metrics": {
+        "model": "icepack",
+        "case": "synthetic-shelf-v1",
+        "steps": 1,
+        "thickness_min": 300.0226959304064,
+        "thickness_max": 499.98084677501714,
+        "thickness_mean": 403.64986119431734,
+        "speed_l2": 133.908461320484,
+        "runtime_seconds": 16.98177451800001
+      },
+      "fields": {
+        "thickness": {
+          "values": {
+            "shape": [
+              25
+            ],
+            "min": 300.0226959304064,
+            "max": 499.98084677501714
+          }
+        },
+        "velocity": {
+          "magnitude": {
+            "shape": [
+              25
+            ],
+            "min": 100.0,
+            "max": 153.13093916271987
+          },
+          "values": {
+            "shape": [
+              25
+            ],
+            "min": 100.0,
+            "max": 153.12590687800926
+          },
+          "values_y": {
+            "shape": [
+              25
+            ],
+            "min": -2.903566258993949,
+            "max": 2.7953278909585335
+          }
+        },
+        "accumulation": {
+          "values": {
+            "shape": [
+              25
+            ],
+            "min": 0.0,
+            "max": 0.0
+          }
+        }
+      },
+      "rng_artifact_sha256": "ea1cad6cda3b59342e8fb85ad7c97b95660eac0d573b3de2fa053e4a2abdc31e",
+      "native_solver_executed_by_verifier": false,
+      "limits": "Portable numeric fields, not a Firedrake checkpoint; no independent repeat or cross-model equivalence claim.",
+      "independent_initialization_checks": [
+        {
+          "field": "thickness",
+          "max_abs_error": 0.0,
+          "reader": "independent SciPy RegularGridInterpolator",
+          "nodes": 25
+        },
+        {
+          "field": "base",
+          "max_abs_error": 0.0,
+          "reader": "independent SciPy RegularGridInterpolator",
+          "nodes": 25
+        },
+        {
+          "field": "surface",
+          "max_abs_error": 0.0,
+          "reader": "independent SciPy RegularGridInterpolator",
+          "nodes": 25
+        },
+        {
+          "field": "vx",
+          "max_abs_error": 0.0,
+          "reader": "independent SciPy RegularGridInterpolator",
+          "nodes": 25
+        },
+        {
+          "field": "vy",
+          "max_abs_error": 0.0,
+          "reader": "independent SciPy RegularGridInterpolator",
+          "nodes": 25
+        }
+      ],
+      "verification_readers": {
+        "numpy": "2.5.5",
+        "h5py": "3.16.0"
+      },
+      "independent_mesh_metric_checks": {
+        "vertices": 25,
+        "triangles": 32,
+        "index_base": 0,
+        "nondegenerate": true,
+        "area_m2": 100000000.0,
+        "thickness_mean_m": 403.64986119431734,
+        "speed_l2_m_per_year": 133.908461320484,
+        "metric_agreement_atol": 1e-08,
+        "passed": true
+      },
+      "scientific_output_acceptance": "passed"
+    },
+    "runtime_observations": {
+      "schema": "cryostack.runtime-provenance.v1",
+      "model": "icepack",
+      "phase": "after",
+      "architecture": "x86_64",
+      "mpi": {
+        "observed_rank": 0,
+        "observed_world_size": 1,
+        "requested_processes": null,
+        "requested_source": "not separately supplied to runner",
+        "source": "running MPI.COMM_WORLD"
+      },
+      "threads": {
+        "MKL_NUM_THREADS": "unset or nonnumeric; value not recorded",
+        "NUMEXPR_NUM_THREADS": "unset or nonnumeric; value not recorded",
+        "OMP_NUM_THREADS": "1",
+        "OPENBLAS_NUM_THREADS": "1"
+      },
+      "runtime_json_sha256": "0563a224c5f337a3511b448ad7d41e106253a961000596c42a320ba6ea0dac4b",
+      "rng_artifact": "rng-before.json",
+      "rng_sha256": "ea1cad6cda3b59342e8fb85ad7c97b95660eac0d573b3de2fa053e4a2abdc31e",
+      "rng_state_exported_publicly": false
+    },
+    "native_execution_accepted": true
+  },
+  "timings_seconds": {
+    "submission_to_batch_start": 214.703,
+    "batch_task": 46.352,
+    "script_reported": 16.981774518
+  },
+  "curated_scientific_download": {
+    "file": "native-initial-conditions-packet.zip",
+    "sha256": "4bea23cdd9dcd38060ae52af8ef8fa457cdf7371bdcf710d56f4ab5943c8ecf7",
+    "accepted_HDF_input_hashes_match": true,
+    "MAT_Launch_par_sha256": "65585ecc35704fa180fad5cf048ce21a9cbacd162edc55f2ca29037753db0388",
+    "MAT_native_acceptance": "pending; source boundary correction reviewed only"
+  },
+  "privacy": {
+    "full_video_decode": "passed",
+    "sampled_frames": 61,
+    "actual_privacy_findings": 0,
+    "scientific_axis_false_positive_samples_adjudicated": 17,
+    "raw_OCR_text_included": false
+  },
+  "editing": "Actual GUI crops and exact archive figures. No populated GUI Preview or scientific rerun claimed. Private account/path fields and unrelated waits excluded."
+}

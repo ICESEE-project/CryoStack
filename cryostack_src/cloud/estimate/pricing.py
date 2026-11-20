@@ -41,6 +41,8 @@ never invented.
 from __future__ import annotations
 
 import json
+import re
+import urllib.request
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -81,11 +83,33 @@ def _default_fetch(region: str) -> list[dict]:
         ],
         capture_output=True,
         text=True,
+        timeout=15,
     )
     if completed.returncode != 0:
-        raise RuntimeError((completed.stderr or completed.stdout or "").strip())
+        return _public_offer_fetch(region)
     payload = json.loads(completed.stdout or "{}")
     return [json.loads(item) for item in payload.get("PriceList", [])]
+
+
+def _public_offer_fetch(region: str) -> list[dict]:
+    """Anonymous official regional pricing when the service cannot use Pricing IAM.
+
+    Only public rate data is fetched; no connected-account credentials leave
+    the process. Bound response size and duration so cost review remains usable.
+    """
+    if not re.fullmatch(r"[a-z]{2}-[a-z]+-\d", region):
+        raise ValueError("Invalid pricing region")
+    url = ("https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/"
+           f"AmazonECS/current/{region}/index.json")
+    limit = 8 * 1024 * 1024
+    with urllib.request.urlopen(url, timeout=15) as response:
+        raw = response.read(limit + 1)
+    if len(raw) > limit:
+        raise ValueError("Regional pricing response exceeds limit")
+    payload = json.loads(raw)
+    terms = payload.get("terms", {}).get("OnDemand", {})
+    return [{"product": product, "terms": {"OnDemand": terms.get(sku, {})}}
+            for sku, product in payload.get("products", {}).items()]
 
 
 def _on_demand_usd(product_entry: dict) -> float | None:
@@ -167,14 +191,19 @@ def resolve_fargate_prices(
 
     fetcher = fetch or _default_fetch
     try:
-        entries = fetcher(region)
+        try:
+            entries = fetcher(region)
+        except (OSError, subprocess.TimeoutExpired):
+            if fetch is not None:
+                raise
+            entries = _public_offer_fetch(region)
         prices = parse_fargate_prices(
-            region, entries, source="AWS Price List API (us-east-1)"
+            region, entries, source="AWS Price List (API or public regional offer)"
         )
     except Exception as err:  # noqa: BLE001 - pricing must never raise upward
         prices = FargatePrices(
             region=region,
-            source="AWS Price List API (us-east-1)",
+            source="AWS Price List (API or public regional offer)",
             source_timestamp=_utc_now_iso(),
             available=False,
             warning=f"AWS Pricing lookup failed: {str(err)[:200]}",

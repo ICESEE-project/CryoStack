@@ -1,0 +1,503 @@
+{
+  "video_sha256": "29a56b823e6b668bda8f19fbad16237ba85904671801da7e5492837812e2def0",
+  "duration_seconds": 322.0,
+  "chapters": [
+    {
+      "id": "goal",
+      "step": "Goal",
+      "start_seconds": 0,
+      "end_seconds": 11.0,
+      "where": "",
+      "screenText": "Ask: how does +15 m thickness change this native shelf result?",
+      "screenWhy": "Answer a controlled question with fixed scripts, mesh and runtime controls.",
+      "expectedResult": "Keep scripts and controls fixed; change the full synthetic thickness input.",
+      "logical_step_id": "orientation",
+      "pause_after": false,
+      "title": "Goal and prerequisites",
+      "instructions": [
+        "First complete the baseline HDF5 guide and retain its result archive.",
+        "Open CryoLauncher with a verified BYO AWS connection. Download run.py, initial_fields.py and icepack-shelf-initial-plus15m.h5."
+      ],
+      "note": "This synthetic sensitivity case changes interior and inflow thickness together. Base and surface are adjusted consistently with flotation; initial velocity stays fixed.",
+      "why": "Answer a controlled question with fixed scripts, mesh and runtime controls."
+    },
+    {
+      "id": "new-example",
+      "step": 1,
+      "start_seconds": 11.0,
+      "end_seconds": 23.0,
+      "where": "",
+      "screenText": "Name a separate workspace example. Choose New example.",
+      "screenWhy": "Keep baseline and variant examples separate for comparison.",
+      "expectedResult": "Expected: a new owned Icepack example.",
+      "logical_step_id": "example",
+      "pause_after": true,
+      "title": "1. Create a separate example",
+      "instructions": [
+        "Choose Cloud \u2192 Advanced \u2192 Icepack. In Editor enter pilot-icepack-problem-1119 or another unique name.",
+        "Choose New example. Keep the accepted baseline example and results for comparison."
+      ],
+      "note": "",
+      "why": "Keep baseline and variant examples separate for comparison."
+    },
+    {
+      "id": "choose-scripts",
+      "step": 2,
+      "start_seconds": 23.0,
+      "end_seconds": 35.0,
+      "where": "",
+      "screenText": "Choose the two scripts: run.py and initial_fields.py.",
+      "screenWhy": "Both files validate and initialize the native model fields.",
+      "expectedResult": "Check Choose script files (2) before importing.",
+      "logical_step_id": "scripts",
+      "pause_after": false,
+      "title": "2. Select both scripts",
+      "instructions": [
+        "Choose Choose script files. Select run.py and initial_fields.py, then Open.",
+        "Check that two files are selected."
+      ],
+      "note": "",
+      "why": "Both files validate and initialize the native model fields."
+    },
+    {
+      "id": "import-scripts",
+      "step": 3,
+      "start_seconds": 35.0,
+      "end_seconds": 49.0,
+      "where": "",
+      "screenText": "Enable Replace existing script files, then Import script files.",
+      "screenWhy": "Replace prevents a starter or older entrypoint from taking precedence.",
+      "expectedResult": "Expected: both filenames imported and saved.",
+      "logical_step_id": "scripts",
+      "pause_after": false,
+      "title": "3. Import and save the scripts",
+      "instructions": [
+        "Enable Replace existing script files so an existing starter entrypoint cannot take precedence.",
+        "Choose Import script files; wait for the saved confirmation."
+      ],
+      "note": "",
+      "why": "Replace prevents a starter or older entrypoint from taking precedence."
+    },
+    {
+      "id": "saved-scripts",
+      "step": 4,
+      "start_seconds": 49.0,
+      "end_seconds": 57.0,
+      "where": "",
+      "screenText": "Read the saved confirmation for both filenames.",
+      "screenWhy": "The saved source bytes are what the next run stages.",
+      "expectedResult": "Set Run target to run.py.",
+      "logical_step_id": "scripts",
+      "pause_after": true,
+      "title": "4. Confirm the saved entrypoint",
+      "instructions": [
+        "Check Imported run.py, initial_fields.py. Files are saved.",
+        "Select run.py as Run target in Experiment before launching."
+      ],
+      "note": "The two script hashes are unchanged from the accepted baseline HDF5 case.",
+      "why": "The saved source bytes are what the next run stages."
+    },
+    {
+      "id": "choose-data",
+      "step": 5,
+      "start_seconds": 57.0,
+      "end_seconds": 72.0,
+      "where": "",
+      "screenText": "In Datasets choose icepack-shelf-initial-plus15m.h5.",
+      "screenWhy": "Select the full +15 m field dataset rather than editing one mesh node.",
+      "expectedResult": "Check that one data file is selected.",
+      "logical_step_id": "upload",
+      "pause_after": false,
+      "title": "5. Choose the variant dataset",
+      "instructions": [
+        "Scroll to Datasets. Choose Choose data files.",
+        "Select icepack-shelf-initial-plus15m.h5 and choose Open. Check the count is one."
+      ],
+      "note": "The supplied file is a 5 \u00d7 9 synthetic structured HDF5 grid, not a Firedrake checkpoint.",
+      "why": "Select the full +15 m field dataset rather than editing one mesh node."
+    },
+    {
+      "id": "upload-data",
+      "step": 6,
+      "start_seconds": 72.0,
+      "end_seconds": 84.0,
+      "where": "",
+      "screenText": "Choose Upload to store the selected variant.",
+      "screenWhy": "Uploading stores the variant in your workspace dataset library.",
+      "expectedResult": "Expected: Uploaded: icepack-shelf-initial-plus15m.h5.",
+      "logical_step_id": "upload",
+      "pause_after": false,
+      "title": "6. Upload the selected variant",
+      "instructions": [
+        "Choose Upload to store the selected variant.",
+        "Wait for the uploaded filename and select that variant in the dataset list."
+      ],
+      "note": "",
+      "why": "Uploading stores the variant in your workspace dataset library."
+    },
+    {
+      "id": "uploaded",
+      "step": 7,
+      "start_seconds": 84.0,
+      "end_seconds": 92.0,
+      "where": "",
+      "screenText": "Select the uploaded +15 m variant.",
+      "screenWhy": "Choosing the variant keeps the accepted baseline input unchanged.",
+      "expectedResult": "Keep the baseline file separate.",
+      "logical_step_id": "upload",
+      "pause_after": true,
+      "title": "7. Select the variant",
+      "instructions": [
+        "Check the uploaded filename and highlight icepack-shelf-initial-plus15m.h5."
+      ],
+      "note": "The baseline and variant have different hashes. Their x/y grids, initial vx/vy and floating mask are identical.",
+      "why": "Choosing the variant keeps the accepted baseline input unchanged."
+    },
+    {
+      "id": "alias",
+      "step": 8,
+      "start_seconds": 92.0,
+      "end_seconds": 102.0,
+      "where": "",
+      "screenText": "Enter the alias icepack-shelf-initial.h5.",
+      "screenWhy": "An alias lets unchanged run.py read the new dataset at its fixed path.",
+      "expectedResult": "The fixed script reads data/icepack-shelf-initial.h5.",
+      "logical_step_id": "reference",
+      "pause_after": false,
+      "title": "8. Set the staged alias",
+      "instructions": [
+        "In the path/alias field enter icepack-shelf-initial.h5.",
+        "Do not change the script path: run.py reads data/icepack-shelf-initial.h5."
+      ],
+      "note": "The filename of the uploaded variant is different from its staged alias.",
+      "why": "An alias lets unchanged run.py read the new dataset at its fixed path."
+    },
+    {
+      "id": "reference",
+      "step": 9,
+      "start_seconds": 102.0,
+      "end_seconds": 116.0,
+      "where": "",
+      "screenText": "Choose Reference in example to attach the variant.",
+      "screenWhy": "The attachment binds this variant to the current owned example.",
+      "expectedResult": "Bind the selected variant to this owned example.",
+      "logical_step_id": "reference",
+      "pause_after": false,
+      "title": "9. Attach the variant",
+      "instructions": [
+        "Choose Reference in example with the variant selected and the alias entered.",
+        "The reference is copied to the script path when the next run is staged."
+      ],
+      "note": "",
+      "why": "The attachment binds this variant to the current owned example."
+    },
+    {
+      "id": "reference-confirmed",
+      "step": 10,
+      "start_seconds": 116.0,
+      "end_seconds": 126.0,
+      "where": "",
+      "screenText": "Read the reference confirmation and exact script path.",
+      "screenWhy": "The exact path proves what will be copied at the next staging step.",
+      "expectedResult": "Expected: variant \u2192 data/icepack-shelf-initial.h5.",
+      "logical_step_id": "reference",
+      "pause_after": true,
+      "title": "10. Verify the binding",
+      "instructions": [
+        "Read Referenced icepack-shelf-initial-plus15m.h5. In your script, read data/icepack-shelf-initial.h5.",
+        "Check that this dataset is referenced by the current example."
+      ],
+      "note": "Accepted staged inputs later matched both script hashes and the variant dataset hash exactly.",
+      "why": "The exact path proves what will be copied at the next staging step."
+    },
+    {
+      "id": "review",
+      "step": 11,
+      "start_seconds": 126.0,
+      "end_seconds": 138.0,
+      "where": "",
+      "screenText": "Open Review & Launch.",
+      "screenWhy": "The review is the final check before an explicit paid submission.",
+      "expectedResult": "Review this Icepack example and your resource settings.",
+      "logical_step_id": "review",
+      "pause_after": false,
+      "title": "11. Review the native plan",
+      "instructions": [
+        "Check Icepack, the new owned example and run.py. Open Review & Launch.",
+        "Confirm the verified BYO connection, qualified image, resource and time-limit settings."
+      ],
+      "note": "The accepted run retained the baseline scripts, image, 2 vCPU, 8 GiB and 3600-second task timeout.",
+      "why": "The review is the final check before an explicit paid submission."
+    },
+    {
+      "id": "review-confirmed",
+      "step": 11,
+      "start_seconds": 138.0,
+      "end_seconds": 147.0,
+      "where": "",
+      "screenText": "Confirm Icepack and the new Own Problem example.",
+      "screenWhy": "This prevents a previous example from being mistaken for the new plan.",
+      "expectedResult": "The review is bound to this example before explicit submission.",
+      "logical_step_id": "review",
+      "pause_after": false,
+      "title": "11. Confirm the reviewed example",
+      "instructions": [
+        "Confirm Model ICEPACK and Example pilot-icepack-problem-1119 in the expanded review.",
+        "Keep the qualified image and baseline resource controls unchanged."
+      ],
+      "note": "",
+      "why": "This prevents a previous example from being mistaken for the new plan."
+    },
+    {
+      "id": "ready",
+      "step": 12,
+      "start_seconds": 147.0,
+      "end_seconds": 156.0,
+      "where": "",
+      "screenText": "Scroll through the review. All infrastructure rows must be Ready.",
+      "screenWhy": "Ready checks confirm storage, image and compute can support the run.",
+      "expectedResult": "Keep the explicit launch action separate from review.",
+      "logical_step_id": "review",
+      "pause_after": true,
+      "title": "12. Check readiness",
+      "instructions": [
+        "In the expanded review scroll to Infrastructure.",
+        "Check that account, storage, image and compute are ready."
+      ],
+      "note": "",
+      "why": "Ready checks confirm storage, image and compute can support the run."
+    },
+    {
+      "id": "launch",
+      "step": 13,
+      "start_seconds": 156.0,
+      "end_seconds": 171.0,
+      "where": "",
+      "screenText": "Choose Launch cloud run.",
+      "screenWhy": "This action stages the bound data and starts one native execution.",
+      "expectedResult": "The reviewed variant is staged for one native execution.",
+      "logical_step_id": "submit",
+      "pause_after": false,
+      "title": "13. Launch explicitly",
+      "instructions": [
+        "Scroll to the bottom of the review and read the final notice.",
+        "Choose Launch cloud run. Stay on the page while the selected input is staged."
+      ],
+      "note": "",
+      "why": "This action stages the bound data and starts one native execution."
+    },
+    {
+      "id": "submitted",
+      "step": 14,
+      "start_seconds": 171.0,
+      "end_seconds": 180.0,
+      "where": "",
+      "screenText": "Follow the new Icepack run until Completed.",
+      "screenWhy": "The new run is the record to follow through startup and completion.",
+      "expectedResult": "Startup and Batch task time are recorded separately.",
+      "logical_step_id": "submit",
+      "pause_after": true,
+      "title": "14. Monitor the selected run",
+      "instructions": [
+        "Confirm that the new Cloud run names the owned Own Problem example.",
+        "Wait for Completed, then open View results."
+      ],
+      "note": "Recorded startup 226.749 s; Batch task 47.298 s; submission-to-stop 274.047 s. The tutorial skips waiting time.",
+      "why": "The new run is the record to follow through startup and completion."
+    },
+    {
+      "id": "select-thickness",
+      "step": 15,
+      "start_seconds": 180.0,
+      "end_seconds": 194.0,
+      "where": "",
+      "screenText": "In Results choose thickness.",
+      "screenWhy": "Selecting a field does not itself update the displayed plot.",
+      "expectedResult": "Choose the field before rendering it.",
+      "logical_step_id": "thickness",
+      "pause_after": false,
+      "title": "15. Select thickness",
+      "instructions": [
+        "Open Results for the completed variant run.",
+        "Select the thickness field. The plot is updated only after Render."
+      ],
+      "note": "",
+      "why": "Selecting a field does not itself update the displayed plot."
+    },
+    {
+      "id": "render-thickness",
+      "step": 16,
+      "start_seconds": 194.0,
+      "end_seconds": 209.0,
+      "where": "",
+      "screenText": "Choose Render for thickness.",
+      "screenWhy": "Render displays the final thickness exported by the native solver.",
+      "expectedResult": "Expected: 25 native values, about 315\u2013515 m.",
+      "logical_step_id": "thickness",
+      "pause_after": true,
+      "title": "16. Render native thickness",
+      "instructions": [
+        "Choose Render.",
+        "Read the new thickness summary and colorbar."
+      ],
+      "note": "",
+      "why": "Render displays the final thickness exported by the native solver."
+    },
+    {
+      "id": "select-velocity",
+      "step": 17,
+      "start_seconds": 209.0,
+      "end_seconds": 223.0,
+      "where": "",
+      "screenText": "Select velocity to inspect the native flow field.",
+      "screenWhy": "Use velocity to inspect the response to the thickness change.",
+      "expectedResult": "The plot changes only after Render.",
+      "logical_step_id": "velocity",
+      "pause_after": false,
+      "title": "17. Select native velocity",
+      "instructions": [
+        "Select velocity in the Field dropdown.",
+        "Choose Render next to update the plot."
+      ],
+      "note": "",
+      "why": "Use velocity to inspect the response to the thickness change."
+    },
+    {
+      "id": "render-velocity",
+      "step": 17,
+      "start_seconds": 223.0,
+      "end_seconds": 239.0,
+      "where": "",
+      "screenText": "Choose Render for the selected velocity field.",
+      "screenWhy": "Render updates the plot to the selected native velocity field.",
+      "expectedResult": "Expected: native speed 100\u2013158.61 m/year.",
+      "logical_step_id": "velocity",
+      "pause_after": true,
+      "title": "17. Render native velocity",
+      "instructions": [
+        "With velocity selected, choose Render.",
+        "Read the speed summary with its m/year units."
+      ],
+      "note": "",
+      "why": "Render updates the plot to the selected native velocity field."
+    },
+    {
+      "id": "download",
+      "step": 18,
+      "start_seconds": 239.0,
+      "end_seconds": 253.0,
+      "where": "",
+      "screenText": "Choose Download results. Wait for a fresh archive link.",
+      "screenWhy": "Preserve the fields and initialization evidence with runtime metadata.",
+      "expectedResult": "Keep the mesh, fields and provenance together.",
+      "logical_step_id": "download",
+      "pause_after": false,
+      "title": "18. Prepare the archive",
+      "instructions": [
+        "Scroll below the field and choose Download results.",
+        "Wait for a fresh results_bundle link for the selected variant run."
+      ],
+      "note": "",
+      "why": "Preserve the fields and initialization evidence with runtime metadata."
+    },
+    {
+      "id": "save-link",
+      "step": 19,
+      "start_seconds": 253.0,
+      "end_seconds": 268.0,
+      "where": "",
+      "screenText": "Choose the fresh results_bundle link to save it.",
+      "screenWhy": "Both archives are needed for the baseline-versus-variant comparison.",
+      "expectedResult": "Retain both baseline and variant archives.",
+      "logical_step_id": "download",
+      "pause_after": true,
+      "title": "19. Save both records",
+      "instructions": [
+        "Choose the newly prepared archive link.",
+        "Save the variant beside the accepted baseline archive and keep their hashes in the comparison record."
+      ],
+      "note": "",
+      "why": "Both archives are needed for the baseline-versus-variant comparison."
+    },
+    {
+      "id": "initial-fields",
+      "step": 20,
+      "start_seconds": 268.0,
+      "end_seconds": 280.0,
+      "where": "",
+      "screenText": "Inspect initial-conditions.png from the saved run.",
+      "screenWhy": "Check that the uploaded full fields actually initialized the native mesh.",
+      "expectedResult": "All five initial fields matched interpolation at all 25 native vertices.",
+      "logical_step_id": "initial-check",
+      "pause_after": true,
+      "title": "20. Verify what initialized the model",
+      "instructions": [
+        "Open initial-conditions.png and initial-fields-on-native-mesh.npz from the saved archive.",
+        "Thickness, base, surface, vx and vy matched independent interpolation at all native scalar/vector nodes."
+      ],
+      "note": "All 45 source-grid thickness values are +15 m; flotation-consistent base/surface adjustment is retained, with unchanged initial velocity.",
+      "why": "Check that the uploaded full fields actually initialized the native mesh."
+    },
+    {
+      "id": "compare-thickness",
+      "step": 21,
+      "start_seconds": 280.0,
+      "end_seconds": 295.0,
+      "where": "",
+      "screenText": "Derived from saved numeric fields: compare final thickness.",
+      "screenWhy": "Shared scales show the two fields; the separate delta scale shows their difference.",
+      "expectedResult": "Area-mean thickness: 403.64986 \u2192 418.64758 m.",
+      "logical_step_id": "compare",
+      "pause_after": false,
+      "title": "21. Compare thickness",
+      "instructions": [
+        "Read the baseline and variant on the shared thickness scale. Read the difference on its separate scale.",
+        "The final area-mean thickness increased by 14.99772 m after one 0.01-year step."
+      ],
+      "note": "Derived scientific plot from verified numeric output archives, not GUI footage. The complete figure and per-node deltas are available with this chapter.",
+      "media": {
+        "comparisonFigure": "icepack-problem-baseline-comparison.png",
+        "nodeDeltas": "final-node-deltas.csv"
+      },
+      "why": "Shared scales show the two fields; the separate delta scale shows their difference."
+    },
+    {
+      "id": "compare-speed",
+      "step": 22,
+      "start_seconds": 295.0,
+      "end_seconds": 310.0,
+      "where": "",
+      "screenText": "Derived from saved numeric fields: compare final speed.",
+      "screenWhy": "Area-weighted metrics compare the full field rather than one selected node.",
+      "expectedResult": "Area-RMS speed: 133.90846 \u2192 137.17064 m/year.",
+      "logical_step_id": "compare",
+      "pause_after": true,
+      "title": "22. Compare speed",
+      "instructions": [
+        "Read baseline and variant speed on the same scale; use the separate scale for the difference.",
+        "The area-RMS speed increased by 3.26217 m/year in this recorded pair."
+      ],
+      "note": "Derived scientific plot from the two verified archives. The mesh remained 25 vertices and 32 triangles over 100 km\u00b2.",
+      "why": "Area-weighted metrics compare the full field rather than one selected node."
+    },
+    {
+      "id": "interpret",
+      "step": 23,
+      "start_seconds": 310.0,
+      "end_seconds": 322.0,
+      "where": "",
+      "screenText": "Keep the input change and controls with your comparison.",
+      "screenWhy": "Retain the coupled input change so the scientific question stays clear.",
+      "expectedResult": "This pair changes interior and inflow thickness together.",
+      "logical_step_id": "qualification",
+      "pause_after": true,
+      "title": "23. Interpret and retain the evidence",
+      "instructions": [
+        "Keep the two unchanged scripts, dataset hashes, mesh, runtime versions and controls with both result archives.",
+        "The perturbation changes thickness inside the shelf and the script\u2019s thickness_inflow condition together."
+      ],
+      "note": "This one synthetic sensitivity pair is not an independent baseline repeat or an accuracy result.",
+      "why": "Retain the coupled input change so the scientific question stays clear."
+    }
+  ]
+}

@@ -40,6 +40,7 @@ def build_workspace_history_panel(
     confirm = W.Checkbox(description="Confirm deletion of selected run", indent=False)
     delete_button = W.Button(description="Delete", icon="trash", button_style="danger", disabled=True)
     suppress_selection_reconcile = False
+    refreshing_options = False
 
     def status_badge(status):
         value = str(status or "unknown").lower()
@@ -125,21 +126,26 @@ def build_workspace_history_panel(
         )
 
     def refresh(_=None, *, auto_select=True):
-        nonlocal suppress_selection_reconcile
+        nonlocal suppress_selection_reconcile, refreshing_options
         previously_selected = manager.selected_run() if hasattr(manager, "selected_run") else None
-        discovered = manager.refresh()
-        runs.options = [
-            (f"{run.model.upper()} • {run.created:%Y-%m-%d} • {run.status.title()}", run.id)
-            for run in discovered
-        ] or [("No previous runs found", "")]
-        run_ids = {run.id for run in discovered}
+        # Replacing Select.options emits a transient first-item selection.
+        # Ignore it completely: selecting a historical run mutates the launch
+        # model, so even suppressing reconciliation alone is insufficient.
+        refreshing_options = True
         suppress_selection_reconcile = True
         try:
+            discovered = manager.refresh()
+            runs.options = [
+                (f"{run.model.upper()} • {run.created:%Y-%m-%d} • {run.status.title()}", run.id)
+                for run in discovered
+            ] or [("No previous runs found", "")]
+            run_ids = {run.id for run in discovered}
             if discovered and auto_select:
                 runs.value = previously_selected.id if previously_selected and previously_selected.id in run_ids else discovered[0].id
             elif not discovered:
                 runs.value = ""
         finally:
+            refreshing_options = False
             suppress_selection_reconcile = False
         render_cards(discovered)
         if auto_select:
@@ -156,6 +162,8 @@ def build_workspace_history_panel(
             )
 
     def show_selection(change=None):
+        if refreshing_options:
+            return
         run = manager.select_run(runs.value or "")
         if run and not suppress_selection_reconcile:
             run = manager.reconcile_run(run.id)

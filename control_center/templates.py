@@ -31,6 +31,7 @@ def control_layout(
     title: str,
     active: str,
     content: str,
+    registration_only: bool = False,
 ) -> str:
 
     def nav_item(
@@ -38,6 +39,9 @@ def control_layout(
         href: str,
         key: str,
     ) -> str:
+
+        if registration_only and key != "registrations":
+            return ""
 
         active_class = (
             " active"
@@ -49,6 +53,7 @@ def control_layout(
         <a
           class="control-nav-item{active_class}"
           href="{escape(href)}"
+          {'aria-current="page"' if active == key else ''}
         >
           {escape(label)}
         </a>
@@ -140,6 +145,19 @@ def control_layout(
     .control-nav-item.active {{
       background: #eff6ff;
       color: #1d4ed8;
+    }}
+
+    .control-nav-item[href="/control/scanner"],
+    .control-nav-item[href="/control/frozen-legacies/map"] {{
+      margin-left: 0.75rem;
+      padding-left: 1rem;
+      border-left: 2px solid #dbeafe;
+      font-size: 0.8rem;
+    }}
+
+    .control-nav-item:focus-visible {{
+      outline: 2px solid #2563eb;
+      outline-offset: 2px;
     }}
 
     .nav-section {{
@@ -917,6 +935,7 @@ def control_layout(
         Control Center
       </div>
 
+      {'<style>.control-nav .nav-section { display: none; }</style>' if registration_only else ''}
       <nav class="control-nav">
 
         {nav_item(
@@ -929,6 +948,12 @@ def control_layout(
             "Users",
             "/control/users",
             "users",
+        )}
+
+        {nav_item(
+            "Registrations",
+            "/control/registrations",
+            "registrations",
         )}
 
         {nav_item(
@@ -971,11 +996,18 @@ def control_layout(
             "storage",
         )}
 
+        <div class="nav-section">
+          Applications
+        </div>
+
         {nav_item(
             "Frozen Legacies",
             "/control/frozen-legacies",
             "frozen-legacies",
         )}
+
+        {nav_item("CryoStack Scanner", "/control/scanner", "scanner")}
+        {nav_item("Map regions", "/control/frozen-legacies/map", "frozen-map")}
 
         {nav_item(
             "LIVIST",
@@ -1347,6 +1379,23 @@ def experiments_page(
         content=content,
     )
 
+def account_status_panel(user: dict) -> str:
+    """Approval status of one account, with the link to decide on it."""
+    status = user.get("account_status")
+    if not status:
+        return ""
+    return f"""
+        <div class="panel">
+          <div class="panel-header">Account status</div>
+          <div class="detail-list" style="padding:0.9rem 1rem">
+            <strong>{escape(status)}</strong>
+            &middot; <a class="table-link"
+              href="/control/registrations?user={escape(user['id'])}#selected">Review or change</a>
+          </div>
+        </div>
+        """
+
+
 def user_detail_page(
     *,
     user: dict,
@@ -1674,6 +1723,8 @@ def user_detail_page(
             }
           </div>
         </div>
+
+        {account_status_panel(user)}
 
         {access_panel(
             user=user,

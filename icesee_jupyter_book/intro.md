@@ -1,5 +1,9 @@
 # ICESEE on GHUB
 
+> **Historical integration.** This page describes the earlier GHUB wrapper.
+> Start at the [current CryoStack documentation](documentation.md) for the
+> deployed applications, sign-in flow and execution instructions.
+
 This GHUB tool packages ICESEE into an interactive **Jupyter Book** format, so users can explore the framework, run lightweight examples, and understand the workflow without needing to set up a full HPC environment.
 
 ---

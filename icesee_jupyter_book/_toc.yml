@@ -9,11 +9,14 @@ chapters:
       - file: docs/user_manual
         sections:
           - file: docs/user_apps
-          - file: docs/user_local
-          - file: docs/user_remote
-          - file: docs/hpc_cloud
-            title: Running in the Cloud
-          - file: docs/resource_allocations
+          - file: docs/user_data
+          - file: docs/user_execution
+            sections:
+              - file: docs/user_local
+              - file: docs/user_remote
+              - file: docs/hpc_cloud
+                title: Running in the Cloud
+              - file: docs/resource_allocations
           - file: docs/user_results
           - file: docs/user_troubleshooting
   - file: docs/developer_guide

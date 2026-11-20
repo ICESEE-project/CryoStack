@@ -1,0 +1,32 @@
+{
+  "schema": "cryostack.tutorial-input-recipe.v1",
+  "case": "Icepack Own Problem +15m",
+  "download_filenames": [
+    "run.py",
+    "initial_fields.py",
+    "icepack-shelf-initial-plus15m.h5"
+  ],
+  "scripts": {
+    "run.py": {
+      "sha256": "447806605f9866159e03ea4ae5b27e591b4a16b032862e416f8571e16d98713a",
+      "bytes": 3516
+    },
+    "initial_fields.py": {
+      "sha256": "111da787a6f1088ac0fa29216997e8a2346c36d9e72a8a31c4d6e391750e3839",
+      "bytes": 5465
+    }
+  },
+  "dataset": {
+    "source_filename": "icepack-shelf-initial-plus15m.h5",
+    "expected_staged_relative_path": "data/icepack-shelf-initial.h5",
+    "bytes": 11973,
+    "sha256": "8297265a705cb531863b96aa4740a580285e9be4fd55051a2748a962865c2bab"
+  },
+  "reference_alias": "icepack-shelf-initial.h5",
+  "script_reads": "data/icepack-shelf-initial.h5",
+  "entrypoint": "run.py",
+  "provenance": "Synthetic analytic structured arrays; not observations or a Firedrake CheckpointFile.",
+  "change": "All source-grid thickness values +15 m; base/surface updated consistently with flotation. The same field sets interior and inflow thickness. Initial velocity, coordinates and mask stay fixed.",
+  "control": "Use the unchanged two scripts and compare against the accepted baseline HDF5 run.",
+  "question": "How does the coupled +15 m interior-and-inflow-thickness change affect this recorded one-step shelf solution?"
+}

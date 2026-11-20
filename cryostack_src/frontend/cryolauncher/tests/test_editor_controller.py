@@ -266,3 +266,219 @@ def test_rename_and_delete_only_for_user_owned_examples(setup):
     ctrl.delete_example()
     assert not (mgr.user_examples_root("issm") / "renamed").exists()
     assert ("deleted", None) in ctrl._changes
+
+
+def test_missing_example_name_is_visible_in_editor_without_opening_run_log(setup):
+    _mgr, _ed, ctrl, _canon, _ = setup
+    ctrl.new_example()
+    assert 'role="alert"' in ctrl.feedback.value
+    assert 'name' in ctrl.feedback.value.lower()
+    assert 'Enter an example name' in ctrl.feedback.value
+    assert '[editor]' not in ctrl.feedback.value
+
+
+def test_unsaved_context_warning_is_visible_and_save_acknowledges_resolution(setup):
+    _mgr, ed, ctrl, _canon, clones = setup
+    ctrl.name_field.value = 'inline-feedback-case'
+    ctrl.clone_example()
+    ed.value = str(clones[0])
+    ctrl.refresh()
+    _select(ctrl, 'runme.m')
+    ctrl.editor.value += '% my edit\n'
+    assert ctrl.guard_context_switch() is False
+    assert 'Unsaved changes' in ctrl.feedback.value
+    ctrl.save()
+    assert not ctrl.dirty
+    assert 'Saved' in ctrl.feedback.value
+
+
+def test_editor_feedback_escapes_untrusted_filename_text(setup):
+    _mgr, _ed, ctrl, _canon, _ = setup
+    ctrl._print('[editor][ERROR]', 'ValueError', 'Unsafe <script>alert(1)</script> name')
+    assert '<script>' not in ctrl.feedback.value
+    assert '&lt;script&gt;' in ctrl.feedback.value
+    assert 'ValueError' not in ctrl.feedback.value
+
+
+def _editable_working_copy(setup):
+    mgr, ed, ctrl, _canon, clones = setup
+    ctrl.name_field.value = 'unsaved-work-rehearsal'
+    ctrl.clone_example()
+    ed.value = str(clones[0])
+    ctrl.refresh()
+    _select(ctrl, 'runme.m')
+    return mgr, ctrl, clones[0]
+
+
+def test_manual_refresh_keeps_unsaved_script(setup):
+    _mgr, ctrl, _root = _editable_working_copy(setup)
+    edited = ctrl.editor.value + '% keep this unsaved work\n'
+    ctrl.editor.value = edited
+    ctrl.buttons['refresh'].click()
+    assert ctrl.editor.value == edited
+    assert ctrl.dirty
+    assert 'Unsaved changes' in ctrl.feedback.value
+    ctrl.discard_toggle.value = True
+    ctrl.buttons['refresh'].click()
+    assert not ctrl.dirty
+    assert ctrl.feedback.value == ''
+
+
+def test_new_file_does_not_discard_the_current_unsaved_script(setup):
+    _mgr, ctrl, root = _editable_working_copy(setup)
+    edited = ctrl.editor.value + '% unsaved\n';ctrl.editor.value = edited
+    ctrl.name_field.value = 'second.py'
+    ctrl.create()
+    assert not (root/'second.py').exists()
+    assert ctrl.editor.value == edited and ctrl.dirty
+
+
+def test_new_example_requires_resolution_of_unsaved_work(setup):
+    mgr, ctrl, _root = _editable_working_copy(setup)
+    edited = ctrl.editor.value + '% unsaved\n';ctrl.editor.value = edited
+    before = mgr.list_user_examples('issm')
+    ctrl.name_field.value = 'should-not-be-created'
+    ctrl.new_example()
+    assert mgr.list_user_examples('issm') == before
+    assert ctrl.editor.value == edited and ctrl.dirty
+
+
+def test_quota_refusal_preserves_buffer_and_shows_actionable_feedback(setup, monkeypatch):
+    from cryostack_src.workspace.storage_policy import QuotaExceeded
+    mgr, ctrl, root = _editable_working_copy(setup)
+    original = (root/'runme.m').read_text()
+    ctrl.editor.value = original + '% unsaved additional data\n'
+    def refused(*args, **kwargs):
+        raise QuotaExceeded('Workspace growth is unavailable; ask the organizer.', None)
+    monkeypatch.setattr(mgr, 'save_text_file', refused)
+    ctrl.save()
+    assert ctrl.dirty and (root/'runme.m').read_text() == original
+    assert 'ask the organizer' in ctrl.feedback.value
+    assert 'QuotaExceeded' not in ctrl.feedback.value
+
+
+def test_missing_volume_on_clone_is_visible_in_editor(setup, monkeypatch):
+    from cryostack_src.workspace.storage_mount import WorkspaceStorageUnavailable
+    mgr, _ed, ctrl, _canon, _clones = setup
+    def unavailable(*args, **kwargs):
+        raise WorkspaceStorageUnavailable('Workspace storage is unavailable; retry later.')
+    monkeypatch.setattr(mgr, 'clone_example_to_workspace', unavailable)
+    ctrl.clone_example()
+    assert 'storage is unavailable' in ctrl.feedback.value
+
+
+def test_denied_stale_example_clears_editor_without_aborting(setup, monkeypatch):
+    mgr, selected, ctrl, canon, _ = setup
+    ctrl.refresh()
+    assert ctrl._loaded_path
+    monkeypatch.setenv("CRYOSTACK_CANONICAL_EXAMPLE_ROOTS", str(canon.parent / "other"))
+    ctrl.refresh()
+    assert ctrl._loaded_path is None
+    assert ctrl.editor.value == ""
+    assert ctrl.editor.disabled
+    assert not any(value for _, value in ctrl.file_picker.options)
+    from cryostack_src.workspace.manager import WorkspacePermissionError
+    with pytest.raises(WorkspacePermissionError):
+        mgr.list_editable_files(str(canon))
+
+
+# Source-file import is a deliberate save action, never an execution action.
+def _script_upload(name, content=b"print('hello')\n"):
+    from datetime import datetime, timezone
+    return {"name": name, "content": memoryview(content), "type": "text/plain",
+            "size": len(content), "last_modified": datetime.now(timezone.utc)}
+
+
+def _owned_editor(setup):
+    mgr, example_dir, ctrl, canon, clones = setup
+    ctrl.refresh()
+    ctrl.clone_example()
+    example_dir.value = str(clones[0])
+    ctrl.refresh()
+    ctrl.open_file_by_name("runme.m")
+    return mgr, ctrl, clones[0]
+
+
+def test_script_import_never_writes_an_application_example(setup):
+    _mgr, _ed, ctrl, canon, _ = setup
+    ctrl.refresh()
+    assert ctrl.buttons['import_scripts'].disabled
+    assert ctrl.script_uploader.disabled
+    ctrl.script_uploader.value = (_script_upload('custom.py'),)
+    ctrl.import_script_files()
+    assert not (canon/'custom.py').exists()
+    assert 'workspace example' in ctrl.feedback.value
+
+
+def test_import_saves_utf8_helpers_and_refreshes_editor_without_executing(setup):
+    _mgr, ctrl, example = _owned_editor(setup)
+    ctrl.script_uploader.value = (
+        _script_upload('custom.py', b"raise AssertionError('do not execute imports')\n"),
+        _script_upload('helper.m', "% \u03b4 helper\n".encode('utf-8')),
+    )
+    ctrl.buttons['import_scripts'].click()
+    assert (example/'custom.py').read_text().startswith('raise AssertionError')
+    assert (example/'helper.m').read_text() == '% \u03b4 helper\n'
+    assert ctrl.file_picker.value.endswith('custom.py')
+    assert ctrl.script_uploader.value == ()
+    assert not ctrl.dirty
+    assert 'Set Run target' in ctrl.feedback.value
+
+
+def test_import_requires_explicit_replacement_of_seeded_entry_file(setup):
+    _mgr, ctrl, example = _owned_editor(setup)
+    original = (example/'runme.m').read_text()
+    ctrl.script_uploader.value = (_script_upload('runme.m', b'md=model();\n'),)
+    ctrl.import_script_files()
+    assert (example/'runme.m').read_text() == original
+    assert 'Replace existing script files' in ctrl.feedback.value
+    ctrl.replace_imports.value = True
+    ctrl.import_script_files()
+    assert (example/'runme.m').read_text() == 'md=model();\n'
+    assert not ctrl.replace_imports.value
+
+
+def test_import_preserves_unsaved_editor_text_and_selected_files(setup):
+    _mgr, ctrl, example = _owned_editor(setup)
+    ctrl.editor.value = 'unsaved personal work\n'
+    ctrl.script_uploader.value = (_script_upload('custom.py'),)
+    ctrl.import_script_files()
+    assert ctrl.editor.value == 'unsaved personal work\n'
+    assert not (example/'custom.py').exists()
+    assert ctrl.script_uploader.value
+    assert 'Unsaved changes' in ctrl.feedback.value
+
+
+@pytest.mark.parametrize('name,content', [
+    ('../escape.py', b'pass\n'),
+    ('binary.py', b'\xff\x00'),
+    ('mesh.nc', b'data'),
+    ('notebook.ipynb', b'{"cells": []}'),
+])
+def test_invalid_script_import_batch_creates_nothing(setup, name, content):
+    _mgr, ctrl, example = _owned_editor(setup)
+    ctrl.script_uploader.value = (_script_upload('valid.py'), _script_upload(name, content))
+    ctrl.import_script_files()
+    assert not (example/'valid.py').exists()
+    assert 'role="alert"' in ctrl.feedback.value
+
+
+def test_import_cannot_follow_a_symlink_to_another_owned_example(setup):
+    mgr, ctrl, example = _owned_editor(setup)
+    other = mgr.create_user_example(model='issm', name='other-example')
+    (other/'shared.py').write_text('original\n')
+    (example/'shared.py').symlink_to(other/'shared.py')
+    ctrl.script_uploader.value = (_script_upload('shared.py', b'replacement\n'),)
+    ctrl.replace_imports.value = True
+    ctrl.import_script_files()
+    assert (other/'shared.py').read_text() == 'original\n'
+    assert 'not a regular file in this example' in ctrl.feedback.value
+
+
+def test_script_import_uses_editor_size_limit(setup, monkeypatch):
+    mgr, ctrl, example = _owned_editor(setup)
+    monkeypatch.setattr(mgr, 'MAX_EDITABLE_BYTES', 3)
+    ctrl.script_uploader.value = (_script_upload('large.py', b'pass\n'),)
+    ctrl.import_script_files()
+    assert not (example/'large.py').exists()
+    assert 'script import limit' in ctrl.feedback.value

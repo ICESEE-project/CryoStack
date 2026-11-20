@@ -1,0 +1,33 @@
+{
+  "guide": "Icepack \u00b7 Run your own Python script",
+  "duration_seconds": 266.0,
+  "video_sha256": "eb69c8d172755e6170af55314afc13b5665c82b0ce9b4fac015db1e222e009ed",
+  "maximum_upscale": 1.6,
+  "audio": false,
+  "native_archive_sha256": [
+    "77717148aa3087180b29f1396e339c4befcde0e313b6ac9bc0c964f3eedc6185"
+  ],
+  "scope": "Existing accepted native/action evidence; no additional job was run for this edit. Supplemental control guides and scientific qualifications are stated in the chapters.",
+  "files": {
+    "icepack-own-script-figure-01-wide.png": {
+      "sha256": "3880b6201704e8d8276da3c193b9734b1e7955497b48a783fb5926446db48a64",
+      "bytes": 72607
+    },
+    "icepack-own-script-figure-02-wide.png": {
+      "sha256": "a5063bd0667b3d68b61d6da8ff118314622e5fefcfc810f3f3a5767b0f859f16",
+      "bytes": 108631
+    },
+    "icepack-own-script-wide.chapters.json": {
+      "sha256": "68385e703454d7765ce62e22e9c38fb2dc5dcc79b1086b828b40183ae9b7df94",
+      "bytes": 21472
+    },
+    "icepack-own-script-wide.mp4": {
+      "sha256": "eb69c8d172755e6170af55314afc13b5665c82b0ce9b4fac015db1e222e009ed",
+      "bytes": 3805256
+    },
+    "icepack-own-script-wide.vtt": {
+      "sha256": "0da2484d8546adbe24f653aa901dfd8d6486e17cde87239159fe6a3efc8d3f98",
+      "bytes": 5736
+    }
+  }
+}

@@ -15,6 +15,22 @@ from .base import (
 )
 
 
+# GitHub's web endpoints send a Content-Security-Policy header far longer
+# than aiohttp's default 8190-byte field limit.
+MAX_FIELD_SIZE = 64 * 1024
+
+
+def _session() -> aiohttp.ClientSession:
+    return aiohttp.ClientSession(
+        max_field_size=MAX_FIELD_SIZE,
+    )
+
+
+def _short(text: str, limit: int = 300) -> str:
+    text = " ".join((text or "").split())
+    return text if len(text) <= limit else text[:limit] + "..."
+
+
 class GitHubProvider(OAuthProvider):
     """
     GitHub OAuth provider for CryoStack.
@@ -134,21 +150,27 @@ class GitHubProvider(OAuthProvider):
             "Accept": "application/json",
         }
 
-        async with aiohttp.ClientSession() as client:
-            async with client.post(
-                self.TOKEN_URL,
-                data=payload,
-                headers=headers,
-            ) as response:
-                try:
-                    result = await response.json()
-                except Exception:
-                    text = await response.text()
+        try:
+            async with _session() as client:
+                async with client.post(
+                    self.TOKEN_URL,
+                    data=payload,
+                    headers=headers,
+                ) as response:
+                    try:
+                        result = await response.json()
+                    except Exception:
+                        text = await response.text()
 
-                    raise RuntimeError(
-                        "GitHub token endpoint returned "
-                        f"an invalid response: {text}"
-                    )
+                        raise RuntimeError(
+                            "GitHub token endpoint returned "
+                            f"an invalid response (HTTP {response.status}): "
+                            f"{_short(text)}"
+                        )
+        except aiohttp.ClientError as error:
+            raise RuntimeError(
+                f"Could not reach GitHub to sign in: {_short(str(error))}"
+            ) from error
 
         access_token = result.get("access_token")
 
@@ -196,34 +218,39 @@ class GitHubProvider(OAuthProvider):
             ),
         }
 
-        async with aiohttp.ClientSession() as client:
+        try:
+            async with _session() as client:
 
-            async with client.get(
-                self.USER_URL,
-                headers=headers,
-            ) as response:
+                async with client.get(
+                    self.USER_URL,
+                    headers=headers,
+                ) as response:
 
-                if response.status != 200:
-                    text = await response.text()
+                    if response.status != 200:
+                        text = await response.text()
 
-                    raise RuntimeError(
-                        "Unable to retrieve GitHub "
-                        "identity. "
-                        f"HTTP {response.status}: "
-                        f"{text}"
-                    )
+                        raise RuntimeError(
+                            "Unable to retrieve GitHub "
+                            "identity. "
+                            f"HTTP {response.status}: "
+                            f"{_short(text)}"
+                        )
 
-                profile = await response.json()
+                    profile = await response.json()
 
-            async with client.get(
-                self.EMAILS_URL,
-                headers=headers,
-            ) as response:
+                async with client.get(
+                    self.EMAILS_URL,
+                    headers=headers,
+                ) as response:
 
-                if response.status == 200:
-                    emails = await response.json()
-                else:
-                    emails = []
+                    if response.status == 200:
+                        emails = await response.json()
+                    else:
+                        emails = []
+        except aiohttp.ClientError as error:
+            raise RuntimeError(
+                f"Could not reach GitHub to sign in: {_short(str(error))}"
+            ) from error
 
         github_id = str(
             profile.get("id", "")

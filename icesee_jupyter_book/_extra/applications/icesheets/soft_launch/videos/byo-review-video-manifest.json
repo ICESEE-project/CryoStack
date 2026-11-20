@@ -1,0 +1,32 @@
+{
+  "status": "accepted_for_publication",
+  "recorded_date": "2026-11-18",
+  "scope": "Existing AWS connection review and verification",
+  "duration_seconds": 96,
+  "files": [
+    {
+      "path": "byo-aws-connection-review.mp4",
+      "bytes": 1915829,
+      "sha256": "8628efb862a25f1711880a6d3825cadcf8c52351469658980efde115ae8c281c"
+    },
+    {
+      "path": "byo-aws-connection-review.vtt",
+      "bytes": 1992,
+      "sha256": "0aed5c98a873e64760c6ce8692781e95585b7f93396549ea8febbf75eafb6487"
+    }
+  ],
+  "limits": [
+    "First-time CloudFormation role creation and AWS-console permissions review are explained, not filmed.",
+    "Saved Role ARN entry and verification occurred during an omitted wait; the recorded final verified state is shown.",
+    "No new role or trust-policy change is claimed.",
+    "This demonstrates account access only; compute preparation, license checkout and billing review are separate."
+  ],
+  "editing": "Actual recorded application frames only, cropped and held for reading; account and role identifiers hidden by opaque masks; long operator/control interruptions excluded.",
+  "verification": {
+    "complete_decode": "passed",
+    "ocr_samples": 32,
+    "sample_interval_seconds": 3,
+    "privacy_findings": [],
+    "parent_visual_review": "accepted"
+  }
+}

@@ -1,0 +1,72 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:12.000
+1. Select the native Basic case
+Choose Cloud → Basic → Icepack → Tutorial / 02 Synthetic Ice Shelf.
+Start with a verified AWS connection and prepared cloud resources.
+This recording uses the same canonical model without reducing its timesteps.
+
+2
+00:00:12.000 --> 00:00:30.000
+2. Keep the canonical science
+The curved shelf has an inflow-arc radius of 200 km and nominal 5 km mesh spacing. The temperature is 255.15 K.
+The script runs two 400-year phases, each with 200 steps at 2 years per step. Phase 2 includes damage physics.
+The submitted run.py exactly matches canonical notebook materialization.
+
+3
+00:00:30.000 --> 00:00:44.000
+3. Review cloud readiness
+Confirm the connected account, storage, container and compute readiness. Review the run before launch.
+This native run requested 2 vCPU,8 GiB and a 60-minute time limit.
+The price is an estimate. AWS charges the connected account.
+
+4
+00:00:44.000 --> 00:00:58.000
+4. Submit the native run
+The accepted run plan names ICEPACK and 02-synthetic-ice-shelf. The notebook is materialized to run.py for AWS Batch.
+CryoLauncher stages the canonical input and submits the actual native job.
+This is the submitted plan, not a surrogate solver.
+
+5
+00:00:58.000 --> 00:01:14.000
+5. Allow the actual job to finish
+The accepted AWS job succeeded with exit code 0.
+Submit to container start:223.044 s. Container start to stop:427.137 s.
+The results take was filmed later. The long operator/control gap is excluded and is not model runtime.
+
+6
+00:01:14.000 --> 00:01:28.000
+6. Select a structured field
+Open Results, choose solution icepack and select thickness or velocity, then Render.
+The exported mesh has 3,371 vertices and 6,533 triangles.
+The scientific field names and units come from the actual output metadata.
+
+7
+00:01:28.000 --> 00:01:44.000
+7. Read the full thickness map
+This full figure is the actual downloaded archive member. Thickness is in metres; x and y are in metres.
+The exported final thickness ranges 98.1004–350.1418 m.
+The separate full figure is shown because the GUI take exposes only part of its taller viewer.
+
+8
+00:01:44.000 --> 00:02:00.000
+8. Read speed and direction
+Colour shows speed in metres/year; arrows show direction. The exported final speed ranges 160.457–740.819 m/year.
+Native h and u use CG2. Portable thickness and velocity are exported as CG1 fields.
+The archive is portable field output, not a full Firedrake checkpoint.
+
+9
+00:02:00.000 --> 00:02:14.000
+9. Download the actual results
+Choose Download results, then the generated HTTPS archive link.
+The browser saved this run’s 20-member ZIP with valid CRC, including fields, mesh, figures, native mesh file and provenance.
+Keep the source packet and downloaded results with the reproducibility receipt.
+
+10
+00:02:14.000 --> 00:02:30.000
+10. Keep the evidence limits clear
+Actual runtime distributions: Icepack 1.1.0, Firedrake 2025.10.2 and Python 3.12.13. Observed MPI world size is 1.
+Native damage ranges −0.0036016 to 0.0741413, including a numerical undershoot. These values are retained.
+Canonical inputs and finite output checks passed. No independent repeat-equality result is claimed.
+

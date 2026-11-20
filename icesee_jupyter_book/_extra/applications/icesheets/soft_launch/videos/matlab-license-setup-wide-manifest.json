@@ -1,0 +1,29 @@
+{
+  "guide": "MATLAB \u00b7 Connect your institutional license for ISSM",
+  "duration_seconds": 195.0,
+  "video_sha256": "3cec345e222541d2f2545417b8af82f2b69fc47fe2fefd34e14a9d81beb240c2",
+  "maximum_upscale": 1.6,
+  "audio": false,
+  "native_archive_sha256": [
+    "be5223513d0b5374baddbe1f9624e18fc6e420cabe5f5c88991fbd897fbd8c52"
+  ],
+  "scope": "Existing accepted native/action evidence; no additional job was run for this edit. Supplemental control guides and scientific qualifications are stated in the chapters.",
+  "files": {
+    "matlab-license-setup-figure-01-wide.png": {
+      "sha256": "a05b4d0a03e78ecd404dbe7adaf9c7453140e9fc69c6b7c8b55e525f71dfe761",
+      "bytes": 87143
+    },
+    "matlab-license-setup-wide.chapters.json": {
+      "sha256": "353c29cde921a6d609a18d92485a24272724f5ee32e977f81f26d55bc9370630",
+      "bytes": 15630
+    },
+    "matlab-license-setup-wide.mp4": {
+      "sha256": "3cec345e222541d2f2545417b8af82f2b69fc47fe2fefd34e14a9d81beb240c2",
+      "bytes": 2735567
+    },
+    "matlab-license-setup-wide.vtt": {
+      "sha256": "2779b309fb176545952c83928e0e1152c3e9f5f60b9a2ae751760f4e9856d23d",
+      "bytes": 4310
+    }
+  }
+}

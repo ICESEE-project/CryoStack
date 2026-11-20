@@ -107,6 +107,7 @@ class OAuthFlow:
     return_to: str
     created_at: float
     expires_at: float
+    nonce: str | None = None
 
 @dataclass(frozen=True, slots=True)
 class ExperimentEvent:
@@ -377,6 +378,8 @@ class AuthStorage:
 
             self._ensure_user_columns(connection)
             access_log.ensure_access_schema(connection)
+            from . import approval
+            approval.ensure_schema(connection)
 
     def create_user(
         self,
@@ -756,6 +759,7 @@ class AuthStorage:
         return_to: str,
         ttl_seconds: int = 600,
         now: float | None = None,
+        nonce: str | None = None,
     ) -> OAuthFlow:
         timestamp = time.time() if now is None else now
 
@@ -767,6 +771,7 @@ class AuthStorage:
             return_to=return_to,
             created_at=timestamp,
             expires_at=timestamp + ttl_seconds,
+            nonce=nonce,
         )
 
         with self._connect() as connection:
@@ -802,6 +807,21 @@ class AuthStorage:
                 ),
             )
 
+            # OpenID Connect nonces live in their own table, so the
+            # existing oauth_flows table keeps its schema
+            connection.execute(
+                "DELETE FROM oauth_flow_nonces WHERE expires_at <= ?",
+                (timestamp,),
+            )
+            if nonce:
+                connection.execute(
+                    """
+                    INSERT INTO oauth_flow_nonces (state, nonce, expires_at)
+                    VALUES (?, ?, ?)
+                    """,
+                    (flow.state, nonce, flow.expires_at),
+                )
+
         return flow
 
 
@@ -833,11 +853,20 @@ class AuthStorage:
             if row is None:
                 return None
 
+            nonce_row = connection.execute(
+                "SELECT nonce FROM oauth_flow_nonces WHERE state = ?",
+                (state,),
+            ).fetchone()
+
             connection.execute(
                 """
                 DELETE FROM oauth_flows
                 WHERE state = ?
                 """,
+                (state,),
+            )
+            connection.execute(
+                "DELETE FROM oauth_flow_nonces WHERE state = ?",
                 (state,),
             )
 
@@ -849,6 +878,7 @@ class AuthStorage:
             return_to=row["return_to"],
             created_at=row["created_at"],
             expires_at=row["expires_at"],
+            nonce=nonce_row["nonce"] if nonce_row is not None else None,
         )
 
     def update_user_profile(

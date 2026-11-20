@@ -1,0 +1,109 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:14.000
+Run the supplied Icepack shelf and save its native fields.
+Why: Keep the source inputs, inspect native fields, and save a complete result package.
+Look for: Start with a verified approved account and prepared cloud resources.
+
+2
+00:00:14.000 --> 00:00:24.000
+Start here in CryoLauncher. Choose Cloud for this tutorial.
+Why: Your workspace keeps scripts, dataset references and results together.
+Look for: Your workspace keeps scripts, datasets, run history and results together.
+
+3
+00:00:24.000 --> 00:00:36.000
+Choose Cloud → Basic → Icepack → Tutorial / 02 Synthetic Ice Shelf.
+Why: Basic retains the supplied example; optional edits change its scientific input definition.
+Look for: The supplied notebook is converted to run.py for cloud execution.
+
+4
+00:00:36.000 --> 00:00:48.000
+Keep the canonical temperature and time stepping.
+Why: Submission, queue/startup and native model execution are separate stages.
+Look for: 255.15 K; two 400-year phases; 200 steps each; dt = 2 years.
+
+5
+00:00:48.000 --> 00:01:00.000
+Check Account connected and Storage, Containers and Compute Ready.
+Why: Ready indicates that the required account resources are configured for the run.
+Look for: Use Prepare cloud first if resources are not ready.
+
+6
+00:01:00.000 --> 00:01:08.000
+Choose Review & Launch.
+Why: Review confirms the intended model, source, resources and charges before submission.
+Look for: Review the connected account and estimated charges.
+
+7
+00:01:08.000 --> 00:01:20.000
+Confirm ICEPACK, the canonical example and tested image/digest.
+Why: The tested image and pinned digest identify the native software environment.
+Look for: Keep the canonical source and run.py target.
+
+8
+00:01:20.000 --> 00:01:31.000
+Control guide: confirm Launch cloud run when checks are Ready.
+Why: This confirmation stages the reviewed inputs and starts a paid cloud job.
+Look for: The following summary belongs to this tutorial’s original native run.
+
+9
+00:01:31.000 --> 00:01:43.000
+Follow the submitted ICEPACK execution summary.
+Why: Submission, queue/startup and native model execution are separate stages.
+Look for: Allow the job to finish, then open its results.
+
+10
+00:01:43.000 --> 00:01:55.000
+Allow time for the complete native model.
+Why: Submission, queue/startup and native model execution are separate stages.
+Look for: Submission → start: 223.044 s; Batch task: 427.137 s.
+
+11
+00:01:55.000 --> 00:02:04.000
+In Results choose icepack, then thickness or velocity.
+Why: Keep the source, versions, hashes and scientific qualifications with the result.
+Look for: Read the selected field name and units.
+
+12
+00:02:04.000 --> 00:02:16.000
+Wait for the selected field preview; Render when needed.
+Why: The solution, field name, units and mesh counts identify what you are viewing.
+Look for: The exported mesh has 3,371 vertices and 6,533 triangles.
+
+13
+00:02:16.000 --> 00:02:28.000
+Open the full saved thickness PNG.
+Why: The unchanged saved figure preserves the complete map, axes and colour scale.
+Look for: Final thickness: 98.1004–350.1418 m; x and y are metres.
+
+14
+00:02:28.000 --> 00:02:40.000
+Read speed and direction in the saved velocity PNG.
+Why: The unchanged saved figure preserves the complete map, axes and colour scale.
+Look for: Speed: 160.457–740.819 m/year; native CG2 fields exported as CG1.
+
+15
+00:02:40.000 --> 00:02:49.000
+Choose Download results below the plot.
+Why: The archive keeps this run’s numeric outputs, figures and provenance together.
+Look for: Wait for a fresh link for this run.
+
+16
+00:02:49.000 --> 00:03:00.000
+Open the generated HTTPS link to save the ZIP.
+Why: The archive keeps this run’s numeric outputs, figures and provenance together.
+Look for: Keep fields, mesh, figures, native mesh file and provenance.
+
+17
+00:03:00.000 --> 00:03:08.000
+Keep the complete 20-member result package.
+Why: Keep the source, versions, hashes and scientific qualifications with the result.
+Look for: The browser-downloaded archive passed its CRC check.
+
+18
+00:03:08.000 --> 00:03:22.000
+Retain the numerical and runtime context with the archive.
+Why: Keep the scientific input definitions and numerical qualifications with the result.
+Look for: Native damage undershoot is retained; portable fields are not a full checkpoint.

@@ -27,12 +27,16 @@ from pathlib import Path
 import ipywidgets as W
 
 from cryostack_src.workspace.manager import WorkspaceManager, WorkspacePermissionError
+from cryostack_src.workspace.files import EDITABLE_SUFFIXES
+from cryostack_src.workspace.storage_policy import QuotaExceeded
+from cryostack_src.workspace.storage_mount import WorkspaceStorageUnavailable
 
 _READONLY_NOTE = (
     "Read-only — this is an application example. Use "
     "<b>Clone to My Workspace</b> to make an editable copy."
 )
-_NOTEBOOK_NOTE = "Notebook shown read-only in this phase (raw JSON)."
+_NOTEBOOK_NOTE = "Notebook shown read-only (raw JSON)."
+_SCRIPT_IMPORT_SUFFIXES = frozenset(EDITABLE_SUFFIXES - {".ipynb"})
 
 
 @dataclass
@@ -56,11 +60,14 @@ class EditorController:
         discard_toggle: W.Checkbox,
         confirm_delete: W.Checkbox,
         buttons: dict,
+        feedback: W.HTML | None = None,
         on_files_changed=None,
         on_clone_created=None,
         on_examples_changed=None,
         example_template=None,
         confirm_example_delete: W.Checkbox | None = None,
+        script_uploader: W.FileUpload | None = None,
+        replace_imports: W.Checkbox | None = None,
     ) -> None:
         self.m = manager
         self._model_value = model_value
@@ -76,6 +83,9 @@ class EditorController:
         self.discard_toggle = discard_toggle
         self.confirm_delete = confirm_delete
         self.buttons = buttons
+        self.feedback = feedback
+        self.script_uploader = script_uploader
+        self.replace_imports = replace_imports
         self._on_files_changed = on_files_changed
         self._on_clone_created = on_clone_created
 
@@ -92,8 +102,10 @@ class EditorController:
         buttons["save_as"].on_click(self.save_as)
         buttons["new"].on_click(self.create)
         buttons["delete"].on_click(self.delete)
-        buttons["refresh"].on_click(lambda _b: self.refresh())
+        buttons["refresh"].on_click(self.refresh_requested)
         buttons["clone"].on_click(self.clone_example)
+        if "import_scripts" in buttons:
+            buttons["import_scripts"].on_click(self.import_script_files)
         if "new_example" in buttons:
             buttons["new_example"].on_click(self.new_example)
         if "rename_example" in buttons:
@@ -110,19 +122,80 @@ class EditorController:
             and self.editor.value != self._clean_text
         )
 
+    # ── page session (icesee_jupyter_book/ui/session_restore.py) ─────────
+    def session_state(self) -> dict | None:
+        """The open file, and its text while it has unsaved changes."""
+        if not self._loaded_path:
+            return None
+        state = {"file": self._loaded_path}
+        if self.dirty:
+            state["text"] = self.editor.value
+        return state
+
+    def restore_session(self, state: dict) -> bool:
+        path = (state or {}).get("file")
+        if not path:
+            return False
+        if path not in [v for _l, v in self.file_picker.options]:
+            self.refresh()
+        changed = False
+        if path in [v for _l, v in self.file_picker.options] and self._loaded_path != path and not self.dirty:
+            self.file_picker.value = path            # the guarded pick path: _on_pick -> _load
+            changed = self._loaded_path == path
+        text = state.get("text")
+        if (isinstance(text, str) and self._loaded_path == path and not self._readonly
+                and self.editor.value != text):
+            self.editor.value = text
+            changed = True
+        return changed
+
+    def _editable_owned_path(self, path) -> bool:
+        return self.m.is_user_owned(path) and not self.m.is_transient_working_copy(path)
+
     def current_example_is_user_owned(self) -> bool:
-        return self.m.is_user_owned(self._example_dir.value)
+        return self._editable_owned_path(self._example_dir.value)
+
+    def _can_clone_current_example(self) -> bool:
+        source = (self._example_dir.value or "").strip()
+        if not source or self.current_example_is_user_owned():
+            return False
+        if self.m.is_transient_working_copy(source):
+            return self.m.canonical_working_copy_source(source) is not None
+        return not self.m.is_user_owned(source)
 
     def _print(self, *parts) -> None:
+        if self.feedback is not None:
+            message = " ".join(str(part) for part in parts)
+            error = "[ERROR]" in message or "Unsaved changes" in message
+            for prefix in ("[editor][ERROR]", "[editor]"):
+                if message.startswith(prefix):
+                    message = message[len(prefix):].strip()
+                    break
+            for name in ("ValueError", "FileExistsError", "WorkspacePermissionError",
+                         "FileNotFoundError", "OSError", "QuotaExceeded",
+                         "WorkspaceStorageUnavailable"):
+                if message.startswith(name + " "):
+                    message = message[len(name):].strip()
+                    break
+            owner_root = getattr(self.m, "_owner_root", None)
+            if owner_root is not None:
+                message = message.replace(str(owner_root), "Your workspace")
+            role, color = ("alert", "#a32525") if error else ("status", "#285580")
+            self.feedback.value = (
+                f'<div role="{role}" style="border-left:3px solid {color};'
+                f'padding:6px 10px;color:{color};overflow-wrap:anywhere;">'
+                f'{html.escape(message)}</div>'
+            )
         if self._log is not None:
             with self._log:
                 print(*parts)
 
     # ── guards ───────────────────────────────────────────────────────────
-    def guard_context_switch(self) -> bool:
+    def guard_context_switch(self, *, consume_discard: bool = True) -> bool:
         """Return True when it is safe to switch example / model / mode."""
         if not self.dirty or self.discard_toggle.value:
-            self.discard_toggle.value = False
+            if consume_discard:
+                self.discard_toggle.value = False
             return True
         self._print(
             f"[editor] Unsaved changes in {Path(self._loaded_path).name}. "
@@ -131,9 +204,22 @@ class EditorController:
         return False
 
     # ── file list ────────────────────────────────────────────────────────
+    def refresh_requested(self, _=None) -> None:
+        if self.guard_context_switch():
+            self.refresh()
+            if self.feedback is not None:
+                self.feedback.value = ""
+
     def refresh(self) -> None:
         example = (self._example_dir.value or "").strip()
-        files = self.m.list_editable_files(example) if example else []
+        denied = None
+        try:
+            files = self.m.list_editable_files(example) if example else []
+        except WorkspacePermissionError as exc:
+            # A restored/stale selection must not abort the application build.
+            # Clear the old file and buffer; authorization remains in manager.
+            files = []
+            denied = exc
         prev_value = self.file_picker.value
         prev_name = Path(self._loaded_path).name if self._loaded_path else None
         self._suppress = True
@@ -150,6 +236,8 @@ class EditorController:
         finally:
             self._suppress = False
         self._load(self.file_picker.value)
+        if denied is not None:
+            self._print("[editor][ERROR]", str(denied))
 
     def open_file_by_name(self, name: str) -> bool:
         """Open the file in the CURRENT listing whose basename is ``name``,
@@ -205,7 +293,7 @@ class EditorController:
 
         p = Path(path)
         self._is_notebook = p.suffix.lower() == ".ipynb"
-        user_owned = self.m.is_user_owned(path)
+        user_owned = self._editable_owned_path(path)
         self._readonly = self._is_notebook or not user_owned
         try:
             text = self.m.read_text_file(path)
@@ -236,7 +324,8 @@ class EditorController:
             return
         try:
             saved = self.m.save_text_file(self._loaded_path, self.editor.value)
-        except (WorkspacePermissionError, FileNotFoundError, OSError) as err:
+        except (WorkspacePermissionError, FileNotFoundError, OSError,
+                QuotaExceeded, WorkspaceStorageUnavailable) as err:
             self._print("[editor][ERROR]", type(err).__name__, err)
             return
         self._clean_text = self.editor.value
@@ -245,7 +334,7 @@ class EditorController:
         self._render()
 
     def _target_dir_for_new_file(self) -> Path | None:
-        if self._loaded_path and self.m.is_user_owned(self._loaded_path):
+        if self._loaded_path and self._editable_owned_path(self._loaded_path):
             return Path(self._loaded_path).parent
         if self.current_example_is_user_owned():
             return Path(self._example_dir.value)
@@ -260,6 +349,8 @@ class EditorController:
         self._create_file(directory, self.name_field.value, self.editor.value, "Saved as")
 
     def create(self, _=None) -> None:
+        if not self.guard_context_switch():
+            return
         directory = self._target_dir_for_new_file()
         if directory is None:
             self._print("[editor] New file needs a workspace example. Use "
@@ -267,11 +358,96 @@ class EditorController:
             return
         self._create_file(directory, self.name_field.value, "", "Created")
 
+    def import_script_files(self, _=None) -> None:
+        """Import source files into the selected owned example; never execute them."""
+        if self.script_uploader is None or not self.script_uploader.value:
+            self._print("[editor][ERROR] Choose script files before importing.")
+            return
+        if not self.guard_context_switch():
+            return
+        if not self.current_example_is_user_owned():
+            self._print("[editor][ERROR] Import needs a workspace example. Use "
+                        "New example or Clone to My Workspace first.")
+            return
+        prepared = []
+        try:
+            directory = self.m.resolve_user_file(self._example_dir.value)
+            if directory.is_file():
+                directory = directory.parent
+            if not directory.is_dir():
+                raise FileNotFoundError("Select an existing workspace example.")
+            value = self.script_uploader.value
+            items = value.values() if isinstance(value, dict) else value
+            seen = set()
+            replace = bool(self.replace_imports is not None and self.replace_imports.value)
+            for item in items:
+                name = self.m._safe_segment(str(item["name"]))
+                if name in seen:
+                    raise ValueError(f"Choose {name} only once.")
+                seen.add(name)
+                if Path(name).suffix.lower() not in _SCRIPT_IMPORT_SUFFIXES:
+                    raise ValueError(f"{name}: import a UTF-8 source/helper file. "
+                                     "Upload scientific inputs through Datasets; "
+                                     "notebooks are not imported by this control.")
+                payload = bytes(item["content"])
+                if len(payload) > self.m.MAX_EDITABLE_BYTES:
+                    raise ValueError(f"{name}: exceeds the 2 MiB script import limit.")
+                text = payload.decode("utf-8-sig")
+                if "\x00" in text:
+                    raise ValueError(f"{name}: contains binary data, not UTF-8 source text.")
+                target = directory / name
+                if target.is_symlink() or not target.resolve().is_relative_to(directory):
+                    raise WorkspacePermissionError(f"{name}: target is not a regular file in this example.")
+                if target.exists() and not replace:
+                    raise FileExistsError(f"{name} already exists. Review the file, then tick "
+                                          "'Replace existing script files' to replace it.")
+                if target.exists() and not target.is_file():
+                    raise ValueError(f"{name}: target is not a regular file.")
+                prepared.append((name, text, target))
+        except (KeyError, TypeError, ValueError, UnicodeDecodeError,
+                WorkspacePermissionError, FileNotFoundError, FileExistsError,
+                OSError, QuotaExceeded, WorkspaceStorageUnavailable) as err:
+            self._print("[editor][ERROR]", str(err))
+            return
+
+        imported = []
+        try:
+            for name, text, target in prepared:
+                if target.exists() and replace:
+                    self.m.save_text_file(target, text)
+                else:
+                    self.m.create_text_file(directory, name, text)
+                imported.append(name)
+        except (ValueError, WorkspacePermissionError, FileNotFoundError,
+                FileExistsError, OSError, QuotaExceeded, WorkspaceStorageUnavailable) as err:
+            detail = ", ".join(imported) or "none"
+            self._print(f"[editor][ERROR] Imported files: {detail}. Import stopped: {err}")
+        else:
+            self._print("[editor] Imported " + ", ".join(imported) +
+                        ". Files are saved. Set Run target to the entry script before launching.")
+            try:
+                self.script_uploader.value = ()
+                self.script_uploader._counter = 0
+            except Exception:
+                pass
+        finally:
+            if self.replace_imports is not None:
+                self.replace_imports.value = False
+            if imported:
+                self._notify_files_changed()
+                self.refresh()
+                self.open_file_by_name(imported[0])
+
     def _create_file(self, directory: Path, name: str, text: str, verb: str) -> None:
+        if not name.strip():
+            self._print("[editor][ERROR] Enter a filename in the name field, "
+                        "then choose New file or Save As.")
+            return
         try:
             created = self.m.create_text_file(directory, name, text)
         except (ValueError, FileExistsError, WorkspacePermissionError,
-                FileNotFoundError, OSError) as err:
+                FileNotFoundError, OSError, QuotaExceeded,
+                WorkspaceStorageUnavailable) as err:
             self._print("[editor][ERROR]", type(err).__name__, err)
             return
         self._print(f"[editor] {verb} {created}")
@@ -284,7 +460,7 @@ class EditorController:
     def delete(self, _=None) -> None:
         if not self._loaded_path:
             return
-        if not self.m.is_user_owned(self._loaded_path):
+        if not self._editable_owned_path(self._loaded_path):
             self._print("[editor] Application example files cannot be deleted.")
             return
         if not self.confirm_delete.value:
@@ -293,7 +469,8 @@ class EditorController:
             return
         try:
             removed = self.m.delete_user_file(self._loaded_path)
-        except (WorkspacePermissionError, FileNotFoundError, OSError) as err:
+        except (WorkspacePermissionError, FileNotFoundError, OSError,
+                QuotaExceeded, WorkspaceStorageUnavailable) as err:
             self._print("[editor][ERROR]", type(err).__name__, err)
             return
         self.confirm_delete.value = False
@@ -307,15 +484,19 @@ class EditorController:
         if not source:
             self._print("[editor] Select an example first.")
             return
-        if self.m.is_user_owned(source):
+        if self._editable_owned_path(source):
             self._print("[editor] This example is already in your workspace.")
+            return
+        if not self._can_clone_current_example():
+            self._print("[editor] Select a registered application example or a verified canonical working copy first.")
             return
         try:
             dest = self.m.clone_example_to_workspace(
                 source=source, model=self._model_value(),
                 name=(self.name_field.value.strip() or None),
             )
-        except (ValueError, FileExistsError, WorkspacePermissionError, OSError) as err:
+        except (ValueError, FileExistsError, WorkspacePermissionError, OSError,
+                QuotaExceeded, WorkspaceStorageUnavailable) as err:
             self._print("[editor][ERROR]", type(err).__name__, err)
             return
         self.name_field.value = ""
@@ -326,10 +507,16 @@ class EditorController:
     # ── user example lifecycle ───────────────────────────────────────────
     def _current_user_example_name(self) -> str | None:
         ex = (self._example_dir.value or "").strip()
-        return Path(ex).name if ex and self.m.is_user_owned(ex) else None
+        return Path(ex).name if ex and self._editable_owned_path(ex) else None
 
     def new_example(self, _=None) -> None:
         name = self.name_field.value.strip()
+        if not name:
+            self._print("[editor][ERROR] Enter an example name in the name field, "
+                        "then choose New example.")
+            return
+        if not self.guard_context_switch(consume_discard=False):
+            return
         try:
             dest = self.m.create_user_example(
                 model=self._model_value(), name=name, template=self._example_template(),
@@ -347,7 +534,7 @@ class EditorController:
         if old is None:
             self._print("[editor] Only your own workspace examples can be renamed.")
             return
-        if not self.guard_context_switch():
+        if not self.guard_context_switch(consume_discard=False):
             return
         new = self.name_field.value.strip()
         try:
@@ -400,11 +587,17 @@ class EditorController:
         user_example = self.current_example_is_user_owned()
 
         b["save"].disabled = not editable
-        b["delete"].disabled = not (self._loaded_path and self.m.is_user_owned(self._loaded_path))
+        b["delete"].disabled = not (self._loaded_path and self._editable_owned_path(self._loaded_path))
         b["save_as"].disabled = not (user_example or (
-            self._loaded_path and self.m.is_user_owned(self._loaded_path)))
+            self._loaded_path and self._editable_owned_path(self._loaded_path)))
         b["new"].disabled = b["save_as"].disabled
-        b["clone"].disabled = user_example or not (self._example_dir.value or "").strip()
+        b["clone"].disabled = not self._can_clone_current_example()
+        if "import_scripts" in b:
+            b["import_scripts"].disabled = not user_example
+        if self.script_uploader is not None:
+            self.script_uploader.disabled = not user_example
+        if self.replace_imports is not None:
+            self.replace_imports.disabled = not user_example
         if "rename_example" in b:
             b["rename_example"].disabled = not user_example
             b["delete_example"].disabled = not user_example
@@ -457,8 +650,14 @@ def build_editor_panel(
     editor = W.Textarea(value="", layout=W.Layout(
         width="100%", height="820px", min_height="820px"))
     status = W.HTML()
-    name_field = W.Text(placeholder="name for new / rename / save-as / clone",
-                        layout=W.Layout(width="260px"))
+    feedback = W.HTML()
+    name_field = W.Text(description="Name:",
+                        placeholder="name for new / rename / save-as / clone",
+                        layout=W.Layout(width="360px"), style={"description_width": "initial"})
+    script_uploader = W.FileUpload(accept=",".join(sorted(_SCRIPT_IMPORT_SUFFIXES)),
+                                   multiple=True, description="Choose script files")
+    replace_imports = W.Checkbox(value=False, description="Replace existing script files",
+                                 indent=False)
     discard_toggle = W.Checkbox(value=False, description="Discard unsaved changes",
                                 indent=False, layout=W.Layout(display="none"))
     confirm_delete = W.Checkbox(value=False, description="Confirm delete",
@@ -480,20 +679,24 @@ def build_editor_panel(
         "new_example": _btn("New example", "folder-open", "info"),
         "rename_example": _btn("Rename example", "pencil"),
         "delete_example": _btn("Delete example", "trash", "danger"),
+        "import_scripts": _btn("Import script files", "upload", "info"),
     }
 
     controller = EditorController(
         manager=manager, model_value=model_value, example_dir_widget=example_dir_widget,
         log_output=log_output, file_picker=file_picker, editor=editor, status=status,
         name_field=name_field, discard_toggle=discard_toggle,
-        confirm_delete=confirm_delete, buttons=buttons,
+        confirm_delete=confirm_delete, buttons=buttons, feedback=feedback,
         on_files_changed=on_files_changed, on_clone_created=on_clone_created,
         on_examples_changed=on_examples_changed, example_template=example_template,
         confirm_example_delete=confirm_example_delete,
+        script_uploader=script_uploader, replace_imports=replace_imports,
     )
 
     container = W.VBox(
         [
+            feedback,
+            name_field,
             W.HBox([buttons["new_example"], buttons["clone"],
                     buttons["rename_example"], buttons["delete_example"],
                     confirm_example_delete],
@@ -503,12 +706,17 @@ def build_editor_panel(
                     file_picker, buttons["refresh"]],
                    layout=W.Layout(align_items="center", gap="8px")),
             status,
-            editor,
+            W.HTML("<div class='icesee-subtle'>Create or clone an example before importing. "
+                   "Import UTF-8 scripts and helper files, up to 2 MiB each. "
+                   "Scientific inputs belong in Datasets. Importing does not launch a run.</div>"),
+            W.HBox([script_uploader, buttons["import_scripts"], replace_imports],
+                   layout=W.Layout(gap="8px", align_items="center", flex_wrap="wrap")),
             W.HBox([buttons["save"], buttons["save_as"], buttons["new"],
                     buttons["delete"]],
                    layout=W.Layout(gap="6px", flex_wrap="wrap")),
-            W.HBox([name_field, discard_toggle, confirm_delete],
+            W.HBox([discard_toggle, confirm_delete],
                    layout=W.Layout(gap="12px", align_items="center", flex_wrap="wrap")),
+            editor,
         ],
         layout=W.Layout(width="100%", gap="8px"),
     )

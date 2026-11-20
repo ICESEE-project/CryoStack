@@ -48,6 +48,11 @@ MARKER_SCHEMA = "cryostack.storage.volume"
 #: file systems whose contents do not survive a reboot or are not storage
 VOLATILE_FS = frozenset({"tmpfs", "ramfs", "devtmpfs", "proc", "sysfs", "squashfs", "overlay",
                          "aufs", "zram"})
+#: network file systems: the kernel assigns their st_dev per mount, so it changes
+#: across reboots (e.g. two CIFS shares mounting in a different order); for these
+#: the marker's file-system type is compared instead of its device number
+NETWORK_FS = frozenset({"cifs", "smb3", "smb2", "nfs", "nfs4", "ceph", "glusterfs",
+                        "fuse.sshfs", "lustre", "gpfs", "beegfs"})
 
 
 @dataclass(frozen=True)
@@ -261,6 +266,11 @@ def location_problems(path: Path, *, durable: bool = True, need_marker: bool = T
             if device != os.stat(marker.parent).st_dev:
                 problems.append(f"is on another device than its volume marker {marker} "
                                 "(a volume may not be mounted)")
+            elif fstype in NETWORK_FS:
+                if doc.get("filesystem") not in (None, fstype):
+                    problems.append(f"the volume at {marker.parent} was marked on a "
+                                    f"{doc.get('filesystem')} file system, not {fstype} "
+                                    "(mounted elsewhere or replaced)")
             elif doc.get("device") != device:
                 problems.append(f"the volume at {marker.parent} is not the device it was "
                                 "marked on (mounted elsewhere or replaced)")

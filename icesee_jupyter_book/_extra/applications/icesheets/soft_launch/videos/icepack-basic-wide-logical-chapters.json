@@ -1,0 +1,226 @@
+{
+  "schema": "cryostack.pilot.interactive-tutorial.v1",
+  "title": "Icepack: run the canonical synthetic shelf",
+  "video_sha256": "bf0c6fe2eb22440e4fbd5b336f8d01d77d34fba82906efa4e4f90210bb727764",
+  "duration_seconds": 202.0,
+  "source_edit_receipt_sha256": "48f27eae67cbfdcdb6324a22bba95472aaff127ccdff1d12f06b9d4bab9cb143",
+  "public_scene_chapters_sha256": "5993242c4f70517b36416dcfd9ab0dbdfdedb0fad93b8d187ce1303e05e52506",
+  "chapter_timing": "Receipt-bound logical chapters include control cue, actual transition and confirmation; durations are video times.",
+  "steps": [
+    {
+      "id": "step-00",
+      "logical_id": "orientation",
+      "title": "Your goal: run the native Icepack shelf",
+      "start": 0.0,
+      "end": 24.0,
+      "instructions": [
+        "Launch the supplied synthetic shelf, inspect thickness and velocity, then save the result ZIP.",
+        "Start with your approved cloud account connected and resources prepared.",
+        "Open CryoLauncher and sign in. Use an approved connected cloud account with its resources prepared.",
+        "The following steps select this tutorial\u2019s model and example."
+      ],
+      "why": "Keep the source inputs, inspect native fields, and save a complete result package. Your workspace keeps scripts, dataset references and results together.",
+      "expected": "Your workspace keeps scripts, datasets, run history and results together.",
+      "note": "Basic needs no script import or dataset upload for this supplied example. Shared application orientation; the case-specific configuration follows.",
+      "pauseAfter": false,
+      "source_scene_ids": [
+        "step-00",
+        "start"
+      ]
+    },
+    {
+      "id": "step-01",
+      "logical_id": "step-1",
+      "title": "1. Choose the Basic example",
+      "start": 24.0,
+      "end": 36.0,
+      "instructions": [
+        "Choose Cloud \u2192 Basic \u2192 Icepack \u2192 Tutorial / 02 Synthetic Ice Shelf.",
+        "Keep the supplied example and its default scientific configuration."
+      ],
+      "why": "Basic retains the supplied example; optional edits change its scientific input definition.",
+      "expected": "The supplied notebook is converted to run.py for cloud execution.",
+      "note": "The notebook is converted to run.py for cloud execution.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-01"
+      ]
+    },
+    {
+      "id": "step-02",
+      "logical_id": "step-2",
+      "title": "2. Retain the native time stepping",
+      "start": 36.0,
+      "end": 48.0,
+      "instructions": [
+        "Keep 255.15 K and 200 steps in each of two 400-year phases: 2 years per step.",
+        "The second phase includes damage physics."
+      ],
+      "why": "Submission, queue/startup and native model execution are separate stages.",
+      "expected": "255.15 K; two 400-year phases; 200 steps each; dt = 2 years.",
+      "note": "The curved shelf has a 200 km inflow-arc radius and nominal 5 km mesh spacing.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-02"
+      ]
+    },
+    {
+      "id": "step-03",
+      "logical_id": "step-3",
+      "title": "3. Confirm cloud readiness",
+      "start": 48.0,
+      "end": 60.0,
+      "instructions": [
+        "Check Account connected and Storage, Containers and Compute Ready.",
+        "Use Prepare cloud first if your resources are not ready."
+      ],
+      "why": "Ready indicates that the required account resources are configured for the run.",
+      "expected": "Use Prepare cloud first if resources are not ready.",
+      "note": "This run uses 2 vCPU, 8 GiB and a 60-minute time limit.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-03"
+      ]
+    },
+    {
+      "id": "step-04",
+      "logical_id": "step-4",
+      "title": "4. Review before submitting",
+      "start": 60.0,
+      "end": 103.0,
+      "instructions": [
+        "Choose Review & Launch.",
+        "Confirm ICEPACK, 02-synthetic-ice-shelf and the tested image/digest.",
+        "Keep the canonical source and run.py target.",
+        "Choose Launch cloud run when the readiness checks are ready.",
+        "This confirmation starts the run.",
+        "The execution summary names ICEPACK and 02-synthetic-ice-shelf.",
+        "Allow the job to complete, then open its results."
+      ],
+      "why": "Review confirms the intended model, source, resources and charges before submission. The tested image and pinned digest identify the native software environment. This confirmation stages the reviewed inputs and starts a paid cloud job. Submission, queue/startup and native model execution are separate stages.",
+      "expected": "Allow the job to finish, then open its results.",
+      "note": "Check the connected account and estimated charges before confirming. The displayed runtime is an estimate, not a measured model duration. Control guide; the following card belongs to this tutorial\u2019s original native run. The materialized run.py matches the canonical notebook exactly.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-04",
+        "step-05",
+        "step-06",
+        "step-07"
+      ]
+    },
+    {
+      "id": "step-08",
+      "logical_id": "step-5",
+      "title": "5. Allow time for the model",
+      "start": 103.0,
+      "end": 115.0,
+      "instructions": [
+        "The native job succeeded with exit code 0.",
+        "Submission \u2192 container start: 223.044 s. Batch task: 427.137 s."
+      ],
+      "why": "Submission, queue/startup and native model execution are separate stages.",
+      "expected": "Submission \u2192 start: 223.044 s; Batch task: 427.137 s.",
+      "note": "Long queue, compute and operator waits are shortened.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-08"
+      ]
+    },
+    {
+      "id": "step-09",
+      "logical_id": "step-6",
+      "title": "6. Choose a field to inspect",
+      "start": 115.0,
+      "end": 136.0,
+      "instructions": [
+        "In Results choose solution icepack and select thickness or velocity.",
+        "The selected velocity field is previewed in Results.",
+        "Use Render when needed after choosing a field."
+      ],
+      "why": "Keep the source, versions, hashes and scientific qualifications with the result. The solution, field name, units and mesh counts identify what you are viewing.",
+      "expected": "The exported mesh has 3,371 vertices and 6,533 triangles.",
+      "note": "Read the displayed field name and units. The exported mesh has 3,371 vertices and 6,533 triangles.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-09",
+        "step-10"
+      ]
+    },
+    {
+      "id": "step-11",
+      "logical_id": "step-7",
+      "title": "7. Inspect the saved thickness map",
+      "start": 136.0,
+      "end": 148.0,
+      "instructions": [
+        "Open the full saved thickness PNG.",
+        "Colour is thickness in metres; x and y are metres. Final thickness spans 98.1004\u2013350.1418 m."
+      ],
+      "why": "The unchanged saved figure preserves the complete map, axes and colour scale.",
+      "expected": "Final thickness: 98.1004\u2013350.1418 m; x and y are metres.",
+      "note": "The full original scientific PNG is shown here.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-11"
+      ]
+    },
+    {
+      "id": "step-12",
+      "logical_id": "step-8",
+      "title": "8. Inspect speed and direction",
+      "start": 148.0,
+      "end": 160.0,
+      "instructions": [
+        "Colour is speed in m/year; arrows show direction. Speed spans 160.457\u2013740.819 m/year.",
+        "Native thickness/velocity use CG2; the portable export uses CG1."
+      ],
+      "why": "The unchanged saved figure preserves the complete map, axes and colour scale.",
+      "expected": "Speed: 160.457\u2013740.819 m/year; native CG2 fields exported as CG1.",
+      "note": "Keep the unchanged saved PNGs with your archive.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-12"
+      ]
+    },
+    {
+      "id": "step-13",
+      "logical_id": "step-9",
+      "title": "9. Generate the archive link",
+      "start": 160.0,
+      "end": 188.0,
+      "instructions": [
+        "Choose Download results below the plot.",
+        "When the link appears, open it to save the ZIP.",
+        "The result package includes fields, mesh, figures, native mesh file and provenance.",
+        "Save the 20-member ZIP and retain it with the canonical source."
+      ],
+      "why": "The archive keeps this run\u2019s numeric outputs, figures and provenance together. Keep the source, versions, hashes and scientific qualifications with the result.",
+      "expected": "The browser-downloaded archive passed its CRC check.",
+      "note": "Wait for the fresh link for this run. Use the generated link for the selected run. The browser-downloaded archive passed its CRC check.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-13",
+        "step-14",
+        "step-15"
+      ]
+    },
+    {
+      "id": "step-16",
+      "logical_id": "step-Keep",
+      "title": "Keep the numerical and runtime context",
+      "start": 188.0,
+      "end": 202.0,
+      "instructions": [
+        "Runtime records Icepack 1.1.0, Firedrake 2025.10.2 and Python 3.12.13; observed MPI world size is 1.",
+        "Damage spans \u22120.0036016 to 0.0741413, including the retained numerical undershoot."
+      ],
+      "why": "Keep the scientific input definitions and numerical qualifications with the result.",
+      "expected": "Native damage undershoot is retained; portable fields are not a full checkpoint.",
+      "note": "Finite output checks passed. This portable export is not a full checkpoint or an independent repeat-equality result.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "step-16"
+      ]
+    }
+  ]
+}

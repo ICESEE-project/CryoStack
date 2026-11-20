@@ -1,0 +1,151 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:10.000
+Run Icepack from your HDF5 fields, then save the results.
+Why: Keep the source inputs, inspect native fields, and save a complete result package.
+Look for: Have run.py, initial_fields.py and icepack-shelf-initial.h5 ready.
+
+2
+00:00:10.000 --> 00:00:20.000
+Start here in CryoLauncher. Choose Cloud for this tutorial.
+Why: An owned example keeps scripts, dataset references and results together.
+Look for: Your workspace keeps scripts, datasets, run history and results together.
+
+3
+00:00:20.000 --> 00:00:29.000
+Choose Cloud → Advanced.
+Why: Cloud uses your connected account; Advanced enables your owned scripts and datasets.
+Look for: Use the editable workspace for your own scripts and datasets.
+
+4
+00:00:29.000 --> 00:00:39.000
+Choose Icepack. Next, create a new workspace example.
+Why: The selected example controls the source files and dataset references used for launch.
+Look for: The next step gives your HDF5 run a separate name.
+
+5
+00:00:39.000 --> 00:00:51.000
+Enter a new name and choose New example.
+Why: An owned workspace separates your files from the supplied application example.
+Look for: Wait for the created-workspace message and empty file list.
+
+6
+00:00:51.000 --> 00:01:01.000
+Choose run.py and initial_fields.py in your file picker; Open.
+Why: Selection picks local files; importing is the step that saves them in this example.
+Look for: Check that two script files are selected.
+
+7
+00:01:01.000 --> 00:01:10.000
+Choose Import script files.
+Why: Import saves the selected source files; it does not submit a model run.
+Look for: Enable Replace existing script files if run.py already exists.
+
+8
+00:01:10.000 --> 00:01:20.000
+Check the imported filenames and saved status.
+Why: Import saves the selected source files; it does not submit a model run.
+Look for: Expected: Imported run.py, initial_fields.py. Files are saved.
+
+9
+00:01:20.000 --> 00:01:30.000
+Set the Run target to run.py.
+Why: Run target selects the entry script; other imported files can act as helpers.
+Look for: The script calls initial_fields.py to read and validate your HDF5 input.
+
+10
+00:01:30.000 --> 00:01:41.000
+Choose data files; select icepack-shelf-initial.h5, then Open.
+Why: Selecting a file prepares it for upload; it is not in the dataset registry yet.
+Look for: Check that one data file is selected.
+
+11
+00:01:41.000 --> 00:01:52.000
+Choose Upload; wait for the HDF5 filename.
+Why: Upload stores the dataset; the script must read its fields to initialize the model.
+Look for: Expected: Uploaded: icepack-shelf-initial.h5.
+
+12
+00:01:52.000 --> 00:02:01.000
+Select the HDF5 dataset and choose Reference in example.
+Why: A reference stages the chosen dataset under data/ when this example launches.
+Look for: Use icepack-shelf-initial.h5 as the reference alias.
+
+13
+00:02:01.000 --> 00:02:11.000
+Confirm the reference saved in this example.
+Why: A reference stages the chosen dataset under data/ when this example launches.
+Look for: Your script will read data/icepack-shelf-initial.h5.
+
+14
+00:02:11.000 --> 00:02:20.000
+Choose Review & Launch.
+Why: Review is the checkpoint for the selected case, inputs, resources and charges.
+Look for: Review the model, example and run target before submitting.
+
+15
+00:02:20.000 --> 00:02:29.000
+Confirm ICEPACK and pilot-icepack-h5-1118.
+Why: Confirm the intended model and owned example before submitting the run.
+Look for: Keep run.py as the entry point with the HDF5 reference attached.
+
+16
+00:02:29.000 --> 00:02:39.000
+Control guide: choose Launch cloud run when checks are Ready.
+Why: Confirmation starts a paid cloud run using the reviewed configuration.
+Look for: The following card belongs to this tutorial’s original native run.
+
+17
+00:02:39.000 --> 00:02:48.000
+Follow your new HDF5 run card.
+Why: Submission, queue/startup and native model execution are separate stages.
+Look for: Wait for completion; opening another tab does not cancel the job.
+
+18
+00:02:48.000 --> 00:02:58.000
+When the job shows Completed, open View results.
+Why: Completion lets you retrieve and inspect this run’s saved native output.
+Look for: This script runs one 0.01-year step with zero accumulation.
+
+19
+00:02:58.000 --> 00:03:08.000
+Choose Render for the selected field.
+Why: The solution, field name and units identify what you are about to view.
+Look for: You can inspect thickness or velocity after the native run finishes.
+
+20
+00:03:08.000 --> 00:03:17.000
+Choose solution icepack, select a field, then Render.
+Why: The solution, field name and units identify what you are viewing.
+Look for: Velocity is in metres/year; thickness is in metres.
+
+21
+00:03:17.000 --> 00:03:29.000
+Open initial-conditions.png to inspect the initialized fields.
+Why: The saved initial map lets you inspect what was sampled from the uploaded grid.
+Look for: The uploaded 5 × 9 grid was sampled at all 25 native mesh vertices.
+
+22
+00:03:29.000 --> 00:03:40.000
+Open the final saved thickness map.
+Why: Use the colour scale and units to interpret the solved native thickness.
+Look for: Final area-weighted mean: 403.649861 m; domain RMS speed: 133.908461 m/year.
+
+23
+00:03:40.000 --> 00:03:48.000
+Choose Download results for this run.
+Why: The archive keeps this run’s numeric outputs, figures and provenance together.
+Look for: Wait for a fresh HTTPS download link.
+
+24
+00:03:48.000 --> 00:03:59.000
+Open the new HTTPS link and save your results ZIP.
+Why: The archive keeps this run’s numeric outputs, figures and provenance together.
+Look for: Keep all 12 archive members with your scripts and HDF5 input.
+
+25
+00:03:59.000 --> 00:04:11.000
+Keep the inputs, figures, native fields and run provenance together.
+Why: Keep the scientific qualifications and provenance with the accepted result.
+Look for: Initial-field interpolation matched independently at every native node.

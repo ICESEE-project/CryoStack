@@ -1,0 +1,173 @@
+{
+  "schema": "cryostack.issm-own-script-tutorial-evidence.v1",
+  "case": "IS-SCRIPT-RETRY",
+  "input_hashes": [
+    {
+      "relative_path": "runme.m",
+      "expected_sha256": "f5d8a64eb6d340c9a449ef4b273fff4f5fdf853c7987e3d1995989534127c387",
+      "actual_sha256": "f5d8a64eb6d340c9a449ef4b273fff4f5fdf853c7987e3d1995989534127c387",
+      "bytes": 2104,
+      "match": true
+    },
+    {
+      "relative_path": "Launch.par",
+      "expected_sha256": "a64f4bfeddd2577d519bdc9a23dfdba0ad3629d4e2bdb920dda657a5d9ba7deb",
+      "actual_sha256": "a64f4bfeddd2577d519bdc9a23dfdba0ad3629d4e2bdb920dda657a5d9ba7deb",
+      "bytes": 849,
+      "match": true
+    },
+    {
+      "relative_path": "validate_launch_dataset.m",
+      "expected_sha256": "0ad08139732b621384c7736e30dd3bca39aca70f12fde2216dcbf9115e280d6f",
+      "actual_sha256": "0ad08139732b621384c7736e30dd3bca39aca70f12fde2216dcbf9115e280d6f",
+      "bytes": 1496,
+      "match": true
+    },
+    {
+      "relative_path": "data/issm-shelf-small-v1.json",
+      "expected_sha256": "c2f0c2b2e838be4598d97c61f8fdd897b30da7b326536251cf893f3dfed4767a",
+      "actual_sha256": "c2f0c2b2e838be4598d97c61f8fdd897b30da7b326536251cf893f3dfed4767a",
+      "bytes": 460,
+      "match": true
+    }
+  ],
+  "all_inputs_predate_submission": true,
+  "actual_image_digests": [
+    "sha256:d68d88dcb7047f29d6e277a45710f50f1bf3023566e0472f07a7dd75ffbcd170"
+  ],
+  "actual_model_and_target": {
+    "CRYOSTACK_MODEL": "issm",
+    "CRYOSTACK_RUN_TARGET": "runme.m"
+  },
+  "mesh": {
+    "vertices": 13,
+    "triangles": 16,
+    "total_area_m2": 100000000.0,
+    "nondegenerate": true,
+    "x_range_m": [
+      0.0,
+      10000.0
+    ],
+    "y_range_m": [
+      0.0,
+      10000.0
+    ]
+  },
+  "field_statistics": {
+    "Pressure": {
+      "count": 13,
+      "min": 2698731.0,
+      "max": 4497885.0,
+      "arithmetic_node_mean": 3598308.0,
+      "arithmetic_node_rms": 3658355.42570003
+    },
+    "StressbalanceConvergenceNumSteps": {
+      "count": 1,
+      "min": 25.0,
+      "max": 25.0,
+      "arithmetic_node_mean": 25.0,
+      "arithmetic_node_rms": 25.0
+    },
+    "Vel": {
+      "count": 13,
+      "min": 0.0,
+      "max": 18.89046042914943,
+      "arithmetic_node_mean": 3.3617336668610136,
+      "arithmetic_node_rms": 6.238698366654749
+    },
+    "Vx": {
+      "count": 13,
+      "min": -1.3601396539941246,
+      "max": 1.3601396539941244,
+      "arithmetic_node_mean": -1.1956247957501685e-16,
+      "arithmetic_node_rms": 0.6207130241129318
+    },
+    "Vy": {
+      "count": 13,
+      "min": 0.0,
+      "max": 18.89046042914943,
+      "arithmetic_node_mean": 3.316413157393217,
+      "arithmetic_node_rms": 6.207742959546344
+    }
+  },
+  "reference_metrics": {
+    "model": "issm",
+    "case": "synthetic-shelf-v1",
+    "steps": 1,
+    "thickness_min": 300,
+    "thickness_max": 500,
+    "thickness_mean": 400,
+    "speed_l2": 6.238698366654749,
+    "runtime_seconds": 2.156046
+  },
+  "metric_definition": "Arithmetic node mean(thickness), sqrt(mean(Vel.^2)); not triangle-area weighted.",
+  "geometry_evidence": {
+    "positive_thickness_source_and_reported_metrics": true,
+    "numeric_saved_model_geometry_decoded": false,
+    "base_and_surface": "Source computes hydrostatic floating base from runtime material densities and surface=base+h; no independent numeric base/surface export in this case.",
+    "limitation": "Saved MATLAB MCOS object is opaque locally. Reconstructed positive thickness and reported thickness metrics do not independently decode the final geometry arrays."
+  },
+  "source_configured_science": {
+    "diagnostic": "SSA Stressbalance",
+    "diagnostic_solves": 1,
+    "physical_time_advance": false,
+    "requested_mpi_processes": 1,
+    "observed_mpi_processes": null,
+    "thickness_formula": "hmax+(hmin-hmax)*y/width",
+    "thickness_min_m": 300.0,
+    "thickness_max_m": 500.0,
+    "initial_vx_vy": "zero",
+    "nonfront_boundary_vx_vy": "zero via SetIceShelfBC fallback; no inversion observation arrays supplied",
+    "front": "y=width, as defined by submitted runme.m",
+    "temperature_K": 253.15,
+    "mesh_spacing_m": 2500.0,
+    "shared_json_fields_not_applied_to_this_solver": [
+      "inflow_velocity_m_per_year",
+      "dt_years",
+      "mesh_nx",
+      "mesh_ny"
+    ]
+  },
+  "runtime_versions": {
+    "matlab": "24.2.0.3070828 (R2024b) Update 7",
+    "matlab_release": "2024b",
+    "issm": "2026.1"
+  },
+  "rng": {
+    "artifact": "rng-before.mat",
+    "sha256": "571e1c934aa517143018ad6fff004ea6c1235905743dde968ac02fc3d4b2b879",
+    "artifact_hash_verified": true,
+    "capture_reset_or_advanced_state": false,
+    "triangle_internal_seed": "unknown"
+  },
+  "provenance_hashes": {
+    "metadata.json": "cfb4e5b7878e477dfffb09eb0aa9f94d1daf5fba52140809442ed96e8613eb81",
+    "runtime-provenance.json": "5c17d2d59ee914fdc01194bf5a66b91d6bd303da8f1b2d8abfc83fa12f68e5a3",
+    "rng-before.mat": "571e1c934aa517143018ad6fff004ea6c1235905743dde968ac02fc3d4b2b879",
+    "reference-metrics.json": "ba1812337e31f3a3f5ea3c813b753ef15b2b090882eb36e0b24f58221c9bc6cb"
+  },
+  "archive": {
+    "sha256": "7d3beb7985a8231f9ef8e72d12d3654804654ba7e6565ae58fd6ea6eb726ccca",
+    "bytes": 236492,
+    "members": 13,
+    "crc_valid": true
+  },
+  "native_figure": {
+    "archive_member": "figures/StressbalanceSolution_Vel.png",
+    "bytes": 72526,
+    "sha256": "ee9bfbd236d9cef2cd6ab21aee533a83475d974f230309256b5e1cd72faf9c0e",
+    "native_png_unchanged": true,
+    "visual_privacy_review": "Opened exact native PNG locally; scientific x/y axes, stressbalance velocity field and colorbar only, no identity/private path/license/credential text."
+  },
+  "times": {
+    "submitted_utc": "2026-11-19T04:43:01.697Z",
+    "started_utc": "2026-11-19T04:46:41.677Z",
+    "stopped_utc": "2026-11-19T04:47:26.687Z",
+    "startup_seconds": 219.98,
+    "batch_runtime_seconds": 45.01,
+    "total_elapsed_seconds": 264.99
+  },
+  "qualification": "Native scientific artifact checks passed for one execution; no repeat or accuracy claim.",
+  "prior_failed_scaffold_case_used": false,
+  "raw_model_or_rng_exported": false
+}

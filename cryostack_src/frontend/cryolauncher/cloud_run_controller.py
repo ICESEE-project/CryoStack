@@ -324,6 +324,7 @@ class _RunHandle:
     region: str = ""
     profile: str | None = None
     metadata: dict = field(default_factory=dict)
+    route: str = "byo"
     # -- C7.5: BYO-AWS + review context for the active-run surface --------
     #: the connected AWS account this run belongs to ("" = developer mode)
     account_id: str = ""
@@ -371,6 +372,8 @@ class CloudRunController:
         on_log: Callable[[str], None],
         on_results_ready: Callable[[], None] = lambda: None,
         execution_provider: Callable[[], Any] | None = None,
+        hosted_bridge_factory: Callable[..., Any] | None = None,
+        hosted_results_sync: Callable[..., Any] | None = None,
         on_run_view: Callable[..., None] | None = None,
         on_resources: Callable[[str, dict], None] | None = None,
         poll_interval: float = 15.0,
@@ -394,6 +397,8 @@ class CloudRunController:
         #: connected BYO account. It raises CloudAccessError for a broken
         #: connection; there is no ambient/profile fallback.
         self._execution_provider = execution_provider
+        self._hosted_bridge_factory = hosted_bridge_factory
+        self._hosted_results_sync = hosted_results_sync
         self._on_run_view = on_run_view
         self._poll_interval = max(0.0, float(poll_interval))
         self._to_thread = to_thread
@@ -453,6 +458,8 @@ class CloudRunController:
         """The resource identity already known once a job id exists -- no AWS
         call, all from the handle."""
         h = self._handle
+        if h.route == "hosted":
+            return  # reservation handles are not AWS Batch job ids
         self._merge_resources({
             "region": h.region,
             "account_id": h.account_id,
@@ -498,13 +505,22 @@ class CloudRunController:
             self._handle.account_id
             or (getattr(execution, "account_id", "") or "")
         ).strip() or "none"
-        access = "temporary-role" if getattr(execution, "is_byo", False) else "developer-mode"
+        access = ("hosted-gateway" if self._handle.route == "hosted" else
+                  "temporary-role" if getattr(execution, "is_byo", False) else "developer-mode")
         self._log(f"[cloud][auth] {operation} account={account} access={access}")
 
     # -- credential context: fresh per AWS operation --------------------
     def _resolve_execution(self):
         """Fresh CloudExecution for one AWS operation. Raises CloudAccessError
         for a broken BYO connection -- callers fail closed, never fall back."""
+        if self._handle.route == "hosted":
+            if self._hosted_bridge_factory is None:
+                raise RuntimeError("Hosted pilot runs are unavailable in this session.")
+            # No AWS context is resolved for a persisted hosted run, even if
+            # the participant changes the Pay with selector or connects AWS.
+            from types import SimpleNamespace
+            return SimpleNamespace(is_hosted=True, is_byo=False, credentials=None,
+                                   account_id="", region=self._handle.region)
         if self._execution_provider is None:
             return None
         return self._execution_provider()
@@ -523,6 +539,10 @@ class CloudRunController:
         asserts once and passes ``execution`` in explicitly, so it is not
         re-checked here.
         """
+        if self._handle.route == "hosted":
+            if self._hosted_bridge_factory is None:
+                raise RuntimeError("Hosted pilot runs are unavailable in this session.")
+            return self._hosted_bridge_factory(region=self._handle.region)
         if self._execution_provider is None:
             return self._bridge_factory()
         ex = execution if execution is not None else self._resolve_execution()
@@ -558,6 +578,10 @@ class CloudRunController:
         connection was ever involved) has nothing to enforce and is
         unaffected by this method.
         """
+        if self._handle.route == "hosted":
+            if not getattr(execution, "is_hosted", False):
+                raise RuntimeError("Hosted run transport changed; nothing was submitted.")
+            return
         want = (self._handle.account_id or "").strip()
         if not want:
             return
@@ -595,6 +619,7 @@ class CloudRunController:
             region=submit_kwargs.pop("_region", "") or "",
             profile=submit_kwargs.pop("_profile", None),
             metadata=dict(submit_kwargs.pop("_md_provenance", None) or {}),
+            route=submit_kwargs.pop("_route", "byo"),
             account_id=(submit_kwargs.pop("_account_id", "") or "").strip(),
             example=(submit_kwargs.pop("_example", "") or "").strip(),
             run_target=(submit_kwargs.get("run_target") or "").strip(),
@@ -610,6 +635,10 @@ class CloudRunController:
             image_reference=(submit_kwargs.pop("_image_reference", "") or "").strip(),
             image_digest=(submit_kwargs.pop("_image_digest", "") or "").strip(),
         )
+        if self._handle.route not in ("byo", "hosted"):
+            raise ValueError("Unknown cloud run transport.")
+        if self._handle.route == "hosted":
+            self._handle.metadata["route"] = self._handle.route
         self._task = self._spawn(self.run_once(**submit_kwargs))
 
     async def run_once(self, **submit_kwargs) -> None:
@@ -634,11 +663,20 @@ class CloudRunController:
             run_id = meta.get("run_id")
             for m in getattr(result, "messages", []) or []:
                 self._log(str(m))
-            if not job_id or not s3_run:
+            if not job_id or (not s3_run and self._handle.route != "hosted"):
                 raise RuntimeError(
                     "submit-job did not return a job id / S3 run location")
+            if self._handle.route == "hosted":
+                if meta.get("route") != "hosted" or meta.get("reservation_id") != str(job_id):
+                    raise RuntimeError("The hosted service returned an invalid run handle.")
+                s3_run = ""  # no AWS object-store capability is exposed to the kernel
+                self._handle.metadata.update({
+                    "route": "hosted", "reservation_id": str(job_id),
+                    "aws_job_id": meta.get("aws_job_id"),
+                    "hold_cents": meta.get("hold_cents"),
+                })
             self._handle.job_id = str(job_id)
-            self._handle.s3_run = str(s3_run)
+            self._handle.s3_run = str(s3_run or "")
             self._handle.run_id = str(run_id or job_id)
             # fold the submit-result's own non-secret job facts into the
             # diagnostics snapshot (job queue / job definition it resolved)
@@ -741,8 +779,13 @@ class CloudRunController:
             self._log_auth("results", execution)
             creds = getattr(execution, "credentials", None)
             region = getattr(execution, "region", None) or self._handle.region or None
+            sync = self._sync_results
+            if self._handle.route == "hosted":
+                if self._hosted_results_sync is None:
+                    raise RuntimeError("Hosted result retrieval is unavailable.")
+                sync = self._hosted_results_sync
             path = await self._to_thread(
-                lambda: self._sync_results(
+                lambda: sync(
                     s3_uri=self._handle.s3_run,
                     region=region,
                     profile=None if creds else self._handle.profile,
@@ -806,6 +849,7 @@ class CloudRunController:
                image_key: str = "", image_label: str = "",
                image_reference: str = "", image_digest: str = "",
                aws_resources: dict | None = None,
+               route: str = "byo",
                state: str = QUEUED) -> None:
         """Re-attach to a run that already exists (e.g. selected from run
         history after a kernel restart) and resume polling if it is not
@@ -817,8 +861,11 @@ class CloudRunController:
         Cloud Environment defaults."""
         from cryostack_src.cloud.diagnostics import merge_aws_resources
 
+        if route not in ("byo", "hosted"):
+            raise ValueError("Unknown cloud run transport.")
         self._handle = _RunHandle(
             job_id=str(job_id), s3_run=str(s3_run), model=model,
+            route=route, metadata={"route": route},
             region=region, profile=profile, state=state,
             account_id=(account_id or "").strip(), example=example,
             run_target=(run_target or "").strip(), source=(source or "").strip(),

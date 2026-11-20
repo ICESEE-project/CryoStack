@@ -24,7 +24,7 @@
     </p>
 
     <div class="cryostack-docs-actions">
-      <a class="cryostack-btn primary" href="/icesheets/">
+      <a class="cryostack-btn primary" href="/cryolauncher/">
         Open CryoLauncher
       </a>
 
@@ -57,7 +57,6 @@ step.
 <div class="cryostack-manual-grid">
 
   <article class="cryostack-manual-card">
-    <div class="cryostack-manual-number">01</div>
     <h3>Run settings, step by step</h3>
     <p>
       <b>1 Mode</b>: execution mode (Remote HPC or Cloud) and the interface
@@ -70,7 +69,6 @@ step.
   </article>
 
   <article class="cryostack-manual-card">
-    <div class="cryostack-manual-number">02</div>
     <h3>Workspace</h3>
     <p>
       Run history and status, per-run files, the Advanced-mode file editor,
@@ -115,10 +113,14 @@ Where Icepack differs from ISSM today:
   collected and shown.
 - **Notebook examples** are shown read-only in the Advanced editor (see
   <a href="#advanced-mode">Advanced mode</a>).
-- **Cloud validation is per example.** Icepack has completed end-to-end Cloud
-  runs for `04-synthetic-ice-stream-xy` (Fargate) and `00-meshes-functions`
-  (EC2 On-Demand, single node, CPU). Other Icepack examples use the same code
-  path but have not each been confirmed on Cloud.
+- **Cloud evidence names individual examples.** Earlier acceptance covers
+  `04-synthetic-ice-stream-xy` on Fargate and `00-meshes-functions` on
+  single-node EC2 On-Demand. The [pilot tutorials](soft_launch.md) additionally
+  record Fargate mesh/functions, the `02-synthetic-ice-shelf` solve and an
+  editor-created one-step shelf. Mesh/functions produces figures rather than
+  a glacier-flow solution. For a different example, verify its dependencies,
+  run target, solver output, exported fields and archive; sharing a submission
+  path does not establish the result of that example.
 
 Basic and Advanced are **CryoLauncher-wide configuration modes**, not model
 modes and not execution backends: every model runs through the same
@@ -158,14 +160,18 @@ model-code editor.
 
 Icepack examples are Firedrake/Python notebooks, not an ISSM `md` model object,
 so the curated set is different and deliberately small. Two parameters are
-exposed today, both scalars with an unambiguous physical meaning that every
-flow tutorial sets the same way:
+exposed in Basic. An override applies only when the selected example has
+the literal assignment the override code recognizes:
 
 - **Ice temperature** (`T`, kelvin, 200&nbsp;K – pressure-melting point). Sets
   the depth-averaged temperature from which Icepack derives the ice fluidity.
-- **Number of timesteps** — the length of the time-integration loop, only where
-  the example sets it as a plain literal (it does not change the physics or the
-  timestep size).
+- **Number of timesteps** — changes the time-loop count only for examples
+  with a literal `num_timesteps = <integer>` assignment, such as tutorials
+  01 and 02. It can change the timestep size and numerical result: tutorial
+  02 Synthetic Ice Shelf calculates `dt = final_time / num_timesteps`.
+  Keep the example default when comparing reproducibility results. A derived
+  expression such as tutorial 04's `num_years * timesteps_per_year` does not
+  match the override and is rejected before submission.
 
 The same guarantees apply: the value is range-checked before submission; the
 override is a single, exact, commented line change in a user-owned working
@@ -179,8 +185,19 @@ directly. No ISSM parameter names or `md` semantics are used for Icepack.
 
 ## 4. Advanced mode
 
-Advanced mode is a **model-neutral workspace and file editor** for modifying
-examples and files directly.
+Advanced mode edits files in examples you own. Create a new example or clone
+a read-only application example into **My Workspace** first. The name field
+and file actions appear above the editor.
+
+To import source/helper files, use **Choose script files → Import script files**.
+Files are UTF-8 text, at most 2 MiB each, with extensions `.cfg`, `.ini`,
+`.json`, `.m`, `.md`, `.par`, `.py`, `.sh`, `.toml`, `.txt`, `.yaml` or `.yml`.
+Existing files remain unchanged unless **Replace existing script files** is
+selected; enable it explicitly when replacing seeded `run.py` or `runme.m`.
+Imports neither choose **Run target** nor launch code. Select the target after
+checking the imported files. Data files use **Datasets → Choose data files →
+Upload**, followed by **Reference in example**, not the script-import control.
+The reference feedback names the staged `data/<reference>` path.
 
 - **Where it lives.** The editor is an **Editor** tab in the Workspace
   (alongside Runs, Files, Run Log, and Results), giving it substantially more
@@ -782,7 +799,11 @@ AWS account and Region, then reuse it for later runs.
 **Existing licenses and later changes.** Advanced users can select **Advanced
 license configuration → Use an existing AWS Secrets Manager secret**, provide
 an **Existing secret ARN**, and select **Use existing secret**. Revisit setup
-when the account, Region, or license endpoint changes.
+when the account, Region, or license endpoint changes. With an existing
+managed secret, **Configure license** recovers its metadata/reference rather
+than overwriting its value; actual value changes use AWS Secrets Manager. The
+[complete MATLAB BYO setup](soft_launch/matlab_byo_setup.md) covers first-time
+creation, reattachment, Connector/network checks and actual runtime evidence.
 
 **Privacy.** The masked license input is handled transiently during setup;
 saved configurations use a reference rather than the raw value. Do not put
@@ -883,6 +904,18 @@ the configuration on a narrow screen.
 - **Files tab.** Shows the selected run's workspace files.
 - **Isolation.** You only see your own runs. A run id owned by another user is
   simply absent from your history.
+
+### Reloading the page
+
+Reloading the page, or opening CryoLauncher again later, picks up where you left
+off: the model, mode, example, ISSM and Icepack parameters, Slurm request,
+the open file (with unsaved edits), the selected run and the open
+workspace tab come back, and a run still in
+progress keeps being monitored. CryoLauncher saves this a couple of seconds after
+each change, in your own workspace. Passwords are never saved; your saved
+HPC settings are restored as before. A note under the step indicator says
+when something was restored. **Start fresh** forgets it and reloads the page
+with the defaults.
 
 ## 13. Results
 
@@ -1300,7 +1333,7 @@ resource, scientific-parameter, and backend checks still run at submission.
 - [Getting Started](getting_started)
 - [CryoLauncher Resources](resources)
 - [CryoStack Documentation](https://cryostack.eas.gatech.edu/documentation.html)
-- [Open ICESEE](https://cryostack.eas.gatech.edu/icesee-gui/)
+- [Open ICESEE](https://cryostack.eas.gatech.edu/icesee/)
 
 :::{raw} html
   </div>

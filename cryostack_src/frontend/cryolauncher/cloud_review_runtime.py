@@ -40,6 +40,7 @@ class CloudReviewCallbacks:
     review: Callable             # open the full REVIEW CLOUD RUN surface
     back: Callable               # close it
     launch: Callable             # explicit human Launch (drift-checked)
+    invalidate: Callable        # drop a review and any in-flight response
 
 
 def _round_minutes(minutes: float) -> str:
@@ -65,7 +66,7 @@ def build_cloud_review_callbacks(
     and never blocks Launch.
     """
 
-    _state: dict = {"review": None, "busy": False}
+    _state: dict = {"review": None, "busy": False, "version": 0}
 
     def _log(*parts):
         if log_output is not None:
@@ -73,6 +74,10 @@ def build_cloud_review_callbacks(
                 print("[cloud][review]", *parts)
 
     def _render_estimate_line(review) -> None:
+        if getattr(review, "route", "byo") == "hosted":
+            from .hosted_pilot import render_hosted_estimate
+            render_hosted_estimate(widgets, review)
+            return
         set_run_estimate_view(
             widgets,
             visible=review.infrastructure.all_ready,
@@ -86,11 +91,14 @@ def build_cloud_review_callbacks(
         if _state["busy"]:
             return
         _state["busy"] = True
+        version = _state["version"]
         widgets.review_button.disabled = True
 
         async def _drive() -> None:
             try:
                 review = await to_thread(review_builder)
+                if version != _state["version"]:
+                    return
                 _state["review"] = review
                 _render_estimate_line(review)
                 if open_panel:
@@ -98,14 +106,15 @@ def build_cloud_review_callbacks(
                     show_review_panel(widgets, True)
             except Exception as err:  # noqa: BLE001 - estimate/review never crash the panel
                 _log("unavailable:", err)
-                if open_panel:
+                if open_panel and version == _state["version"]:
                     widgets.review_notice.value = (
                         "<div style='font-size:11px;color:#b23c3c;'>Could not build "
                         f"the review: {err}</div>"
                     )
             finally:
-                _state["busy"] = False
-                widgets.review_button.disabled = False
+                if version == _state["version"]:
+                    _state["busy"] = False
+                    widgets.review_button.disabled = False
 
         spawn(_drive())
 
@@ -118,6 +127,12 @@ def build_cloud_review_callbacks(
     def back(_=None) -> None:
         show_review_panel(widgets, False)
 
+    def invalidate() -> None:
+        _state.update(review=None, busy=False, version=_state["version"] + 1)
+        widgets.review_button.disabled = False
+        widgets.launch_button.disabled = True
+        back()
+
     def launch(_=None) -> None:
         current = _state["review"]
         if current is None:
@@ -127,8 +142,18 @@ def build_cloud_review_callbacks(
         # review was opened.
         try:
             live_digest = digest_builder()
-        except Exception:  # noqa: BLE001
-            live_digest = current.digest
+        except Exception:  # noqa: BLE001 - a failed check never authorizes spend
+            live_digest = None
+        if not isinstance(live_digest, str) or not live_digest or not current.digest:
+            _state["review"] = None
+            widgets.launch_button.disabled = True
+            widgets.review_notice.value = (
+                "<div style='font-size:11px;color:#b23c3c;'>Launch blocked: the "
+                "current configuration could not be verified. Nothing was submitted. "
+                "Open Review &amp; Launch again before retrying.</div>"
+            )
+            _log("launch blocked: current configuration could not be verified")
+            return
         if live_digest != current.digest:
             _state["review"] = None
             widgets.review_notice.value = (
@@ -150,4 +175,5 @@ def build_cloud_review_callbacks(
         review=review,
         back=back,
         launch=launch,
+        invalidate=invalidate,
     )

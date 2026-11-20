@@ -1,0 +1,11 @@
+{
+  "CRYOSTACK_MAIL_MODE": "smtp",
+  "CRYOSTACK_MAIL_FROM": "CryoStack <cryostack@eas.gatech.edu>",
+  "CRYOSTACK_PUBLIC_BASE_URL": "https://cryostack.eas.gatech.edu",
+  "CRYOSTACK_SMTP_HOST": "outbound.mail.gatech.edu",
+  "CRYOSTACK_SMTP_PORT": "25",
+  "CRYOSTACK_SMTP_SECURITY": "starttls",
+  "CRYOSTACK_SMTP_TLS_POLICY": "gt-relay-exception",
+  "CRYOSTACK_SMTP_USERNAME": "",
+  "CRYOSTACK_SMTP_PASSWORD_FILE": ""
+}

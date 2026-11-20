@@ -34,6 +34,13 @@ DEFAULT_GATEWAY_URL = "http://127.0.0.1:8080"
 
 _PURPOSE = b"cryostack-kernel-workspace-read\x00"
 
+#: hosted-pilot grant: same construction, separate purpose, so a workspace
+#: grant can never be replayed against the pilot routes (or the reverse)
+PILOT_GRANT_HEADER = "X-CryoStack-Pilot-Grant"
+PILOT_GRANT_ENV = "HTTP_X_CRYOSTACK_PILOT_GRANT"
+KERNEL_PILOT_PATH = "/internal/kernel/pilot"
+_PILOT_PURPOSE = b"cryostack-kernel-hosted-pilot\x00"
+
 
 def workspace_grant(user_id: str, key: bytes) -> str | None:
     """The grant for one user, or ``None`` without a user or key."""
@@ -47,6 +54,26 @@ def workspace_grant(user_id: str, key: bytes) -> str | None:
 def grant_matches(user_id: str, grant: str | None, key: bytes) -> bool:
     expected = workspace_grant(user_id, key)
     return bool(expected and isinstance(grant, str) and hmac.compare_digest(expected, grant))
+
+
+def pilot_grant(user_id: str, key: bytes) -> str | None:
+    """The hosted-pilot grant for one user, or ``None`` without a user or key."""
+    user = (user_id or "").strip()
+    if not user or not key:
+        return None
+    digest = hmac.new(key, _PILOT_PURPOSE + user.encode("utf-8"), hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+
+
+def pilot_grant_matches(user_id: str, grant: str | None, key: bytes) -> bool:
+    expected = pilot_grant(user_id, key)
+    return bool(expected and isinstance(grant, str) and hmac.compare_digest(expected, grant))
+
+
+def kernel_pilot_grant() -> str | None:
+    """The pilot grant the gateway forwarded to this kernel, or ``None``."""
+    value = (os.environ.get(PILOT_GRANT_ENV) or "").strip()
+    return value or None
 
 
 def kernel_workspace_grant() -> str | None:

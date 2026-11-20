@@ -204,3 +204,31 @@ def test_no_access_key_or_profile_prompt_in_the_estimate_or_review_source():
     lowered = src.lower().replace("does not store your aws access keys", "")
     assert "access key id" not in lowered
     assert "secret access key" not in lowered
+
+
+@pytest.mark.parametrize("failure", ["exception", "blank", "none"])
+def test_unverifiable_current_configuration_never_launches_a_saved_review(card, failure):
+    reviewed = _review()
+    state = {"broken": True}
+    def digest():
+        if not state["broken"]:
+            return reviewed.digest
+        if failure == "exception":
+            raise OSError("synthetic private lookup detail")
+        return "" if failure == "blank" else None
+    launched = []
+    spawn = _DeferredSpawn()
+    callbacks = _cbs(card, review=reviewed, digest=digest,
+        launch=launched.append, spawn=spawn)
+    callbacks.review()
+    spawn.run()
+    callbacks.launch()
+    assert not launched and card.launch_button.disabled
+    assert "Nothing was submitted" in card.review_notice.value
+    assert "private lookup" not in card.review_notice.value
+    state["broken"] = False
+    callbacks.review()
+    spawn.run()
+    assert not card.launch_button.disabled
+    callbacks.launch()
+    assert launched == [reviewed]

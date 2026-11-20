@@ -1,0 +1,139 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:14.000
+Clone the synthetic shelf and run a one-change temperature case.
+Why: Keep the source inputs, inspect native fields, and save a complete result package.
+Look for: Prepare run.py with only T = 254.15 K instead of 255.15 K.
+
+2
+00:00:14.000 --> 00:00:24.000
+Start here in CryoLauncher. Choose Cloud for this tutorial.
+Why: Your workspace keeps scripts, dataset references and results together.
+Look for: Your workspace keeps scripts, datasets, run history and results together.
+
+3
+00:00:24.000 --> 00:00:36.000
+Choose Cloud → Advanced → Icepack → Tutorial / 02 Synthetic Ice Shelf.
+Why: Choose the intended interface, model and example before editing or launching a run.
+Look for: Use an owned workspace clone before replacing source.
+
+4
+00:00:36.000 --> 00:00:46.000
+Enter a new name and choose Clone to My Workspace.
+Why: Cloning gives you an editable copy while preserving the supplied application source.
+Look for: The canonical application source stays read-only.
+
+5
+00:00:46.000 --> 00:00:59.000
+Wait for the cloned-workspace confirmation and saved file status.
+Why: Cloning gives you an editable copy while preserving the supplied application source.
+Look for: This owned example is pilot-icepack-advanced-1118.
+
+6
+00:00:59.000 --> 00:01:09.000
+Choose the one-change run.py in your file picker; Open.
+Why: Selecting local files prepares them for import; importing saves them in this example.
+Look for: Check that one script file is selected.
+
+7
+00:01:09.000 --> 00:01:21.000
+Check the selected script before replacing the existing file.
+Why: Selecting local files prepares them for import; importing saves them in this example.
+Look for: Retain both 400-year phases and 200 steps per phase: dt = 2 years.
+
+8
+00:01:21.000 --> 00:01:30.000
+Enable Replace existing script files.
+Why: Replacement explicitly allows an imported file to overwrite the same name in this clone.
+Look for: Your clone already contains run.py.
+
+9
+00:01:30.000 --> 00:01:40.000
+Choose Import script files.
+Why: Import saves the selected source files in this example; it does not launch the model.
+Look for: Importing saves the replacement; it does not launch a model.
+
+10
+00:01:40.000 --> 00:01:52.000
+Wait for Imported run.py. Files are saved.
+Why: Import saves the selected source files in this example; it does not launch the model.
+Look for: Keep run.py as the Run target.
+
+11
+00:01:52.000 --> 00:02:04.000
+Check cloud readiness and retain 2 vCPU / 8 GiB.
+Why: Ready indicates that the required account resources are configured for the run.
+Look for: Review the owned clone and run.py target.
+
+12
+00:02:04.000 --> 00:02:13.000
+Choose Review & Launch.
+Why: Review confirms the intended model, source, resources and charges before submission.
+Look for: The displayed runtime is an estimate, not measured model duration.
+
+13
+00:02:13.000 --> 00:02:24.000
+Control guide: confirm Launch cloud run when checks are Ready.
+Why: This confirmation stages the reviewed inputs and starts a paid cloud job.
+Look for: The following card belongs to this tutorial’s original native run.
+
+14
+00:02:24.000 --> 00:02:34.000
+Follow the new Advanced clone run card.
+Why: Submission, queue/startup and native model execution are separate stages.
+Look for: Wait for completion, then open View results.
+
+15
+00:02:34.000 --> 00:02:44.000
+Select icepack → velocity in Results; Render when needed.
+Why: The solution, field name, units and mesh counts identify what you are viewing.
+Look for: Read the field units and selected solution.
+
+16
+00:02:44.000 --> 00:02:56.000
+Check the native field metadata.
+Why: The solution, field name, units and mesh counts identify what you are viewing.
+Look for: 3,371 vertices / 6,533 triangles; native CG2 fields exported as portable CG1.
+
+17
+00:02:56.000 --> 00:03:08.000
+Inspect the complete native velocity map.
+Why: Keep the source, versions, hashes and scientific qualifications with the result.
+Look for: Speed: 160.457236–728.806914 m/year; arrows show direction.
+
+18
+00:03:08.000 --> 00:03:20.000
+Read the recorded thickness and damage checks.
+Why: These checks complement the velocity map shown here.
+Look for: Thickness: 98.259646–350.139815 m; accumulation is zero.
+
+19
+00:03:20.000 --> 00:03:28.000
+Locate Download results beneath the plot.
+Why: The archive keeps this run’s numeric outputs, figures and provenance together.
+Look for: Save the current run’s archive.
+
+20
+00:03:28.000 --> 00:03:36.000
+Choose Download results.
+Why: The archive keeps this run’s numeric outputs, figures and provenance together.
+Look for: Wait for preparation to finish and a new HTTPS link.
+
+21
+00:03:36.000 --> 00:03:45.000
+Allow the result archive to finish preparing.
+Why: Keep the source, versions, hashes and scientific qualifications with the result.
+Look for: The following view resumes after preparation.
+
+22
+00:03:45.000 --> 00:03:55.000
+Open the new link and save the 19-member ZIP.
+Why: The archive keeps this run’s numeric outputs, figures and provenance together.
+Look for: Keep fields, mesh, figures and runtime/RNG provenance together.
+
+23
+00:03:55.000 --> 00:04:09.000
+Keep the native numerical context with your result.
+Why: Keep the scientific input definitions and numerical qualifications with the result.
+Look for: Damage undershoot is retained; this changed case is not a sensitivity validation.

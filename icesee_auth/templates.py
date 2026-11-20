@@ -20,8 +20,18 @@ def auth_page(
     alternate_label: str,
     error: str | None = None,
     github_href: str | None = None,
+    google_href: str | None = None,
+    notice: str | None = None,
+    body_html: str = "",
+    after_form_html: str = "",
 ) -> str:
+    """One card page. ``form_action=None`` renders ``body_html`` instead of a form."""
     safe_error = escape(error) if error else ""
+    notice_block = (
+        f'<div class="auth-notice" role="status">{escape(notice)}</div>'
+        if notice
+        else ""
+    )
 
     error_block = (
         f'<div class="auth-error" role="alert">{safe_error}</div>'
@@ -29,21 +39,53 @@ def auth_page(
         else ""
     )
 
+    oauth_links = "".join(
+        f'<a class="oauth-button {kind}" href="{escape(href)}">{label}</a>'
+        for kind, href, label in (
+            ("google", google_href, "Continue with Google"),
+            ("github", github_href, "Continue with GitHub"),
+        )
+        if href
+    )
     github_block = (
         f"""
-        <a
-          class="oauth-button github"
-          href="{escape(github_href)}"
-        >
-            Continue with GitHub
-          
-        </a>
+        {oauth_links}
 
         <div class="auth-divider">
           <span>or continue with email</span>
         </div>
         """
-        if github_href
+        if oauth_links and form_action
+        else ""
+    )
+    form_block = (
+        f"""
+      <form method="post" action="{escape(form_action)}">
+        <input
+          type="hidden"
+          name="return_to"
+          value="{escape(return_to)}"
+        >
+
+        {fields}
+
+        <button class="submit" type="submit">
+          {escape(submit_label)}
+        </button>
+      </form>
+      {after_form_html}"""
+        if form_action
+        else body_html
+    )
+    alternate_block = (
+        f"""
+      <p class="alternate">
+        {escape(alternate_text)}
+        <a href="{escape(alternate_href)}">
+          {escape(alternate_label)}
+        </a>
+      </p>"""
+        if alternate_href
         else ""
     )
 
@@ -239,6 +281,59 @@ def auth_page(
       line-height: 1.45;
     }}
 
+    .oauth-button.google {{
+      border-color: #cbd5e1;
+      background: #ffffff;
+      color: #0f172a;
+    }}
+
+    .oauth-button.google:hover {{
+      background: #f8fafc;
+    }}
+
+    .auth-notice {{
+      margin-bottom: 1rem;
+      padding: 0.75rem 0.85rem;
+      border: 1px solid rgba(37, 99, 235, 0.2);
+      border-radius: 9px;
+      background: #eff6ff;
+      color: #1e3a8a;
+      font-size: 0.85rem;
+      line-height: 1.5;
+    }}
+
+    .auth-body p {{
+      margin: 0 0 0.9rem;
+      color: #334155;
+      font-size: 0.9rem;
+      line-height: 1.55;
+    }}
+
+    .auth-body form {{
+      margin: 0 0 0.75rem;
+    }}
+
+    .submit.secondary {{
+      border: 1px solid #cbd5e1;
+      background: #ffffff;
+      color: #0f172a;
+    }}
+
+    .submit.secondary:hover {{
+      background: #f8fafc;
+    }}
+
+    .forgot {{
+      margin: 0.85rem 0 0;
+      font-size: 0.82rem;
+      text-align: right;
+    }}
+
+    .forgot a {{
+      color: #2563eb;
+      text-decoration: none;
+    }}
+
     .alternate {{
       margin: 1.25rem 0 0;
       color: #64748b;
@@ -274,27 +369,10 @@ def auth_page(
       <p class="subtitle">{escape(subtitle)}</p>
 
       {error_block}
+      {notice_block}
       {github_block}
-      <form method="post" action="{escape(form_action)}">
-        <input
-          type="hidden"
-          name="return_to"
-          value="{escape(return_to)}"
-        >
-
-        {fields}
-
-        <button class="submit" type="submit">
-          {escape(submit_label)}
-        </button>
-      </form>
-
-      <p class="alternate">
-        {escape(alternate_text)}
-        <a href="{escape(alternate_href)}">
-          {escape(alternate_label)}
-        </a>
-      </p>
+      {form_block}
+      {alternate_block}
     </section>
 
     <a class="back" href="{escape(return_to)}">
@@ -325,6 +403,50 @@ def login_fields(email: str = "") -> str:
     type="password"
     name="password"
     autocomplete="current-password"
+    required
+  >
+</label>
+"""
+
+
+def email_field(email: str = "") -> str:
+    return f"""
+<label>
+  Email
+  <input
+    type="email"
+    name="email"
+    value="{escape(email)}"
+    autocomplete="email"
+    maxlength="254"
+    required
+  >
+</label>
+"""
+
+
+def new_password_fields(token: str) -> str:
+    return f"""
+<input type="hidden" name="token" value="{escape(token)}">
+
+<label>
+  New password
+  <input
+    type="password"
+    name="password"
+    autocomplete="new-password"
+    minlength="8"
+    required
+  >
+</label>
+
+<label>
+  Confirm new password
+  <input
+    type="password"
+    name="confirm_password"
+    autocomplete="new-password"
+    minlength="8"
     required
   >
 </label>
@@ -438,6 +560,7 @@ def account_settings_page(
     message: str | None = None,
     error: str | None = None,
     source_application: str = "",
+    google_available: bool = False,
 ) -> str:
 
     continue_url, continue_label, source_query = (
@@ -453,6 +576,7 @@ def account_settings_page(
 
     github_identity = identity_map.get("github")
     orcid_identity = identity_map.get("orcid")
+    google_identity = identity_map.get("google")
 
     safe_message = escape(message) if message else ""
     safe_error = escape(error) if error else ""
@@ -528,6 +652,32 @@ def account_settings_page(
           </div>
         </div>
         """
+    )
+
+    if google_identity:
+        google_detail = "Connected · " + escape(google_identity.provider_email or "")
+        google_action = ""
+    elif google_available:
+        google_detail = "Not connected"
+        google_action = (
+            '<a class="identity-connect" href="/auth/google?return_to='
+            + quote("/account/" + source_query, safe="")
+            + '">Connect Google</a>'
+        )
+    else:
+        google_detail = google_action = ""
+    google_block = (
+        f"""
+      <div class="identity-row">
+        <div class="identity-main">
+          <div class="identity-name">Google</div>
+          <div class="identity-detail">{google_detail}</div>
+        </div>
+        <div class="identity-actions">{google_action}</div>
+      </div>
+      """
+        if google_detail
+        else ""
     )
 
     orcid_block = (
@@ -1146,6 +1296,7 @@ def account_settings_page(
             </p>
 
             <div class="identity-list">
+              {google_block}
               {github_block}
               {orcid_block}
             </div>

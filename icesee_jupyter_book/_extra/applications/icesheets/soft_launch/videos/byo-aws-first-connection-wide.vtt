@@ -1,0 +1,85 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:12.000
+Connect an AWS account to CryoLauncher.
+Why: Cloud runs use this account through temporary access to an AWS role.
+Look for: Start signed in to CryoStack and to an AWS account you are authorized to connect.
+
+2
+00:00:12.000 --> 00:00:22.000
+Choose Cloud in the Mode panel.
+Why: Cloud mode reveals the AWS account connection controls.
+Look for: Scroll to Environment → AWS ACCOUNT.
+
+3
+00:00:22.000 --> 00:00:31.000
+Under AWS ACCOUNT, choose Connect AWS Account.
+Why: CryoStack creates a setup link tied to your signed-in user.
+Look for: Awaiting role means you can continue to Open AWS Setup.
+
+4
+00:00:31.000 --> 00:00:45.000
+Choose Open AWS Setup.
+Why: The button opens the connection-specific CloudFormation setup in a new tab.
+Look for: Switch to the AWS tab showing Quick create stack.
+
+5
+00:00:45.000 --> 00:00:59.000
+Review the prefilled Quick create stack page.
+Why: The generated template links your AWS access role to this CryoStack connection.
+Look for: Keep the generated stack name and connection parameters; confirm the intended AWS account.
+
+6
+00:00:59.000 --> 00:01:13.000
+Review the IAM notice, then check its acknowledgement.
+Why: CloudFormation needs your permission to create the access role.
+Look for: The acknowledgement checkbox is checked.
+
+7
+00:01:13.000 --> 00:01:25.000
+Choose Create stack.
+Why: This submits the access-role stack you just reviewed.
+Look for: AWS starts creating the stack; wait for completion.
+
+8
+00:01:25.000 --> 00:01:33.000
+Wait until the new stack shows CREATE_COMPLETE.
+Why: The role must exist before CryoStack can verify its access.
+Look for: CREATE_COMPLETE is visible for the created stack.
+
+9
+00:01:33.000 --> 00:01:43.000
+Open the Outputs tab on that stack.
+Why: Outputs contains the role identifier to return to CryoStack.
+Look for: Find the row whose Key is RoleArn.
+
+10
+00:01:43.000 --> 00:01:59.000
+Select the Value in the RoleArn row; press Ctrl+C or Command+C.
+Why: CryoStack needs the full ARN of the access role created by this stack.
+Look for: Copy the entire value, not the RoleArn key; its private contents are hidden here.
+
+11
+00:01:59.000 --> 00:02:16.000
+Return to CryoStack and paste the full value into Role ARN.
+Why: This selects the role CryoStack will use for temporary AWS access.
+Look for: The Role ARN field is filled; its contents are hidden in this guide.
+
+12
+00:02:16.000 --> 00:02:26.000
+Choose Verify connection and wait for the check.
+Why: CryoStack tests access through the newly created role.
+Look for: Verifying changes to Connected when verification succeeds.
+
+13
+00:02:26.000 --> 00:02:39.000
+Confirm Connected and check Last verified.
+Why: This confirms access through the role you just created.
+Look for: Connected, Temporary role and an updated Last verified time.
+
+14
+00:02:39.000 --> 00:02:49.000
+Continue with cloud preparation and your model tutorial.
+Why: A verified account is the starting point for readiness checks and paid cloud runs.
+Look for: Check the connected account, resources and launch estimate before submitting a job.

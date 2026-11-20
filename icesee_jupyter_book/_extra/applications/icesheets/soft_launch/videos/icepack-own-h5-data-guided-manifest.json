@@ -1,0 +1,81 @@
+{
+  "schema": "cryostack.pilot.guided-tutorial.v1",
+  "case": "IP-DATA-H5-20261119",
+  "model": "Icepack",
+  "duration_seconds": 225,
+  "input_filenames": [
+    "run.py",
+    "initial_fields.py",
+    "icepack-shelf-initial.h5"
+  ],
+  "accepted_native_archive_sha256": "617b09e99d1b561951e072b7935f47c6edaf4bbd02e9cd0339e669740aad7e1e",
+  "uploaded_grid_shape": [
+    5,
+    9
+  ],
+  "initial_fields_match_every_native_node": [
+    {
+      "field": "thickness",
+      "max_abs_error": 0.0,
+      "nodes": 25
+    },
+    {
+      "field": "base",
+      "max_abs_error": 0.0,
+      "nodes": 25
+    },
+    {
+      "field": "surface",
+      "max_abs_error": 0.0,
+      "nodes": 25
+    },
+    {
+      "field": "vx",
+      "max_abs_error": 0.0,
+      "nodes": 25
+    },
+    {
+      "field": "vy",
+      "max_abs_error": 0.0,
+      "nodes": 25
+    }
+  ],
+  "mesh": {
+    "vertices": 25,
+    "triangles": 32
+  },
+  "metrics": {
+    "model": "icepack",
+    "case": "synthetic-shelf-v1",
+    "steps": 1,
+    "thickness_min": 300.0226959304064,
+    "thickness_max": 499.98084677501714,
+    "thickness_mean": 403.64986119431734,
+    "speed_l2": 133.908461320484,
+    "runtime_seconds": 16.98177451800001
+  },
+  "figure_archive_members": {
+    "icepack-h5-initial-guided.png": "initial-conditions.png",
+    "icepack-h5-final-guided.png": "figures/figure-01.png"
+  },
+  "edit_scope": "Continuous file selection/import/upload/reference actions with caption holds and navigation cues; later shared Launch-button closeup is guidance, followed by the original native submission. No extra model job was run.",
+  "scientific_limits": "Portable CG1 numeric fields; initialization checked independently; no independent native repeat or accuracy claim.",
+  "assets": {
+    "icepack-own-h5-data-guided.mp4": {
+      "bytes": 3609831,
+      "sha256": "9ae16a097d25470f9975f8cd63bf81cdc78ad3468a5373c1a7548d385d624c52"
+    },
+    "icepack-own-h5-data-guided.vtt": {
+      "bytes": 5922,
+      "sha256": "87ca14609c2c5492309f647e936652d04dfdaebc1bd3cfe35a47173813e4a7ed"
+    },
+    "icepack-h5-initial-guided.png": {
+      "bytes": 254279,
+      "sha256": "b309f3b3b94e5cae9b25122a34fd4f167a94a10700539934cbd9545e8499e665"
+    },
+    "icepack-h5-final-guided.png": {
+      "bytes": 112853,
+      "sha256": "f9d893ec7ef7334fd6f5a83476aa999a02c2786d40013ea3d35df4eebbf99be5"
+    }
+  }
+}

@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import logging
 import os
 import sqlite3
+import sys
 import time
 import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
-from urllib.parse import quote
+from html import escape as escape_html
+from urllib.parse import quote, urlsplit
 
 import base64
 import hashlib
@@ -19,7 +22,9 @@ import secrets
 
 from aiohttp import web
 
-from . import access_log
+from . import access_log, approval
+from .approval import ApprovalStore
+from .mailer import MailConfig, Outbox
 from .security import hash_password, safe_return_to, verify_password
 from .storage import AuthStorage, SessionRecord, User
 
@@ -28,7 +33,9 @@ from .templates import (
     auth_page,
     configuration_form_page,
     configurations_page,
+    email_field,
     login_fields,
+    new_password_fields,
     register_fields,
     experiments_page,
     experiment_detail_page,
@@ -36,8 +43,24 @@ from .templates import (
 
 from .providers import (
     GitHubProvider,
+    GoogleProvider,
+    GoogleTokenError,
     ORCIDProvider,
 )
+
+#: registrations allowed per client address per hour
+REGISTER_ADDRESS_LIMIT = 10
+#: verification / reset emails per address (and per client address) per hour
+EMAIL_SEND_LIMIT = 3
+EMAIL_SEND_ADDRESS_LIMIT = 20
+HOUR = 3600.0
+#: how often the gateway delivers queued email and provisions workspaces
+BACKGROUND_INTERVAL_S = 15.0
+#: how often a proxied websocket re-checks that its session may continue
+LIVE_RECHECK_S = 30.0
+
+#: paths an unapproved signed-in account may still use
+_UNAPPROVED_ALLOWED_PREFIXES = ("/auth/", "/api/v1/me")
 
 #: failed password sign-ins allowed per email within the window
 LOGIN_FAILURE_LIMIT = 10
@@ -160,6 +183,12 @@ class AuthManager:
         session_ttl_seconds: int = 12 * 60 * 60,
         secure_cookies: bool | None = None,
         clock: Callable[[], float] = time.time,
+        approval_required: bool | None = None,
+        mail_config: MailConfig | None = None,
+        mail_transport=None,
+        workspace_provisioner=None,
+        google_provider: GoogleProvider | None = None,
+        background_interval_s: float = BACKGROUND_INTERVAL_S,
     ) -> None:
         if session_ttl_seconds <= 0:
             raise ValueError("session_ttl_seconds must be positive")
@@ -187,6 +216,31 @@ class AuthManager:
         self._clock = clock
         self._login_limiter = LoginRateLimiter()
         self._address_limiter = LoginRateLimiter(limit=LOGIN_ADDRESS_FAILURE_LIMIT)
+        self._register_limiter = LoginRateLimiter(
+            limit=REGISTER_ADDRESS_LIMIT, window_seconds=HOUR)
+        self._email_send_limiter = LoginRateLimiter(
+            limit=EMAIL_SEND_LIMIT, window_seconds=HOUR)
+        self._email_address_limiter = LoginRateLimiter(
+            limit=EMAIL_SEND_ADDRESS_LIMIT, window_seconds=HOUR)
+
+        self._approval_required = (
+            approval.approval_required_from_env()
+            if approval_required is None
+            else bool(approval_required)
+        )
+        self._approval = ApprovalStore(self._storage, clock=clock)
+        self._outbox = Outbox(
+            self._storage,
+            config=mail_config,
+            clock=clock,
+            transport=mail_transport,
+        )
+        self._workspace_provisioner = workspace_provisioner
+        self._background_interval_s = background_interval_s
+        self._background_task: asyncio.Task | None = None
+        #: user id -> close callbacks of that account's live proxied sockets
+        self._live_connections: dict[str, set] = {}
+        self._google_provider = google_provider or GoogleProvider.from_env(os.environ)
         self._github_provider = GitHubProvider(
             client_id=os.environ.get(
                 "CRYOSTACK_GITHUB_CLIENT_ID",
@@ -230,8 +284,73 @@ class AuthManager:
     def storage(self) -> AuthStorage:
         return self._storage
 
+    @property
+    def approval(self) -> ApprovalStore:
+        return self._approval
+
+    @property
+    def outbox(self) -> Outbox:
+        return self._outbox
+
+    @property
+    def approval_required(self) -> bool:
+        return self._approval_required
+
+    def check_approval_cutover(self) -> None:
+        """Refuse to run the gate over accounts nobody has reviewed.
+
+        With the gate on, an account without a status row is pending. If
+        the baseline migration has never run and such accounts exist, every
+        current user would be locked out, so the gateway does not start. An
+        empty database is baselined automatically: there is no one to lock
+        out. After a baseline, accounts created later without a status (for
+        example while the gate was off again) stay pending and are reported.
+        """
+        if not self._approval_required:
+            return
+        counts = self._approval.counts()
+        unreviewed = counts["no_record"]
+        if self._approval.baseline() is not None:
+            if unreviewed:
+                print(f"[auth] {unreviewed} account(s) have no approval status and "
+                      "are treated as pending; review them in Control Center.",
+                      file=sys.stderr, flush=True)
+            return
+        if not unreviewed:
+            if not any(counts[status] for status in approval.STATUSES):
+                self._approval.record_baseline(
+                    operator="automatic",
+                    reason="New database with no accounts at cutover",
+                )
+            return
+        raise RuntimeError(
+            "CRYOSTACK_REGISTRATION_APPROVAL is on but the existing accounts "
+            "have not been baselined. Run deployment/auth_db_migrate.py "
+            "approval-baseline (see the operator guide) or turn the gate off."
+        )
+
     def install(self, app: web.Application) -> None:
+        self.check_approval_cutover()
+        app.middlewares.append(self._approval_middleware)
+        app.on_startup.append(self._start_background)
+        app.on_cleanup.append(self._stop_background)
+
         app.router.add_get("/api/v1/me", self._handle_me)
+
+        app.router.add_get("/auth/status", self._status_page)
+        app.router.add_post("/auth/status/resend", self._resend_verification)
+        app.router.add_get("/auth/verify-email", self._verify_email_page)
+        app.router.add_post("/auth/verify-email", self._verify_email_submit)
+        app.router.add_get("/auth/forgot", self._forgot_page)
+        app.router.add_post("/auth/forgot", self._forgot_submit)
+        app.router.add_get("/auth/reset", self._reset_page)
+        app.router.add_post("/auth/reset", self._reset_submit)
+
+        app.router.add_get("/auth/google", self._google_begin)
+        app.router.add_get(
+            "/auth/google/callback",
+            self._oauth_callback_logged(self._google_callback, "google"),
+        )
 
         app.router.add_get("/auth/login", self._login_page)
         app.router.add_post("/auth/login", self._login_submit)
@@ -608,8 +727,11 @@ class AuthManager:
             )
 
         response = web.HTTPFound(
-            safe_return_to(
-                flow.return_to
+            self._after_sign_in(
+                user,
+                safe_return_to(
+                    flow.return_to
+                ),
             )
         )
 
@@ -995,6 +1117,14 @@ class AuthManager:
                         )
                     )
 
+                if self._approval_required:
+                    # GitHub reported this address as verified
+                    self._record_registration(
+                        user,
+                        method="github",
+                        email_verified=True,
+                    )
+
         # ========================================================
         # Sanity check
         # ========================================================
@@ -1031,8 +1161,11 @@ class AuthManager:
         # ========================================================
 
         response = web.HTTPFound(
-            safe_return_to(
-                flow.return_to
+            self._after_sign_in(
+                user,
+                safe_return_to(
+                    flow.return_to
+                ),
             )
         )
 
@@ -1043,6 +1176,767 @@ class AuthManager:
         )
 
         raise response
+
+    # ============================================================
+    # Administrator approval
+    # ============================================================
+
+    def _redirect_unapproved(self, request: web.Request) -> None:
+        """Send a signed-in but unapproved account to its status page."""
+        user = self.session_user(request)
+        if user is None or self.user_is_active(user.id):
+            return
+        raise web.HTTPFound(
+            "/auth/status?return_to=" + quote(safe_return_to(request.path_qs), safe="")
+        )
+
+    def _after_sign_in(self, user: User, return_to: str) -> str:
+        if self.user_is_active(user.id):
+            return return_to
+        return "/auth/status?return_to=" + quote(return_to, safe="")
+
+    @web.middleware
+    async def _approval_middleware(self, request: web.Request, handler):
+        """Refuse protected APIs to unapproved accounts with a clear 403.
+
+        Defence in depth: those handlers already see such an account as
+        signed out, because ``current_user`` returns ``None`` for it.
+        """
+        if (
+            request.path.startswith("/api/")
+            and not request.path.startswith(_UNAPPROVED_ALLOWED_PREFIXES)
+            and request.cookies.get(self._cookie_name)
+        ):
+            user = self.session_user(request)
+            if user is not None and not self.user_is_active(user.id):
+                status = self._approval.effective_status(user.id)
+                response = web.json_response(
+                    {
+                        "error": "account_not_approved",
+                        "account_status": status,
+                        "status_url": "/auth/status",
+                    },
+                    status=403,
+                )
+                self._prepare_no_cache(response)
+                return response
+        return await handler(request)
+
+    def _require_same_origin(self, request: web.Request) -> None:
+        origin = request.headers.get("Origin")
+        if origin is not None and urlsplit(origin).netloc != request.host:
+            raise web.HTTPForbidden(text="Cross-site request refused.")
+
+    def _record_registration(self, user: User, *, method: str,
+                             email_verified: bool) -> None:
+        self._approval.register(
+            user_id=user.id,
+            method=method,
+            email_verified=email_verified,
+        )
+        if email_verified:
+            self._queue_review_notices(user, method=method)
+
+    def _queue_review_notices(self, user: User, *, method: str) -> None:
+        """Tell reviewers and the applicant; each notice is sent once."""
+        self._outbox.notify_reviewers(user=user, method=method)
+        self._outbox.enqueue(
+            dedupe_key=f"applicant_pending:{user.id}",
+            template="applicant_pending",
+            recipient=user.email,
+            user_id=user.id,
+            context={"display_name": user.display_name},
+        )
+
+    def notify_decision(self, user: User, *, status: str, audit_id: str) -> None:
+        """Queue the applicant's decision email (one per decision)."""
+        if status not in (approval.APPROVED, approval.REJECTED, approval.SUSPENDED):
+            return
+        self._outbox.enqueue(
+            dedupe_key=f"decision:{user.id}:{audit_id}",
+            template="decision",
+            recipient=user.email,
+            user_id=user.id,
+            context={"display_name": user.display_name, "status": status},
+        )
+
+    def _send_verification(self, user: User) -> None:
+        token = self._approval.issue_token(
+            user_id=user.id, email=user.email, purpose=approval.VERIFY_EMAIL)
+        self._outbox.enqueue(
+            dedupe_key=f"verify_email:{approval.hash_token(token)}",
+            template="verify_email",
+            recipient=user.email,
+            user_id=user.id,
+            context={"display_name": user.display_name, "token": token},
+        )
+
+    def _email_throttled(self, request: web.Request, email: str) -> bool:
+        """Count one verification/reset email; ``True`` when over the limit."""
+        now = self._clock()
+        email_key = "email:" + email
+        address_key = "address:" + client_address(request)
+        if (
+            self._email_send_limiter.blocked(email_key, now)
+            or self._email_address_limiter.blocked(address_key, now)
+        ):
+            self._record_access(
+                event_type=access_log.LOGIN_RATE_LIMITED,
+                outcome="denied",
+                category="rate_limited",
+                provider="email",
+            )
+            return True
+        self._email_send_limiter.failed(email_key, now)
+        self._email_address_limiter.failed(address_key, now)
+        return False
+
+    def _card(self, *, title: str, subtitle: str, body_html: str = "",
+              notice: str | None = None, error: str | None = None,
+              status: int = 200, return_to: str = "/") -> web.Response:
+        response = web.Response(
+            text=auth_page(
+                title=title,
+                subtitle=subtitle,
+                form_action=None,
+                return_to=return_to,
+                fields="",
+                submit_label="",
+                alternate_text="",
+                alternate_href="",
+                alternate_label="",
+                notice=notice,
+                error=error,
+                body_html=f'<div class="auth-body">{body_html}</div>',
+            ),
+            content_type="text/html",
+            status=status,
+        )
+        self._prepare_no_cache(response)
+        return response
+
+    @staticmethod
+    def _sign_out_form() -> str:
+        return (
+            '<form method="post" action="/auth/logout">'
+            '<button class="submit secondary" type="submit">Sign out</button>'
+            "</form>"
+        )
+
+    def _registration_mail_unavailable(self) -> web.Response | None:
+        config = self._outbox.config
+        if config.delivers and not config.problems():
+            return None
+        response = self._card(
+            title="Registration email is temporarily unavailable",
+            subtitle="Please try again after email delivery has been restored.",
+            body_html=(
+                "<p>We cannot send a confirmation email right now. "
+                "Your account must have a confirmed email address and "
+                "administrator approval before you can use CryoStack.</p>"
+                '<p><a href="/auth/login">Sign in to an existing account</a>.</p>'
+            ),
+            status=503,
+        )
+        response.headers["Retry-After"] = "300"
+        return response
+
+    async def _register_for_review(
+        self,
+        request: web.Request,
+        *,
+        session: SessionRecord,
+        display_name: str,
+        email: str,
+        institution: str,
+        password: str,
+        return_to: str,
+    ) -> web.Response:
+        """Gated registration: pending account, verification email, no session.
+
+        The answer is the same whether or not the address already has an
+        account, so the page cannot be used to find registered addresses;
+        the owner of an existing address gets an email instead.
+        """
+        unavailable = self._registration_mail_unavailable()
+        if unavailable is not None:
+            return unavailable
+        now = self._clock()
+        address_key = "address:" + client_address(request)
+        if self._register_limiter.blocked(address_key, now):
+            self._record_access(
+                event_type=access_log.LOGIN_RATE_LIMITED,
+                outcome="denied",
+                category="rate_limited",
+                provider="password",
+            )
+            response = web.Response(
+                text=self._render_register(
+                    return_to=return_to,
+                    display_name=display_name,
+                    email=email,
+                    institution=institution,
+                    error=(
+                        "Too many registrations from this network. "
+                        "Wait an hour and try again."
+                    ),
+                ),
+                content_type="text/html",
+                status=429,
+            )
+            self._prepare_no_cache(response)
+            self._set_session_cookie(request, response, session.id)
+            return response
+        self._register_limiter.failed(address_key, now)
+
+        password_hash = await _off_loop(hash_password, password)
+        existing = self._storage.get_user_by_email(email)
+        if existing is None:
+            try:
+                user = self._storage.create_user(
+                    email=email,
+                    display_name=display_name,
+                    institution=institution or None,
+                    password_hash=password_hash,
+                    now=now,
+                )
+            except sqlite3.IntegrityError:
+                user = None
+            if user is not None:
+                self._record_registration(user, method="password", email_verified=False)
+                self._send_verification(user)
+        else:
+            day = int(now // 86400)
+            self._outbox.enqueue(
+                dedupe_key=f"registration_exists:{existing.id}:{day}",
+                template="registration_exists",
+                recipient=existing.email,
+                user_id=existing.id,
+                context={},
+            )
+            self._record_access(
+                event_type=access_log.REGISTER,
+                outcome="failure",
+                category="registration_conflict",
+                user_id=existing.id,
+                provider="password",
+            )
+
+        return self._card(
+            title="Check your email",
+            subtitle="One more step before an administrator can review your registration.",
+            notice=(
+                f"If {email} can receive email, a confirmation email has been "
+                "queued for delivery. Check your inbox and spam or junk folder. "
+                "The link expires in 3 days. "
+                "If it does not arrive, sign in and request another link."
+            ),
+            body_html=(
+                "<p>After you confirm your address, a CryoStack administrator "
+                "reviews the registration. You will receive an email with the "
+                "decision; until then applications, storage and computing are "
+                "not available.</p>"
+                '<p>Already have an account? <a href="/auth/login">Sign in</a>.</p>'
+            ),
+            return_to=return_to,
+        )
+
+    async def _status_page(self, request: web.Request) -> web.Response:
+        return_to = safe_return_to(request.query.get("return_to"))
+        user = self.session_user(request)
+        if user is None:
+            raise web.HTTPFound(
+                "/auth/login?return_to=" + quote(return_to, safe=""))
+        if self.user_is_active(user.id):
+            raise web.HTTPFound(return_to)
+
+        record = self._approval.status(user.id)
+        status = record.status if record is not None else approval.PENDING
+        sign_out = self._sign_out_form()
+        email = escape_html(user.email)
+
+        if status == approval.PENDING and record is not None and not record.email_verified:
+            sent = request.query.get("sent") == "1"
+            return self._card(
+                title="Confirm your email",
+                subtitle="Your registration is not complete yet.",
+                notice=(
+                    "A new confirmation email has been queued for delivery." if sent else None
+                ),
+                body_html=(
+                    f"<p>A confirmation email was queued for <strong>{email}</strong>. "
+                    "Check your inbox and spam or junk folder. "
+                    "Open the email to finish registering; an administrator can review "
+                    "your account only after that.</p>"
+                    '<form method="post" action="/auth/status/resend">'
+                    '<button class="submit" type="submit">Send the link again</button>'
+                    "</form>"
+                    f"{sign_out}"
+                ),
+            )
+        if status == approval.PENDING:
+            return self._card(
+                title="Awaiting approval",
+                subtitle="Your registration is waiting for an administrator.",
+                notice=f"Signed in as {user.email}.",
+                body_html=(
+                    "<p>A CryoStack administrator reviews every new account. "
+                    "You will receive an email when yours is decided; you do "
+                    "not need to do anything else.</p>"
+                    "<p>Until then applications, file storage, computing and "
+                    "the Connector are not available to this account.</p>"
+                    f"{sign_out}"
+                ),
+            )
+        if status == approval.REJECTED:
+            return self._card(
+                title="Registration not approved",
+                subtitle="This CryoStack account was not approved.",
+                body_html=(
+                    "<p>If you think this is a mistake, contact the person who "
+                    "invited you to CryoStack.</p>"
+                    f"{sign_out}"
+                ),
+                status=403,
+            )
+        return self._card(
+            title="Account suspended",
+            subtitle="Access to CryoStack is suspended for this account.",
+            body_html=(
+                "<p>Your files are kept. Contact the CryoStack organizers if "
+                "you have questions.</p>"
+                f"{sign_out}"
+            ),
+            status=403,
+        )
+
+    async def _resend_verification(self, request: web.Request) -> web.StreamResponse:
+        self._require_same_origin(request)
+        user = self.session_user(request)
+        if user is None:
+            raise web.HTTPSeeOther("/auth/login")
+        unavailable = self._registration_mail_unavailable()
+        if unavailable is not None:
+            return unavailable
+        record = self._approval.status(user.id)
+        if (
+            record is not None
+            and record.status == approval.PENDING
+            and not record.email_verified
+            and not self._email_throttled(request, user.email)
+        ):
+            self._send_verification(user)
+        raise web.HTTPSeeOther("/auth/status?sent=1")
+
+    def _invalid_link(self, what: str) -> web.Response:
+        return self._card(
+            title="This link does not work",
+            subtitle=f"The {what} link is invalid, already used or expired.",
+            body_html=(
+                '<p><a href="/auth/login">Sign in</a> to request a new one.</p>'
+            ),
+            status=400,
+        )
+
+    async def _verify_email_page(self, request: web.Request) -> web.Response:
+        # A GET never changes anything: mail scanners open links too.
+        token = str(request.query.get("token", ""))
+        if self._approval.peek_token(token, approval.VERIFY_EMAIL) is None:
+            return self._invalid_link("confirmation")
+        response = self._card(
+            title="Confirm your email",
+            subtitle="Confirm this address for your CryoStack registration.",
+            body_html=(
+                '<form method="post" action="/auth/verify-email">'
+                f'<input type="hidden" name="token" value="{escape_html(token)}">'
+                '<button class="submit" type="submit">Confirm my email</button>'
+                "</form>"
+            ),
+        )
+        # Keep token URLs out of Referer while retaining a real Origin on the
+        # native confirmation POST; no-referrer makes that Origin null.
+        response.headers["Referrer-Policy"] = "strict-origin"
+        return response
+
+    async def _verify_email_submit(self, request: web.Request) -> web.Response:
+        self._require_same_origin(request)
+        form = await request.post()
+        token = str(form.get("token", ""))
+        user_id = self._approval.consume_token(token, approval.VERIFY_EMAIL)
+        user = self._storage.get_user_by_id(user_id) if user_id else None
+        if user is None:
+            return self._invalid_link("confirmation")
+        if self._approval.mark_email_verified(user.id):
+            self._record_access(
+                event_type=access_log.EMAIL_VERIFIED,
+                outcome="success",
+                user_id=user.id,
+                provider="password",
+            )
+            record = self._approval.status(user.id)
+            self._queue_review_notices(
+                user, method=record.registration_method if record else "password")
+        return self._card(
+            title="Email confirmed",
+            subtitle="Thank you. Your registration is now waiting for review.",
+            body_html=(
+                "<p>You will receive an email when an administrator has "
+                "decided. You can sign in at any time to see your status.</p>"
+                '<p><a href="/auth/status">Check your status</a></p>'
+            ),
+        )
+
+    async def _forgot_page(self, request: web.Request) -> web.Response:
+        response = web.Response(
+            text=auth_page(
+                title="Reset your password",
+                subtitle="We will email you a link to choose a new password.",
+                form_action="/auth/forgot",
+                return_to="/",
+                fields=email_field(),
+                submit_label="Send reset link",
+                alternate_text="Remembered it?",
+                alternate_href="/auth/login",
+                alternate_label="Sign in",
+            ),
+            content_type="text/html",
+        )
+        self._prepare_no_cache(response)
+        return response
+
+    async def _forgot_submit(self, request: web.Request) -> web.Response:
+        self._require_same_origin(request)
+        form = await request.post()
+        email = str(form.get("email", "")).strip().lower()[:254]
+        if "@" in email and not self._email_throttled(request, email):
+            user = self._storage.get_user_by_email(email)
+            if user is not None:
+                token = self._approval.issue_token(
+                    user_id=user.id, email=user.email, purpose=approval.PASSWORD_RESET)
+                self._outbox.enqueue(
+                    dedupe_key=f"password_reset:{approval.hash_token(token)}",
+                    template="password_reset",
+                    recipient=user.email,
+                    user_id=user.id,
+                    context={"display_name": user.display_name, "token": token},
+                )
+        # the same answer whether or not the address has an account
+        return self._card(
+            title="Check your email",
+            subtitle="Password reset",
+            notice=(
+                "If an account uses that address, a reset link is on its way. "
+                "It expires in 1 hour."
+            ),
+            body_html='<p><a href="/auth/login">Back to sign in</a></p>',
+        )
+
+    def _reset_form(self, token: str, error: str | None = None,
+                    status: int = 200) -> web.Response:
+        response = web.Response(
+            text=auth_page(
+                title="Choose a new password",
+                subtitle="Resetting your password signs you out everywhere.",
+                form_action="/auth/reset",
+                return_to="/",
+                fields=new_password_fields(token),
+                submit_label="Save new password",
+                alternate_text="",
+                alternate_href="",
+                alternate_label="",
+                error=error,
+            ),
+            content_type="text/html",
+            status=status,
+        )
+        self._prepare_no_cache(response)
+        response.headers["Referrer-Policy"] = "strict-origin"
+        return response
+
+    async def _reset_page(self, request: web.Request) -> web.Response:
+        token = str(request.query.get("token", ""))
+        if self._approval.peek_token(token, approval.PASSWORD_RESET) is None:
+            return self._invalid_link("password reset")
+        return self._reset_form(token)
+
+    async def _reset_submit(self, request: web.Request) -> web.Response:
+        self._require_same_origin(request)
+        form = await request.post()
+        token = str(form.get("token", ""))
+        password = str(form.get("password", ""))
+        confirm = str(form.get("confirm_password", ""))
+        if len(password) < 8:
+            return self._reset_form(
+                token, "Your password must contain at least 8 characters.", 400)
+        if password != confirm:
+            return self._reset_form(token, "The passwords do not match.", 400)
+        if self._approval.peek_token(token, approval.PASSWORD_RESET) is None:
+            return self._invalid_link("password reset")
+        password_hash = await _off_loop(hash_password, password)
+        user_id = self._approval.consume_token(token, approval.PASSWORD_RESET)
+        if user_id is None:
+            return self._invalid_link("password reset")
+        self._approval.set_password_hash(user_id, password_hash)
+        self.revoke_user(user_id)
+        return self._card(
+            title="Password changed",
+            subtitle="Your new password is saved and you were signed out everywhere.",
+            body_html='<p><a href="/auth/login">Sign in</a></p>',
+        )
+
+    # ============================================================
+    # Google OpenID Connect
+    # ============================================================
+
+    async def _google_begin(self, request: web.Request) -> web.StreamResponse:
+        provider = self._google_provider
+        if not provider.configured:
+            raise web.HTTPServiceUnavailable(
+                text="Google sign-in is not configured on this server.")
+
+        return_to = safe_return_to(request.query.get("return_to"))
+        session = self._get_or_create_session(request)
+        state = secrets.token_urlsafe(32)
+        nonce = secrets.token_urlsafe(32)
+        verifier = self._pkce_verifier()
+
+        self._storage.create_oauth_flow(
+            state=state,
+            session_id=session.id,
+            provider=provider.name,
+            code_verifier=verifier,
+            return_to=return_to,
+            ttl_seconds=600,
+            now=self._clock(),
+            nonce=nonce,
+        )
+        response = web.HTTPFound(
+            provider.authorization_url(
+                state=state,
+                code_challenge=self._pkce_challenge(verifier),
+                nonce=nonce,
+            )
+        )
+        self._set_session_cookie(request, response, session.id)
+        raise response
+
+    async def _google_callback(self, request: web.Request) -> web.StreamResponse:
+        provider = self._google_provider
+        if not provider.configured:
+            raise web.HTTPServiceUnavailable(
+                text="Google sign-in is not configured on this server.")
+
+        if request.query.get("error"):
+            raise web.HTTPBadRequest(text="Google sign-in was not completed.")
+
+        code = str(request.query.get("code", "")).strip()
+        state = str(request.query.get("state", "")).strip()
+        if not code or not state:
+            raise web.HTTPBadRequest(text="Missing Google sign-in response.")
+
+        flow = self._storage.consume_oauth_flow(
+            state=state, provider=provider.name, now=self._clock())
+        if flow is None or not flow.nonce:
+            raise web.HTTPBadRequest(
+                text="The Google sign-in request is invalid or expired.")
+
+        if request.cookies.get(self._cookie_name) != flow.session_id:
+            raise web.HTTPBadRequest(
+                text="Google sign-in session does not match.")
+
+        try:
+            authentication = await provider.exchange_code(
+                code=code, code_verifier=flow.code_verifier)
+            identity = await provider.verify(authentication, nonce=flow.nonce)
+        except GoogleTokenError as error:
+            request["cryostack_login_failure"] = error.category
+            raise web.HTTPBadRequest(text=str(error))
+        except RuntimeError as error:
+            raise web.HTTPBadGateway(text=str(error))
+
+        stored = self._storage.get_user_identity(
+            provider=identity.provider, provider_subject=identity.subject)
+
+        if stored is not None:
+            user = self._storage.get_user_by_id(stored.user_id)
+            if user is None:
+                raise web.HTTPInternalServerError(
+                    text="Google identity references a missing CryoStack account.")
+        else:
+            user = self.current_user(request)
+            if user is not None:
+                # An approved, signed-in account connecting Google itself.
+                try:
+                    self._create_google_identity(user, identity)
+                except sqlite3.IntegrityError:
+                    raise web.HTTPConflict(
+                        text="This Google account is already linked to another "
+                             "CryoStack account.")
+            else:
+                user = self._create_google_account(identity)
+
+        authenticated = self._start_authenticated_session(
+            flow.session_id, user_id=user.id)
+        request["cryostack_login_user_id"] = user.id
+
+        response = web.HTTPFound(
+            self._after_sign_in(user, safe_return_to(flow.return_to)))
+        self._set_session_cookie(request, response, authenticated.id)
+        raise response
+
+    def _create_google_identity(self, user: User, identity) -> None:
+        self._storage.create_user_identity(
+            user_id=user.id,
+            provider=identity.provider,
+            provider_subject=identity.subject,
+            provider_username=identity.username,
+            provider_email=identity.email,
+            provider_profile_url=None,
+            now=self._clock(),
+        )
+
+    def _create_google_account(self, identity) -> User:
+        """A new, pending account from a Google identity nobody has linked."""
+        if not self._approval_required:
+            # Without the approval gate a new account would be usable at
+            # once; Google sign-up opens only together with the gate.
+            raise web.HTTPConflict(
+                text="New accounts cannot be created with Google yet. Sign in "
+                     "with your CryoStack account and connect Google from "
+                     "Account Settings.")
+
+        if self._storage.get_user_by_email(identity.email) is not None:
+            # Never link an existing account only because the email matches.
+            raise web.HTTPConflict(
+                text="A CryoStack account already uses this email address. "
+                     "Sign in with your existing CryoStack account first, then "
+                     "connect Google from Account Settings.")
+
+        display_name = (
+            identity.display_name or identity.email.split("@", 1)[0]
+        )[:120]
+        try:
+            user = self._storage.create_user(
+                email=identity.email,
+                display_name=display_name,
+                institution=None,
+                password_hash=hash_password(secrets.token_urlsafe(64)),
+                now=self._clock(),
+            )
+            self._create_google_identity(user, identity)
+        except sqlite3.IntegrityError:
+            raise web.HTTPConflict(
+                text="Unable to create the CryoStack account because the "
+                     "identity is already registered.")
+        # Google reported the address as verified
+        self._record_registration(user, method="google", email_verified=True)
+        return user
+
+    # ============================================================
+    # Revocation of live connections
+    # ============================================================
+
+    def register_live_connection(self, user_id: str, close) -> Callable[[], None]:
+        """Track one long-lived connection; returns its unregister function.
+
+        ``close`` is called (with no arguments, from the event loop) when the
+        account is suspended or rejected, or its password is reset.
+        """
+        closers = self._live_connections.setdefault(user_id, set())
+        closers.add(close)
+
+        def unregister() -> None:
+            found = self._live_connections.get(user_id)
+            if found is not None:
+                found.discard(close)
+                if not found:
+                    self._live_connections.pop(user_id, None)
+
+        return unregister
+
+    def revoke_user(self, user_id: str) -> int:
+        """Close every live proxied connection of one account now."""
+        closers = list(self._live_connections.pop(user_id, ()))
+        for close in closers:
+            try:
+                close()
+            except Exception:
+                pass
+        return len(closers)
+
+    def live_session_valid(self, request: web.Request) -> bool:
+        """Re-check, for a long-lived connection, its session and account."""
+        request.pop("cryostack_session_user", None)
+        user = self.current_user(request)
+        return user is not None
+
+    # ============================================================
+    # Background delivery and provisioning
+    # ============================================================
+
+    async def _start_background(self, app: web.Application) -> None:
+        if self._background_interval_s <= 0:
+            return
+        mail_logger = logging.getLogger("icesee_auth.mailer")
+        mail_logger.setLevel(logging.INFO)
+        if not mail_logger.handlers:
+            mail_logger.addHandler(logging.StreamHandler(sys.stderr))
+        mail_logger.propagate = False
+        self._background_task = asyncio.create_task(self._background_loop())
+
+    async def _stop_background(self, app: web.Application) -> None:
+        task, self._background_task = self._background_task, None
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+    async def _background_loop(self) -> None:
+        while True:
+            try:
+                await self.run_background_once()
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:      # keep the loop alive
+                print(f"[auth] background step failed: {type(error).__name__}",
+                      file=sys.stderr, flush=True)
+            await asyncio.sleep(self._background_interval_s)
+
+    async def run_background_once(self) -> dict:
+        loop = asyncio.get_running_loop()
+        mail = await loop.run_in_executor(None, self._outbox.deliver_due)
+        provisioned = await loop.run_in_executor(None, self.provision_due)
+        return {"mail": mail, "provisioning": provisioned}
+
+    def provision_due(self) -> dict:
+        """Provision every approved account that is due (blocking)."""
+        result = {"ready": 0, "retry": 0, "failed": 0}
+        for user_id in self._approval.due_provisioning():
+            if self._approval.claim_provisioning(user_id):
+                outcome = self.provision_workspace(user_id)
+                result[outcome] = result.get(outcome, 0) + 1
+        return result
+
+    def provision_workspace(self, user_id: str) -> str:
+        """One attempt; ``ready``, ``retry`` (queued again) or ``failed``."""
+        provisioner = self._workspace_provisioner
+        if provisioner is None:
+            from .provisioning import provision_owner_workspace as provisioner
+        try:
+            details = provisioner(user_id)
+        except Exception as error:
+            status = self._approval.fail_provisioning(
+                user_id, f"{type(error).__name__}: {str(error)[:200]}")
+            return "failed" if status == "failed" else "retry"
+        self._approval.finish_provisioning(
+            user_id,
+            owner_key=details["owner_key"],
+            allowance_bytes=details["allowance_bytes"],
+            allowance_source=details["allowance_source"],
+        )
+        return "ready"
 
     def _require_api_user(
         self,
@@ -1060,10 +1954,19 @@ class AuthManager:
     async def _handle_me(self, request: web.Request) -> web.Response:
         session = self._get_or_create_session(request)
         user = self._user_for_session(session)
+        account_status = None
+
+        if user is not None and not self.user_is_active(user.id):
+            account_status = self._approval.effective_status(user.id)
+            user = None
 
         response = web.json_response(
             {
                 "authenticated": user is not None,
+                "account_status": (
+                    account_status
+                    or ("approved" if user is not None else None)
+                ),
                 "user": self._public_user(user),
                 "session": {
                     "created_at": self._format_timestamp(
@@ -1183,6 +2086,7 @@ class AuthManager:
                 user=user,
                 identities=identities,
                 source_application=source_application,
+                google_available=self._google_provider.configured,
             ),
             content_type="text/html",
         )
@@ -1244,6 +2148,7 @@ class AuthManager:
                     identities=identities,
                     error="Please enter a valid display name.",
                     source_application=source_application,
+                    google_available=self._google_provider.configured,
                 ),
                 content_type="text/html",
                 status=400,
@@ -1279,6 +2184,7 @@ class AuthManager:
                 identities=identities,
                 message="Your account settings were updated.",
                 source_application=source_application,
+                google_available=self._google_provider.configured,
             ),
             content_type="text/html",
         )
@@ -1295,7 +2201,9 @@ class AuthManager:
         user = self._user_for_session(session)
 
         if user is not None:
-            raise web.HTTPFound(return_to)
+            raise web.HTTPFound(
+                self._after_sign_in(user, return_to)
+            )
 
         response = web.Response(
             text=self._render_login(return_to=return_to),
@@ -1413,7 +2321,9 @@ class AuthManager:
             provider="password",
         )
 
-        response = web.HTTPFound(return_to)
+        response = web.HTTPFound(
+            self._after_sign_in(user, return_to)
+        )
         self._set_session_cookie(
             request,
             response,
@@ -1433,7 +2343,9 @@ class AuthManager:
         user = self._user_for_session(session)
 
         if user is not None:
-            raise web.HTTPFound(return_to)
+            raise web.HTTPFound(
+                self._after_sign_in(user, return_to)
+            )
 
         response = web.Response(
             text=self._render_register(return_to=return_to),
@@ -1482,6 +2394,17 @@ class AuthManager:
                 email=email,
                 institution=institution,
                 error=error,
+            )
+
+        if self._approval_required:
+            return await self._register_for_review(
+                request,
+                session=session,
+                display_name=display_name,
+                email=email,
+                institution=institution,
+                password=password,
+                return_to=return_to,
             )
 
         try:
@@ -1547,17 +2470,23 @@ class AuthManager:
                     user_id=session.user_id,
                 )
 
-        response = web.json_response(
-            {
-                "ok": True,
-                "authenticated": False,
-            }
-        )
+        if request.content_type == "application/x-www-form-urlencoded":
+            # the status pages sign out with a plain form
+            response = web.HTTPSeeOther("/auth/login")
+        else:
+            response = web.json_response(
+                {
+                    "ok": True,
+                    "authenticated": False,
+                }
+            )
         self._prepare_no_cache(response)
         response.del_cookie(
             self._cookie_name,
             path="/",
         )
+        if isinstance(response, web.HTTPException):
+            raise response
         return response
 
     async def _configurations_redirect(
@@ -1988,7 +2917,9 @@ class AuthManager:
                         "invalid_request",
                     )
                     text = (outcome.text or "").lower()
-                    if "invalid or expired" in text:
+                    if request.get("cryostack_login_failure"):
+                        category = request["cryostack_login_failure"]
+                    elif "invalid or expired" in text:
                         category = "expired_or_invalid_state"
                     elif "does not match" in text:
                         category = "session_mismatch"
@@ -2009,7 +2940,52 @@ class AuthManager:
     def current_user(
         self,
         request: web.Request,
+        *,
+        refresh_session: bool = False,
     ) -> User | None:
+        """The signed-in user, only while their account may use CryoStack.
+
+        Every application, API, storage, compute and Connector path asks
+        this, so a pending, rejected or suspended account is treated as
+        signed out everywhere. The status is read on every call: a decision
+        takes effect on the account's next request.
+        """
+        # Long-lived responses must re-read the session after logout/reset as
+        # well as checking approval. Ordinary requests retain their local cache.
+        if refresh_session:
+            request.pop("cryostack_session_user", None)
+        user = self.session_user(request)
+
+        if user is None or not self.user_is_active(user.id):
+            return None
+
+        return user
+
+    def user_is_active(self, user_id: str) -> bool:
+        """Whether the account may use CryoStack.
+
+        With the gate on, only ``approved``. With it off, everyone except an
+        account an administrator explicitly rejected or suspended, so turning
+        the gate off again never readmits a suspended account.
+        """
+        record = self._approval.status(user_id)
+        if record is not None and record.status in (approval.REJECTED, approval.SUSPENDED):
+            return False
+        if not self._approval_required:
+            return True
+        return record is not None and record.status == approval.APPROVED
+
+    def session_user(
+        self,
+        request: web.Request,
+    ) -> User | None:
+        """The account behind the session cookie, whatever its status.
+
+        Only the account status pages use this directly.
+        """
+        if "cryostack_session_user" in request:
+            return request["cryostack_session_user"]
+
         session_id = request.cookies.get(
             self._cookie_name
         )
@@ -2028,9 +3004,11 @@ class AuthManager:
         if not session.user_id:
             return None
 
-        return self._storage.get_user_by_id(
+        user = self._storage.get_user_by_id(
             session.user_id
         )
+        request["cryostack_session_user"] = user
+        return user
 
 
     def authenticated_user(
@@ -2047,6 +3025,8 @@ class AuthManager:
             user = self.current_user(request)
 
             if user is None:
+                self._redirect_unapproved(request)
+
                 return_to = request.path_qs
 
                 login_url = (
@@ -2184,7 +3164,18 @@ class AuthManager:
             alternate_label="Create an account",
             error=error,
             github_href=github_href,
+            google_href=self._google_href(return_to),
+            after_form_html=(
+                '<p class="forgot"><a href="/auth/forgot">Forgot your password?</a></p>'
+                if self._outbox.config.delivers
+                else ""
+            ),
         )
+
+    def _google_href(self, return_to: str) -> str | None:
+        if not self._google_provider.configured:
+            return None
+        return "/auth/google?return_to=" + quote(return_to, safe="")
 
     def _render_register(
         self,
@@ -2224,6 +3215,17 @@ class AuthManager:
             alternate_label="Sign in",
             error=error,
             github_href=github_href,
+            google_href=(
+                self._google_href(return_to)
+                if self._approval_required
+                else None
+            ),
+            notice=(
+                "New accounts are reviewed by an administrator before "
+                "they can use CryoStack."
+                if self._approval_required
+                else None
+            ),
         )
 
     def _registration_error_response(
@@ -2272,6 +3274,7 @@ class AuthManager:
             or email.startswith("@")
             or email.endswith("@")
             or len(email) > 254
+            or any(character.isspace() for character in email)
         ):
             return "Please enter a valid email address."
 
@@ -3070,6 +4073,7 @@ class AuthManager:
                 )
 
                 if user is None:
+                    self._redirect_unapproved(request)
 
                     return_to = (
                         request.path_qs

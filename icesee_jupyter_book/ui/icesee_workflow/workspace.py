@@ -36,6 +36,7 @@ from .components import (
     BusyButton, ConfirmAction, badge, button, callout, code, empty_state, esc, human_duration, human_size,
     image_html, issues_html, kv, offer_download, run_js, skeleton, state_badge,
 )
+from .monitor import monitor_banner
 
 TABS = ("Run", "Files", "Editor", "Logs", "Results")
 TAB_ICONS = ("play-circle", "folder-open", "pencil", "terminal", "line-chart")
@@ -164,6 +165,40 @@ class RunWorkspace:
         elif tab == "Editor":
             self.editor_refresh_list()
         self.host.on_workspace_tab(tab)
+
+    # ── page session (ui/session_restore.py) ───────────────────────────────
+    def session_state(self) -> dict:
+        """The open tab, the selected run and an unsaved editor draft."""
+        state = {"tab": self.tabs.value, "run": self.selected.id if self.selected else None}
+        if self.editor_dirty() and self.ed_files.value:
+            state["editor"] = {"file": self.ed_files.value, "text": self.ed_text.value}
+        return state
+
+    def restore_session(self, state: dict) -> bool:
+        changed = False
+        run_id = state.get("run")
+        if run_id and (self.selected is None or self.selected.id != run_id):
+            if run_id not in [v for _l, v in self.run_list.options]:
+                self.refresh_runs()
+            if run_id in [v for _l, v in self.run_list.options]:
+                self.select_run(run_id)
+                changed = True
+        draft = state.get("editor") or {}
+        if draft.get("file") and isinstance(draft.get("text"), str):
+            if draft["file"] not in [v for _l, v in self.ed_files.options]:
+                self.editor_refresh_list()
+            if draft["file"] in [v for _l, v in self.ed_files.options]:
+                if self.ed_files.value != draft["file"] and not self.editor_dirty():
+                    self.ed_files.value = draft["file"]
+                if (self.ed_files.value == draft["file"] and self._ed_info is not None
+                        and self._ed_info.editable and self.ed_text.value != draft["text"]):
+                    self.ed_text.value = draft["text"]
+                    changed = True
+        tab = state.get("tab")
+        if tab in TABS and self.tabs.value != tab:
+            self.tabs.value = tab
+            changed = True
+        return changed
 
     # ── run selection ──────────────────────────────────────────────────────
     def refresh_runs(self, select: str | None = None) -> None:
@@ -846,6 +881,8 @@ class RunWorkspace:
         self.log_dl = button("Download log", icon="download", kind="quiet")
         self.log_dl.on_click(lambda _b: self._download_log())
         self.log_meta = W.HTML()
+        self.log_status = W.HTML()                     # state, lifecycle, waiting/connection notes
+        self._log_errors: dict = {}
         self.log_view = W.HTML(skeleton(5))
         self.activity_box = W.Box([self.host.activity_output], layout=W.Layout(width="100%"))
         self.activity_box.add_class("icw-activity")
@@ -858,13 +895,14 @@ class RunWorkspace:
         self.log_controls_extra.layout.display = "none"
         head = W.HBox([seg, W.HBox([self.log_follow, self.log_refresh, self.log_dl, self.clear_activity])],
                       layout=W.Layout(justify_content="space-between", align_items="center"))
-        return W.VBox([head, self.log_meta, self.log_view, self.activity_box, self.log_controls_extra],
-                      layout=W.Layout(gap="8px"))
+        return W.VBox([head, self.log_status, self.log_meta, self.log_view, self.activity_box,
+                       self.log_controls_extra], layout=W.Layout(gap="8px"))
 
     def _log_switch(self) -> None:
         run_output = self.log_kind.value == "Run output"
         self.log_view.layout.display = "" if run_output else "none"
         self.log_meta.layout.display = "" if run_output else "none"
+        self.log_status.layout.display = "" if run_output else "none"
         self.activity_box.layout.display = "none" if run_output else ""
         self.clear_activity.layout.display = "none" if run_output else ""
         self.log_controls_extra.layout.display = "none" if run_output else ""
@@ -877,20 +915,37 @@ class RunWorkspace:
         self.show("Logs", reveal=True)
         self.log_kind.value = "Launcher activity"
 
+    def set_log_error(self, run_id: str, text: str = "") -> None:
+        """A connection problem while following ``run_id`` (empty clears it)."""
+        if text:
+            self._log_errors[run_id] = text
+        else:
+            self._log_errors.pop(run_id, None)
+        if self.selected is not None and self.selected.id == run_id and self.tabs.value == "Logs":
+            self.refresh_log()
+
     def refresh_log(self, *, status=None) -> None:
         run = self.selected
         if run is None:
             self.log_meta.value = ""
+            self.log_status.value = ""
             self.log_view.value = empty_state("No run selected", "The model's output appears here while it runs.", "▤")
             return
         path = Path(run.workspace_directory) / LOG_FILE
+        every = getattr(self.host, "poll_seconds", lambda _r: None)(run)
+        error = self._log_errors.get(run.id, "")
         if not path.is_file():
-            where = {"remote": "on the cluster — use “Tail log” below to fetch it",
-                     "cloud": "in AWS CloudWatch — use the log controls below"}.get(run.execution_mode,
-                                                                                 "not written yet")
+            no_log = {"remote": "No output from the cluster yet. The job's log is fetched with each status "
+                                "check once the job starts writing it.",
+                      "cloud": "No output yet. AWS Batch logs appear in CloudWatch once the job starts; "
+                               "use the log controls below to fetch them."}.get(
+                run.execution_mode, "Waiting for the first output from the model.")
+            self.log_status.value = monitor_banner(run, every=every, error=error, no_log=no_log)
             self.log_meta.value = ""
-            self.log_view.value = empty_state("No local log", f"This run's output is {where}.", "▤")
+            self.log_view.value = empty_state("No log output yet", no_log if lc.current_state(run) in lc.ACTIVE
+                                              else "This run wrote no log here.", "▤")
             return
+        self.log_status.value = monitor_banner(run, every=every, error=error)
         text = clean_log(LocalJob(run.workspace_directory).tail(192 * 1024))
         lines = text.splitlines()[-600:]
         size = path.stat().st_size

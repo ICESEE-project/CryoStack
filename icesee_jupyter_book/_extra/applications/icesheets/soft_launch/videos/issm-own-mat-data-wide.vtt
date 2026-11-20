@@ -1,0 +1,115 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:15.000
+Initialize native ISSM from your gridded MATLAB fields.
+Why: Full geometry and velocity fields must initialize the actual native mesh.
+Look for: Four scripts + issm-shelf-initial.mat; verified BYO AWS, MATLAB and Connector.
+
+2
+00:00:15.000 --> 00:00:31.000
+Name an owned example, then choose New example.
+Why: An owned example keeps your imported workflow separate from installed examples.
+Look for: Expected: a new editable ISSM workspace example.
+
+3
+00:00:31.000 --> 00:00:39.000
+Read the confirmation and keep this owned example selected.
+Why: Source imports and dataset attachments must belong to the same example.
+Look for: Expected: the newly created workspace name.
+
+4
+00:00:39.000 --> 00:01:02.000
+Choose issm-shelf-initial.mat, then Upload.
+Why: The MAT file contains the full synthetic initial-condition grids.
+Look for: Expected: one selected file becomes Uploaded: issm-shelf-initial.mat.
+
+5
+00:01:02.000 --> 00:01:23.000
+Select the MAT dataset and choose Reference in example.
+Why: Referencing provides the exact relative path that runme.m reads.
+Look for: Expected: data/issm-shelf-initial.mat; do not add data/ twice.
+
+6
+00:01:23.000 --> 00:01:42.000
+Replace and import all four source files.
+Why: Replacement updates the new example’s starter runme.m.
+Look for: Check count 4 → 0 and wait for Files are saved.
+
+7
+00:01:42.000 --> 00:01:54.000
+Confirm all four imported filenames and Files are saved.
+Why: Only saved scripts enter the next run snapshot.
+Look for: runme.m, Launch.par, validate_launch_dataset.m, load_initial_conditions.m.
+
+8
+00:01:54.000 --> 00:02:03.000
+Confirm Action Run and Run target runme.m.
+Why: The entrypoint chooses the MATLAB workflow that will execute.
+Look for: Keep all four saved scripts and the referenced MAT file.
+
+9
+00:02:03.000 --> 00:02:15.000
+Review the owned MAT experiment before launching.
+Why: Review checks resources, readiness, configured license and Connector.
+Look for: ISSM · pilot-issm-mat-1119; 2 vCPU and 8 GiB.
+
+10
+00:02:15.000 --> 00:02:25.000
+Launch explicitly, then follow the new MAT run.
+Why: The new submission is the run to monitor through completion.
+Look for: Expected: Staging/Submitting, then Queued, Running and Completed.
+
+11
+00:02:25.000 --> 00:02:32.000
+Inspect the initial thickness panel.
+Why: The saved native figure shows the uploaded fields on the Triangle mesh.
+Look for: Thickness 300–500 m; coordinates span a 10 km square.
+
+12
+00:02:32.000 --> 00:02:39.000
+Inspect initial surface alongside thickness.
+Why: Floating-shelf base and surface must remain consistent with thickness.
+Look for: Surface elevation and coordinates are in metres.
+
+13
+00:02:39.000 --> 00:02:46.000
+Inspect the initial speed panel.
+Why: The diagnostic solver then computes the native velocity response.
+Look for: Initial speed uses metres/year; this is not a transient time plot.
+
+14
+00:02:46.000 --> 00:03:00.000
+Check all five initialized fields and successful completion.
+Why: A file upload is useful only when its fields actually initialize the model.
+Look for: All five fields × 13 native vertices: interpolation error 0.
+
+15
+00:03:00.000 --> 00:03:16.000
+Choose StressbalanceSolution → Vel, then Render.
+Why: Render updates the retained native field without rerunning the model.
+Look for: Expected: the accepted MAT run’s 13-node velocity field.
+
+16
+00:03:16.000 --> 00:03:32.000
+Inspect the saved final native velocity figure.
+Why: Use the full axes, colour bar and velocity components together.
+Look for: Speed 100–180 m/year; Vel agrees with hypot(Vx,Vy).
+
+17
+00:03:32.000 --> 00:03:48.000
+Use node-weighted definitions when reading these metrics.
+Why: Arithmetic-node metrics differ from area-weighted triangle metrics.
+Look for: Mean h 402.307692 m; node-RMS speed 142.564238 m/year; iteration count 12.
+
+18
+00:03:48.000 --> 00:04:04.000
+Choose Download results and wait for the fresh link.
+Why: The archive preserves fields, figures, initialization and runtime provenance.
+Look for: Expected: a newly prepared results_bundle link for this selected run.
+
+19
+00:04:04.000 --> 00:04:23.000
+Choose the fresh archive link to save this run’s results.
+Why: Keep the archive with its source, data, image and output hashes.
+Look for: 15 CRC-valid members, byte-identical to the originally checked MAT archive.

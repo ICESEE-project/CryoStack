@@ -1,0 +1,28 @@
+{
+  "schema": "cryostack.tutorial-publish-assets.v1",
+  "title": "Icepack \u00b7 Bring your own problem (+15 m)",
+  "video_sha256": "29a56b823e6b668bda8f19fbad16237ba85904671801da7e5492837812e2def0",
+  "duration_seconds": 322.0,
+  "silent": true,
+  "logical_chapter_count": 13,
+  "max_source_pixel_scale": 1.6,
+  "scientific_figures_aspect_preserved": true,
+  "files": {
+    "icepack-own-problem-wide.chapters.json": {
+      "sha256": "4bd99e689f9f3fccfd987e78a3409f444e2f152d305d17757ffa05891a2aefc9",
+      "bytes": 21704
+    },
+    "icepack-own-problem-wide.mp4": {
+      "sha256": "29a56b823e6b668bda8f19fbad16237ba85904671801da7e5492837812e2def0",
+      "bytes": 4188917
+    },
+    "icepack-own-problem-wide.poster.jpg": {
+      "sha256": "501dd108892c4a3c1159076b6a6b53e4e7f174a5240030ce53f7b25c0a4842d5",
+      "bytes": 98266
+    },
+    "icepack-own-problem-wide.vtt": {
+      "sha256": "fce9a94f3c69a66f3abcdfa8d8f924a4257fc121f8dc3e977c65cf99329507b9",
+      "bytes": 5572
+    }
+  }
+}

@@ -44,7 +44,6 @@
     <div class="cryostack-docs-summary-grid">
 
       <div class="cryostack-docs-summary-card">
-        <div class="cryostack-docs-summary-icon">CL</div>
         <h3>CryoLauncher</h3>
         <p>Configure and run ISSM or Icepack ice-sheet models. Basic,
            Advanced, and Auto-config &middot; Beta configuration experiences
@@ -58,7 +57,6 @@
       </div>
 
       <div class="cryostack-docs-summary-card">
-        <div class="cryostack-docs-summary-icon">IE</div>
         <h3>ICESEE</h3>
         <p>Ensemble-based state and parameter estimation for ice-sheet
            models. Organized as Local, Remote, or Cloud execution, with
@@ -73,7 +71,6 @@
       </div>
 
       <div class="cryostack-docs-summary-card">
-        <div class="cryostack-docs-summary-icon">FL</div>
         <h3>Frozen Legacies</h3>
         <p>Discover and work with historical Antarctic radar observations
            and derived products through a manifest-driven catalog. Not
@@ -87,7 +84,6 @@
       </div>
 
       <div class="cryostack-docs-summary-card">
-        <div class="cryostack-docs-summary-icon">LV</div>
         <h3>LIVIST</h3>
         <p>Explore Antarctic englacial-temperature products inferred from
            radar and constrained by boreholes. Its own frontend and

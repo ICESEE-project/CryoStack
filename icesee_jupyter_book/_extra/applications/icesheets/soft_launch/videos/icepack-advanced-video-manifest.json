@@ -1,0 +1,51 @@
+{
+  "status": "accepted_for_publication",
+  "scope": "Icepack Advanced; canonical clone with only temperature constant255.15\u2192254.15K replaced through supported GUI source import.",
+  "duration_seconds": 185,
+  "files": [
+    {
+      "path": "icepack-advanced-run-manifest.json",
+      "bytes": 19411,
+      "sha256": "8dce83b33831d0935e85e64893e4d6a9a1fd74811bf16e71cf230fb1b7b49a51"
+    },
+    {
+      "path": "icepack-advanced-velocity.png",
+      "bytes": 99693,
+      "sha256": "264d4f8784a8415e830242b8d87c0fba6c77c635dde03f65a5e52ac9b77e1ac3"
+    },
+    {
+      "path": "icepack-advanced.mp4",
+      "bytes": 3047341,
+      "sha256": "d613835158e0a9fc4bb93662db520a2ca5ee863842ccca8fd08292e7f713cccd"
+    },
+    {
+      "path": "icepack-advanced.vtt",
+      "bytes": 3686,
+      "sha256": "2ed7c48fcfa617f583cb90066982114309b6ac398c07f2b0de6a5cb5dd56ea57"
+    }
+  ],
+  "native_acceptance": "Actual submitted source/image/binding, finite native fields, mesh and browser ZIP accepted; no repeat or scientific accuracy claim.",
+  "archive": {
+    "sha256": "6ce7d342dd48be2b129bb294e4e3e9535180831156a7eb2d1f14fcfdcc2a4447",
+    "bytes": 1770668,
+    "members": 19,
+    "crc_valid": true
+  },
+  "privacy": {
+    "video_sha256": "d613835158e0a9fc4bb93662db520a2ca5ee863842ccca8fd08292e7f713cccd",
+    "sample_interval_seconds": 3,
+    "sampled_frames": 62,
+    "findings": [],
+    "raw_ocr_text_retained": false
+  },
+  "complete_decode": "passed, independent ffmpeg full decode exit0",
+  "editing": "Actual recorded GUI crops only. Right-side Advanced Results retained; unrelated HDF5 preparation/private left column excluded. Setup89.116s and compatibility repair201.269s excluded, same completed run reopened, no simulation rerun.",
+  "scientific_limits": [
+    "Native CG2 thickness/velocity exported to portableCG1, not complete checkpoint.",
+    "Negative damage undershoot retained.",
+    "Global RNG states captured without reset; initial seeds/library generators unknown.",
+    "Changed case, no unchanged-input repeat, validated sensitivity or PC/AWS agreement."
+  ],
+  "production_changes": false,
+  "root_visual_review": "accepted11-segment contact sheet; exact185-second video"
+}

@@ -25,16 +25,6 @@
       computing resources. This page is the map — pick where to go next.
     </p>
 
-    <div class="cryostack-docs-actions">
-      <a class="cryostack-btn primary" href="applications/icesheets/getting_started.html">
-        CryoLauncher Getting Started
-      </a>
-
-      <a class="cryostack-btn secondary" href="resources.html">
-        Resources
-      </a>
-    </div>
-
   </section>
 
   <section id="get-started" class="cryostack-section">
@@ -46,14 +36,13 @@
     <h2>New to CryoStack?</h2>
 
     <p class="cryostack-section-intro">
-      CryoStack applications share one shape: configure, execute, monitor,
-      visualize, download. Start with an application.
+      CryoStack provides a shared platform for four different scientific
+      tasks. Start with the application that matches your work.
     </p>
 
     <div class="cryostack-docs-summary-grid">
 
       <div class="cryostack-docs-summary-card">
-        <div class="cryostack-docs-summary-icon">GS</div>
         <h3>Getting Started</h3>
         <p>
           New here? Start with a short CryoStack orientation and find the
@@ -63,7 +52,6 @@
       </div>
 
       <div class="cryostack-docs-summary-card">
-        <div class="cryostack-docs-summary-icon">CS</div>
         <h3>CryoStack overview</h3>
         <p>
           What CryoStack is and how the browser, applications, environments,
@@ -73,21 +61,19 @@
       </div>
 
       <div class="cryostack-docs-summary-card">
-        <div class="cryostack-docs-summary-icon">CL</div>
-        <h3>CryoLauncher Getting Started</h3>
+        <h3>Application guides</h3>
         <p>
-          Run your first ice-sheet simulation and inspect the structured
-          results — <a href="applications/icesheets/getting_started.html">open the guide</a>.
+          Open the dedicated documentation for CryoLauncher, ICESEE, Frozen
+          Legacies, or LIVIST — <a href="#applications">view application guides</a>.
         </p>
       </div>
 
       <div class="cryostack-docs-summary-card">
-        <div class="cryostack-docs-summary-icon">UM</div>
         <h3>User Manual</h3>
         <p>
-          The operational reference for configuring, running, and
-          retrieving results across applications and execution
-          environments — <a href="docs/user_manual.html">open the manual</a>.
+          The platform map for choosing an application and understanding
+          shared concepts, with procedures kept in each application manual —
+          <a href="docs/user_manual.html">open the manual</a>.
         </p>
       </div>
 
@@ -115,7 +101,7 @@
         <div class="cryostack-card-eyebrow">Numerical Modeling</div>
         <div class="cryostack-card-tag">Simulation</div>
 
-        <h3>CryoLauncher</h3>
+        <h3><a href="applications/icesheets/index.html">CryoLauncher</a></h3>
 
         <p>
           Run supported ice-sheet models through a browser interface, with a
@@ -131,7 +117,7 @@
         </div>
 
         <div class="cryostack-docs-card-actions">
-          <a href="/icesheets/" data-requires-auth="true">Open Application</a>
+          <a href="/cryolauncher/" data-requires-auth="true">Open Application</a>
           <a href="applications/icesheets/getting_started.html">Getting Started</a>
           <a href="applications/icesheets/user_manual.html">User Manual</a>
           <a href="applications/icesheets/resources.html">Resources</a>
@@ -144,7 +130,7 @@
         <div class="cryostack-card-eyebrow">State and Parameter Estimation</div>
         <div class="cryostack-card-tag green">Data Assimilation</div>
 
-        <h3>ICESEE</h3>
+        <h3><a href="applications/icesee/index.html">ICESEE</a></h3>
 
         <p>
           Run ensemble data-assimilation workflows with supported numerical
@@ -159,7 +145,7 @@
         </div>
 
         <div class="cryostack-docs-card-actions">
-          <a href="/icesee-gui/" data-requires-auth="true">Open Application</a>
+          <a href="/icesee/" data-requires-auth="true">Open Application</a>
           <a href="applications/icesee/getting_started.html">Getting Started</a>
           <a href="applications/icesee/user_manual.html">User Manual</a>
           <a href="applications/icesee/resources.html">Resources</a>
@@ -172,7 +158,7 @@
         <div class="cryostack-card-eyebrow">Scientific Data Products</div>
         <div class="cryostack-card-tag green">Interactive Explorer</div>
 
-        <h3>LIVIST</h3>
+        <h3><a href="/livist/docs/">LIVIST</a></h3>
 
         <p>
           Explore Antarctic ice-sheet temperature products inferred from radar
@@ -200,7 +186,7 @@
         <div class="cryostack-card-eyebrow">Historical Radar Archive</div>
         <div class="cryostack-card-tag gray">Data Explorer</div>
 
-        <h3>Frozen Legacies</h3>
+        <h3><a href="applications/frozen_legacies/overview.html">Frozen Legacies</a></h3>
 
         <p>
           Explore historical Antarctic airborne radar surveys, flight tracks,
@@ -279,8 +265,10 @@
           MPI-parallel solver execution, institutional MATLAB licensing
           through Connector/Relay, postprocessing, result retrieval, and
           visualization; ICESEE's Lorenz-96 example has done the same on
-          Fargate. EC2 Spot/GPU/multi-node and ICESEE's own Cloud/ISSM
-          workflows remain unvalidated — see the
+          Fargate. EC2 Spot/custom networking are unqualified here;
+          CryoLauncher GPU/multi-node scientific submission and ICESEE
+          Cloud/ISSM are blocked. The current staged ICESEE example/process
+          contract is separate from that earlier run — see the
           <a href="docs/hpc_cloud.html">Cloud Run Guide</a>.
         </p>
       </div>

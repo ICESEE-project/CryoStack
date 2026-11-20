@@ -1,0 +1,23 @@
+{
+  "guide": "AWS \u00b7 Review your existing account connection",
+  "duration_seconds": 162.0,
+  "video_sha256": "db0cf5f7cdebd75bb1fd7d5efccf5338eba18678b141920f6ecf64b5e4df75a8",
+  "maximum_upscale": 1.6,
+  "audio": false,
+  "native_archive_sha256": [],
+  "scope": "Existing-role AWS connection review and verification only. This recording does not create a stack, grant a new role or launch a scientific job; first-time onboarding is explained separately.",
+  "files": {
+    "byo-aws-connection-review-wide.chapters.json": {
+      "sha256": "e80411bbff7f70a105aa018d0b2ab1e30c18014d22c67f33be173ca376edf487",
+      "bytes": 11905
+    },
+    "byo-aws-connection-review-wide.mp4": {
+      "sha256": "db0cf5f7cdebd75bb1fd7d5efccf5338eba18678b141920f6ecf64b5e4df75a8",
+      "bytes": 2645260
+    },
+    "byo-aws-connection-review-wide.vtt": {
+      "sha256": "ef1cca331bf8d4ff522ea46635a3b6f1c49bafa8f01317cc0101d59a145a724e",
+      "bytes": 3066
+    }
+  }
+}

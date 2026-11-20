@@ -1,0 +1,213 @@
+{
+  "schema": "cryostack.autoconfig.native-evidence.v1",
+  "native_scientific_artifact_check": {
+    "schema": "cryostack.issm-autoconfig-local-check.v1",
+    "native_scientific_artifact_check_passed": true,
+    "archive": {
+      "sha256": "cd0391a22e69e700d1eb4210a59d90f609f4a22cb23819763af3748f691302c2",
+      "bytes": 182563,
+      "members": 11,
+      "crc_valid": true
+    },
+    "mesh": {
+      "vertices": 91,
+      "triangles": 148,
+      "total_area_m2": 1000000000000.0,
+      "nondegenerate": true,
+      "x_range_m": [
+        0.0,
+        1000000.0
+      ],
+      "y_range_m": [
+        0.0,
+        1000000.0
+      ]
+    },
+    "all_exported_scientific_numeric_arrays_finite": true,
+    "field_statistics": {
+      "Pressure": {
+        "count": 91,
+        "min": 2698731.0,
+        "max": 8995770.0,
+        "arithmetic_node_mean": 5857756.183842698,
+        "arithmetic_node_rms": 6181889.080367121
+      },
+      "StressbalanceConvergenceNumSteps": {
+        "count": 1,
+        "min": 23.0,
+        "max": 23.0,
+        "arithmetic_node_mean": 23.0,
+        "arithmetic_node_rms": 23.0
+      },
+      "Vel": {
+        "count": 91,
+        "min": 0.0,
+        "max": 9034.387288463504,
+        "arithmetic_node_mean": 3905.487159139771,
+        "arithmetic_node_rms": 4953.237364329308
+      },
+      "Vx": {
+        "count": 91,
+        "min": -1152.2731208904463,
+        "max": 1159.5649136296163,
+        "arithmetic_node_mean": 1.46542265908157,
+        "arithmetic_node_rms": 334.66078931687827
+      },
+      "Vy": {
+        "count": 91,
+        "min": 0.0,
+        "max": 9034.37118216809,
+        "arithmetic_node_mean": 3892.8216342177807,
+        "arithmetic_node_rms": 4941.9189130824225
+      }
+    },
+    "velocity_magnitude_max_abs_error_m_per_year": 1.8189894035458565e-12,
+    "convergence_steps": 23,
+    "maxiter120_binding": {
+      "actual_submitted_assignment_and_before_solve_hook": true,
+      "normalized_provenance_only_maxiter120": true,
+      "actual_runtime_marker_precedes_model_consistency": true,
+      "canonical_geometry_sources_unchanged": true,
+      "canonical_runme_unchanged_except_single_override_hook": true,
+      "requested_mpi_processes": 2,
+      "evidence": "fast-binding-check.json, canonical-runme-binding.json, timing-and-override-receipt.json"
+    },
+    "basic_changed_cap_comparison": {
+      "reference_archive_sha256": "be5223513d0b5374baddbe1f9624e18fc6e420cabe5f5c88991fbd897fbd8c52",
+      "mesh_exactly_equal": {
+        "x": true,
+        "y": true,
+        "elements": true
+      },
+      "fields": {
+        "Pressure": {
+          "same_shape": true,
+          "exactly_equal": true,
+          "max_abs_difference": 0.0,
+          "relative_nodal_l2_difference": 0.0
+        },
+        "StressbalanceConvergenceNumSteps": {
+          "same_shape": true,
+          "exactly_equal": true,
+          "max_abs_difference": 0.0,
+          "relative_nodal_l2_difference": 0.0
+        },
+        "Vel": {
+          "same_shape": true,
+          "exactly_equal": true,
+          "max_abs_difference": 0.0,
+          "relative_nodal_l2_difference": 0.0
+        },
+        "Vx": {
+          "same_shape": true,
+          "exactly_equal": true,
+          "max_abs_difference": 0.0,
+          "relative_nodal_l2_difference": 0.0
+        },
+        "Vy": {
+          "same_shape": true,
+          "exactly_equal": true,
+          "max_abs_difference": 0.0,
+          "relative_nodal_l2_difference": 0.0
+        }
+      },
+      "all_numeric_mesh_and_fields_exactly_equal": true,
+      "basic_iteration_cap": 100,
+      "autoconfig_iteration_cap": 120,
+      "observed_convergence_below_both_caps": true,
+      "interpretation": "For this changed-cap execution, exact equality and convergence below both caps are consistent with neither cap truncating convergence. maxiter120 is a ceiling, not a request to execute 120 iterations. This is not a general accuracy result or an unchanged-input repeat claim."
+    },
+    "safe_runtime_versions": {
+      "matlab": "24.2.0.3070828 (R2024b) Update 7",
+      "matlab_release": "2024b",
+      "issm": "2026.1"
+    },
+    "rng": {
+      "artifact": "rng-before.mat",
+      "sha256": "a295d60173c9de2e443187d7e4be31f9d816d4930eb4a43bfc0eaf939c2000c9",
+      "artifact_hash_verified": true,
+      "capture_reset_or_advanced_state": false,
+      "triangle_internal_seed": "unknown"
+    },
+    "provenance_member_hashes": {
+      "metadata.json": "d83fe5ad5010ce5319654e8d090b0b807bcbbadcb159024d54614ada8a535d77",
+      "runtime-provenance.json": "e146fe61d49c3b07a6ef67dd01510eaa2c952e6368b73591fca4c6ab5484550d",
+      "rng-before.mat": "a295d60173c9de2e443187d7e4be31f9d816d4930eb4a43bfc0eaf939c2000c9"
+    },
+    "figure": {
+      "archive_member": "figures/StressbalanceSolution_Vel.png",
+      "saved_file": "figures/issm-autoconfig-final-velocity.png",
+      "bytes": 87143,
+      "sha256": "a05b4d0a03e78ecd404dbe7adaf9c7453140e9fc69c6b7c8b55e525f71dfe761",
+      "native_png_unchanged": true,
+      "visual_privacy_review": "Opened exact native PNG locally; scientific x/y axes, stressbalance velocity field and colorbar only; no identity, private path, license or credential text."
+    },
+    "timing_receipt": "timing-and-override-receipt.json",
+    "repeat_reproducibility_claim": false,
+    "accuracy_claim": false,
+    "network_or_solver_executed": false,
+    "raw_model_or_rng_exported": false
+  },
+  "canonical_runme_binding": {
+    "actual_runme_sha256": "c75f5ebc0e02e3dcd23bdefefed4a9496801e440629e9490138f0e33c41b73c0",
+    "single_override_hook_removed_for_comparison": true,
+    "stripped_runme_sha256": "ba33248542d76c0fd4d7c2430d4ab015572c7188560640d31c9157686c9c82b1",
+    "matches_declared_canonical_runme": true,
+    "source_requests_np2": true,
+    "raw_source_exported": false,
+    "aws_operations": false
+  },
+  "configured_parameter": {
+    "key": "stressbalance.maxiter",
+    "default": 100,
+    "applied": 120,
+    "requested_MPI_processes": 2
+  },
+  "canonical_reference_files": [
+    {
+      "submitted_path": "DomainOutline.exp",
+      "sha256": "3093d41076be127884136aded8a906f9ddd97dec250c7db67ab2fac8c01f7b30",
+      "known_paths": [
+        "existing-native-inputs/canonical/issm/SquareIceShelf/DomainOutline.exp"
+      ]
+    },
+    {
+      "submitted_path": "Front.exp",
+      "sha256": "275790e3caf22144d05b41f768bb2cb362b651d8092de10bc1fc61a621bd515a",
+      "known_paths": [
+        "existing-native-inputs/canonical/issm/SquareIceShelf/Front.exp"
+      ]
+    },
+    {
+      "submitted_path": "Square.par",
+      "sha256": "fb5bad3dfbe1dd25d7fbf1e0050dd8ce205037a92c6cbd6d3e31a5e800713f28",
+      "known_paths": [
+        "existing-native-inputs/canonical/issm/SquareIceShelf/Square.par"
+      ]
+    },
+    {
+      "submitted_path": "runme.m",
+      "sha256": "ba33248542d76c0fd4d7c2430d4ab015572c7188560640d31c9157686c9c82b1",
+      "known_paths": [
+        "existing-native-inputs/canonical/issm/SquareIceShelf/runme.m"
+      ]
+    }
+  ],
+  "reference_source_packet": {
+    "file": "basic-issm-matched-source.zip",
+    "sha256": "bf2e6a47af8b17b1d6b6cd1c9add900ffaba61905e8176095b8c54adca8607fc",
+    "bytes": 2145,
+    "scientific_files": 4,
+    "source": "Already-public copied canonical files, independently byte-matched to actual submitted hashes; no raw private export."
+  },
+  "image_digest": "sha256:d68d88dcb7047f29d6e277a45710f50f1bf3023566e0472f07a7dd75ffbcd170",
+  "timings": {
+    "submitted_utc": "2026-11-19T04:57:40.706Z",
+    "started_utc": "2026-11-19T05:01:13.423Z",
+    "stopped_utc": "2026-11-19T05:01:54.792Z",
+    "startup_seconds": 212.717,
+    "batch_runtime_seconds": 41.369,
+    "total_elapsed_seconds": 254.086
+  },
+  "source_scope": "Canonical reference files remain publicly downloadable; actual submitted runme adds the one reviewed before-solve override hook. Raw private execution wrappers are not exported."
+}

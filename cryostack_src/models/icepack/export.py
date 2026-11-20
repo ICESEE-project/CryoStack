@@ -36,6 +36,132 @@ RUNNER_MODULE_NAME = "cryostack_icepack_runner.py"
 #:     never guesses a field).
 #: Steps 1, 3 and 4 are all non-fatal: a good science run is never turned
 #: into a failed one by figure capture or export.
+_PROVENANCE_SOURCE = r'''
+def _capture_runtime_provenance(run_dir, phase):
+    """Best-effort observation only: never import a scientific/RNG package."""
+    try:
+        # Only observe random generators that the existing runtime loaded.
+        # Importing a new RNG here would change its initialization point.
+        states = {}
+        rng = {}
+        if phase == "before":
+            py_random = sys.modules.get("random")
+            np_random = sys.modules.get("numpy.random")
+            if py_random is not None and callable(getattr(py_random, "getstate", None)):
+                states["python_random"] = py_random.getstate()
+                rng["python_global"] = {"captured": True, "seed": None,
+                    "seed_status": "not inferable from current state", "state_member": "python_random"}
+            else:
+                rng["python_global"] = {"captured": False, "reason": "not loaded before science"}
+            if np_random is not None and callable(getattr(np_random, "get_state", None)):
+                value = np_random.get_state()
+                states["numpy_random"] = {"algorithm": value[0], "keys": value[1].tolist(),
+                    "position": int(value[2]), "has_gauss": int(value[3]), "cached_gaussian": float(value[4])}
+                rng["numpy_global"] = {"captured": True, "algorithm": value[0], "seed": None,
+                    "seed_status": "not inferable from current state", "state_member": "numpy_random"}
+            else:
+                rng["numpy_global"] = {"captured": False, "reason": "not loaded before science"}
+        import hashlib
+        import platform
+        import re
+        from datetime import datetime, timezone
+        output = os.path.join(run_dir, "outputs")
+        os.makedirs(output, exist_ok=True)
+        path = os.path.join(output, "runtime-provenance.json")
+        report = {}
+        if phase != "before":
+            try:
+                with open(path, encoding="utf-8") as stream:
+                    report = json.load(stream)
+            except Exception:
+                pass
+        report.update(schema="cryostack.runtime-provenance.v1", model="icepack",
+                      architecture=platform.machine(),
+                      capture_time_utc=datetime.now(timezone.utc).isoformat(), phase=phase)
+        report[phase + "_capture_time_utc"] = report["capture_time_utc"]
+        versions = {"python": {"value": platform.python_version(), "source": "running Python interpreter"}}
+        discovered = None
+        for name in ("numpy", "h5py", "firedrake", "icepack", "petsc4py", "mpi4py"):
+            module = sys.modules.get(name)
+            value = getattr(module, "__version__", None) if module is not None else None
+            if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+!~\-]{0,160}", value):
+                versions[name] = {"value": value, "source": "loaded module __version__"}
+                continue
+            # Use the runtime's discovered package-to-distribution mapping;
+            # never invent a distribution name for an unavailable module.
+            if discovered is None:
+                discovered = {}
+                if phase != "before":
+                    try:
+                        from importlib import metadata
+                        discovered = metadata.packages_distributions()
+                    except Exception:
+                        pass
+            distributions = {}
+            for distribution in discovered.get(name, ()):
+                try:
+                    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", distribution):
+                        continue
+                    value = metadata.version(distribution)
+                    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+!~\-]{0,160}", value):
+                        distributions[distribution] = value
+                except Exception:
+                    pass
+            versions[name] = {"value": None, "source": "module version unavailable",
+                "module_loaded": module is not None, "installed_distributions": distributions,
+                "distribution_source": "runtime packages_distributions mapping"}
+        petsc = sys.modules.get("petsc4py.PETSc")
+        if petsc is not None:
+            try:
+                versions["petsc_library"] = {"value": list(petsc.Sys.getVersion()), "source": "PETSc.Sys.getVersion()"}
+            except Exception:
+                pass
+        versions.setdefault("petsc_library", {"value": None, "source": "library not observed"})
+        mpi = sys.modules.get("mpi4py.MPI")
+        process = {"requested_processes": None, "requested_source": "not separately supplied to runner",
+                   "observed_world_size": None, "observed_rank": None, "source": "MPI module not loaded"}
+        if mpi is not None:
+            try:
+                process.update(observed_world_size=int(mpi.COMM_WORLD.Get_size()),
+                               observed_rank=int(mpi.COMM_WORLD.Get_rank()), source="running MPI.COMM_WORLD")
+                versions["mpi_standard"] = {"value": list(mpi.Get_version()), "source": "MPI.Get_version()"}
+                raw = mpi.Get_library_version()
+                match = re.search(r"(Open MPI|MPICH|Intel\(R\) MPI|Microsoft MPI)[^0-9\n]*([0-9]+(?:\.[0-9]+){1,3})", raw)
+                versions["mpi_library"] = {"value": (match.group(1)+" "+match.group(2)) if match else None,
+                    "source": "MPI.Get_library_version() vendor/version only; raw text excluded"}
+            except Exception:
+                pass
+        versions.setdefault("mpi_standard", {"value": None, "source": "library not observed"})
+        versions.setdefault("mpi_library", {"value": None, "source": "library version not observed"})
+        report["versions"] = versions
+        report["mpi"] = process
+        report["threads"] = {name: (os.environ[name] if re.fullmatch(r"[0-9]+(?:,[0-9]+)*", os.environ.get(name, ""))
+                            and len(os.environ[name]) <= 64 else "unset or nonnumeric; value not recorded")
+            for name in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS")}
+        report["observed_thread_counts"] = {"value": None, "source": "not measured; environment requests only"}
+        if phase == "before":
+            report["before_versions"] = dict(versions)
+            report["before_threads"] = dict(report["threads"])
+            rng_path = os.path.join(output, "rng-before.json")
+            body = (json.dumps(states, sort_keys=True, separators=(",", ":"))+"\n").encode()
+            with open(rng_path, "wb") as stream:
+                stream.write(body)
+            report["rng"] = {"global_states": rng, "artifact": "rng-before.json",
+                "sha256": hashlib.sha256(body).hexdigest(), "state_reset_or_advanced_by_capture": False,
+                "unobserved": ["script-owned generators", "Triangle internal RNG", "other solver-library generators"]}
+        with open(path, "w", encoding="utf-8") as stream:
+            json.dump(report, stream, indent=2, sort_keys=True)
+            stream.write("\n")
+        # Public, bounded summary only: no RNG values, paths or environment dump.
+        print("[cryostack][runtime-provenance] " + json.dumps({
+            "schema": report["schema"], "model": report["model"], "phase": phase,
+            "versions": versions, "threads": report["threads"], "mpi": process,
+            "artifact": "outputs/runtime-provenance.json"}, sort_keys=True), flush=True)
+    except Exception as error:
+        print("[cryostack][warn] runtime provenance unavailable: " + type(error).__name__, flush=True)
+
+'''
+
 _RUNNER_SOURCE = '''# cryostack-icepack-runner (auto-generated -- do not edit)
 import json
 import os
@@ -72,8 +198,13 @@ try:
 except Exception:
     _plt = None
 
+# __CRYOSTACK_RUNTIME_PROVENANCE_FUNCTIONS__
 sys.path.insert(0, run_dir)
-_ns = runpy.run_path(script, run_name="__main__")   # science: errors propagate
+_capture_runtime_provenance(run_dir, "before")
+try:
+    _ns = runpy.run_path(script, run_name="__main__")   # science: errors propagate
+finally:
+    _capture_runtime_provenance(run_dir, "after")
 
 # Persist any still-open figures the script drew but never saved, and record
 # each figure's OWN metadata -- explicit figure label, suptitle, axes title,
@@ -175,7 +306,7 @@ def export_module_source() -> str:
 
 def runner_module_source() -> str:
     """Text for ``<run_dir>/cryostack_icepack_runner.py``."""
-    return _RUNNER_SOURCE
+    return _RUNNER_SOURCE.replace("# __CRYOSTACK_RUNTIME_PROVENANCE_FUNCTIONS__", _PROVENANCE_SOURCE)
 
 
 def run_command(*, script: str, run_dir: str) -> str:

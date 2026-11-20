@@ -42,7 +42,9 @@ never writes credentials, local user paths or a MATLAB license value.
 from __future__ import annotations
 
 import json
+import os
 import re
+import stat
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -100,6 +102,39 @@ def _local_dir(source) -> Path:
 _RUN_PREFIX_RE = re.compile(r"\A(?:[A-Za-z0-9][A-Za-z0-9._-]{0,63}/)*\Z")
 
 
+def _validate_staged_inputs(local: Path, target: str) -> None:
+    """Fail before transfer on escaped targets, special files or empty code.
+
+    Do not parse Python with the web server's interpreter: scientific images
+    may legitimately use a different Python version. No model code executes.
+    """
+    name = Path(target)
+    if name.is_absolute() or "\\" in target or ".." in name.parts:
+        raise CloudStagingError("run target must be a relative path inside the staged example")
+    if not target or not (local / target).is_file():
+        raise CloudStagingError(f"run target {target!r} is not present in the staged run directory")
+    try:
+        def unreadable(error):
+            raise error
+
+        for parent, directories, files in os.walk(local, followlinks=False, onerror=unreadable):
+            for entry in directories + files:
+                mode = (Path(parent) / entry).lstat().st_mode
+                if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+                    raise CloudStagingError(
+                        "staged inputs contain a symbolic link or special file; "
+                        "copy ordinary input files into the example before launching")
+        # Read incrementally so even an oversized whitespace-only script does
+        # not allocate its entire contents in the shared web process.
+        with (local / target).open("rb") as script:
+            while chunk := script.read(65536):
+                if chunk.strip():
+                    return
+        raise CloudStagingError("run target is empty; save a nonempty script before launching")
+    except OSError:
+        raise CloudStagingError("could not read staged inputs; check file permissions") from None
+
+
 def stage_run_inputs(
     config: AWSConfig,
     *,
@@ -131,9 +166,7 @@ def stage_run_inputs(
 
     local = _local_dir(source)
     target = (run_target or "").strip()
-    if not target or (local / target).is_file() is False:
-        raise CloudStagingError(
-            f"run target {run_target!r} is not present in the staged run directory")
+    _validate_staged_inputs(local, target)
 
     run_id = (run_id or _mint_run_id()).strip()
     if not _RUN_ID_RE.match(run_id):
@@ -152,20 +185,21 @@ def stage_run_inputs(
     staged_files = sorted(
         str(p.relative_to(local)) for p in local.rglob("*") if p.is_file())
 
+    # Validate the runtime contract before transferring any participant bytes.
+    descriptor = build_run_descriptor(
+        model=model, run_target=target, working_directory=working_directory)
+    if not descriptor_is_clean(descriptor):
+        raise CloudStagingError("execution descriptor failed its no-secrets check")
+
     # 1. the staged tree, verbatim
     code, out, err = invoke(
-        ["s3", "sync", f"{local}/", f"{s3_input}/", "--only-show-errors"])
+        ["s3", "sync", f"{local}/", f"{s3_input}/", "--only-show-errors", "--no-follow-symlinks"])
     if code != 0:
         raise CloudStagingError(
             (err or out).strip()
             or f"failed to upload the staged run to {s3_input}/")
 
     # 2. the execution descriptor (inputs only -- no paths, no secrets)
-    descriptor = build_run_descriptor(
-        model=model, run_target=target, working_directory=working_directory)
-    if not descriptor_is_clean(descriptor):
-        raise CloudStagingError("execution descriptor failed its no-secrets check")
-
     with tempfile.NamedTemporaryFile(
         "w", suffix=".json", delete=False, encoding="utf-8"
     ) as handle:

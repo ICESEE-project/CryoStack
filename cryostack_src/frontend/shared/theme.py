@@ -505,6 +505,17 @@ CRYOSTACK_FRONTEND_CSS = r"""
     border-radius: 6px;
 }
 
+/* Fit structured and native result figures inside the available viewer. */
+.cryostack-results-viewer img {
+    display: block;
+    max-width: 100%;
+    width: auto;
+    height: auto;
+    max-height: min(65vh, calc(var(--cryostack-workspace-viewer-max-height, 65vh) - 24px));
+    object-fit: contain;
+    margin-inline: auto;
+}
+
 /* "Jump to latest" -- shown only while the user has scrolled up from the tail;
    sticks to the bottom-right of the Run Log viewer. */
 .cryostack-tail-jump {

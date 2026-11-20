@@ -19,18 +19,24 @@ from pathlib import Path
 
 #: derived by scripts/build_brand_assets.py from the canonical cryostack.png
 _MARK_PATH = Path(__file__).resolve().parent / "assets" / "cryostack-mark-96.png"
+#: the trimmed full logo (mark + wordmark) shown in the application header
+_LOGO_PATH = Path(__file__).resolve().parent / "assets" / "cryostack-logo-112.png"
 
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=2)
+def _data_uri(path: Path) -> str:
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return ""
+    return "data:image/png;base64," + base64.b64encode(raw).decode("ascii")
+
+
 def cryostack_mark_data_uri() -> str:
     """base64 ``data:`` URI for the canonical CryoStack mark, or ``""`` when
     unavailable. Computed once per process (the mark never changes at runtime).
     """
-    try:
-        raw = _MARK_PATH.read_bytes()
-    except OSError:
-        return ""
-    return "data:image/png;base64," + base64.b64encode(raw).decode("ascii")
+    return _data_uri(_MARK_PATH)
 
 
 # backwards-compatible alias (used by bin/icesee_app.py's warm-up page)
@@ -38,10 +44,10 @@ _mark_data_uri = cryostack_mark_data_uri
 
 
 def cryostack_mark_img(*, css_class: str = "cryostack-app-mark", alt: str = "CryoStack") -> str:
-    """An ``<img>`` for the CryoStack mark, or a ``❄`` fallback span carrying
+    """An ``<img>`` for the CryoStack logo, or a ``❄`` fallback span carrying
     the same class, for embedding in the application navigation header."""
     alt = html.escape(alt)
-    uri = cryostack_mark_data_uri()
+    uri = _data_uri(_LOGO_PATH) or cryostack_mark_data_uri()
     if uri:
         return f'<img class="{css_class}" src="{uri}" alt="{alt}" />'
     return f'<span class="{css_class} {css_class}--fallback" aria-hidden="true">❄</span>'

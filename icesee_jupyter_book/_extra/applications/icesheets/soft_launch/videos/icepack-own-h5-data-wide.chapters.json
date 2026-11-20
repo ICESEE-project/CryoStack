@@ -1,0 +1,477 @@
+{
+  "video_sha256": "f38fd5276bcc1f6ba67cbd8b19b309f54f631930db08af9c9839eee8f4cb09c9",
+  "duration_seconds": 251.0,
+  "chapters": [
+    {
+      "id": "goal",
+      "step": "Goal",
+      "start_seconds": 0,
+      "end_seconds": 10.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Run Icepack from your HDF5 fields, then save the results.",
+      "screenWhy": "Keep the source inputs, inspect native fields, and save a complete result package.",
+      "expectedResult": "Have run.py, initial_fields.py and icepack-shelf-initial.h5 ready.",
+      "logical_step_id": "orientation",
+      "pause_after": false,
+      "title": "Your goal: initialize and run Icepack",
+      "instructions": [
+        "Run a synthetic shelf from your own gridded fields, then save the initial/final maps and native results.",
+        "Download run.py, initial_fields.py and icepack-shelf-initial.h5 from this tutorial page."
+      ],
+      "note": "Start with your approved cloud account already connected and its cloud resources prepared.",
+      "why": "Keep the source inputs, inspect native fields, and save a complete result package."
+    },
+    {
+      "id": "start",
+      "step": "Start",
+      "start_seconds": 10.0,
+      "end_seconds": 20.0,
+      "where": "Mode and Experiment",
+      "screenText": "Start here in CryoLauncher. Choose Cloud for this tutorial.",
+      "screenWhy": "An owned example keeps scripts, dataset references and results together.",
+      "expectedResult": "Your workspace keeps scripts, datasets, run history and results together.",
+      "logical_step_id": "orientation",
+      "pause_after": false,
+      "title": "Start here",
+      "instructions": [
+        "Open CryoLauncher and sign in. Use an approved connected cloud account with its resources prepared.",
+        "The following steps select this tutorial\u2019s model and example."
+      ],
+      "note": "Shared application orientation; the case-specific configuration follows.",
+      "why": "An owned example keeps scripts, dataset references and results together."
+    },
+    {
+      "id": "mode",
+      "step": 1,
+      "start_seconds": 20.0,
+      "end_seconds": 29.0,
+      "where": "Mode and Experiment",
+      "screenText": "Choose Cloud \u2192 Advanced.",
+      "screenWhy": "Cloud uses your connected account; Advanced enables your owned scripts and datasets.",
+      "expectedResult": "Use the editable workspace for your own scripts and datasets.",
+      "logical_step_id": "step-1",
+      "pause_after": true,
+      "title": "1. Open the cloud workspace",
+      "instructions": [
+        "Choose Cloud \u2192 Advanced \u2192 Icepack.",
+        "You will create a separate workspace example for this HDF5 run."
+      ],
+      "note": "Keep the three supplied tutorial files together on your computer.",
+      "why": "Cloud uses your connected account; Advanced enables your owned scripts and datasets."
+    },
+    {
+      "id": "case",
+      "step": 1,
+      "start_seconds": 29.0,
+      "end_seconds": 39.0,
+      "where": "Mode and Experiment",
+      "screenText": "Choose Icepack. Next, create a new workspace example.",
+      "screenWhy": "The selected example controls the source files and dataset references used for launch.",
+      "expectedResult": "The next step gives your HDF5 run a separate name.",
+      "logical_step_id": "step-1",
+      "pause_after": true,
+      "title": "1. Open the cloud workspace",
+      "instructions": [
+        "Choose Icepack as the model.",
+        "Next, create a new owned workspace example with a separate name for this HDF5 run."
+      ],
+      "note": "Keep the three supplied tutorial files together on your computer.",
+      "why": "The selected example controls the source files and dataset references used for launch."
+    },
+    {
+      "id": "new-example",
+      "step": 2,
+      "start_seconds": 39.0,
+      "end_seconds": 51.0,
+      "where": "Workspace \u2192 Editor",
+      "screenText": "Enter a new name and choose New example.",
+      "screenWhy": "An owned workspace separates your files from the supplied application example.",
+      "expectedResult": "Wait for the created-workspace message and empty file list.",
+      "logical_step_id": "step-2",
+      "pause_after": true,
+      "title": "2. Create your own example",
+      "instructions": [
+        "Enter a new name, then choose New example.",
+        "The new example has an empty file list, ready for your Python files."
+      ],
+      "note": "The recorded example is pilot-icepack-h5-1118.",
+      "why": "An owned workspace separates your files from the supplied application example."
+    },
+    {
+      "id": "choose-scripts",
+      "step": 3,
+      "start_seconds": 51.0,
+      "end_seconds": 61.0,
+      "where": "Workspace \u2192 Editor",
+      "screenText": "Choose run.py and initial_fields.py in your file picker; Open.",
+      "screenWhy": "Selection picks local files; importing is the step that saves them in this example.",
+      "expectedResult": "Check that two script files are selected.",
+      "logical_step_id": "step-3",
+      "pause_after": true,
+      "title": "3. Select both Python files",
+      "instructions": [
+        "Choose script files. In your file picker, select run.py and initial_fields.py, then choose Open.",
+        "Check that the button now shows two selected files."
+      ],
+      "note": "You will import both files into the same workspace example.",
+      "why": "Selection picks local files; importing is the step that saves them in this example."
+    },
+    {
+      "id": "import-cue",
+      "step": 4,
+      "start_seconds": 61.0,
+      "end_seconds": 70.0,
+      "where": "Workspace \u2192 Editor",
+      "screenText": "Choose Import script files.",
+      "screenWhy": "Import saves the selected source files; it does not submit a model run.",
+      "expectedResult": "Enable Replace existing script files if run.py already exists.",
+      "logical_step_id": "step-4",
+      "pause_after": true,
+      "title": "4. Import the selected scripts",
+      "instructions": [
+        "Choose Import script files."
+      ],
+      "note": "If your example already contains run.py, enable Replace existing script files first.",
+      "why": "Import saves the selected source files; it does not submit a model run."
+    },
+    {
+      "id": "import",
+      "step": 4,
+      "start_seconds": 70.0,
+      "end_seconds": 80.0,
+      "where": "Workspace \u2192 Editor",
+      "screenText": "Check the imported filenames and saved status.",
+      "screenWhy": "Import saves the selected source files; it does not submit a model run.",
+      "expectedResult": "Expected: Imported run.py, initial_fields.py. Files are saved.",
+      "logical_step_id": "step-4",
+      "pause_after": true,
+      "title": "4. Check both saved filenames",
+      "instructions": [
+        "Wait for Imported run.py, initial_fields.py. Files are saved.",
+        "The file selector now contains run.py; the import confirmation lists both imported files."
+      ],
+      "note": "For seeded or existing files, use Replace existing script files before importing.",
+      "why": "Import saves the selected source files; it does not submit a model run."
+    },
+    {
+      "id": "target",
+      "step": 5,
+      "start_seconds": 80.0,
+      "end_seconds": 90.0,
+      "where": "Experiment \u2192 Run target",
+      "screenText": "Set the Run target to run.py.",
+      "screenWhy": "Run target selects the entry script; other imported files can act as helpers.",
+      "expectedResult": "The script calls initial_fields.py to read and validate your HDF5 input.",
+      "logical_step_id": "step-5",
+      "pause_after": true,
+      "title": "5. Use run.py as the entry point",
+      "instructions": [
+        "Set Run target to run.py.",
+        "This script calls initial_fields.py to validate and read your HDF5 input."
+      ],
+      "note": "Importing files saves them; launching is a separate step.",
+      "why": "Run target selects the entry script; other imported files can act as helpers."
+    },
+    {
+      "id": "choose-data",
+      "step": 6,
+      "start_seconds": 90.0,
+      "end_seconds": 101.0,
+      "where": "Environment \u2192 Datasets",
+      "screenText": "Choose data files; select icepack-shelf-initial.h5, then Open.",
+      "screenWhy": "Selecting a file prepares it for upload; it is not in the dataset registry yet.",
+      "expectedResult": "Check that one data file is selected.",
+      "logical_step_id": "step-6",
+      "pause_after": true,
+      "title": "6. Choose your HDF5 input",
+      "instructions": [
+        "In Datasets choose Choose data files.",
+        "In your file picker select icepack-shelf-initial.h5 and choose Open. Check that one file is selected."
+      ],
+      "note": "Next, upload the selected file into your workspace.",
+      "why": "Selecting a file prepares it for upload; it is not in the dataset registry yet."
+    },
+    {
+      "id": "upload",
+      "step": 7,
+      "start_seconds": 101.0,
+      "end_seconds": 112.0,
+      "where": "Environment \u2192 Datasets",
+      "screenText": "Choose Upload; wait for the HDF5 filename.",
+      "screenWhy": "Upload stores the dataset; the script must read its fields to initialize the model.",
+      "expectedResult": "Expected: Uploaded: icepack-shelf-initial.h5.",
+      "logical_step_id": "step-7",
+      "pause_after": true,
+      "title": "7. Upload the selected data file",
+      "instructions": [
+        "Choose Upload. Wait for Uploaded: icepack-shelf-initial.h5.",
+        "Check that the new HDF5 filename appears in your dataset list."
+      ],
+      "note": "The supplied file contains full thickness, base, surface, vx, vy and floating-mask grids.",
+      "why": "Upload stores the dataset; the script must read its fields to initialize the model."
+    },
+    {
+      "id": "reference-cue",
+      "step": 8,
+      "start_seconds": 112.0,
+      "end_seconds": 121.0,
+      "where": "Environment \u2192 Datasets",
+      "screenText": "Select the HDF5 dataset and choose Reference in example.",
+      "screenWhy": "A reference stages the chosen dataset under data/ when this example launches.",
+      "expectedResult": "Use icepack-shelf-initial.h5 as the reference alias.",
+      "logical_step_id": "step-8",
+      "pause_after": true,
+      "title": "8. Reference the file in this example",
+      "instructions": [
+        "Select icepack-shelf-initial.h5. Keep that filename as the reference alias, then choose Reference in example."
+      ],
+      "note": "Your script will read data/icepack-shelf-initial.h5.",
+      "why": "A reference stages the chosen dataset under data/ when this example launches."
+    },
+    {
+      "id": "reference",
+      "step": 8,
+      "start_seconds": 121.0,
+      "end_seconds": 131.0,
+      "where": "Environment \u2192 Datasets",
+      "screenText": "Confirm the reference saved in this example.",
+      "screenWhy": "A reference stages the chosen dataset under data/ when this example launches.",
+      "expectedResult": "Your script will read data/icepack-shelf-initial.h5.",
+      "logical_step_id": "step-8",
+      "pause_after": true,
+      "title": "8. Confirm the staged data path",
+      "instructions": [
+        "Read the reference confirmation: data/icepack-shelf-initial.h5.",
+        "When you launch, CryoLauncher copies the selected dataset into that path for run.py to read."
+      ],
+      "note": "The reference is attached to your current workspace example.",
+      "why": "A reference stages the chosen dataset under data/ when this example launches."
+    },
+    {
+      "id": "review",
+      "step": 9,
+      "start_seconds": 131.0,
+      "end_seconds": 140.0,
+      "where": "Environment \u2192 Review & Launch",
+      "screenText": "Choose Review & Launch.",
+      "screenWhy": "Review is the checkpoint for the selected case, inputs, resources and charges.",
+      "expectedResult": "Review the model, example and run target before submitting.",
+      "logical_step_id": "step-9",
+      "pause_after": true,
+      "title": "9. Review your configuration",
+      "instructions": [
+        "Choose Review & Launch.",
+        "Before submitting, check that the summary names your intended model and workspace example."
+      ],
+      "note": "Review the current settings before you launch.",
+      "why": "Review is the checkpoint for the selected case, inputs, resources and charges."
+    },
+    {
+      "id": "review-case",
+      "step": 9,
+      "start_seconds": 140.0,
+      "end_seconds": 149.0,
+      "where": "Environment \u2192 Review & Launch",
+      "screenText": "Confirm ICEPACK and pilot-icepack-h5-1118.",
+      "screenWhy": "Confirm the intended model and owned example before submitting the run.",
+      "expectedResult": "Keep run.py as the entry point with the HDF5 reference attached.",
+      "logical_step_id": "step-9",
+      "pause_after": true,
+      "title": "9. Check the HDF5 run summary",
+      "instructions": [
+        "Check Model: ICEPACK and Example: pilot-icepack-h5-1118.",
+        "Keep run.py as the entry point, with the referenced HDF5 input attached."
+      ],
+      "note": "This native run used 2 vCPU and 8 GiB.",
+      "why": "Confirm the intended model and owned example before submitting the run."
+    },
+    {
+      "id": "launch-guide",
+      "step": 9,
+      "start_seconds": 149.0,
+      "end_seconds": 159.0,
+      "where": "Environment \u2192 Review & Launch",
+      "screenText": "Control guide: choose Launch cloud run when checks are Ready.",
+      "screenWhy": "Confirmation starts a paid cloud run using the reviewed configuration.",
+      "expectedResult": "The following card belongs to this tutorial\u2019s original native run.",
+      "logical_step_id": "step-9",
+      "pause_after": true,
+      "title": "9. Launch when the checks are ready",
+      "instructions": [
+        "Choose Launch cloud run when the readiness checks are ready."
+      ],
+      "note": "Control guide; the original accepted HDF5 run follows.",
+      "why": "Confirmation starts a paid cloud run using the reviewed configuration."
+    },
+    {
+      "id": "queued",
+      "step": 9,
+      "start_seconds": 159.0,
+      "end_seconds": 168.0,
+      "where": "Cloud run status",
+      "screenText": "Follow your new HDF5 run card.",
+      "screenWhy": "Submission, queue/startup and native model execution are separate stages.",
+      "expectedResult": "Wait for completion; opening another tab does not cancel the job.",
+      "logical_step_id": "step-9",
+      "pause_after": true,
+      "title": "9. Follow the new run card",
+      "instructions": [
+        "Your HDF5 run now has its own Cloud Run card.",
+        "Wait for the job to finish; opening another tab does not cancel it."
+      ],
+      "note": "This run used 2 vCPU and 8 GiB. Queue/startup and model timings are reported separately.",
+      "why": "Submission, queue/startup and native model execution are separate stages."
+    },
+    {
+      "id": "completed",
+      "step": 10,
+      "start_seconds": 168.0,
+      "end_seconds": 178.0,
+      "where": "Cloud run status",
+      "screenText": "When the job shows Completed, open View results.",
+      "screenWhy": "Completion lets you retrieve and inspect this run\u2019s saved native output.",
+      "expectedResult": "This script runs one 0.01-year step with zero accumulation.",
+      "logical_step_id": "step-10",
+      "pause_after": true,
+      "title": "10. Open the completed results",
+      "instructions": [
+        "When the run shows Completed, open View results.",
+        "The native script performs one 0.01-year step with zero accumulation."
+      ],
+      "note": "Next, render and save the fields from this completed HDF5 run.",
+      "why": "Completion lets you retrieve and inspect this run\u2019s saved native output."
+    },
+    {
+      "id": "render-cue",
+      "step": 11,
+      "start_seconds": 178.0,
+      "end_seconds": 188.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Choose Render for the selected field.",
+      "screenWhy": "The solution, field name and units identify what you are about to view.",
+      "expectedResult": "You can inspect thickness or velocity after the native run finishes.",
+      "logical_step_id": "step-11",
+      "pause_after": true,
+      "title": "11. Render a native field",
+      "instructions": [
+        "Choose Render to draw the selected field."
+      ],
+      "note": "You can switch between thickness and velocity after the run finishes.",
+      "why": "The solution, field name and units identify what you are about to view."
+    },
+    {
+      "id": "render",
+      "step": 11,
+      "start_seconds": 188.0,
+      "end_seconds": 197.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Choose solution icepack, select a field, then Render.",
+      "screenWhy": "The solution, field name and units identify what you are viewing.",
+      "expectedResult": "Velocity is in metres/year; thickness is in metres.",
+      "logical_step_id": "step-11",
+      "pause_after": true,
+      "title": "11. Render a native field",
+      "instructions": [
+        "In Results choose solution icepack, choose velocity or thickness, then choose Render.",
+        "Use the field name and units to interpret the plot."
+      ],
+      "note": "Velocity is in metres/year; thickness is in metres.",
+      "why": "The solution, field name and units identify what you are viewing."
+    },
+    {
+      "id": "initial-fields",
+      "step": 12,
+      "start_seconds": 197.0,
+      "end_seconds": 209.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Open initial-conditions.png to inspect the initialized fields.",
+      "screenWhy": "The saved initial map lets you inspect what was sampled from the uploaded grid.",
+      "expectedResult": "The uploaded 5 \u00d7 9 grid was sampled at all 25 native mesh vertices.",
+      "logical_step_id": "step-12",
+      "pause_after": true,
+      "title": "12. Inspect the initialized fields",
+      "instructions": [
+        "Open initial-conditions.png in your saved results.",
+        "It shows thickness, surface and speed sampled from your uploaded grid onto the native mesh."
+      ],
+      "note": "The supplied grid has 5 \u00d7 9 points and covers a 10 km \u00d7 10 km synthetic shelf.",
+      "why": "The saved initial map lets you inspect what was sampled from the uploaded grid."
+    },
+    {
+      "id": "final-thickness",
+      "step": 13,
+      "start_seconds": 209.0,
+      "end_seconds": 220.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Open the final saved thickness map.",
+      "screenWhy": "Use the colour scale and units to interpret the solved native thickness.",
+      "expectedResult": "Final area-weighted mean: 403.649861 m; domain RMS speed: 133.908461 m/year.",
+      "logical_step_id": "step-13",
+      "pause_after": true,
+      "title": "13. Inspect the final thickness",
+      "instructions": [
+        "Open the final thickness figure and compare the colour scale with the initial map.",
+        "Final thickness is 300.022696\u2013499.980847 m; its area-weighted mean is 403.649861 m."
+      ],
+      "note": "The final domain RMS speed is 133.908461 m/year.",
+      "why": "Use the colour scale and units to interpret the solved native thickness."
+    },
+    {
+      "id": "download-cue",
+      "step": 14,
+      "start_seconds": 220.0,
+      "end_seconds": 228.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Choose Download results for this run.",
+      "screenWhy": "The archive keeps this run\u2019s numeric outputs, figures and provenance together.",
+      "expectedResult": "Wait for a fresh HTTPS download link.",
+      "logical_step_id": "step-14",
+      "pause_after": true,
+      "title": "14. Generate your download link",
+      "instructions": [
+        "Choose Download results.",
+        "Wait for a new HTTPS download link for the current run."
+      ],
+      "note": "Use the freshly generated link to save the ZIP.",
+      "why": "The archive keeps this run\u2019s numeric outputs, figures and provenance together."
+    },
+    {
+      "id": "download",
+      "step": 14,
+      "start_seconds": 228.0,
+      "end_seconds": 239.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Open the new HTTPS link and save your results ZIP.",
+      "screenWhy": "The archive keeps this run\u2019s numeric outputs, figures and provenance together.",
+      "expectedResult": "Keep all 12 archive members with your scripts and HDF5 input.",
+      "logical_step_id": "step-14",
+      "pause_after": true,
+      "title": "14. Keep the result archive",
+      "instructions": [
+        "Open the generated HTTPS link to save your results ZIP.",
+        "It contains the mesh, native fields, initial/final figures, metrics and runtime/RNG provenance."
+      ],
+      "note": "Keep this 12-member archive and its manifest with your input files.",
+      "why": "The archive keeps this run\u2019s numeric outputs, figures and provenance together."
+    },
+    {
+      "id": "scope",
+      "step": "Keep",
+      "start_seconds": 239.0,
+      "end_seconds": 251.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Keep the inputs, figures, native fields and run provenance together.",
+      "screenWhy": "Keep the scientific qualifications and provenance with the accepted result.",
+      "expectedResult": "Initial-field interpolation matched independently at every native node.",
+      "logical_step_id": "step-Keep",
+      "pause_after": true,
+      "title": "What this completed example establishes",
+      "instructions": [
+        "The five initialized fields matched an independent interpolation at all 25 native nodes; the mesh has 32 triangles.",
+        "These portable CG1 fields are numeric results, rather than a Firedrake checkpoint. This example is not an independent native repeat or an accuracy assessment."
+      ],
+      "note": "Submission \u2192 Batch start: 214.703 s; task: 46.352 s; script: 16.9818 s. Long waits are shortened in the video.",
+      "why": "Keep the scientific qualifications and provenance with the accepted result."
+    }
+  ]
+}

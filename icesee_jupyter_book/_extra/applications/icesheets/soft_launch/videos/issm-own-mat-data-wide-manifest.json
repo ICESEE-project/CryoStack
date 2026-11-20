@@ -1,0 +1,35 @@
+{
+  "schema": "cryostack.tutorial-publish-assets.v1",
+  "title": "ISSM: initialize from MAT fields",
+  "video_sha256": "b3c15d9289f5ee146dbb72aa33114b3219baee1dbf2f5cd32223aa4abf3471e4",
+  "duration_seconds": 263,
+  "silent": true,
+  "logical_chapter_count": 13,
+  "max_source_pixel_scale": 1.6,
+  "scientific_figures_aspect_preserved": true,
+  "native_evidence_reference": "issm-own-mat-manifest.json",
+  "cached_results_scope": "Same completed accepted MAT run; all15cached archive members match original bytes. No native rerun.",
+  "visual_review": "accepted",
+  "privacy": {
+    "sampled_frames": 88,
+    "unresolved_findings": 0
+  },
+  "files": {
+    "issm-own-mat-data-wide.chapters.json": {
+      "bytes": 17880,
+      "sha256": "21242bc223248e2b284ca087a3112c5c1b5c1aa16c9f57a8c80d12346edaba93"
+    },
+    "issm-own-mat-data-wide.mp4": {
+      "bytes": 3514918,
+      "sha256": "b3c15d9289f5ee146dbb72aa33114b3219baee1dbf2f5cd32223aa4abf3471e4"
+    },
+    "issm-own-mat-data-wide.poster.jpg": {
+      "bytes": 96033,
+      "sha256": "d2b360364ad511aac5c40eb55c60c863734917380457c77413abb580c8aef71a"
+    },
+    "issm-own-mat-data-wide.vtt": {
+      "bytes": 4332,
+      "sha256": "88bc6a8dbee281190a4ca660b4cccbcb37fa971f650b198f0d8cf855cbe435a9"
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "status": "accepted_for_publication",
+  "recorded_date": "2026-11-18",
+  "application_url": "https://cryostack.eas.gatech.edu/cryolauncher/",
+  "files": [
+    {
+      "path": "issm-basic.mp4",
+      "bytes": 2784960,
+      "sha256": "a20c3d22387562f578210094e7baddd44997353b7b3609160b83b3e7bcd97a37",
+      "duration_seconds": 160.0,
+      "width": 1920,
+      "height": 1080,
+      "audio": false
+    },
+    {
+      "path": "issm-basic.vtt",
+      "bytes": 2679,
+      "sha256": "319c443646bebb76386c2f346be20d814ef3a5697ac3e595634fdb42408faa20"
+    },
+    {
+      "path": "matlab-license-setup.mp4",
+      "bytes": 3379024,
+      "sha256": "733cdadb7bdcccc34a612f296cb640a6ce38d3f6768e00fcc071063e42f87e73",
+      "duration_seconds": 158.0,
+      "width": 1920,
+      "height": 1080,
+      "audio": false
+    },
+    {
+      "path": "matlab-license-setup.vtt",
+      "bytes": 2961,
+      "sha256": "ef32d2dd41c2cd81eeb59efd6cef7cbf05b361400f055d083f1d171d4866a94f"
+    },
+    {
+      "path": "issm-basic-velocity.png",
+      "bytes": 87143,
+      "sha256": "a05b4d0a03e78ecd404dbe7adaf9c7453140e9fc69c6b7c8b55e525f71dfe761",
+      "source": "Exact figure member from the accepted browser-downloaded result ZIP; no replot"
+    }
+  ],
+  "editing": "Real recorded application frames are cropped for privacy and held for reading. Idle intervals are shortened. The full velocity map is separately labelled as an actual downloaded archive figure.",
+  "matlab_license_demonstration": "Existing saved license reattachment; no claim of new secret creation or value overwrite. Optional reset steps, external Connector code entry and VPN setup are explained but not recorded. Actual successful native checkout/result evidence follows.",
+  "verification": {
+    "basic_native_exit_code": 0,
+    "native_runtime": "MATLAB R2024b Update 7; ISSM 2026.1",
+    "archive_members": 11,
+    "archive_crc_valid": true,
+    "archive_sha256": "be5223513d0b5374baddbe1f9624e18fc6e420cabe5f5c88991fbd897fbd8c52",
+    "scientific_comparison": "Four physical fields and mesh match the declared reference exactly; convergence count 23",
+    "sampled_privacy_check": "53 frames per final video sampled every three seconds, no findings; final contact sheets reviewed",
+    "video_decode": "Complete decode of both final videos passed"
+  }
+}

@@ -24,7 +24,7 @@
     </p>
 
     <div class="cryostack-docs-actions">
-      <a class="cryostack-btn primary" href="/icesee-gui/">
+      <a class="cryostack-btn primary" href="/icesee/">
         Open ICESEE
       </a>
 
@@ -379,7 +379,7 @@ Official documentation:
 
 ### Containers
 
-Containers provide portable scientific environments that package software and dependencies together.
+A container image packages a specific software environment and its dependencies. Use the image and runtime named by the chosen workflow; an image does not establish compatibility with every host, GPU or MPI allocation.
 
 CryoStack deployments may use:
 
@@ -550,7 +550,7 @@ For reproducible issues, provide the smallest configuration that demonstrates th
 
 - Read [Getting Started with ICESEE](getting_started) to run a first experiment.
 - Use the [ICESEE User Manual](user_manual) for detailed configuration and troubleshooting.
-- Open [ICESEE](https://cryostack.eas.gatech.edu/icesee-gui/) through CryoStack.
+- Open [ICESEE](https://cryostack.eas.gatech.edu/icesee/) through CryoStack.
 - Return to the main <a href="../../documentation.html">CryoStack Documentation</a>.
 
 :::{raw} html

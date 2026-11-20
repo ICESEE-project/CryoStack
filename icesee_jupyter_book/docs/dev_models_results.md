@@ -160,6 +160,7 @@ Plan, and manifests render these as separate rows and derive a historical run's
 identity from its **persisted metadata**, never the current UI defaults — a
 legacy widget such as `backend_dd` never determines cloud semantics.
 
+(icesee-results)=
 ## ICESEE results
 
 An ICESEE run is an ensemble data-assimilation experiment, so its results

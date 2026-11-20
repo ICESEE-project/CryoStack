@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from cryostack_src.cloud.config import bind_connected_cloud_account
+
 import os
+import threading
 import io
 import html
 import json
@@ -89,6 +92,7 @@ from icesee_jupyter_book.ui.workspace_bridge import (
     load_workspace_bridge,
 )
 from icesee_jupyter_book.ui.workspace_persistence import make_state_io
+from icesee_jupyter_book.ui.session_restore import SessionRestore
 
 from cryostack_src.workspace import (
     WorkspaceBridge,
@@ -113,6 +117,7 @@ from cryostack_src.frontend.shared import (
 
 from cryostack_src.frontend.cryolauncher.cloud_environment import (
     build_cloud_environment_card,
+    set_cloud_compute_view,
     set_cloud_status,
     wire_institutional_connection_widgets,
     wire_matlab_license_widgets,
@@ -719,7 +724,7 @@ def build_icesheets_ui():
                 model=(model_dd.value or "issm").strip().lower(),
             )
 
-        def current_cloud_bridge(*, credentials=None, region=None):
+        def current_cloud_bridge(*, credentials=None, region=None, route=None):
             """A CloudBridge for a cloud operation.
 
             When ``credentials`` is not supplied and the authenticated user has
@@ -731,6 +736,12 @@ def build_icesheets_ui():
             """
             selected_run = workspace_manager.selected_run()
             selected_metadata = selected_run.metadata if selected_run and selected_run.execution_mode == "cloud" else {}
+            if route == "hosted" or (route is None and credentials is None and selected_metadata.get("route") == "hosted"):
+                from cryostack_src.frontend.cryolauncher.hosted_pilot import enabled, workspace_hosted_bridge
+                if not enabled():
+                    raise RuntimeError("Hosted run access is disabled; no AWS fallback is permitted.")
+                return workspace_hosted_bridge(workspace_manager, user_id=workspace_manager.owner.user_id,
+                                               region=region or selected_metadata.get("region") or "")
             if credentials is None:
                 _ex = _resolve_cloud_execution()          # may raise CloudAccessError
                 if getattr(_ex, "is_byo", False):
@@ -878,6 +889,10 @@ def build_icesheets_ui():
                 log_file=None,
                 metadata={
                     **(handle.metadata or {}),
+                    "route": getattr(handle, "route", "byo"),
+                    "reservation_id": meta.get("reservation_id"),
+                    "aws_job_id": meta.get("aws_job_id"),
+                    "hold_cents": meta.get("hold_cents"),
                     "cloud_run": s3_run,
                     "s3_outputs": s3_outputs,
                     "run_id": handle.run_id,
@@ -985,6 +1000,47 @@ def build_icesheets_ui():
             re-checked here so a change since Review cannot launch.
             """
             _model = model_dd.value
+            panel = _pilot.get("panel")
+            if getattr(review, "route", "byo") == "hosted":
+                if panel is None:
+                    raise RuntimeError("Hosted pilot runs are unavailable in this session.")
+                from cryostack_src.frontend.cryolauncher.hosted_pilot import build_hosted_review
+                route, reason = panel.route(fresh=True)
+                if route != "hosted":
+                    with log_out:
+                        print("[cloud][ERROR]", reason)
+                    return None
+                checked = build_hosted_review(
+                    summary=panel.summary, model=_model, example=_cloud_example_name(),
+                    run_target=Path(run_target.value or "runme.m").name,
+                    scientific_overrides=(md_panel.overrides() if _model == "issm" else {}),
+                    image=_default_tested_image(_model), source_digest=_hosted_source_digest())
+                if not review.can_launch or not checked.can_launch or _cloud_review_digest() != review.digest:
+                    with log_out:
+                        print("[cloud][ERROR] Pilot allocation or configuration changed. Review again before launching.")
+                    return None
+                try:
+                    if str(staged_dir) == str(example_dir.value):
+                        extra = _icepack_cloud_postprocess_files() if _model == "icepack" else None
+                        staged_dir = str(workspace_manager.stage_example_for_run(
+                            source_example=example_dir.value, extra_files=extra).path)
+                except Exception as error:
+                    with log_out:
+                        print("[cloud][stage][ERROR]", type(error).__name__, error)
+                    return None
+                _cloud["controller"].submit(
+                    _route="hosted", staged_source=str(staged_dir), model=_model,
+                    run_target=checked.run_target, seconds=int(checked.time_limit_minutes * 60),
+                    _region=checked.region, _md_provenance=md_provenance,
+                    _example=checked.example, _vcpu=checked.vcpu, _memory_gib=checked.memory_gib,
+                    _review_digest=checked.digest, _image_key=checked.image_key,
+                    _image_label=checked.image_label, _image_reference=checked.image_reference,
+                    _image_digest=checked.image_digest)
+                return None
+            if panel is not None and panel.route()[0] != "byo":
+                with log_out:
+                    print("[cloud][ERROR] Choose My AWS account explicitly and review the run before submitting there.")
+                return None
             _jd_warnings: list[str] = []
             if review is not None:
                 # the reviewed config IS the run config
@@ -1012,17 +1068,7 @@ def build_icesheets_ui():
                     _model, batch_job_def.value.strip(), allow_list=_CLOUD_JOB_DEFS,
                     compute_mode=_compute_mode, ec2=_ec2_cfg,
                 )
-                _cfg = resolve_cloud_config(
-                    provider="aws",
-                    region=aws_region.value.strip(),
-                    bucket=cloud_bucket.value.strip(),
-                    profile=aws_profile.value.strip(),
-                    model=_model,
-                    job_queue=batch_job_queue.value.strip(),
-                    job_definition=_job_def,
-                    aws_batch_compute=_compute_mode,
-                    ec2=_ec2_cfg,
-                )
+                _cfg = _cloud_run_config()
             # one resolution, both fields -- CloudMatlabLicense.configured
             # and .requires_tunnel (the latter is the already-authoritative,
             # capability/profile-derived site fact; never re-derived here).
@@ -1421,7 +1467,7 @@ def build_icesheets_ui():
                     "inline-flex" if SESSION.get("id") else "none")
 
                 with log_out:
-                    print("[connector] pairing code:", SESSION.get("pairing_code"))
+                    print("[connector] Pairing instructions are shown in the Connector panel.")
                     print("[connector] relay state:", st.get("state"))
 
             except Exception as e:
@@ -1452,6 +1498,9 @@ def build_icesheets_ui():
 
         # Cloud controls
         # -----------------------------
+        from cryostack_src.frontend.cryolauncher.hosted_pilot import enabled as _pilot_ui_enabled
+
+        _show_cloud_access_picker = _pilot_ui_enabled()
         cloud_environment = build_cloud_environment_card(
             region=DEFAULT_CLOUD_REGION,
             profile="",
@@ -1459,7 +1508,10 @@ def build_icesheets_ui():
             job_queue="",
             job_definition="",
             job_name="cryostack",
+            cloud_access_picker=_show_cloud_access_picker,
         )
+
+        _pilot = {"panel": None}
 
         cloud_state_chip = W.HTML(
             "<span class='icesee-status icesee-idle'>Cloud: Not configured</span>"
@@ -1556,11 +1608,22 @@ def build_icesheets_ui():
         def _discover_examples():
             model = model_dd.value
             adapter = get_model_adapter(model)
-            return merged_examples_for_model(
+            examples = merged_examples_for_model(
                 model,
                 user_examples=workspace_manager.list_user_examples(model),
                 runnable_check=getattr(adapter, "example_runnable", None),
             )
+            # Discovery is not authorization: stale installs and symlinks may
+            # resolve outside the operator-registered canonical roots.
+            from cryostack_src.workspace.manager import WorkspacePermissionError
+            allowed = []
+            for example in examples:
+                try:
+                    workspace_manager._assert_example_source_allowed(example.path)
+                except WorkspacePermissionError:
+                    continue
+                allowed.append(example)
+            return allowed
 
         def refresh_example_picker(_=None, *, select: str | None = None):
             examples = _discover_examples()
@@ -1822,6 +1885,14 @@ def build_icesheets_ui():
             final_opts = adapter.order_run_targets(opts)
             run_target.options = final_opts
 
+            # Creating/deleting a script does not change the selected example,
+            # so its selection observer will not refresh the readiness label.
+            # Refresh only the details: never reselect or discard editor state.
+            selected = example_picker.value or ""
+            ex = next((e for e in _discover_examples()
+                       if str(e.path) == selected), None) if selected else None
+            example_info.value = _example_summary(ex, selected)
+
             current = (run_target.value or "").strip()
             if current and current in final_opts:
                 return
@@ -1948,6 +2019,15 @@ def build_icesheets_ui():
                     getattr(cloud_environment, name).value = val
             _prev_ui_mode["value"] = cur
 
+        def _show_byo_connector():
+            from cryostack_src.cloud.matlab_license import site_requires_cloud_license_tunnel
+
+            capabilities = resolve_workflow_capabilities(model=model_dd.value)
+            show = capabilities.requires_matlab_license and site_requires_cloud_license_tunnel()
+            cloud_environment.institutional_connection_box.layout.display = "" if show else "none"
+            if show:
+                _refresh_institutional_connection()
+
         def update_visibility(_=None):
             _sync_cloud_compute_mode_with_ui_mode()
             is_container = backend_dd.value == "container"
@@ -1980,6 +2060,10 @@ def build_icesheets_ui():
             # config to match; this just keeps the controls themselves out
             # of Basic mode's view.
             cloud_environment.advanced.layout.display = "none" if is_basic else ""
+            panel = _pilot.get("panel")
+            set_cloud_compute_view(
+                cloud_environment, advanced=is_cloud and is_advanced,
+                route=panel._preference if panel is not None else "byo")
 
             # MATLAB license visibility/requirement is a property of the
             # SELECTED WORKFLOW (cryostack_src.models.workflow_capabilities)
@@ -2003,17 +2087,11 @@ def build_icesheets_ui():
             # trigger a fresh AWS sts:AssumeRole just to decide visibility.
             # The actual .submit(...) call and Review & Launch still read
             # the one real, configuration-aware CloudMatlabLicense object.
-            from cryostack_src.cloud.matlab_license import (
-                site_requires_cloud_license_tunnel,
-            )
-
-            _requires_connector = bool(
-                _cloud_capabilities.requires_matlab_license
-                and site_requires_cloud_license_tunnel())
-            cloud_environment.institutional_connection_box.layout.display = (
-                "" if _requires_connector else "none")
-            if _requires_connector:
-                _refresh_institutional_connection()
+            _pilot_panel = _pilot.get("panel")
+            if _pilot_panel is None or _pilot_panel._preference == "byo":
+                _show_byo_connector()
+            if _pilot_panel is not None:
+                _pilot_panel.render()
 
             # Agent is a peer interaction mode: when it is selected, the manual
             # Basic / Advanced configuration is hidden and only the Run
@@ -2921,6 +2999,8 @@ def build_icesheets_ui():
                         "port": int(cluster_port.value),
                         "access_mode": access_mode_dd.value,
                         "cluster_name": cluster_name_for_keys.value or "pace",
+                        # the workflow stepper follows runs of the current experiment
+                        "example": example_picker.value or "",
                         **md_run_provenance,
                     },
                     container=stack_provenance.get("container") or {},
@@ -3143,12 +3223,7 @@ def build_icesheets_ui():
                 ECR_REPOSITORY_NAMES,
             )
             _model = model_dd.value
-            _cfg = resolve_cloud_config(
-                provider="aws", region=aws_region.value.strip(),
-                bucket=cloud_bucket.value.strip(), profile=aws_profile.value.strip(),
-                model=_model, job_queue=batch_job_queue.value.strip(),
-                job_definition=batch_job_def.value.strip(),
-            )
+            _cfg = _cloud_run_config()
             problems = validate_cloud_config(_cfg, model=_model)
             _smoke_state.update(
                 cfg=_cfg, ecr=ECR_REPOSITORY_NAMES.get(_model, ""),
@@ -3192,6 +3267,11 @@ def build_icesheets_ui():
             results_output=results_out,
             execution_resolver=_resolve_cloud_execution,
             on_status_result=_cloud_status_result,
+            job_id_provider=lambda: (
+                str(workspace_manager.selected_run().jobid or "")
+                if workspace_manager.selected_run() is not None and workspace_manager.selected_run().execution_mode == "cloud"
+                else getattr(_cloud.get("controller"), "job_id", "")
+                if _cloud.get("controller") is not None else STATUS.get("batch_job_id")),
             smoke_button=cloud_smoke_btn,
             set_chip=_set_cloud_state,
             smoke_precheck=_smoke_precheck,
@@ -3201,7 +3281,7 @@ def build_icesheets_ui():
         on_cloud_status = cloud_runtime.status
         on_cloud_logs = cloud_runtime.logs
         on_cloud_terminate = cloud_runtime.terminate
-        on_cloud_results = cloud_runtime.results
+        on_cloud_results = lambda _=None: sync_selected_run_results()
 
         # -- "Connect AWS Account" onboarding (C7.2) --------------------
         # Bring-your-own-AWS-account: the connection is owned by the
@@ -3216,9 +3296,9 @@ def build_icesheets_ui():
             )
 
         def _on_aws_account_state(summary: dict) -> None:
-            """Once the account is verified, Prepare cloud -- not Test
-            connection -- is the normal-user action. Re-check lives in the AWS
-            ACCOUNT block.
+            """Keep account state visible; connected accounts get a read-only
+            infrastructure refresh through on_connected. Prepare cloud remains
+            available when actual resources are missing.
 
             Also keeps the Cloud state chip honest: a deployment that IS
             configured but whose user connection needs attention must never
@@ -3243,6 +3323,7 @@ def build_icesheets_ui():
             onboarding_factory=_aws_onboarding_factory,
             log_output=log_out,
             on_state=_on_aws_account_state,
+            on_connected=lambda _summary: cloud_runtime.check_environment(),
         )
         cloud_environment.connect_button.on_click(aws_connect.connect)
         cloud_environment.verify_button.on_click(aws_connect.verify)
@@ -3334,12 +3415,44 @@ def build_icesheets_ui():
                 with log_out:
                     print("[cloud][diagnostics] (non-fatal)", type(_pe).__name__, _pe)
 
+        def _on_cloud_run_state(state):
+            _set_cloud_state(state)
+            _cloud_experiments.state(state)
+            # Automatic polling must update the same owned run as manual
+            # Status, rather than leaving the monitor/history stuck queued.
+            # Bind by the controller's job, never the current UI selection.
+            controller = _cloud.get("controller")
+            job_id = getattr(controller, "job_id", "") if controller else ""
+            if job_id:
+                workspace_manager.update_run_status_by_job(job_id, state)
+            panel = _pilot.get("panel")
+            credit_state = (str(job_id), state)
+            hosted_active = (job_id and getattr(getattr(controller, "_handle", None), "route", "") == "hosted"
+                             and state in ("queued", "running"))
+            refresh_active = hosted_active and _cloud.get("pilot_credit_state") != credit_state
+            if panel is not None and (refresh_active or state in ("completed", "failed", "cancelled")):
+                if refresh_active:
+                    _cloud["pilot_credit_state"] = credit_state
+                panel.refresh()
+
+        def _hosted_bridge_factory(*, region=""):
+            from cryostack_src.frontend.cryolauncher.hosted_pilot import enabled
+            if not enabled():
+                raise RuntimeError("Hosted pilot runs are disabled.")
+            from cryostack_src.cloud.pilot.client import HostedBridge
+            return HostedBridge(workspace_manager.owner.user_id, region=region)
+
+        def _sync_hosted_results(**kwargs):
+            from cryostack_src.frontend.cryolauncher.hosted_pilot import sync_hosted_results
+            return sync_hosted_results(workspace_manager, _hosted_bridge_factory(), **kwargs)
+
         _cloud["controller"] = CloudRunController(
-            bridge_factory=current_cloud_bridge,
+            bridge_factory=lambda **kwargs: current_cloud_bridge(route="byo", **kwargs),
+            hosted_bridge_factory=_hosted_bridge_factory,
+            hosted_results_sync=_sync_hosted_results,
             register_run=_register_cloud_run,
             sync_results=workspace_manager.sync_cloud_results,
-            on_state=lambda _state: (_set_cloud_state(_state),
-                                     _cloud_experiments.state(_state)),
+            on_state=_on_cloud_run_state,
             on_log=_cloud_log,
             on_results_ready=_cloud_results_ready,
             # every AWS op of a connected BYO run uses a fresh sts:AssumeRole
@@ -3386,7 +3499,7 @@ def build_icesheets_ui():
                 _model, batch_job_def.value.strip(), allow_list=_CLOUD_JOB_DEFS,
                 compute_mode=_compute_mode, ec2=_ec2_cfg,
             )
-            return resolve_cloud_config(
+            cfg = resolve_cloud_config(
                 provider="aws",
                 region=aws_region.value.strip(),
                 bucket=cloud_bucket.value.strip(),
@@ -3397,6 +3510,8 @@ def build_icesheets_ui():
                 aws_batch_compute=_compute_mode,
                 ec2=_ec2_cfg,
             )
+            return bind_connected_cloud_account(
+                cfg, summary=_aws_onboarding_factory().summary())
 
         def _cloud_run_history():
             """Durations (minutes) of this user's past successful cloud runs of
@@ -3422,8 +3537,23 @@ def build_icesheets_ui():
                 pass
             return out
 
+        def _hosted_source_digest():
+            from cryostack_src.frontend.cryolauncher.hosted_pilot import source_fingerprint
+            return source_fingerprint(workspace_manager, example_dir.value,
+                                      _pilot["panel"].summary.limits)
+
         def _cloud_review_digest() -> str:
             _m = (model_dd.value or "issm").strip().lower()
+            panel = _pilot.get("panel")
+            if panel is not None and panel._preference is None:
+                return ""
+            if panel is not None and panel._preference == "hosted":
+                from cryostack_src.frontend.cryolauncher.hosted_pilot import hosted_digest
+                return hosted_digest(summary=panel.summary, model=_m, example=_cloud_example_name(),
+                    run_target=Path(run_target.value or "runme.m").name,
+                    scientific_overrides=(md_panel.overrides() if _m == "issm" else {}),
+                    image_digest=getattr(_default_tested_image(_m), "digest", "") or "",
+                    source_digest=_hosted_source_digest())
             _img = _default_tested_image(_m)
             account_id, connected_region = _cloud_review_identity()
             cfg = _cloud_run_config()
@@ -3457,6 +3587,16 @@ def build_icesheets_ui():
 
         def _build_cloud_review():
             _model = (model_dd.value or "issm").strip().lower()
+            panel = _pilot.get("panel")
+            if panel is not None and panel._preference is None:
+                raise RuntimeError("Choose a cloud access option before reviewing the run.")
+            if panel is not None and panel._preference == "hosted":
+                from cryostack_src.frontend.cryolauncher.hosted_pilot import build_hosted_review
+                panel.route(fresh=True)
+                return build_hosted_review(summary=panel.summary, model=_model,
+                    example=_cloud_example_name(), run_target=Path(run_target.value or "runme.m").name,
+                    scientific_overrides=(md_panel.overrides() if _model == "issm" else {}),
+                    image=_default_tested_image(_model), source_digest=_hosted_source_digest())
             cfg = _cloud_run_config()
             region = cfg.region
             account_id = _cloud_account_id_for_review()
@@ -3556,10 +3696,60 @@ def build_icesheets_ui():
             launch_handler=_launch_cloud_run,
             log_output=log_out,
         )
-        _review_holder["refresh"] = _cloud_review.refresh_estimate
+        def _refresh_cloud_estimate():
+            panel = _pilot.get("panel")
+            if panel is None or panel._preference == "byo":
+                _cloud_review.refresh_estimate()
+
+        _review_holder["refresh"] = _refresh_cloud_estimate
         cloud_environment.review_button.on_click(_cloud_review.review)
         cloud_environment.review_back_button.on_click(_cloud_review.back)
         cloud_environment.launch_button.on_click(_cloud_review.launch)
+
+        if _show_cloud_access_picker:
+            from cryostack_src.frontend.cryolauncher.hosted_pilot import HostedPilotPanel
+            def _open_hosted_advanced_compute():
+                panel = _pilot.get("panel")
+                if panel is None or panel._preference != "hosted" or mode_dd.value != "cloud":
+                    return
+                ui_mode_dd.value = "advanced"  # existing visibility/snapshot events
+                set_cloud_compute_view(cloud_environment, advanced=True, route="hosted")
+                from icesee_jupyter_book.ui.icesee_workflow.components import run_js
+                run_js(_reveal_out,
+                       "var n=0;function revealHostedCompute(){"
+                       "var t=document.querySelector('.cryostack-hosted-compute');"
+                       "if(!t||!t.getClientRects().length){if(++n<20)requestAnimationFrame(revealHostedCompute);return;}"
+                       "t.setAttribute('tabindex','-1');"
+                       "t.scrollIntoView({behavior:'smooth',block:'center'});"
+                       "t.focus({preventScroll:true});}requestAnimationFrame(revealHostedCompute);")
+
+            def _pilot_changed():
+                panel = _pilot.get("panel")
+                _cloud_review.invalidate()
+                set_cloud_compute_view(
+                    cloud_environment,
+                    advanced=mode_dd.value == "cloud" and ui_mode_dd.value == "advanced",
+                    route=panel._preference)
+                byo = panel._preference == "byo"
+                cloud_state_chip.layout.display = "" if byo else "none"
+                cloud_smoke_btn.layout.display = "" if byo else "none"
+                if byo:
+                    cloud_environment.run_estimate_section.layout.display = "none"
+                    _show_byo_connector()
+                    _refresh_cloud_estimate()
+            _pilot["panel"] = HostedPilotPanel(
+                user_id=workspace_manager.owner.user_id, widgets=cloud_environment,
+                model=lambda: (model_dd.value or "issm").strip().lower(),
+                connection_summary=lambda: _aws_onboarding_factory().summary(),
+                on_change=_pilot_changed,
+                on_open_compute=_open_hosted_advanced_compute,
+                connector_box=cloud_environment.institutional_connection_box,
+                connector_refresh=_refresh_institutional_connection)
+            cloud_box.children = (cloud_state_chip, _pilot["panel"].container, cloud_environment.container)
+            cloud_state_chip.layout.display = "none"
+            cloud_smoke_btn.layout.display = "none"
+            model_dd.observe(lambda _change: (_pilot["panel"].render(), _pilot_changed()), names="value")
+            _pilot["panel"].refresh()
 
         def tail_selected_workspace_run():
             selected = workspace_manager.selected_run()
@@ -3571,6 +3761,9 @@ def build_icesheets_ui():
 
         def resolve_workspace_run_status(run):
             if run.execution_mode == "cloud":
+                if (run.metadata or {}).get("route") == "hosted":
+                    return current_cloud_bridge(route="hosted", region=run.metadata.get("region")).status(
+                        job_id=str(run.jobid)).state
                 # a BYO run (account id recorded) re-checks status through a
                 # FRESH assumed-role context for that account; a developer-mode
                 # run keeps its profile. current_cloud_bridge picks the path.
@@ -3614,8 +3807,7 @@ def build_icesheets_ui():
             selected = workspace_manager.selected_run()
             if selected and selected.execution_mode == "cloud":
                 loc = selected.metadata.get("cloud_run")
-                if loc:
-                    return str(loc)
+                return str(loc) if loc else None
             return STATUS.get("cloud_run")
 
         def sync_selected_run_results():
@@ -3623,6 +3815,9 @@ def build_icesheets_ui():
             using whichever backend produced it. Returns the local outputs dir
             (or None). Performs no rendering."""
             if active_execution_mode() == "cloud":
+                selected = workspace_manager.selected_run()
+                if selected and (selected.metadata or {}).get("route") == "hosted":
+                    return current_cloud_bridge(route="hosted").results(job_id=str(selected.jobid))
                 s3 = _selected_cloud_run_s3()
                 if not s3:
                     with results_out:
@@ -3635,7 +3830,7 @@ def build_icesheets_ui():
             # 1. fetch/synchronise outputs + print the run summary, 2. drive the
             # structured visualization panel: re-read the local package, rebuild
             # Solution/Field/Timestep, and render an initial recommended plot.
-            if active_execution_mode() == "cloud":
+            if active_execution_mode() == "cloud" and workspace_manager.cached_result_outputs() is None:
                 try:
                     _p = sync_selected_run_results()
                     with results_out:
@@ -3644,45 +3839,21 @@ def build_icesheets_ui():
                 except Exception as _e:
                     with results_out:
                         print("[cloud][ERROR]", type(_e).__name__, _e)
-            else:
+            elif active_execution_mode() != "cloud":
                 workspace_manager.preview_results()
             visualization_panel.controller.preview()
 
         def _download_cloud_results(*, figures_only=False):
-            """Cloud Download: synchronise the selected run's S3 outputs into
-            its own cache (the SAME cache/cloud_outputs the Results panel and
-            Preview read), then package that exact set. Never a re-derived path,
-            never a silent empty archive."""
+            """Export this run's retained cache; only fetch when no cache exists."""
+            from cryostack_src.frontend.cryolauncher.workspace.result_actions import download_cloud_results
             results_out.clear_output()
-            with results_out:
-                print("[cloud] Synchronising results from S3…")
             try:
-                outputs_dir = sync_selected_run_results()
-            except Exception as _e:  # noqa: BLE001 - surfaced, never a raw traceback
+                return download_cloud_results(workspace_manager,
+                    fetch_results=sync_selected_run_results, figures_only=figures_only)
+            except Exception as error:  # noqa: BLE001 - show a bounded user action
                 with results_out:
-                    print("[cloud][ERROR]", type(_e).__name__, _e)
-                return
-            if outputs_dir is None:
-                return
-            cache_dir = Path(outputs_dir).parent
-            if figures_only:
-                figs = sorted(Path(outputs_dir).rglob("*.png")) \
-                    + sorted(Path(outputs_dir).rglob("*.jpg"))
-                if not figs:
-                    with results_out:
-                        print("[cloud] This run produced no figure files.")
-                    return
-                figures_dir = cache_dir / "_cloud_figures_only"
-                if figures_dir.exists():
-                    workspace_manager.delete(figures_dir)
-                figures_dir.mkdir(parents=True, exist_ok=True)
-                for p in figs:
-                    shutil.copy2(p, figures_dir / p.name)
-                workspace_manager.package_and_download(
-                    figures_dir, filename="figures_bundle.zip", cache_dir=cache_dir)
-                return
-            workspace_manager.package_and_download(
-                outputs_dir, filename="results_bundle.zip", cache_dir=cache_dir)
+                    print("[cloud][ERROR]", type(error).__name__, error)
+                return False
 
         def on_results_download(_=None):
             if active_execution_mode() == "cloud":
@@ -4143,6 +4314,7 @@ def build_icesheets_ui():
         # widgets update_visibility() shows and hides; the workflow only
         # places them (built after output_workspace, see below).
         _cl_workflow = {"wf": None}
+        _cl_monitor_ref: dict = {}          # live monitoring (set once the workspace exists)
 
         runtime_panel = build_runtime_panel(
             status_widget=status_chip,
@@ -4184,6 +4356,7 @@ def build_icesheets_ui():
                     model=run.model, region=meta.get("region") or "",
                     profile=meta.get("profile"),
                     account_id=meta.get("account_id") or "",
+                    route=meta.get("route") or "byo",
                     example=meta.get("example") or "",
                     run_target=meta.get("run_target") or "",
                     source=meta.get("source") or "",
@@ -4262,13 +4435,19 @@ def build_icesheets_ui():
             on_results_download()                     # download only -- no tab switch
 
         def _show_new_run(run):
-            """List a just-registered run in the Runs panel and select it."""
+            """List a just-registered run in the Runs panel, select it and follow
+            it live: Run Log now, Results once it completes."""
             try:
                 workspace_history_panel.refresh_button.click()
                 if run is not None and run.id in [v for _, v in workspace_history_panel.runs.options]:
                     workspace_history_panel.runs.value = run.id
             except Exception:  # noqa: BLE001 - the run is recorded either way
                 pass
+            follow = _cl_monitor_ref.get("follower")
+            if run is not None and follow is not None:
+                follow.start(run.id)
+                if run.execution_mode == "remote":
+                    threading.Thread(target=_cl_monitor_ref["tick"], daemon=True).start()
 
         with perf.span("history panel"):
             workspace_history_panel = build_workspace_history_panel(
@@ -4289,8 +4468,10 @@ def build_icesheets_ui():
         # output_workspace.set_advanced_mode call below). Basic<->Advanced
         # only reassigns which tabs are attached to the SAME Tab object, so
         # file selection and unsaved content survive every mode switch.
+        cl_monitor_banner = W.HTML()
+        cl_monitor_banner.add_class("icw-monitor-wrap")
         output_workspace = build_run_details(
-            log_output=log_out,
+            log_output=W.VBox([cl_monitor_banner, log_out], layout=W.Layout(width="100%", gap="8px")),
             results_output=results_out,
             download_controls=download_buttons_row,
             log_controls=log_runtime_controls,
@@ -4391,6 +4572,153 @@ def build_icesheets_ui():
         )
         _cl_workflow["wf"] = workflow
 
+        # -- workflow stepper: follow the run of the current configuration ----
+        # Review & launch -> Monitor -> Results is driven by the run the
+        # Workspace selects (or, after a reload, the latest run of this mode and
+        # experiment); every status change goes through the workspace manager.
+        from icesee_jupyter_book.ui.icesee_workflow.progress import (
+            ACTIVE, CANCELLED, COMPLETED, FAILED, follow_run,
+        )
+
+        _CL_TAB_STEP = {"Run Log": "Monitor", "Results": "Results"}
+        _CL_RUN_STATES = ACTIVE | CANCELLED | COMPLETED | FAILED
+
+        def _cl_followed_run():
+            mode = mode_dd.value
+            model = (model_dd.value or "").strip().lower()
+            example_names = {example_picker.value}
+            if mode == "cloud" and (example_dir.value or "").strip():
+                example_names.add(_cloud_example_name())
+            example_names.discard(None)
+            example_names.discard("")
+
+            def matches(run):
+                recorded = (run.metadata or {}).get("example")
+                return (run.execution_mode == mode
+                        and (run.model or "").strip().lower() == model
+                        and isinstance(recorded, str)
+                        and recorded in example_names
+                        and str(run.status or "").strip().lower() in _CL_RUN_STATES)
+
+            # The workspace manager scopes both selections and history to the
+            # signed-in user. Cloud records use the effective example basename.
+            runs = workspace_manager.list_runs()
+            controller = _cloud.get("controller") if mode == "cloud" else None
+            job_id = getattr(controller, "job_id", "")
+            launched = next((run for run in runs if job_id and str(run.jobid or "") == str(job_id)), None)
+            return follow_run(workspace_manager.selected_run(), launched, runs, matches=matches)
+
+        def _cl_refresh_progress(_=None):
+            tabs = _workspace_tabs["w"]
+            try:
+                viewing = _CL_TAB_STEP.get(tabs.get_title(tabs.selected_index), "") if tabs else ""
+            except Exception:  # noqa: BLE001 - no tab selected yet
+                viewing = ""
+            run = _cl_followed_run()
+            workflow.refresh(run_state=(run.status if run else ""), viewing=viewing)
+
+        workspace_manager.add_run_listener(lambda _run: _cl_refresh_progress())
+        output_workspace.tabs.observe(_cl_refresh_progress, names="selected_index")
+        for _w in (example_picker, example_dir, model_dd, mode_dd):
+            _w.observe(_cl_refresh_progress, names="value")
+        _cl_refresh_progress()
+
+        # -- live monitoring: Submit -> Run Log -> Results (icesee_workflow/monitor.py)
+        from icesee_jupyter_book.ui.icesee_workflow.launch import Ticker
+        from icesee_jupyter_book.ui.icesee_workflow.monitor import RunFollower, monitor_banner
+
+        _CL_REMOTE_POLL = float(os.environ.get("CRYOSTACK_REMOTE_MONITOR_SECONDS", "30"))
+        _CL_CLOUD_POLL = float(os.environ.get("CRYOSTACK_CLOUD_POLL_SECONDS", "20"))
+        _cl_monitor = {"error": "", "busy": False}
+
+        def _cl_select_in_panel(run_id):
+            try:
+                if run_id in [v for _, v in workspace_history_panel.runs.options]:
+                    workspace_history_panel.runs.value = run_id
+                else:
+                    workspace_manager.select_run(run_id)
+            except Exception:  # noqa: BLE001
+                workspace_manager.select_run(run_id)
+
+        def _cl_open_monitor(run_id):
+            _cl_select_in_panel(run_id)
+            _switch_workspace_tab("log", reveal=True)
+
+        def _cl_open_results(run_id):
+            _cl_select_in_panel(run_id)
+            _switch_workspace_tab("results", reveal=True)
+            try:
+                on_results_preview()
+            except Exception as _e:  # noqa: BLE001
+                with log_out:
+                    print("[results][ERROR]", type(_e).__name__, _e)
+
+        def _cl_state_of(run_id):
+            run = next((r for r in workspace_manager.list_runs() if r.id == run_id), None)
+            return run.status if run else None
+
+        cl_follower = RunFollower(open_monitor=_cl_open_monitor, open_results=_cl_open_results,
+                                  state_of=_cl_state_of)
+
+        def _cl_render_monitor():
+            run = workspace_manager.selected_run()
+            every = {"remote": _CL_REMOTE_POLL, "cloud": _CL_CLOUD_POLL}.get(getattr(run, "execution_mode", ""))
+            no_log = ""
+            if run is not None and run.status in ("submitted", "queued"):
+                no_log = ("No log output yet: the job has not started writing it. The tail below "
+                          "refreshes with each status check." if run.execution_mode == "remote" else
+                          "No log output yet. AWS Batch writes to CloudWatch once the job starts; "
+                          "use View log on the CLOUD RUN card to fetch it.")
+            following = run is not None and run.id == cl_follower.run_id
+            cl_monitor_banner.value = monitor_banner(run, every=every,
+                                                     error=_cl_monitor["error"] if following else "",
+                                                     no_log=no_log)
+
+        def _cl_on_run_change(run):
+            if run is not None:
+                cl_follower.update(run.id, run.status)
+            _cl_render_monitor()
+
+        workspace_manager.add_run_listener(_cl_on_run_change)
+
+        def _cl_on_tab(change):
+            tabs = output_workspace.tabs
+            try:
+                title = tabs.get_title(change["new"])
+            except Exception:  # noqa: BLE001
+                return
+            cl_follower.navigated(_CL_TAB_STEP.get(title, title))
+
+        output_workspace.tabs.observe(_cl_on_tab, names="selected_index")
+
+        def _cl_monitor_tick():
+            """Quiet Remote status check and log tail for the followed run; the
+            Cloud run controller polls Cloud runs itself."""
+            run = next((r for r in workspace_manager.list_runs() if r.id == cl_follower.run_id), None)
+            if run is None or run.execution_mode != "remote" or not run.jobid or _cl_monitor["busy"]:
+                return
+            if run.status in ("completed", "failed", "cancelled"):
+                return
+            _cl_monitor["busy"] = True
+            try:
+                state = current_remote_bridge().status(job_id=str(run.jobid)).state
+                _cl_monitor["error"] = ""
+                if workspace_manager.selected_run() is not None and workspace_manager.selected_run().id == run.id:
+                    on_tail()                       # the scheduler log, into Run Log
+                workspace_manager.update_run_status(run.id, state)
+            except Exception as _e:  # noqa: BLE001 - shown in the banner, retried next tick
+                _cl_monitor["error"] = (f"Could not reach the cluster ({type(_e).__name__}: {_e}). "
+                                        f"Retrying in {int(_CL_REMOTE_POLL)} s.")
+            finally:
+                _cl_monitor["busy"] = False
+            _cl_render_monitor()
+
+        _cl_monitor["ticker"] = Ticker(_cl_monitor_tick, interval=_CL_REMOTE_POLL)
+        _cl_monitor_ref.update(follower=cl_follower, tick=_cl_monitor_tick)
+        _cl_monitor["tick"] = _cl_monitor_tick
+        _cl_monitor["follower"] = cl_follower
+        _cl_render_monitor()
+
         row = workflow.shell
         workspace_height_sync = W.HTML(f"<script>\n{_VIEWER_JS}\n</script>")
 
@@ -4422,6 +4750,90 @@ def build_icesheets_ui():
             with log_out:
                 print("[settings] restore skipped:", type(_b2_err).__name__, _b2_err)
 
+        # Page session: a reload comes back to the same model, mode, example,
+        # parameters, Slurm request, open file (with unsaved text), selected
+        # run and workspace tab. Registered in dependency order; B2-owned HPC
+        # settings (resource, login, directory, account, e-mail) are restored
+        # by resource_state above.
+        def _cl_workspace_session():
+            tabs = output_workspace.tabs
+            try:
+                title = tabs.get_title(tabs.selected_index)
+            except Exception:  # noqa: BLE001
+                title = None
+            return {"tab": title, "run": workspace_history_panel.runs.value or None}
+
+        def _cl_workspace_restore(state):
+            changed = False
+            run_id = (state or {}).get("run")
+            if run_id and workspace_history_panel.runs.value != run_id:
+                if run_id not in [v for _, v in workspace_history_panel.runs.options]:
+                    workspace_history_panel.refresh_button.click()
+                if run_id in [v for _, v in workspace_history_panel.runs.options]:
+                    workspace_history_panel.runs.value = run_id
+                    workspace_manager.select_run(run_id)
+                    changed = True
+            tabs = output_workspace.tabs
+            for index in range(len(tabs.children)):
+                if tabs.get_title(index) == (state or {}).get("tab") and tabs.selected_index != index:
+                    tabs.selected_index = index
+                    changed = True
+            return changed
+
+        session = SessionRestore("cryolauncher")
+        session.fields(model=model_dd, mode=mode_dd, user_mode=ui_mode_dd, backend=backend_dd,
+                       example=example_picker)
+        def _restore_example_directory(saved):
+            from cryostack_src.workspace.manager import WorkspacePermissionError
+            if not isinstance(saved, str) or not saved.strip():
+                return False
+            try:
+                workspace_manager._assert_example_source_allowed(saved)
+            except WorkspacePermissionError:
+                return False
+            if example_dir.value == saved:
+                return False
+            example_dir.value = saved
+            return True
+
+        session.part("example_directory", lambda: example_dir.value,
+                     _restore_example_directory)
+        session.fields(exec_directory=exec_dir,
+                       advanced_action=advanced_action_dd, run_target=run_target,
+                       software_profile=software_panel._state["profile"],
+                       container_source=container_source, image_uri=image_uri,
+                       job_name=slurm_job_name, wall_time=slurm_time, nodes=slurm_nodes,
+                       tasks=slurm_ntasks, tasks_per_node=slurm_tpn, partition=slurm_part,
+                       memory=slurm_mem, remote_tag=remote_tag, auto_tail=auto_tail_btn,
+                       remote_backend=exec_backend_choice, spack_enable=spack_enable,
+                       spack_install_if_needed=spack_install_if_needed,
+                       spack_install_mode=spack_install_mode)
+        session.part("issm_parameters", md_panel.session_state, md_panel.restore_session)
+        session.part("icepack_parameters", icepack_basic_panel.session_state,
+                     icepack_basic_panel.restore_session)
+        session.part("editor", editor_panel.controller.session_state,
+                     editor_panel.controller.restore_session)
+        session.part("workspace", _cl_workspace_session, _cl_workspace_restore)
+        try:
+            with perf.span("session restore"), ui_refresh.batch():
+                session.restore()
+        except Exception as _s_err:  # noqa: BLE001 - a bad session never blocks the page
+            with log_out:
+                print("[session] restore skipped:", type(_s_err).__name__, _s_err)
+
+        # a run still in flight keeps being followed after the reload, with a
+        # first status check now rather than at the next monitor tick
+        _cl_resumed = workspace_manager.selected_run()
+        if _cl_resumed is not None and _cl_resumed.status in ("preparing", "submitted", "queued", "running"):
+            try:
+                _cl_tab = output_workspace.tabs.get_title(output_workspace.tabs.selected_index)
+            except Exception:  # noqa: BLE001
+                _cl_tab = ""
+            cl_follower.resume(_cl_resumed.id, auto=_CL_TAB_STEP.get(_cl_tab) == "Monitor")
+            if _cl_resumed.execution_mode == "remote":
+                threading.Thread(target=_cl_monitor_tick, daemon=True).start()
+            _cl_render_monitor()
+
         # Run Assistant (Beta) is now the third interaction mode ("Agent"),
         # opt-in via CRYOSTACK_AGENT_PANEL and built inline with the Run
         # Settings (see _build_agent_panel / update_visibility). Nothing
@@ -4443,6 +4855,7 @@ def build_icesheets_ui():
                 app_menu,
                 workflow.hero,
                 workflow.stepper.html,
+                session.notice(),
                 row,
                 workspace_height_sync,
                 _reveal_out,
@@ -4458,6 +4871,9 @@ def build_icesheets_ui():
         image_panel.set_profile(software_panel.profile())
         update_visibility()
         update_summary()
+
+        session.start()
+        page.session = session
 
         perf.mark("gateway total (icesheets)", _time.perf_counter() - _perf_t0)
         return page

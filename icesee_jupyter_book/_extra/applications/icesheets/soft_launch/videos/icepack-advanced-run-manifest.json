@@ -1,0 +1,621 @@
+{
+  "schema": "cryostack.reproducibility.v1",
+  "clip_id": "IP-ADVANCED-20261119",
+  "collected_at": "2026-11-19T00:23:30.840409+00:00",
+  "model": "icepack",
+  "example": "pilot-icepack-advanced-1118",
+  "job_reference_sha256": "f83d132761b9471d38516ebd9f44a9324228de61d468a4d87824a3652478bdbb",
+  "job_status": "SUCCEEDED",
+  "job_times_ms": {
+    "createdAt": 1795047498018,
+    "startedAt": 1795047713270,
+    "stoppedAt": 1795048142189
+  },
+  "private_input_archive_sha256": "86252b010a0b80e32049222b57c0026911db46fc45e974343128abf101a1551d",
+  "input_archive_access": "Sealed input bytes and raw object provenance retained privately on host; no raw desktop export.",
+  "input_evidence": "Actual run-scoped S3 objects read through verified owner BYO role; raw objects/keys/logs remain private on the host.",
+  "inputs": [
+    {
+      "relative_path": "run.py",
+      "bytes": 28565,
+      "sha256": "097227dabc6395a4a59147c9014ae354bef9c8c30acd1f7ac2502fedcc520380",
+      "last_modified": "2026-11-19T00:18:16+00:00",
+      "last_modified_no_later_than_submission": true
+    }
+  ],
+  "total_input_files": 7,
+  "total_input_bytes": 97599,
+  "all_inputs_predate_submission": true,
+  "public_input_list_restricted": true,
+  "inputs_manifest_sha256": "024932e29ec24aa481f610c784e285d401d5ee4be0390af0fbdf199cd112fb99",
+  "actual_image_digests": [
+    "sha256:d68d88dcb7047f29d6e277a45710f50f1bf3023566e0472f07a7dd75ffbcd170"
+  ],
+  "image_digest_evidence": "Exact actual AWS Batch job definition revision pins image@sha256; optional ECS observation is separately reported.",
+  "job_environment_binds_expected_run_root": true,
+  "job_input_binding_contract": "Actual CRYOSTACK_S3_RUN environment equals this run root; the pinned native runner downloads its input/ subdirectory.",
+  "actual_job_model_and_target": {
+    "CRYOSTACK_MODEL": "icepack",
+    "CRYOSTACK_RUN_TARGET": "run.py"
+  },
+  "versions": {
+    "firedrake": {
+      "value": null,
+      "installed_distributions": {
+        "firedrake": "2025.10.2"
+      },
+      "evidence": "actual runtime-provenance.json"
+    },
+    "h5py": {
+      "value": "3.16.0",
+      "installed_distributions": {},
+      "evidence": "actual runtime-provenance.json"
+    },
+    "icepack": {
+      "value": null,
+      "installed_distributions": {
+        "icepack": "1.1.0"
+      },
+      "evidence": "actual runtime-provenance.json"
+    },
+    "mpi4py": {
+      "value": "4.1.1",
+      "installed_distributions": {},
+      "evidence": "actual runtime-provenance.json"
+    },
+    "mpi_library": {
+      "value": "Open MPI 5.0.10",
+      "installed_distributions": {},
+      "evidence": "actual runtime-provenance.json"
+    },
+    "mpi_standard": {
+      "value": [
+        3,
+        1
+      ],
+      "installed_distributions": {},
+      "evidence": "actual runtime-provenance.json"
+    },
+    "numpy": {
+      "value": "1.26.4",
+      "installed_distributions": {},
+      "evidence": "actual runtime-provenance.json"
+    },
+    "petsc4py": {
+      "value": "3.24.0",
+      "installed_distributions": {},
+      "evidence": "actual runtime-provenance.json"
+    },
+    "petsc_library": {
+      "value": [
+        3,
+        24,
+        0
+      ],
+      "installed_distributions": {},
+      "evidence": "actual runtime-provenance.json"
+    },
+    "python": {
+      "value": "3.12.13",
+      "installed_distributions": {},
+      "evidence": "actual runtime-provenance.json"
+    }
+  },
+  "scientific_source_statements": [],
+  "resources": {
+    "VCPU": "2",
+    "MEMORY": "8192"
+  },
+  "timeout_seconds": 3600,
+  "randomness": {
+    "status": "Global Python/NumPy state captured without reset; original seeds unknown",
+    "plotting_stream_seed": 1729,
+    "plotting_seed_is_model_seed": false,
+    "unobserved": [
+      "Gmsh version and internal RNG",
+      "script-owned generators",
+      "other solver-library generators"
+    ]
+  },
+  "missing_evidence": [
+    "No unchanged-input repeated-run comparison for this changed-temperature case",
+    "No new PC/AWS comparison",
+    "Original global seeds and library-owned generator states are not inferred",
+    "Portable CG1 fields are not the complete native CG2 state",
+    "Damage undershoot retained; physical bound/accuracy and temperature sensitivity have not been validated"
+  ],
+  "reproducibility_accepted": false,
+  "raw_payload_exported": false,
+  "read_only_aws": true,
+  "secret_values_read": false,
+  "job_times_utc": {
+    "createdAt": "2026-11-19T00:18:18.018000+00:00",
+    "startedAt": "2026-11-19T00:21:53.270000+00:00",
+    "stoppedAt": "2026-11-19T00:29:02.189000+00:00"
+  },
+  "runtime_provenance": {
+    "schema": "cryostack.runtime-provenance.v1",
+    "model": "icepack",
+    "phase": "after",
+    "architecture": "x86_64",
+    "versions": {
+      "python": {
+        "value": "3.12.13",
+        "evidence": "actual runtime-provenance.json"
+      },
+      "numpy": {
+        "value": "1.26.4",
+        "evidence": "actual runtime-provenance.json"
+      },
+      "h5py": {
+        "value": "3.16.0",
+        "evidence": "actual runtime-provenance.json"
+      },
+      "firedrake": {
+        "value": null,
+        "evidence": "actual runtime-provenance.json"
+      },
+      "icepack": {
+        "value": null,
+        "evidence": "actual runtime-provenance.json"
+      },
+      "petsc4py": {
+        "value": "3.24.0",
+        "evidence": "actual runtime-provenance.json"
+      },
+      "mpi4py": {
+        "value": "4.1.1",
+        "evidence": "actual runtime-provenance.json"
+      },
+      "petsc_library": {
+        "value": null,
+        "evidence": "actual runtime-provenance.json"
+      },
+      "mpi_standard": {
+        "value": null,
+        "evidence": "actual runtime-provenance.json"
+      },
+      "mpi_library": {
+        "value": "Open MPI 5.0.10",
+        "evidence": "actual runtime-provenance.json"
+      }
+    },
+    "before_versions": {
+      "python": {
+        "value": "3.12.13",
+        "evidence": "actual runtime-provenance.json"
+      },
+      "numpy": {
+        "value": "1.26.4",
+        "evidence": "actual runtime-provenance.json"
+      },
+      "h5py": {
+        "value": null,
+        "evidence": "actual runtime-provenance.json"
+      },
+      "firedrake": {
+        "value": null,
+        "evidence": "actual runtime-provenance.json"
+      },
+      "icepack": {
+        "value": null,
+        "evidence": "actual runtime-provenance.json"
+      },
+      "petsc4py": {
+        "value": null,
+        "evidence": "actual runtime-provenance.json"
+      },
+      "mpi4py": {
+        "value": null,
+        "evidence": "actual runtime-provenance.json"
+      },
+      "petsc_library": {
+        "value": null,
+        "evidence": "actual runtime-provenance.json"
+      },
+      "mpi_standard": {
+        "value": null,
+        "evidence": "actual runtime-provenance.json"
+      },
+      "mpi_library": {
+        "value": null,
+        "evidence": "actual runtime-provenance.json"
+      }
+    },
+    "capture_times": {
+      "before_capture_time_utc": "2026-11-19T00:21:55.512064+00:00",
+      "after_capture_time_utc": "2026-11-19T00:28:31.760595+00:00"
+    },
+    "mpi": {
+      "requested_processes": null,
+      "observed_world_size": 1,
+      "observed_rank": 0
+    },
+    "threads": {
+      "OMP_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1",
+      "MKL_NUM_THREADS": "unset or nonnumeric; value not recorded",
+      "NUMEXPR_NUM_THREADS": "unset or nonnumeric; value not recorded"
+    },
+    "matlab_max_compute_threads": null,
+    "rng": {
+      "artifact": "rng-before.json",
+      "artifact_present": true,
+      "claimed_sha256": "3b47008849ccaeb431f270ee30be97746d2592c452e03939876e5d7c9aa8b896",
+      "actual_sha256": "3b47008849ccaeb431f270ee30be97746d2592c452e03939876e5d7c9aa8b896",
+      "reported_hash_matches_actual": true,
+      "capture_reports_no_reset_or_advance": true,
+      "unobserved": [
+        "Gmsh internal RNG",
+        "script-owned generators",
+        "other solver-library generators"
+      ],
+      "global_states": {
+        "numpy_global": {
+          "algorithm": "MT19937",
+          "captured": true,
+          "seed": null,
+          "seed_status": "not inferable from current state",
+          "state_member": "numpy_random"
+        },
+        "python_global": {
+          "captured": true,
+          "seed": null,
+          "seed_status": "not inferable from current state",
+          "state_member": "python_random"
+        }
+      },
+      "case_annotation": "Canonical submitted source uses Gmsh; no Triangle RNG claim is made. Raw runtime-provenance.json bytes/hash remain unchanged."
+    },
+    "version_details": {
+      "firedrake": {
+        "value": null,
+        "installed_distributions": {
+          "firedrake": "2025.10.2"
+        },
+        "evidence": "actual runtime-provenance.json"
+      },
+      "h5py": {
+        "value": "3.16.0",
+        "installed_distributions": {},
+        "evidence": "actual runtime-provenance.json"
+      },
+      "icepack": {
+        "value": null,
+        "installed_distributions": {
+          "icepack": "1.1.0"
+        },
+        "evidence": "actual runtime-provenance.json"
+      },
+      "mpi4py": {
+        "value": "4.1.1",
+        "installed_distributions": {},
+        "evidence": "actual runtime-provenance.json"
+      },
+      "mpi_library": {
+        "value": "Open MPI 5.0.10",
+        "installed_distributions": {},
+        "evidence": "actual runtime-provenance.json"
+      },
+      "mpi_standard": {
+        "value": [
+          3,
+          1
+        ],
+        "installed_distributions": {},
+        "evidence": "actual runtime-provenance.json"
+      },
+      "numpy": {
+        "value": "1.26.4",
+        "installed_distributions": {},
+        "evidence": "actual runtime-provenance.json"
+      },
+      "petsc4py": {
+        "value": "3.24.0",
+        "installed_distributions": {},
+        "evidence": "actual runtime-provenance.json"
+      },
+      "petsc_library": {
+        "value": [
+          3,
+          24,
+          0
+        ],
+        "installed_distributions": {},
+        "evidence": "actual runtime-provenance.json"
+      },
+      "python": {
+        "value": "3.12.13",
+        "installed_distributions": {},
+        "evidence": "actual runtime-provenance.json"
+      }
+    },
+    "gmsh_version_status": "not captured by this observer; do not infer from other package versions"
+  },
+  "outputs": {
+    "schema": "cryostack.icepack.artifact-check.v2",
+    "archive_sha256": "6ce7d342dd48be2b129bb294e4e3e9535180831156a7eb2d1f14fcfdcc2a4447",
+    "archive_bytes": 1770668,
+    "member_count": 19,
+    "crc_valid": true,
+    "members": [
+      {
+        "path": "fields/icepack/accumulation.h5",
+        "bytes": 29016,
+        "sha256": "9b6447bb452a9ae93684dbad5865a7acf929799cfdae29bbb0101ce31930f8f1"
+      },
+      {
+        "path": "fields/icepack/damage.h5",
+        "bytes": 29016,
+        "sha256": "6ddff6c0c064c9d645f0a5c1079209bceae6fc116e7f78fe419b784332cb0004"
+      },
+      {
+        "path": "fields/icepack/thickness.h5",
+        "bytes": 29016,
+        "sha256": "c224d0bacfe037ddb8eddf69af9b574e6003ce38543d8cc13705cd3ee243cbb1"
+      },
+      {
+        "path": "fields/icepack/velocity.h5",
+        "bytes": 82952,
+        "sha256": "56a9c34a6b35c434c8b6579ca2c714aa4fea2f17aa6f48f508405f7fb888f803"
+      },
+      {
+        "path": "figures/_captured.json",
+        "bytes": 384,
+        "sha256": "6139a101cf700309b1e4d3f6ef8189aeb163b3d8e7028c03f5f75a92ca2e0e1b"
+      },
+      {
+        "path": "figures/figure-01.png",
+        "bytes": 154576,
+        "sha256": "27c62263bb20b7f9fff5013bd095c4457b9d15ff7ed2c88f99fb960f9894b20d"
+      },
+      {
+        "path": "figures/figure-02.png",
+        "bytes": 98895,
+        "sha256": "1451d0f5ef4b6552836b91703b9d093875bb1083bed20439259969402e1e51b5"
+      },
+      {
+        "path": "figures/figure-03.png",
+        "bytes": 273870,
+        "sha256": "999bf042b79d1cdb4e794b85f71f0b3d5b12a94c063e8c7d446015646f5180e0"
+      },
+      {
+        "path": "figures/figure-04.png",
+        "bytes": 222210,
+        "sha256": "1ac797a37e7f9e5e753a636bed745f4efcbdec86efb3d97d60e7e025e3b68e24"
+      },
+      {
+        "path": "figures/figure-05.png",
+        "bytes": 132608,
+        "sha256": "c40a89357923a76a37027d8f50f31dce21523ec0bd8fc6d571d1fa27cf930711"
+      },
+      {
+        "path": "figures/figure-06.png",
+        "bytes": 255256,
+        "sha256": "1aaea57825b6d842f38fdc72f3178de203f24a4cdf5d759c30b758ec83ad42e2"
+      },
+      {
+        "path": "figures/figure-07.png",
+        "bytes": 120628,
+        "sha256": "61b77085d328b1fcfe8ca41d445d203215cc1d8504972bfc210247efc850cf50"
+      },
+      {
+        "path": "figures/figure-08.png",
+        "bytes": 96789,
+        "sha256": "666211ba1868ffd421c73ac62a84b115dc237c10d69d05b1c29d275304d90a63"
+      },
+      {
+        "path": "figures/icepack_velocity.png",
+        "bytes": 99693,
+        "sha256": "264d4f8784a8415e830242b8d87c0fba6c77c635dde03f65a5e52ac9b77e1ac3"
+      },
+      {
+        "path": "mesh/mesh.h5",
+        "bytes": 212776,
+        "sha256": "716d4902e60bc61755351bd561e216507d29ec9305793626df597ce66ea93a57"
+      },
+      {
+        "path": "metadata.json",
+        "bytes": 3180,
+        "sha256": "6801ebb1c8c77d14745f4b23b2327adbc107a05b6b23442b8becacf28edd5562"
+      },
+      {
+        "path": "model/ice-shelf.msh",
+        "bytes": 281234,
+        "sha256": "c32e5d0ebcc4083c147031de3c53967cfded937c78129088fb555d5fa3807e14"
+      },
+      {
+        "path": "rng-before.json",
+        "bytes": 13544,
+        "sha256": "3b47008849ccaeb431f270ee30be97746d2592c452e03939876e5d7c9aa8b896"
+      },
+      {
+        "path": "runtime-provenance.json",
+        "bytes": 4815,
+        "sha256": "7629be4ea8fc17a3e89b7c9fa7fa6446d47c3aec7af58d57487cc6c2f2a0b41b"
+      }
+    ],
+    "mesh": {
+      "vertices": 3371,
+      "triangles": 6533,
+      "connectivity_indexing": "0-based",
+      "all_triangles_nondegenerate": true,
+      "total_area_m2": 69409818251.49236,
+      "extent_m": [
+        -200000.0,
+        200000.0,
+        -200000.0,
+        24617.3536554788
+      ]
+    },
+    "fields": {
+      "thickness": {
+        "units": "meters",
+        "source_space": "CG2",
+        "exported_space": "CG1",
+        "linearised": true,
+        "datasets": {
+          "values": {
+            "minimum": 98.25964646679951,
+            "maximum": 350.13981456478683,
+            "shape": [
+              3371
+            ]
+          }
+        }
+      },
+      "velocity": {
+        "units": "meters/year",
+        "source_space": "CG2",
+        "exported_space": "CG1",
+        "linearised": true,
+        "datasets": {
+          "magnitude": {
+            "minimum": 160.4572357088255,
+            "maximum": 728.8069138797038,
+            "shape": [
+              3371
+            ]
+          },
+          "values": {
+            "minimum": -330.2284058610152,
+            "maximum": 193.71284928023215,
+            "shape": [
+              3371
+            ]
+          },
+          "values_y": {
+            "minimum": 158.4786640464337,
+            "maximum": 719.7465540495674,
+            "shape": [
+              3371
+            ]
+          }
+        }
+      },
+      "accumulation": {
+        "units": "meters/year",
+        "source_space": null,
+        "exported_space": "CG1",
+        "linearised": false,
+        "datasets": {
+          "values": {
+            "minimum": 0.0,
+            "maximum": 0.0,
+            "shape": [
+              3371
+            ]
+          }
+        }
+      },
+      "damage": {
+        "units": "dimensionless",
+        "source_space": "CG1",
+        "exported_space": "CG1",
+        "linearised": false,
+        "datasets": {
+          "values": {
+            "minimum": -0.002612510023320273,
+            "maximum": 0.0689681004396843,
+            "shape": [
+              3371
+            ]
+          }
+        }
+      }
+    },
+    "all_fields_finite": true,
+    "thickness_positive": true,
+    "velocity_magnitude_consistency": {
+      "maximum_absolute_difference": 1.1368683772161603e-13,
+      "absolute_tolerance": 1e-10,
+      "passed": true
+    },
+    "accumulation_exactly_zero": true,
+    "damage_bounds": {
+      "minimum": -0.002612510023320273,
+      "maximum": 0.0689681004396843,
+      "within_zero_to_one": false,
+      "values_clipped_by_checker": false
+    },
+    "runtime_schema": "cryostack.runtime-provenance.v1",
+    "runtime_phase": "after",
+    "runtime_json_sha256": "7629be4ea8fc17a3e89b7c9fa7fa6446d47c3aec7af58d57487cc6c2f2a0b41b",
+    "rng": {
+      "artifact": "rng-before.json",
+      "sha256": "3b47008849ccaeb431f270ee30be97746d2592c452e03939876e5d7c9aa8b896",
+      "json_decodes": true,
+      "claimed_state_members_present": [
+        "numpy_random",
+        "python_random"
+      ],
+      "raw_states_exported": false
+    },
+    "artifact_structure_accepted": true,
+    "scientific_accuracy_validated": false,
+    "repeat_equality_test_performed": false,
+    "native_solver_executed_by_checker": false
+  },
+  "changed_case": {
+    "schema": "cryostack.changed-case.context.v1",
+    "native_artifact_accepted": true,
+    "only_submitted_source_change": "T = firedrake.Constant(255.15) -> T = firedrake.Constant(254.15)",
+    "canonical_source_sha256": "4efcfce487cdd181243fc23949f737c2fb812a2e6e7dfeaf1e774ff0ba951c32",
+    "submitted_source_sha256": "097227dabc6395a4a59147c9014ae354bef9c8c30acd1f7ac2502fedcc520380",
+    "mesh_comparison_to_Basic": {
+      "elements": {
+        "shape": [
+          6533,
+          3
+        ],
+        "exact_equal": true,
+        "max_absolute_difference": 0.0
+      },
+      "x": {
+        "shape": [
+          3371
+        ],
+        "exact_equal": true,
+        "max_absolute_difference": 0.0
+      },
+      "y": {
+        "shape": [
+          3371
+        ],
+        "exact_equal": true,
+        "max_absolute_difference": 0.0
+      }
+    },
+    "archive_observer_files_match_actual_remote_objects": {
+      "runtime-provenance.json": true,
+      "rng-before.json": true,
+      "metadata.json": true
+    },
+    "interpretation": "This is an independent 254.15 K experiment, not an unchanged-input repeat. Exact exported mesh equality provides context; field equality, sensitivity validation and PC/AWS agreement are not asserted.",
+    "native_space": "Thickness/velocity source CG2 interpolated to portable CG1; not a full Firedrake checkpoint.",
+    "damage": "Small negative undershoot remains explicit and unclipped.",
+    "actual_timing_seconds": {
+      "submission_to_batch_start": 215.252,
+      "batch_task": 428.919,
+      "observer_interval": 396.248531
+    }
+  },
+  "scientific_configuration": {
+    "temperature_K": 254.15,
+    "source_change": "Only temperature constant changed from 255.15 K to 254.15 K",
+    "example": "Tutorial / 02 Synthetic Ice Shelf",
+    "final_time_each_phase_years": 400,
+    "steps_each_phase": 200,
+    "phases": 2,
+    "dt_years": 2,
+    "phase_2_damage_physics": true,
+    "accumulation_m_per_year": 0,
+    "native_thickness_velocity_space": "CG2",
+    "portable_export_space": "CG1",
+    "portable_export_is_complete_firedrake_checkpoint": false
+  },
+  "native_execution_accepted": true,
+  "artifact_structure_accepted": true,
+  "scientific_accuracy_validated": false,
+  "recording_status": "Reviewed185-second native Advanced tutorial accepted for publication."
+}

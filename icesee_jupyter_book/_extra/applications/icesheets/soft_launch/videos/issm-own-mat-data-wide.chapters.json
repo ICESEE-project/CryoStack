@@ -1,0 +1,367 @@
+{
+  "video_sha256": "b3c15d9289f5ee146dbb72aa33114b3219baee1dbf2f5cd32223aa4abf3471e4",
+  "duration_seconds": 263.0,
+  "chapters": [
+    {
+      "id": "mat-01",
+      "step": "Goal",
+      "start_seconds": 0,
+      "end_seconds": 15.0,
+      "where": "",
+      "screenText": "Initialize native ISSM from your gridded MATLAB fields.",
+      "screenWhy": "Full geometry and velocity fields must initialize the actual native mesh.",
+      "expectedResult": "Four scripts + issm-shelf-initial.mat; verified BYO AWS, MATLAB and Connector.",
+      "logical_step_id": "orientation",
+      "pause_after": false,
+      "title": "1. Prepare your files and access",
+      "instructions": [
+        "Open Pilot Tutorials \u2192 Upload a dataset \u2192 download the native initial-condition packet. Extract it.",
+        "Have an approved login, connected AWS resources and configured MATLAB/Connector. Choose Cloud \u2192 Advanced \u2192 ISSM."
+      ],
+      "why": "Full geometry and velocity fields must initialize the actual native mesh.",
+      "note": "Scripts: native-data-issm-mat/ (all four files). Data: datasets/issm-shelf-initial.mat. Prerequisites are linked on the tutorial page."
+    },
+    {
+      "id": "mat-02",
+      "step": 1,
+      "start_seconds": 15.0,
+      "end_seconds": 31.0,
+      "where": "",
+      "screenText": "Name an owned example, then choose New example.",
+      "screenWhy": "An owned example keeps your imported workflow separate from installed examples.",
+      "expectedResult": "Expected: a new editable ISSM workspace example.",
+      "logical_step_id": "example",
+      "pause_after": false,
+      "title": "2. Create an owned example",
+      "instructions": [
+        "In Editor, enter a new name and choose New example.",
+        "This recording uses pilot-issm-mat-1119. A new ISSM example can include a seeded runme.m that must be replaced with your real script."
+      ],
+      "why": "An owned example keeps your imported workflow separate from installed examples.",
+      "note": "A seeded runme.m must be replaced by the supplied MAT run script before launch."
+    },
+    {
+      "id": "mat-03",
+      "step": 1,
+      "start_seconds": 31.0,
+      "end_seconds": 39.0,
+      "where": "",
+      "screenText": "Read the confirmation and keep this owned example selected.",
+      "screenWhy": "Source imports and dataset attachments must belong to the same example.",
+      "expectedResult": "Expected: the newly created workspace name.",
+      "logical_step_id": "example",
+      "pause_after": true,
+      "title": "2. Confirm the owned workspace",
+      "instructions": [
+        "The blue confirmation says the workspace example was created.",
+        "Keep this owned example selected while uploading and referencing the input. Source files and datasets use different controls."
+      ],
+      "why": "Source imports and dataset attachments must belong to the same example.",
+      "note": "This is an editable workspace example, separate from the read-only application examples."
+    },
+    {
+      "id": "mat-04",
+      "step": 2,
+      "start_seconds": 39.0,
+      "end_seconds": 62.0,
+      "where": "",
+      "screenText": "Choose issm-shelf-initial.mat, then Upload.",
+      "screenWhy": "The MAT file contains the full synthetic initial-condition grids.",
+      "expectedResult": "Expected: one selected file becomes Uploaded: issm-shelf-initial.mat.",
+      "logical_step_id": "upload",
+      "pause_after": true,
+      "title": "3. Upload the MAT file",
+      "instructions": [
+        "Scroll below Environment & resources in the left column to Datasets. Choose issm-shelf-initial.mat, then choose Upload. The selected-file count changes from 1 to 0 after upload.",
+        "This is a synthetic 5\u00d79 gridded field file for a 10 km square shelf."
+      ],
+      "why": "The MAT file contains the full synthetic initial-condition grids.",
+      "note": "Upload stores the file. The script and schema-specific reader must still load it."
+    },
+    {
+      "id": "mat-05",
+      "step": 3,
+      "start_seconds": 62.0,
+      "end_seconds": 83.0,
+      "where": "",
+      "screenText": "Select the MAT dataset and choose Reference in example.",
+      "screenWhy": "Referencing provides the exact relative path that runme.m reads.",
+      "expectedResult": "Expected: data/issm-shelf-initial.mat; do not add data/ twice.",
+      "logical_step_id": "reference",
+      "pause_after": true,
+      "title": "4. Reference the staged filename",
+      "instructions": [
+        "Select issm-shelf-initial.mat and choose Reference in example. Keep the baseline filename.",
+        "The confirmation gives data/issm-shelf-initial.mat. The run script must read that exact relative path."
+      ],
+      "why": "Referencing provides the exact relative path that runme.m reads.",
+      "note": "Do not add data/ twice. Referencing makes the bytes available; it does not start the model."
+    },
+    {
+      "id": "mat-06",
+      "step": 4,
+      "start_seconds": 83.0,
+      "end_seconds": 102.0,
+      "where": "",
+      "screenText": "Replace and import all four source files.",
+      "screenWhy": "Replacement updates the new example\u2019s starter runme.m.",
+      "expectedResult": "Check count 4 \u2192 0 and wait for Files are saved.",
+      "logical_step_id": "scripts",
+      "pause_after": false,
+      "title": "5. Import all four source files",
+      "instructions": [
+        "Choose runme.m, Launch.par, validate_launch_dataset.m and load_initial_conditions.m together.",
+        "Check Replace existing script files for the seeded runme.m, then choose Import script files."
+      ],
+      "why": "Replacement updates the new example\u2019s starter runme.m.",
+      "note": "The actual continuous take shows selected count 4, replacement enabled, the import action and then count 0."
+    },
+    {
+      "id": "mat-07",
+      "step": 4,
+      "start_seconds": 102.0,
+      "end_seconds": 114.0,
+      "where": "",
+      "screenText": "Confirm all four imported filenames and Files are saved.",
+      "screenWhy": "Only saved scripts enter the next run snapshot.",
+      "expectedResult": "runme.m, Launch.par, validate_launch_dataset.m, load_initial_conditions.m.",
+      "logical_step_id": "scripts",
+      "pause_after": true,
+      "title": "6. Check the saved-file confirmation",
+      "instructions": [
+        "The confirmation names all four imported files and says Files are saved.",
+        "The imported runme.m is now the actual MAT reader/ISSM workflow. All four script hashes were verified before launch and in the submitted snapshot."
+      ],
+      "why": "Only saved scripts enter the next run snapshot.",
+      "note": "All four filenames must appear in the saved-file confirmation before you continue."
+    },
+    {
+      "id": "mat-08",
+      "step": 5,
+      "start_seconds": 114.0,
+      "end_seconds": 123.0,
+      "where": "",
+      "screenText": "Confirm Action Run and Run target runme.m.",
+      "screenWhy": "The entrypoint chooses the MATLAB workflow that will execute.",
+      "expectedResult": "Keep all four saved scripts and the referenced MAT file.",
+      "logical_step_id": "review",
+      "pause_after": false,
+      "title": "6. Confirm the entry script",
+      "instructions": [
+        "In Experiment, confirm Action = Run and Run target = runme.m.",
+        "Importing source files does not select a different target or submit an AWS job."
+      ],
+      "why": "The entrypoint chooses the MATLAB workflow that will execute.",
+      "note": "The four saved scripts and the referenced MAT file must all be present before review."
+    },
+    {
+      "id": "mat-09",
+      "step": 5,
+      "start_seconds": 123.0,
+      "end_seconds": 135.0,
+      "where": "",
+      "screenText": "Review the owned MAT experiment before launching.",
+      "screenWhy": "Review checks resources, readiness, configured license and Connector.",
+      "expectedResult": "ISSM \u00b7 pilot-issm-mat-1119; 2 vCPU and 8 GiB.",
+      "logical_step_id": "review",
+      "pause_after": true,
+      "title": "7. Review the MAT experiment",
+      "instructions": [
+        "Choose Review & Launch. Confirm model ISSM and example pilot-issm-mat-1119, readiness and resources.",
+        "Scroll to the bottom of the review and choose Launch cloud run explicitly."
+      ],
+      "why": "Review checks resources, readiness, configured license and Connector.",
+      "note": "Check 2 vCPU / 8 GiB and the existing license/Connector. Measured execution times appear in the completion card."
+    },
+    {
+      "id": "mat-10",
+      "step": 6,
+      "start_seconds": 135.0,
+      "end_seconds": 145.0,
+      "where": "",
+      "screenText": "Launch explicitly, then follow the new MAT run.",
+      "screenWhy": "The new submission is the run to monitor through completion.",
+      "expectedResult": "Expected: Staging/Submitting, then Queued, Running and Completed.",
+      "logical_step_id": "submit",
+      "pause_after": true,
+      "title": "7. Watch the new submission",
+      "instructions": [
+        "Confirm Launch cloud run at the bottom of the review.",
+        "Watch the MAT experiment progress through Staging/Submitting, then wait for Queued, Running and Completed."
+      ],
+      "why": "The new submission is the run to monitor through completion.",
+      "note": "The manifest links the actual saved source/data, pinned image, job and retained archive."
+    },
+    {
+      "id": "mat-11",
+      "step": 7,
+      "start_seconds": 145.0,
+      "end_seconds": 152.0,
+      "where": "",
+      "screenText": "Inspect the initial thickness panel.",
+      "screenWhy": "The saved native figure shows the uploaded fields on the Triangle mesh.",
+      "expectedResult": "Thickness 300\u2013500 m; coordinates span a 10 km square.",
+      "logical_step_id": "initial-fields",
+      "pause_after": false,
+      "title": "8a. Initial thickness",
+      "instructions": [
+        "Initial thickness is 300\u2013500 m.",
+        "The axes span a 10 km square in metres."
+      ],
+      "why": "The saved native figure shows the uploaded fields on the Triangle mesh.",
+      "note": "Exact saved native PNG, shown as the complete three-panel strip; this panel is outlined without stretching or altering pixels."
+    },
+    {
+      "id": "mat-12",
+      "step": 7,
+      "start_seconds": 152.0,
+      "end_seconds": 159.0,
+      "where": "",
+      "screenText": "Inspect initial surface alongside thickness.",
+      "screenWhy": "Floating-shelf base and surface must remain consistent with thickness.",
+      "expectedResult": "Surface elevation and coordinates are in metres.",
+      "logical_step_id": "initial-fields",
+      "pause_after": false,
+      "title": "8b. Initial surface",
+      "instructions": [
+        "Surface elevation is in metres.",
+        "This floating shelf uses consistent thickness, base and surface."
+      ],
+      "why": "Floating-shelf base and surface must remain consistent with thickness.",
+      "note": "Exact saved native PNG, shown as the complete three-panel strip; this panel is outlined without stretching or altering pixels."
+    },
+    {
+      "id": "mat-13",
+      "step": 7,
+      "start_seconds": 159.0,
+      "end_seconds": 166.0,
+      "where": "",
+      "screenText": "Inspect the initial speed panel.",
+      "screenWhy": "The diagnostic solver then computes the native velocity response.",
+      "expectedResult": "Initial speed uses metres/year; this is not a transient time plot.",
+      "logical_step_id": "initial-fields",
+      "pause_after": true,
+      "title": "8c. Initial speed",
+      "instructions": [
+        "Initial speed is in metres/year.",
+        "The next diagnostic solve computes the native velocity field."
+      ],
+      "why": "The diagnostic solver then computes the native velocity response.",
+      "note": "Exact saved native PNG, shown as the complete three-panel strip; this panel is outlined without stretching or altering pixels."
+    },
+    {
+      "id": "mat-14",
+      "step": 8,
+      "start_seconds": 166.0,
+      "end_seconds": 180.0,
+      "where": "",
+      "screenText": "Check all five initialized fields and successful completion.",
+      "screenWhy": "A file upload is useful only when its fields actually initialize the model.",
+      "expectedResult": "All five fields \u00d7 13 native vertices: interpolation error 0.",
+      "logical_step_id": "validation",
+      "pause_after": true,
+      "title": "9. Verify initialization and completion",
+      "instructions": [
+        "Initialized thickness, base, surface, vx and vy match the uploaded file at all 13 native vertices, with maximum error 0.",
+        "One diagnostic SSA Stressbalance solve completed; no physical time advances."
+      ],
+      "why": "A file upload is useful only when its fields actually initialize the model.",
+      "note": "Startup 220.723 s \u00b7 AWS task 51.018 s \u00b7 script 9.568328 s, including setup, mesh, initial plotting and solving."
+    },
+    {
+      "id": "mat-15",
+      "step": 9,
+      "start_seconds": 180.0,
+      "end_seconds": 196.0,
+      "where": "",
+      "screenText": "Choose StressbalanceSolution \u2192 Vel, then Render.",
+      "screenWhy": "Render updates the retained native field without rerunning the model.",
+      "expectedResult": "Expected: the accepted MAT run\u2019s 13-node velocity field.",
+      "logical_step_id": "render",
+      "pause_after": true,
+      "title": "10. Render the current velocity field",
+      "instructions": [
+        "Open Workspace \u2192 Results for the completed MAT run. Confirm StressbalanceSolution and Vel, then choose Render.",
+        "The enabled button changes while the retained native velocity field is rendered."
+      ],
+      "why": "Render updates the retained native field without rerunning the model.",
+      "note": "This Results identity belongs to the accepted MAT run; the final native field contains 13 vertices and 16 triangles."
+    },
+    {
+      "id": "mat-16",
+      "step": 10,
+      "start_seconds": 196.0,
+      "end_seconds": 212.0,
+      "where": "",
+      "screenText": "Inspect the saved final native velocity figure.",
+      "screenWhy": "Use the full axes, colour bar and velocity components together.",
+      "expectedResult": "Speed 100\u2013180 m/year; Vel agrees with hypot(Vx,Vy).",
+      "logical_step_id": "field",
+      "pause_after": true,
+      "title": "11. Inspect final native velocity",
+      "instructions": [
+        "This is the unchanged native PNG from the accepted archive, with full axes and colour bar.",
+        "Speed is 100\u2013180 m/year, and Vel agrees with hypot(Vx,Vy). The initial and solved velocities need not match in the interior."
+      ],
+      "why": "Use the full axes, colour bar and velocity components together.",
+      "note": "The mesh spans 10 km \u00d7 10 km. This diagnostic run has no transient time axis."
+    },
+    {
+      "id": "mat-17",
+      "step": 11,
+      "start_seconds": 212.0,
+      "end_seconds": 228.0,
+      "where": "",
+      "screenText": "Use node-weighted definitions when reading these metrics.",
+      "screenWhy": "Arithmetic-node metrics differ from area-weighted triangle metrics.",
+      "expectedResult": "Mean h 402.307692 m; node-RMS speed 142.564238 m/year; iteration count 12.",
+      "logical_step_id": "metrics",
+      "pause_after": true,
+      "title": "12. Interpret the checks precisely",
+      "instructions": [
+        "Arithmetic-node mean thickness is 402.307692 m. Node-RMS speed sqrt(mean(Vel\u00b2)) is 142.564238 m/year; convergence count is the scalar 12.",
+        "These metrics are not area-weighted."
+      ],
+      "why": "Arithmetic-node metrics differ from area-weighted triangle metrics.",
+      "note": "Five inferred non-front boundary vertices match input vx/vy. Saved spc arrays remain opaque; this boundary check is an inference, not direct decoding."
+    },
+    {
+      "id": "mat-18",
+      "step": 12,
+      "start_seconds": 228.0,
+      "end_seconds": 244.0,
+      "where": "",
+      "screenText": "Choose Download results and wait for the fresh link.",
+      "screenWhy": "The archive preserves fields, figures, initialization and runtime provenance.",
+      "expectedResult": "Expected: a newly prepared results_bundle link for this selected run.",
+      "logical_step_id": "download",
+      "pause_after": false,
+      "title": "13. Prepare the archive download",
+      "instructions": [
+        "Choose Download results. When the fresh HTTPS link appears, use it to save this run\u2019s archive.",
+        "The next step follows that link; the archive contains the native fields, figures, initialized arrays and provenance."
+      ],
+      "why": "The archive preserves fields, figures, initialization and runtime provenance.",
+      "note": "Download preparation uses the completed run\u2019s retained results."
+    },
+    {
+      "id": "mat-19",
+      "step": 12,
+      "start_seconds": 244.0,
+      "end_seconds": 263.0,
+      "where": "",
+      "screenText": "Choose the fresh archive link to save this run\u2019s results.",
+      "screenWhy": "Keep the archive with its source, data, image and output hashes.",
+      "expectedResult": "15 CRC-valid members, byte-identical to the originally checked MAT archive.",
+      "logical_step_id": "download",
+      "pause_after": true,
+      "title": "14. Save and check your archive",
+      "instructions": [
+        "Click the fresh download link. The browser saved a 15-member ZIP with valid CRC.",
+        "Every file is byte-identical to the originally checked MAT archive. Keep the archive with its input, image and output hashes."
+      ],
+      "why": "Keep the archive with its source, data, image and output hashes.",
+      "note": "One native execution; this cached download does not rerun the solver. Repeatability and accuracy require separate checks."
+    }
+  ]
+}

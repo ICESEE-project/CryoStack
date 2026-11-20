@@ -11,8 +11,8 @@ or real secret values.
 |---|---|---|---|
 | nginx | TLS termination and reverse proxy | HTTPS 443, HTTP redirect | system configuration and certificates |
 | gateway (`bin/icesee_app.py`) | authentication, book, Control Center, app routing | proxied by nginx; localhost 8080 by default | auth and operations databases |
-| Run Center Voilà | ICESEE configuration and runs | gateway `/icesee-gui/` | user workspace and result records |
-| IceSheets Voilà | CryoLauncher application | gateway `/icesheets/` | user workspace and result records |
+| Run Center Voilà | ICESEE configuration and runs | gateway `/icesee/` | user workspace and result records |
+| IceSheets Voilà | CryoLauncher application | gateway `/cryolauncher/` | user workspace and result records |
 | Frozen Legacies | catalogs, imagery, products, reviews and picker jobs | gateway `/frozen-legacies/` | catalog DB, review store, workspaces and approved datasets |
 | LIVIST | temperature product generation and publication workflow | gateway `/livist/` | LIVIST workspace and manifests |
 | Connector relay | owner-bound remote/HPC connector sessions | gateway relay routes; localhost 8899 | relay token and transient sessions |

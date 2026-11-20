@@ -24,7 +24,7 @@
     </p>
 
     <div class="cryostack-docs-actions">
-      <a class="cryostack-btn primary" href="/icesheets/">
+      <a class="cryostack-btn primary" href="/cryolauncher/">
         Open CryoLauncher
       </a>
 
@@ -56,8 +56,9 @@ runs MATLAB and therefore needs a MATLAB license, Icepack does not. The
 [User Manual](user_manual) lists where the two models differ and exactly which
 Cloud options have been validated.
 
-This guide walks through a first **Remote** run with ISSM. The Cloud path
-shares every step except where the run executes — see
+This guide starts with an ISSM **Remote** run. Cloud instead uses AWS
+role verification, S3/container/Batch readiness and a cloud review; it does
+not use the Remote SSH/Slurm connection fields. See
 <a href="#running-on-cloud-instead">Running on Cloud instead</a>.
 
 ## Before you begin
@@ -116,7 +117,7 @@ installation.
 
 ## 1. Open CryoLauncher
 
-Open [https://cryostack.eas.gatech.edu/icesheets/](https://cryostack.eas.gatech.edu/icesheets/).
+Open [https://cryostack.eas.gatech.edu/cryolauncher/](https://cryostack.eas.gatech.edu/cryolauncher/).
 
 The interface has two areas:
 
@@ -191,7 +192,8 @@ untouched. You clone explicitly (**Clone to My Workspace**) when you want to
 
 ## 5. Choose an execution backend
 
-Set the **Execution** and **Backend** menus:
+Under **Mode**, choose **Remote HPC** or **Cloud**. Configure the
+software backend inside the selected environment:
 
 :::{raw} html
 <p>
@@ -346,11 +348,13 @@ ISSM Cloud run also needs a MATLAB license configured under **Cloud
 Environment → MATLAB LICENSE**. Results are retrieved automatically when the
 run completes and appear in the same **Results** tab.
 
-The
-<a href="https://mediaspace.gatech.edu/media/Brian+Kyanjos+Zoom+Meeting/1_edvr6a1l" target="_blank" rel="noopener noreferrer">Icepack · Cloud</a>
-video tutorial shows the whole sequence, including the AWS account setup. The
-full reference — compute options, what is validated, MATLAB licensing, costs,
-and cleanup — is in
+Watch <a href="soft_launch/byo_aws_setup.html#first-time-connection">Connect an AWS account</a>
+for the first-time access-stack creation, **RoleArn** output and connection
+verification. That recording stops at **Connected**. Preparing cloud resources
+and launching a scientific model are separate steps; begin with the
+<a href="soft_launch/basic_icepack.html#recorded-basic-icepack">Basic Icepack tutorial</a>.
+The full reference — compute options, what is validated, MATLAB licensing,
+costs and cleanup — is in
 <a href="user_manual.html#cloud-execution-aws">User Manual → Cloud execution
 (AWS)</a>.
 
@@ -363,7 +367,7 @@ and cleanup — is in
 - Browse [CryoLauncher Resources](resources) for models, containers, examples,
   and result formats.
 - Use **Advanced mode** and **Clone to My Workspace** to modify an example.
-- Open [ICESEE](https://cryostack.eas.gatech.edu/icesee-gui/) for ensemble data
+- Open [ICESEE](https://cryostack.eas.gatech.edu/icesee/) for ensemble data
   assimilation.
 
 :::{raw} html

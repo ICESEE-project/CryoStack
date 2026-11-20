@@ -355,6 +355,7 @@ def build_cloud_runtime_callbacks(
     results_output,
     execution_resolver=None,
     on_status_result=None,
+    job_id_provider=None,           # authoritative active attempt, including no submitted job
     smoke_button=None,
     set_chip=None,
     smoke_precheck=None,
@@ -576,10 +577,15 @@ def build_cloud_runtime_callbacks(
                   "(no job submitted, no ISSM run)…")
         _ops.smoke_test(smoke_worker, _smoke_success, precheck=smoke_precheck)
 
-    # -- job-lifecycle (unchanged: on-demand, quick describe-* calls) --
+    # -- job-lifecycle (on-demand, quick describe-* calls) --
+    def _current_job_id():
+        # A new failed submission may have no job, while legacy STATUS still
+        # contains the previous successful job. Never act on that stale ID.
+        return job_id_provider() if job_id_provider is not None else runtime_status.get("batch_job_id")
+
     def on_status(_=None):
         log_output.clear_output()
-        job_id = runtime_status.get("batch_job_id")
+        job_id = _current_job_id()
         if not job_id:
             with log_output:
                 print("[cloud] No Batch job id yet. Submit first.")
@@ -602,7 +608,7 @@ def build_cloud_runtime_callbacks(
 
     def on_logs(_=None):
         log_output.clear_output()
-        job_id = runtime_status.get("batch_job_id")
+        job_id = _current_job_id()
         if not job_id:
             with log_output:
                 print("[cloud] No Batch job id yet. Submit first.")
@@ -610,7 +616,7 @@ def build_cloud_runtime_callbacks(
         try:
             result = bridge_factory().logs(job_id=str(job_id))
             with log_output:
-                print("[cloud] Logs")
+                print(f"[cloud] Logs for Batch job {job_id}")
                 if isinstance(result, dict):
                     log_text = (
                         result.get("logs")
@@ -630,7 +636,7 @@ def build_cloud_runtime_callbacks(
                 # the status pill to failed (the Results view stays usable).
                 short, _detail = classify_cloud_failure(error)
                 with log_output:
-                    print("[cloud] Logs")
+                    print(f"[cloud] Logs for Batch job {job_id}")
                     print(f"[cloud] {short}")
                 status_widget.value = status_html("done")
             else:
@@ -639,7 +645,7 @@ def build_cloud_runtime_callbacks(
 
     def on_terminate(_=None):
         log_output.clear_output()
-        job_id = runtime_status.get("batch_job_id")
+        job_id = _current_job_id()
         if not job_id:
             with log_output:
                 print("[cloud] No Batch job id yet. Submit first.")
@@ -657,7 +663,7 @@ def build_cloud_runtime_callbacks(
 
     def on_results(_=None):
         results_output.clear_output()
-        cloud_run = runtime_status.get("cloud_run")
+        cloud_run = runtime_status.get("cloud_run") if _current_job_id() else None
         if not cloud_run:
             with results_output:
                 print("[cloud] No cloud run location yet. Submit first.")

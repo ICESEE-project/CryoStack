@@ -1,0 +1,63 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:12.000
+1. Choose Cloud and ISSM
+Use Cloud for an AWS run, then select ISSM.
+This ISSM cloud workflow runs MATLAB, so this workflow needs a usable license provided by your institution.
+
+00:00:12.000 --> 00:00:32.000
+Already configured? Prepare reattachment
+The masked input is hidden when a managed license is already configured.
+Advanced license configuration → save the current ARN privately → clear Existing secret ARN → Use existing secret.
+Only the local reference is cleared. The AWS secret stays intact.
+
+00:00:32.000 --> 00:00:44.000
+2. Enter the license address
+Paste the network license address supplied by your institution into the masked MATLAB license field.
+Use your own institution’s port@server value. The value stays masked on screen.
+
+00:00:44.000 --> 00:00:56.000
+3. Configure the license
+Select Configure license.
+The existing managed secret is found. Its reference and execution access are reattached.
+The typed value is not saved over that secret; the input clears after configuration.
+
+00:00:56.000 --> 00:01:08.000
+4. Confirm the saved reference
+MATLAB license configured confirms that the account has a saved license reference.
+It does not prove a successful MATLAB checkout. The execution test comes later.
+
+00:01:08.000 --> 00:01:20.000
+5. Connect the institutional bridge
+If the license service is private, run the CryoStack Connector where that service is reachable.
+Off campus, establish the required institutional VPN connection first. Select Open Connector.
+
+00:01:20.000 --> 00:01:32.000
+6. Pair your Connector
+Use your own one-time code to pair the external Connector. The code is hidden here.
+This footage shows the pairing prompt and the later Re-check; external code entry is not recorded.
+
+00:01:32.000 --> 00:01:44.000
+7. Re-check the connection
+Select Re-check after pairing.
+This checks the same-user institutional connection. It does not launch a model or perform a MATLAB checkout.
+
+00:01:44.000 --> 00:01:56.000
+7. Confirm Connector connected
+The green CryoStack Connector connected badge confirms the bridge is online.
+Keep the Connector and required network connection available until the run ends.
+
+00:01:56.000 --> 00:02:08.000
+8. Review ISSM runtime readiness
+Open Review & Launch and confirm ISSM runtime is Ready.
+Check the account, model, resources, time limit and estimated charges before launching.
+
+00:02:08.000 --> 00:02:22.000
+Native MATLAB / ISSM run completed
+The actual AWS Batch run succeeded with native exit code 0.
+Downloaded runtime provenance reports MATLAB R2024b Update 7 and ISSM 2026.1. This confirms that the configured license path supported actual execution.
+
+00:02:22.000 --> 00:02:38.000
+Actual licensed execution: saved result
+The same accepted native run produced this full saved Vel figure.
+Its downloaded provenance reports MATLAB R2024b Update 7 and ISSM 2026.1. The configured license and institutional connection supported actual execution.

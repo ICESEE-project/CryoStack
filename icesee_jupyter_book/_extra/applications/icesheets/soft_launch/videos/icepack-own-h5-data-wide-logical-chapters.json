@@ -1,0 +1,322 @@
+{
+  "schema": "cryostack.pilot.interactive-tutorial.v1",
+  "title": "Icepack: initialize from HDF5",
+  "video_sha256": "f38fd5276bcc1f6ba67cbd8b19b309f54f631930db08af9c9839eee8f4cb09c9",
+  "duration_seconds": 251.0,
+  "source_edit_receipt_sha256": "b0ca496b0879055bdf9dddfab6dadcea7c0a727b3cb7db774dabb308a4cfcd11",
+  "public_scene_chapters_sha256": "b55cd9535b6dd242c1c96af6e2d17c50d63d9de69e1679b053093be3551c385e",
+  "chapter_timing": "Receipt-bound logical chapters include control cue, actual transition and confirmation; durations are video times.",
+  "steps": [
+    {
+      "id": "goal",
+      "logical_id": "orientation",
+      "title": "Your goal: initialize and run Icepack",
+      "start": 0.0,
+      "end": 20.0,
+      "instructions": [
+        "Run a synthetic shelf from your own gridded fields, then save the initial/final maps and native results.",
+        "Download run.py, initial_fields.py and icepack-shelf-initial.h5 from this tutorial page.",
+        "Open CryoLauncher and sign in. Use an approved connected cloud account with its resources prepared.",
+        "The following steps select this tutorial\u2019s model and example."
+      ],
+      "why": "Keep the source inputs, inspect native fields, and save a complete result package. An owned example keeps scripts, dataset references and results together.",
+      "expected": "Your workspace keeps scripts, datasets, run history and results together.",
+      "note": "Start with your approved cloud account already connected and its cloud resources prepared. Shared application orientation; the case-specific configuration follows.",
+      "pauseAfter": false,
+      "source_scene_ids": [
+        "goal",
+        "start"
+      ]
+    },
+    {
+      "id": "mode",
+      "logical_id": "step-1",
+      "title": "1. Open the cloud workspace",
+      "start": 20.0,
+      "end": 39.0,
+      "instructions": [
+        "Choose Cloud \u2192 Advanced \u2192 Icepack.",
+        "You will create a separate workspace example for this HDF5 run.",
+        "Choose Icepack as the model.",
+        "Next, create a new owned workspace example with a separate name for this HDF5 run."
+      ],
+      "why": "Cloud uses your connected account; Advanced enables your owned scripts and datasets. The selected example controls the source files and dataset references used for launch.",
+      "expected": "The next step gives your HDF5 run a separate name.",
+      "note": "Keep the three supplied tutorial files together on your computer.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "mode",
+        "case"
+      ]
+    },
+    {
+      "id": "new-example",
+      "logical_id": "step-2",
+      "title": "2. Create your own example",
+      "start": 39.0,
+      "end": 51.0,
+      "instructions": [
+        "Enter a new name, then choose New example.",
+        "The new example has an empty file list, ready for your Python files."
+      ],
+      "why": "An owned workspace separates your files from the supplied application example.",
+      "expected": "Wait for the created-workspace message and empty file list.",
+      "note": "The recorded example is pilot-icepack-h5-1118.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "new-example"
+      ]
+    },
+    {
+      "id": "choose-scripts",
+      "logical_id": "step-3",
+      "title": "3. Select both Python files",
+      "start": 51.0,
+      "end": 61.0,
+      "instructions": [
+        "Choose script files. In your file picker, select run.py and initial_fields.py, then choose Open.",
+        "Check that the button now shows two selected files."
+      ],
+      "why": "Selection picks local files; importing is the step that saves them in this example.",
+      "expected": "Check that two script files are selected.",
+      "note": "You will import both files into the same workspace example.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "choose-scripts"
+      ]
+    },
+    {
+      "id": "import-cue",
+      "logical_id": "step-4",
+      "title": "4. Import the selected scripts",
+      "start": 61.0,
+      "end": 80.0,
+      "instructions": [
+        "Choose Import script files.",
+        "Wait for Imported run.py, initial_fields.py. Files are saved.",
+        "The file selector now contains run.py; the import confirmation lists both imported files."
+      ],
+      "why": "Import saves the selected source files; it does not submit a model run.",
+      "expected": "Expected: Imported run.py, initial_fields.py. Files are saved.",
+      "note": "If your example already contains run.py, enable Replace existing script files first. For seeded or existing files, use Replace existing script files before importing.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "import-cue",
+        "import"
+      ]
+    },
+    {
+      "id": "target",
+      "logical_id": "step-5",
+      "title": "5. Use run.py as the entry point",
+      "start": 80.0,
+      "end": 90.0,
+      "instructions": [
+        "Set Run target to run.py.",
+        "This script calls initial_fields.py to validate and read your HDF5 input."
+      ],
+      "why": "Run target selects the entry script; other imported files can act as helpers.",
+      "expected": "The script calls initial_fields.py to read and validate your HDF5 input.",
+      "note": "Importing files saves them; launching is a separate step.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "target"
+      ]
+    },
+    {
+      "id": "choose-data",
+      "logical_id": "step-6",
+      "title": "6. Choose your HDF5 input",
+      "start": 90.0,
+      "end": 101.0,
+      "instructions": [
+        "In Datasets choose Choose data files.",
+        "In your file picker select icepack-shelf-initial.h5 and choose Open. Check that one file is selected."
+      ],
+      "why": "Selecting a file prepares it for upload; it is not in the dataset registry yet.",
+      "expected": "Check that one data file is selected.",
+      "note": "Next, upload the selected file into your workspace.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "choose-data"
+      ]
+    },
+    {
+      "id": "upload",
+      "logical_id": "step-7",
+      "title": "7. Upload the selected data file",
+      "start": 101.0,
+      "end": 112.0,
+      "instructions": [
+        "Choose Upload. Wait for Uploaded: icepack-shelf-initial.h5.",
+        "Check that the new HDF5 filename appears in your dataset list."
+      ],
+      "why": "Upload stores the dataset; the script must read its fields to initialize the model.",
+      "expected": "Expected: Uploaded: icepack-shelf-initial.h5.",
+      "note": "The supplied file contains full thickness, base, surface, vx, vy and floating-mask grids.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "upload"
+      ]
+    },
+    {
+      "id": "reference-cue",
+      "logical_id": "step-8",
+      "title": "8. Reference the file in this example",
+      "start": 112.0,
+      "end": 131.0,
+      "instructions": [
+        "Select icepack-shelf-initial.h5. Keep that filename as the reference alias, then choose Reference in example.",
+        "Read the reference confirmation: data/icepack-shelf-initial.h5.",
+        "When you launch, CryoLauncher copies the selected dataset into that path for run.py to read."
+      ],
+      "why": "A reference stages the chosen dataset under data/ when this example launches.",
+      "expected": "Your script will read data/icepack-shelf-initial.h5.",
+      "note": "Your script will read data/icepack-shelf-initial.h5. The reference is attached to your current workspace example.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "reference-cue",
+        "reference"
+      ]
+    },
+    {
+      "id": "review",
+      "logical_id": "step-9",
+      "title": "9. Review your configuration",
+      "start": 131.0,
+      "end": 168.0,
+      "instructions": [
+        "Choose Review & Launch.",
+        "Before submitting, check that the summary names your intended model and workspace example.",
+        "Check Model: ICEPACK and Example: pilot-icepack-h5-1118.",
+        "Keep run.py as the entry point, with the referenced HDF5 input attached.",
+        "Choose Launch cloud run when the readiness checks are ready.",
+        "Your HDF5 run now has its own Cloud Run card.",
+        "Wait for the job to finish; opening another tab does not cancel it."
+      ],
+      "why": "Review is the checkpoint for the selected case, inputs, resources and charges. Confirm the intended model and owned example before submitting the run. Confirmation starts a paid cloud run using the reviewed configuration. Submission, queue/startup and native model execution are separate stages.",
+      "expected": "Wait for completion; opening another tab does not cancel the job.",
+      "note": "Review the current settings before you launch. This native run used 2 vCPU and 8 GiB. Control guide; the original accepted HDF5 run follows. This run used 2 vCPU and 8 GiB. Queue/startup and model timings are reported separately.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "review",
+        "review-case",
+        "launch-guide",
+        "queued"
+      ]
+    },
+    {
+      "id": "completed",
+      "logical_id": "step-10",
+      "title": "10. Open the completed results",
+      "start": 168.0,
+      "end": 178.0,
+      "instructions": [
+        "When the run shows Completed, open View results.",
+        "The native script performs one 0.01-year step with zero accumulation."
+      ],
+      "why": "Completion lets you retrieve and inspect this run\u2019s saved native output.",
+      "expected": "This script runs one 0.01-year step with zero accumulation.",
+      "note": "Next, render and save the fields from this completed HDF5 run.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "completed"
+      ]
+    },
+    {
+      "id": "render-cue",
+      "logical_id": "step-11",
+      "title": "11. Render a native field",
+      "start": 178.0,
+      "end": 197.0,
+      "instructions": [
+        "Choose Render to draw the selected field.",
+        "In Results choose solution icepack, choose velocity or thickness, then choose Render.",
+        "Use the field name and units to interpret the plot."
+      ],
+      "why": "The solution, field name and units identify what you are about to view. The solution, field name and units identify what you are viewing.",
+      "expected": "Velocity is in metres/year; thickness is in metres.",
+      "note": "You can switch between thickness and velocity after the run finishes. Velocity is in metres/year; thickness is in metres.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "render-cue",
+        "render"
+      ]
+    },
+    {
+      "id": "initial-fields",
+      "logical_id": "step-12",
+      "title": "12. Inspect the initialized fields",
+      "start": 197.0,
+      "end": 209.0,
+      "instructions": [
+        "Open initial-conditions.png in your saved results.",
+        "It shows thickness, surface and speed sampled from your uploaded grid onto the native mesh."
+      ],
+      "why": "The saved initial map lets you inspect what was sampled from the uploaded grid.",
+      "expected": "The uploaded 5 \u00d7 9 grid was sampled at all 25 native mesh vertices.",
+      "note": "The supplied grid has 5 \u00d7 9 points and covers a 10 km \u00d7 10 km synthetic shelf.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "initial-fields"
+      ]
+    },
+    {
+      "id": "final-thickness",
+      "logical_id": "step-13",
+      "title": "13. Inspect the final thickness",
+      "start": 209.0,
+      "end": 220.0,
+      "instructions": [
+        "Open the final thickness figure and compare the colour scale with the initial map.",
+        "Final thickness is 300.022696\u2013499.980847 m; its area-weighted mean is 403.649861 m."
+      ],
+      "why": "Use the colour scale and units to interpret the solved native thickness.",
+      "expected": "Final area-weighted mean: 403.649861 m; domain RMS speed: 133.908461 m/year.",
+      "note": "The final domain RMS speed is 133.908461 m/year.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "final-thickness"
+      ]
+    },
+    {
+      "id": "download-cue",
+      "logical_id": "step-14",
+      "title": "14. Generate your download link",
+      "start": 220.0,
+      "end": 239.0,
+      "instructions": [
+        "Choose Download results.",
+        "Wait for a new HTTPS download link for the current run.",
+        "Open the generated HTTPS link to save your results ZIP.",
+        "It contains the mesh, native fields, initial/final figures, metrics and runtime/RNG provenance."
+      ],
+      "why": "The archive keeps this run\u2019s numeric outputs, figures and provenance together.",
+      "expected": "Keep all 12 archive members with your scripts and HDF5 input.",
+      "note": "Use the freshly generated link to save the ZIP. Keep this 12-member archive and its manifest with your input files.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "download-cue",
+        "download"
+      ]
+    },
+    {
+      "id": "scope",
+      "logical_id": "step-Keep",
+      "title": "What this completed example establishes",
+      "start": 239.0,
+      "end": 251.0,
+      "instructions": [
+        "The five initialized fields matched an independent interpolation at all 25 native nodes; the mesh has 32 triangles.",
+        "These portable CG1 fields are numeric results, rather than a Firedrake checkpoint. This example is not an independent native repeat or an accuracy assessment."
+      ],
+      "why": "Keep the scientific qualifications and provenance with the accepted result.",
+      "expected": "Initial-field interpolation matched independently at every native node.",
+      "note": "Submission \u2192 Batch start: 214.703 s; task: 46.352 s; script: 16.9818 s. Long waits are shortened in the video.",
+      "pauseAfter": true,
+      "source_scene_ids": [
+        "scope"
+      ]
+    }
+  ]
+}

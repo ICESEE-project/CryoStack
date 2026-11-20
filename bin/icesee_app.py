@@ -50,6 +50,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 from icesee_auth import AuthManager
+from icesee_auth.manager import LIVE_RECHECK_S
 
 from control_center.services.access import (
     AccessService,
@@ -63,11 +64,15 @@ from icesee_jupyter_book.applications.livist.routes import install_livist
 from icesee_jupyter_book.core.connector_relay_auth import OWNER_GRANT_HEADER, owner_grant
 from icesee_auth.kernel_access import (
     KERNEL_WORKSPACE_STATE_PATH,
+    PILOT_GRANT_HEADER,
     WORKSPACE_GRANT_HEADER,
     grant_matches,
+    pilot_grant,
     workspace_grant,
 )
+from icesee_jupyter_book.application_access import allowed_applications
 from icesee_jupyter_book.developer_docs_access import (
+    can_develop_application,
     developer_docs_middleware,
     filter_livist_html,
     is_privileged,
@@ -306,8 +311,10 @@ def wait_for_port(host: str, port: int, timeout: float = 30.0) -> bool:
     return False
 
 
-async def root_redirect(request: web.Request) -> web.StreamResponse:
-    raise web.HTTPFound("/index.html")
+async def root_index(request: web.Request) -> web.StreamResponse:
+    # Serve the canonical home URL directly. /index.html remains available for
+    # old bookmarks, but visitors should not be bounced to a file name.
+    return web.FileResponse(book_root() / "index.html")
 
 async def livist_redirect(request: web.Request) -> web.StreamResponse:
     raise web.HTTPFound("/livist/")
@@ -347,7 +354,8 @@ async def livist_docs_index(request: web.Request) -> web.StreamResponse:
             )
         )
 
-    if is_privileged(request.app["auth"], request):
+    if (is_privileged(request.app["auth"], request)
+            or can_develop_application(request.app["auth"], request, "livist")):
         return private_docs_response(web.FileResponse(index_file))
     return private_docs_response(web.Response(
         text=filter_livist_html(index_file.read_text(encoding="utf-8")),
@@ -370,13 +378,15 @@ async def livist_docs_page(request: web.Request) -> web.StreamResponse:
         raise web.HTTPNotFound(text="LIVIST documentation page not found.")
 
     auth = request.app["auth"]
-    if restricted_livist_doc(tail) and not is_privileged(auth, request):
+    developer_access = (is_privileged(auth, request)
+                        or can_develop_application(auth, request, "livist"))
+    if restricted_livist_doc(tail) and not developer_access:
         if auth.current_user(request) is None:
             raise web.HTTPFound("/auth/login?return_to="
                                 + quote(request.path_qs, safe=""))
         raise web.HTTPForbidden(
             text="Developer documentation requires owner-controlled access.")
-    if requested_path.suffix.lower() in {".html", ".htm"} and not is_privileged(auth, request):
+    if requested_path.suffix.lower() in {".html", ".htm"} and not developer_access:
         return private_docs_response(web.Response(
             text=filter_livist_html(requested_path.read_text(encoding="utf-8")),
             content_type="text/html"))
@@ -435,6 +445,11 @@ VOILA_ENV_ALLOWLIST = frozenset({
     "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
     # CryoStack application settings (no credentials)
     "CRYOSTACK_AGENT_PANEL", "CRYOSTACK_PERF", "CRYOSTACK_WORKSPACE_ROOT",
+    "CRYOSTACK_DATA_ROOT", "CRYOSTACK_WORKSPACE_STATE_ROOT",
+    "CRYOSTACK_WORKSPACE_MOUNT", "CRYOSTACK_WORKSPACE_VOLUME_ID",
+    "CRYOSTACK_WORKSPACE_CONTENT_ONLY", "CRYOSTACK_CANONICAL_EXAMPLE_ROOTS",
+    "CRYOSTACK_STREAM_DOWNLOADS", "CRYOSTACK_PILOT_UI_ENABLED",
+    "CRYOSTACK_FROZEN_LEGACIES_STORAGE_DB",
     "CRYOSTACK_AUTH_DATABASE", "CRYOSTACK_AWS_PRINCIPAL_ARN", "CRYOSTACK_GATEWAY_INTERNAL_URL",
     "CRYOSTACK_KERNEL_SANDBOX", "CRYOSTACK_KERNEL_BWRAP", "CRYOSTACK_KERNEL_RO_PATHS",
     "CRYOSTACK_KERNEL_AWS_DIR", "CRYOSTACK_KERNEL_HIDE",
@@ -535,17 +550,27 @@ def read_voila_token_file(path: str | None = None) -> str:
     return token
 
 
+#: public paths of the two Voila applications (each is also its Voila base URL)
+ICESEE_PATH = "/icesee/"
+CRYOLAUNCHER_PATH = "/cryolauncher/"
+
+#: earlier public paths, permanently redirected so bookmarks keep working
+LEGACY_APP_PATHS = {
+    "/icesee-gui": ICESEE_PATH,
+    "/icesheets": CRYOLAUNCHER_PATH,
+}
+
 #: (notebook, port, base URL) of the two application servers
 VOILA_APPS = {
     "icesee": (
         run_center_nb,
         configured_port("CRYOSTACK_RUN_CENTER_PORT", 8866),
-        "/icesee-gui/",
+        ICESEE_PATH,
     ),
     "icesheets": (
         icesheets_nb,
         configured_port("CRYOSTACK_ICESHEETS_PORT", 8870),
-        "/icesheets/",
+        CRYOLAUNCHER_PATH,
     ),
 }
 
@@ -571,6 +596,7 @@ def voila_command(app_name: str, python: str | None = None) -> list[str]:
         # workspace grant (never the gateway key).
         f"--VoilaConfiguration.http_header_envs={OWNER_GRANT_HEADER}",
         f"--VoilaConfiguration.http_header_envs={WORKSPACE_GRANT_HEADER}",
+        f"--VoilaConfiguration.http_header_envs={PILOT_GRANT_HEADER}",
     ]
 
 
@@ -703,6 +729,7 @@ def build_upstream_headers(
             "x-cryostack-user-name",
             OWNER_GRANT_HEADER.lower(),
             WORKSPACE_GRANT_HEADER.lower(),
+            PILOT_GRANT_HEADER.lower(),
         }
     }
 
@@ -744,6 +771,9 @@ def build_upstream_headers(
         workspace = workspace_grant(user.id, key) if key else None
         if workspace:
             headers[WORKSPACE_GRANT_HEADER] = workspace
+        pilot = pilot_grant(user.id, key) if key else None
+        if pilot:
+            headers[PILOT_GRANT_HEADER] = pilot
 
     return headers
 
@@ -795,8 +825,16 @@ async def proxy_ws(request: web.Request, upstream_port: int) -> web.WebSocketRes
     ended = (upstream_port, kernel.group(1)) if kernel else None
     if ended in state.ended_kernels:
         return web.Response(status=404, text="Kernel does not exist")
+    # Negotiate the same Jupyter wire format on both sides of the proxy.
+    # Forwarding only the header lets upstream select binary v1 while the
+    # browser falls back to legacy JSON, breaking widget initialization.
+    protocols = tuple(p.strip() for p in request.headers.get(
+        "Sec-WebSocket-Protocol", "").split(",") if p.strip())
+    headers = {k: v for k, v in headers.items()
+               if k.lower() != "sec-websocket-protocol"}
     try:
-        upstream_ws = await state.client.ws_connect(upstream_url, headers=headers)
+        upstream_ws = await state.client.ws_connect(
+            upstream_url, headers=headers, protocols=protocols)
     except WSServerHandshakeError as exc:
         if exc.status == 404 and ended:
             state.ended_kernels[ended] = None
@@ -804,8 +842,30 @@ async def proxy_ws(request: web.Request, upstream_port: int) -> web.WebSocketRes
                 del state.ended_kernels[next(iter(state.ended_kernels))]
         return web.Response(status=exc.status or 502, text="Upstream refused the connection")
 
-    browser_ws = web.WebSocketResponse()
+    browser_ws = web.WebSocketResponse(
+        protocols=(upstream_ws.protocol,) if upstream_ws.protocol else ())
     await browser_ws.prepare(request)
+
+    # Suspension, rejection or a revoked session ends the connection: at once
+    # when Control Center decides in this process, otherwise at the next
+    # periodic re-check of the session and account.
+    auth = request.app.get("auth")
+    user = request.get("cryostack_user")
+    closing = asyncio.Event()
+    unregister = (auth.register_live_connection(user.id, closing.set)
+                  if auth is not None and user is not None else None)
+
+    async def watch_access() -> None:
+        while not closing.is_set():
+            try:
+                await asyncio.wait_for(closing.wait(), LIVE_RECHECK_S)
+            except asyncio.TimeoutError:
+                if auth is not None and not auth.live_session_valid(request):
+                    closing.set()
+        await upstream_ws.close()
+        await browser_ws.close(code=4401, message=b"access revoked")
+
+    watcher = asyncio.create_task(watch_access()) if auth is not None and user is not None else None
 
     async with upstream_ws:
 
@@ -827,7 +887,16 @@ async def proxy_ws(request: web.Request, upstream_port: int) -> web.WebSocketRes
                 elif msg.type == WSMsgType.CLOSE:
                     await browser_ws.close()
 
-        await asyncio.gather(browser_to_upstream(), upstream_to_browser())
+        try:
+            await asyncio.gather(browser_to_upstream(), upstream_to_browser())
+        except ConnectionResetError:
+            # the tab closed while a message was on its way: nothing to deliver
+            pass
+        finally:
+            if unregister is not None:
+                unregister()
+            if watcher is not None:
+                watcher.cancel()
 
     return browser_ws
 
@@ -861,6 +930,18 @@ async def _proxy_application(
     return await proxy_dispatch(request, service.port)
 
 
+async def legacy_app_redirect(request: web.Request) -> web.StreamResponse:
+    """``/icesheets/...`` -> ``/cryolauncher/...`` and ``/icesee-gui/...`` ->
+    ``/icesee/...``, keeping the rest of the path and the query string."""
+    for old, new in LEGACY_APP_PATHS.items():
+        if request.path == old or request.path.startswith(old + "/"):
+            target = new + request.path[len(old):].lstrip("/")
+            if request.query_string:
+                target += "?" + request.query_string
+            raise web.HTTPPermanentRedirect(target)
+    raise web.HTTPNotFound()
+
+
 async def proxy_run_center(request: web.Request) -> web.StreamResponse:
     state: ICESEEState = request.app["state"]
     return await _proxy_application(request, state.run_center, "ICESEE")
@@ -888,6 +969,9 @@ async def kernel_workspace_state(request: web.Request) -> web.Response:
     if not grant_matches(user_id, request.headers.get(WORKSPACE_GRANT_HEADER),
                          state.kernel_grant_key):
         raise web.HTTPForbidden(text="invalid workspace grant")
+    # a kernel outlives its browser tab; an account suspended since keeps nothing
+    if not request.app["auth"].user_is_active(user_id):
+        raise web.HTTPForbidden(text="account not approved")
     application = (request.query.get("application") or "").strip().lower()
     if application not in ("cryolauncher", "icesee"):
         raise web.HTTPBadRequest(text="unknown application")
@@ -936,8 +1020,11 @@ def make_app() -> web.Application:
             auth,
             book_root(),
             html_pages={
+                "/": lambda: book_root() / "index.html",
                 "/frozen-legacies/": lambda: frozen_legacies_root() / "index.html",
             },
+            # application cards and links follow the account's app.use grants
+            application_filter=lambda request: allowed_applications(auth, request),
         )
     )
 
@@ -955,6 +1042,17 @@ def make_app() -> web.Application:
         auth=auth,
     )
 
+    try:  # hosted pilot: optional; off (and BYO untouched) unless configured.
+        # After the Control Center so the credit tables exist before the ledger binds.
+        from cryostack_src.cloud.pilot.routes import install_pilot
+        install_pilot(app, auth=auth, grant_key_provider=lambda: state.kernel_grant_key,
+                      storage=app.get("control_storage"))
+    except Exception as error:  # noqa: BLE001
+        print(f"[pilot] hosted pilot is OFF ({type(error).__name__})", file=sys.stderr, flush=True)
+
+    from cryostack_src.workspace.downloads import install_workspace_downloads
+    install_workspace_downloads(app, auth=auth)
+
     protected_run_center = auth.require_login(
         proxy_run_center
     )
@@ -963,31 +1061,15 @@ def make_app() -> web.Application:
         proxy_icesheets
     )
 
-    # ICESEE application
-    app.router.add_route(
-        "*",
-        "/icesee-gui",
-        protected_run_center,
-    )
+    # ICESEE and CryoLauncher applications
+    for path, handler in ((ICESEE_PATH, protected_run_center),
+                          (CRYOLAUNCHER_PATH, protected_icesheets)):
+        app.router.add_route("*", path.rstrip("/"), handler)
+        app.router.add_route("*", path + "{tail:.*}", handler)
 
-    app.router.add_route(
-        "*",
-        "/icesee-gui/{tail:.*}",
-        protected_run_center,
-    )
-
-    # CryoLauncher application
-    app.router.add_route(
-        "*",
-        "/icesheets",
-        protected_icesheets,
-    )
-
-    app.router.add_route(
-        "*",
-        "/icesheets/{tail:.*}",
-        protected_icesheets,
-    )
+    for old in LEGACY_APP_PATHS:
+        app.router.add_route("*", old, legacy_app_redirect)
+        app.router.add_route("*", old + "/{tail:.*}", legacy_app_redirect)
 
     app.router.add_get("/livist/docs", livist_docs_redirect)
     app.router.add_get("/livist/docs/", livist_docs_index)
@@ -1028,7 +1110,7 @@ def make_app() -> web.Application:
         maintainer_access(maintainer_guide_page),
     )
 
-    app.router.add_get("/", root_redirect)
+    app.router.add_get("/", root_index)
     app.router.add_static("/", path=str(book_root()), show_index=True)
 
     return app

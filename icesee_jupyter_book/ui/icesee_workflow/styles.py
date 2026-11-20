@@ -50,6 +50,8 @@ CSS = r"""
 .icw-step.attention { color:var(--ic-warn); border-color:#f1d79b; background:var(--ic-warn-soft); }
 .icw-step.attention .n { background:var(--ic-warn); color:#fff; border-color:var(--ic-warn); }
 .icw-step.active .n { animation: icw-pulse 1.6s ease-in-out infinite; }
+.icw-step.stopped { color:var(--ic-muted); border-style:dashed; background:transparent; box-shadow:none; }
+.icw-step.stopped .n { background:transparent; color:var(--ic-muted); border-color:var(--ic-muted); }
 
 /* ── layout ────────────────────────────────────────────────────────── */
 .icw-shell { display:grid !important; grid-template-columns: minmax(380px, 5fr) minmax(460px, 7fr); gap:16px; align-items:start; width:100%; }

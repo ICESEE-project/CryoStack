@@ -43,7 +43,7 @@ job definition). ``profile`` is a local CLI selector, not a credential.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from cryostack_src.cloud.drivers.aws.batch_config import (
     COMPUTE_MODE_EC2,
@@ -220,3 +220,18 @@ def validate_cloud_config(config: CloudRunConfig, *, model: str = "") -> list[st
         problems.append("A Batch job definition is required.")
 
     return problems
+
+
+def bind_connected_cloud_account(config: CloudRunConfig, *, summary: dict) -> CloudRunConfig:
+    """Apply server-owned BYO account defaults before validation or review.
+
+    ``summary`` must come from the authenticated owner's AWSOnboarding store,
+    never request/widget input. This derives resource names only; submission
+    still requires a fresh assumed-role verification and drift check.
+    """
+    if summary.get("status") != "connected":
+        return config
+    from cryostack_src.cloud.connect.defaults import derive_cloud_defaults
+    defaults = derive_cloud_defaults(account_id=summary.get("account_id", ""),
+                                     region=summary.get("region", ""))
+    return replace(config, bucket=defaults.bucket, region=defaults.region, profile=None, bucket_error="")

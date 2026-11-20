@@ -1,0 +1,344 @@
+{
+  "video_sha256": "6fc525187b7cc0ed315fb93762367e34e77a5755c84e424541e6116cfc917ca6",
+  "duration_seconds": 202.0,
+  "chapters": [
+    {
+      "id": "step-00",
+      "step": "Goal",
+      "start_seconds": 0,
+      "end_seconds": 14.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Run the supplied ISSM shelf and save its native results.",
+      "screenWhy": "Keep the source inputs, inspect native fields, and save a complete result package.",
+      "expectedResult": "Start with a connected cloud account, configured MATLAB license and required Connector.",
+      "logical_step_id": "orientation",
+      "pause_after": false,
+      "title": "Your goal: run the native ISSM example",
+      "instructions": [
+        "Launch SquareIceShelf with its supplied inputs, inspect speed and save the results ZIP.",
+        "Start with an approved cloud account, configured MATLAB license and any required Connector."
+      ],
+      "note": "Use the separate account and MATLAB guides if these prerequisites are not ready.",
+      "why": "Keep the source inputs, inspect native fields, and save a complete result package."
+    },
+    {
+      "id": "start",
+      "step": "Start",
+      "start_seconds": 14.0,
+      "end_seconds": 24.0,
+      "where": "Mode and Experiment",
+      "screenText": "Start here in CryoLauncher. Choose Cloud for this tutorial.",
+      "screenWhy": "Your workspace keeps scripts, dataset references and results together.",
+      "expectedResult": "Your workspace keeps scripts, datasets, run history and results together.",
+      "logical_step_id": "orientation",
+      "pause_after": false,
+      "title": "Start here",
+      "instructions": [
+        "Open CryoLauncher and sign in. Use an approved connected cloud account with its resources prepared.",
+        "The following steps select this tutorial\u2019s model and example."
+      ],
+      "note": "Shared application orientation; the case-specific configuration follows.",
+      "why": "Your workspace keeps scripts, dataset references and results together."
+    },
+    {
+      "id": "step-01",
+      "step": "1",
+      "start_seconds": 24.0,
+      "end_seconds": 35.0,
+      "where": "Mode and Experiment",
+      "screenText": "Choose Cloud \u2192 Basic \u2192 ISSM \u2192 SquareIceShelf.",
+      "screenWhy": "Basic keeps the supplied scientific workflow and exposes its reviewed controls.",
+      "expectedResult": "Keep runme.m as the Run target; no script upload is needed.",
+      "logical_step_id": "step-1",
+      "pause_after": true,
+      "title": "1. Choose the Basic shelf case",
+      "instructions": [
+        "Choose Cloud \u2192 Basic \u2192 ISSM \u2192 SquareIceShelf.",
+        "Basic uses the supplied example; no script upload or workspace clone is needed."
+      ],
+      "note": "Keep the Run target as runme.m.",
+      "why": "Basic keeps the supplied scientific workflow and exposes its reviewed controls."
+    },
+    {
+      "id": "step-02",
+      "step": "2",
+      "start_seconds": 35.0,
+      "end_seconds": 47.0,
+      "where": "Mode and Experiment",
+      "screenText": "Keep the supplied inputs and leave optional overrides disabled.",
+      "screenWhy": "Basic retains the supplied example; optional edits change its scientific input definition.",
+      "expectedResult": "The 1,000 km shelf tapers from 1,000 m to 300 m along y.",
+      "logical_step_id": "step-2",
+      "pause_after": true,
+      "title": "2. Keep the supplied scientific inputs",
+      "instructions": [
+        "Leave the optional Basic overrides disabled.",
+        "The 1,000 km square shelf tapers from 1,000 m to 300 m along y and solves a steady SSA stress-balance problem."
+      ],
+      "note": "The four supplied files are runme.m, Square.par, DomainOutline.exp and Front.exp.",
+      "why": "Basic retains the supplied example; optional edits change its scientific input definition."
+    },
+    {
+      "id": "step-03",
+      "step": "3",
+      "start_seconds": 47.0,
+      "end_seconds": 59.0,
+      "where": "Environment \u2192 Cloud readiness",
+      "screenText": "Check Account connected and Storage, Containers and Compute Ready.",
+      "screenWhy": "Storage, image, compute and MATLAB access must be ready before AWS can execute the model.",
+      "expectedResult": "Use Prepare cloud first if the account resources are not ready.",
+      "logical_step_id": "step-3",
+      "pause_after": true,
+      "title": "3. Confirm cloud readiness",
+      "instructions": [
+        "Check Account connected and Storage, Containers and Compute Ready.",
+        "Use Prepare cloud if your account resources are not ready, then review again."
+      ],
+      "note": "This run used 2 vCPU, 8 GiB and a 60-minute time limit.",
+      "why": "Storage, image, compute and MATLAB access must be ready before AWS can execute the model."
+    },
+    {
+      "id": "step-04",
+      "step": "4",
+      "start_seconds": 59.0,
+      "end_seconds": 68.0,
+      "where": "Environment \u2192 Review & Launch",
+      "screenText": "Choose Review & Launch.",
+      "screenWhy": "Review confirms the intended model, source, resources and charges before submission.",
+      "expectedResult": "Reviewing shows the configuration before a paid run is submitted.",
+      "logical_step_id": "step-4",
+      "pause_after": true,
+      "title": "4. Open the review",
+      "instructions": [
+        "Choose Review & Launch."
+      ],
+      "note": "Reviewing shows the configuration before a paid run is submitted.",
+      "why": "Review confirms the intended model, source, resources and charges before submission."
+    },
+    {
+      "id": "step-05",
+      "step": "4",
+      "start_seconds": 68.0,
+      "end_seconds": 80.0,
+      "where": "Environment \u2192 Review & Launch",
+      "screenText": "Confirm ISSM, SquareIceShelf and the tested image/digest.",
+      "screenWhy": "The tested image and pinned digest identify the native software environment.",
+      "expectedResult": "AWS charges the connected account; the displayed price is an estimate.",
+      "logical_step_id": "step-4",
+      "pause_after": true,
+      "title": "4. Check the native case and image",
+      "instructions": [
+        "Confirm ISSM and SquareIceShelf in the review.",
+        "Check the tested container image and pinned digest."
+      ],
+      "note": "AWS charges the connected account; the displayed price is an estimate.",
+      "why": "The tested image and pinned digest identify the native software environment."
+    },
+    {
+      "id": "step-06",
+      "step": "5",
+      "start_seconds": 80.0,
+      "end_seconds": 89.0,
+      "where": "Environment \u2192 Review & Launch",
+      "screenText": "When every readiness row is Ready, choose Launch cloud run.",
+      "screenWhy": "This final confirmation submits a paid job to the connected AWS account.",
+      "expectedResult": "Check ISSM runtime before confirming.",
+      "logical_step_id": "step-5",
+      "pause_after": true,
+      "title": "5. Submit the reviewed run",
+      "instructions": [
+        "When all readiness rows are Ready, choose Launch cloud run."
+      ],
+      "note": "Check the ISSM runtime row before confirming.",
+      "why": "This final confirmation submits a paid job to the connected AWS account."
+    },
+    {
+      "id": "step-07",
+      "step": "5",
+      "start_seconds": 89.0,
+      "end_seconds": 101.0,
+      "where": "Environment \u2192 Review & Launch",
+      "screenText": "Wait for the submission and execution summary.",
+      "screenWhy": "Review confirms the intended model, source, resources and charges before submission.",
+      "expectedResult": "Expected: ISSM \u00b7 SquareIceShelf \u00b7 runme.m.",
+      "logical_step_id": "step-5",
+      "pause_after": true,
+      "title": "5. Wait for the submission confirmation",
+      "instructions": [
+        "CryoLauncher stages the inputs and submits the native job.",
+        "The execution summary retains ISSM, SquareIceShelf and runme.m."
+      ],
+      "note": "The script requests two MPI processes.",
+      "why": "Review confirms the intended model, source, resources and charges before submission."
+    },
+    {
+      "id": "step-08",
+      "step": "6",
+      "start_seconds": 101.0,
+      "end_seconds": 113.0,
+      "where": "Cloud run status",
+      "screenText": "Let the native job complete, then open its results.",
+      "screenWhy": "Submission, queue/startup and native model execution are separate stages.",
+      "expectedResult": "Submission \u2192 start: 214.4 s; Batch task: 42.8 s.",
+      "logical_step_id": "step-6",
+      "pause_after": true,
+      "title": "6. Let the native job finish",
+      "instructions": [
+        "Allow the job to complete, then open its results.",
+        "Submission \u2192 container start: 214.4 s. Batch task: 42.8 s."
+      ],
+      "note": "Long setup, queue and observation waits are shortened in this guide.",
+      "why": "Submission, queue/startup and native model execution are separate stages."
+    },
+    {
+      "id": "step-09",
+      "step": "6",
+      "start_seconds": 113.0,
+      "end_seconds": 123.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Confirm the completed native run.",
+      "screenWhy": "A completed native job and its recorded provenance provide execution evidence.",
+      "expectedResult": "MATLAB R2024b Update 7 \u00b7 ISSM 2026.1 \u00b7 exit code 0.",
+      "logical_step_id": "step-6",
+      "pause_after": true,
+      "title": "6. Confirm native completion",
+      "instructions": [
+        "The job succeeded with native exit code 0.",
+        "Runtime provenance records MATLAB R2024b Update 7 and ISSM 2026.1."
+      ],
+      "note": "The configured license path supported native execution.",
+      "why": "A completed native job and its recorded provenance provide execution evidence."
+    },
+    {
+      "id": "step-10",
+      "step": "7",
+      "start_seconds": 123.0,
+      "end_seconds": 133.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "In Results select StressbalanceSolution \u2192 Vel; Render when needed.",
+      "screenWhy": "The solution, field name, units and mesh counts identify what you are viewing.",
+      "expectedResult": "The first field may preview automatically.",
+      "logical_step_id": "step-7",
+      "pause_after": true,
+      "title": "7. Render a speed field",
+      "instructions": [
+        "Open Results, select StressbalanceSolution \u2192 Vel, then use Render when needed."
+      ],
+      "note": "The first field may be previewed automatically.",
+      "why": "The solution, field name, units and mesh counts identify what you are viewing."
+    },
+    {
+      "id": "step-11",
+      "step": "7",
+      "start_seconds": 133.0,
+      "end_seconds": 144.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Read the field summary before interpreting the map.",
+      "screenWhy": "The solution, field name, units and mesh counts identify what you are viewing.",
+      "expectedResult": "Four physical arrays, 91 mesh vertices and 148 triangles.",
+      "logical_step_id": "step-7",
+      "pause_after": true,
+      "title": "7. Read the field summary",
+      "instructions": [
+        "Vel contains 91 nodal speed values.",
+        "The native mesh has 91 vertices and 148 triangles."
+      ],
+      "note": "The four physical arrays are Vx, Vy, Vel and Pressure.",
+      "why": "The solution, field name, units and mesh counts identify what you are viewing."
+    },
+    {
+      "id": "step-12",
+      "step": "8",
+      "start_seconds": 144.0,
+      "end_seconds": 156.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Open the full saved velocity PNG.",
+      "screenWhy": "The unchanged saved figure preserves the complete map, axes and colour scale.",
+      "expectedResult": "Speed: 0\u20139034.387288 m/year; x and y are metres.",
+      "logical_step_id": "step-8",
+      "pause_after": true,
+      "title": "8. Inspect the full saved velocity map",
+      "instructions": [
+        "Open the full saved Vel PNG.",
+        "Colour is speed in m/year; x and y are metres. Speed spans 0\u20139034.387288 m/year."
+      ],
+      "note": "10\u2076 m equals 1,000 km. The saved PNG is unchanged.",
+      "why": "The unchanged saved figure preserves the complete map, axes and colour scale."
+    },
+    {
+      "id": "step-13",
+      "step": "9",
+      "start_seconds": 156.0,
+      "end_seconds": 168.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Read the convergence count as a diagnostic, rather than time.",
+      "screenWhy": "A steady diagnostic convergence count is different from a transient time axis.",
+      "expectedResult": "23 steps describes steady stress-balance convergence.",
+      "logical_step_id": "step-9",
+      "pause_after": true,
+      "title": "9. Separate the diagnostic from time",
+      "instructions": [
+        "The native convergence count is 23 steps.",
+        "It describes steady stress-balance convergence, not 23 transient timesteps."
+      ],
+      "note": "Vel agrees with hypot(Vx, Vy); all four physical fields are finite.",
+      "why": "A steady diagnostic convergence count is different from a transient time axis."
+    },
+    {
+      "id": "step-14",
+      "step": "10",
+      "start_seconds": 168.0,
+      "end_seconds": 176.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Choose Download results.",
+      "screenWhy": "The archive keeps this run\u2019s numeric outputs, figures and provenance together.",
+      "expectedResult": "Wait for a fresh archive link for this run.",
+      "logical_step_id": "step-10",
+      "pause_after": true,
+      "title": "10. Generate your result download",
+      "instructions": [
+        "Choose Download results."
+      ],
+      "note": "Wait for the fresh archive link for this run.",
+      "why": "The archive keeps this run\u2019s numeric outputs, figures and provenance together."
+    },
+    {
+      "id": "step-15",
+      "step": "10",
+      "start_seconds": 176.0,
+      "end_seconds": 188.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Open the generated HTTPS link and save the ZIP.",
+      "screenWhy": "The archive keeps this run\u2019s numeric outputs, figures and provenance together.",
+      "expectedResult": "Keep its 11 members: fields, mesh, model, figure and provenance.",
+      "logical_step_id": "step-10",
+      "pause_after": true,
+      "title": "10. Save the complete archive",
+      "instructions": [
+        "Open the generated HTTPS link and save the ZIP.",
+        "The package includes native fields, mesh, final MATLAB model, figure and provenance."
+      ],
+      "note": "This archive contains 11 members and passed its CRC check.",
+      "why": "The archive keeps this run\u2019s numeric outputs, figures and provenance together."
+    },
+    {
+      "id": "step-16",
+      "step": "Keep",
+      "start_seconds": 188.0,
+      "end_seconds": 202.0,
+      "where": "Workspace \u2192 Results",
+      "screenText": "Keep the four source files and results together.",
+      "screenWhy": "Keep the source, versions, hashes and scientific qualifications with the result.",
+      "expectedResult": "All four physical fields and the mesh match the declared reference exactly.",
+      "logical_step_id": "step-Keep",
+      "pause_after": true,
+      "title": "Keep the inputs and results together",
+      "instructions": [
+        "Retain the four source files, result ZIP, versions, hashes and saved MATLAB RNG state.",
+        "All four physical fields and the mesh match the declared reference exactly."
+      ],
+      "note": "This is the supplied synthetic diagnostic case; it is not a field-data forecast.",
+      "why": "Keep the source, versions, hashes and scientific qualifications with the result."
+    }
+  ]
+}

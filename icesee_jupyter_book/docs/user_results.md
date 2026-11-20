@@ -14,13 +14,10 @@
     <div class="cryostack-section-label">CryoStack Documentation</div>
     <h1>Results &amp; Visualization</h1>
     <p>
-      For CryoStack's two workflow-execution applications — CryoLauncher
-      and ICESEE — a completed run's results can be retrieved, inspected,
-      and visualized, though the underlying representation differs between
-      them; see below for what each actually does. Frozen Legacies and
-      LIVIST are their own applications with their own interaction models,
-      not a run/results lifecycle — see
-      <a href="user_apps.html">Applications &amp; Workflows</a>.
+      Find the right output path for all four CryoStack applications.
+      CryoLauncher and ICESEE produce run results; Frozen Legacies and
+      LIVIST expose scientific data products. Detailed procedures stay in
+      each application's own User Manual.
     </p>
     <div class="cryostack-docs-actions">
       <a class="cryostack-btn secondary" href="user_manual.html">
@@ -56,14 +53,35 @@ for the full walkthrough.
 
 ## ICESEE: its own results workflow
 
-ICESEE currently has its own, separate results path — not the structured
-result package above. A completed run's output files and any generated
-figures are presented directly from ICESEE's own experiment/run-record
-tooling: retrieve them from the run's Remote or Cloud location, then
-inspect the file listing and any generated images through ICESEE's own Run
-Log and Results Preview. See
+ICESEE reads each example's native results contract through its own
+Results service; it does not construct CryoLauncher's result package.
+Select the run, retrieve Remote or Cloud output when required, then open
+**Results** for the example's scientific figures and **Files** for its output
+files. Lorenz-96 shows its true/background/observed/analysed state views and
+a supplementary assimilation-error view. Other examples use their own
+`results.yaml`/postprocessing contract. See
 <a href="../applications/icesee/user_manual.html#results-and-reports">Results and reports</a>
 for the full walkthrough.
+
+## Frozen Legacies: observations and radar products
+
+Frozen Legacies associates shared radar observations with provenance,
+imagery, derived quantities, and downloadable scientific products. It can
+also keep user-provided files and generated picking outputs in a private
+workspace. Availability and validation status vary by collection and product;
+use the labels and provenance shown by the application. See
+<a href="../applications/frozen_legacies/user_manual.html#products-and-downloads">Products and Downloads</a>
+in the Frozen Legacies User Manual.
+
+## LIVIST: published temperature products
+
+LIVIST visualizes published englacial-temperature products and supporting
+geographic or borehole layers. Downloadable datasets live in the linked data
+repository, and the Python package supports analysis beyond the browser. Read
+the product metadata before comparing coverage, resolution, method, or
+uncertainty. See the
+<a href="/livist/docs/livist_user_manual/">LIVIST User Manual</a> and
+<a href="https://source.coop/englacial/ice-sheet-temperature" target="_blank" rel="noopener noreferrer">Data Repository</a>.
 
 
 ## Live interface walkthrough
